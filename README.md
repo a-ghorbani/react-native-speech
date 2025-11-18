@@ -35,6 +35,16 @@ A high-performance text-to-speech library built for bare React Native and Expo, 
 
 - ✅ &nbsp;**Type Safety** - Fully written in TypeScript with complete type definitions
 
+### Multi-Engine Support (v2.0+)
+
+- 🎯 &nbsp;**Neural TTS** - High-quality Kokoro neural voices running entirely on-device
+- 🔒 &nbsp;**Privacy-First** - Neural synthesis with no cloud dependencies
+- 🌐 &nbsp;**Multi-Language** - Support for English, Chinese, Korean, Japanese
+- 🎨 &nbsp;**Voice Blending** - Mix multiple voices for unique characteristics
+- 🔄 &nbsp;**Flexible Architecture** - Easy to switch between OS native and neural engines
+
+> **New in v2.0:** Kokoro neural TTS engine support! See [Kokoro Guide](./docs/KOKORO_GUIDE.md) for details.
+
 ## Installation
 
 ### Bare React Native
@@ -72,6 +82,16 @@ For Expo projects, follow these steps:
    ```sh
    npx expo prebuild
    ```
+
+### Kokoro Neural TTS (Optional)
+
+To use the Kokoro neural TTS engine, install the additional dependency:
+
+```sh
+npm install onnxruntime-react-native
+```
+
+Then follow the [Kokoro Model Management Guide](./docs/KOKORO_MODEL_MANAGEMENT.md) to set up model files.
 
 ## Usage
 
@@ -118,7 +138,37 @@ const styles = StyleSheet.create({
 });
 ```
 
+### Kokoro Neural TTS Quick Start
+
+```tsx
+import Speech from '@mhpdev/react-native-speech';
+
+// Initialize Kokoro engine
+await Speech.kokoro.initialize({
+  modelPath: 'file://path/to/model.onnx',
+  vocabPath: 'file://path/to/vocab.json',
+  mergesPath: 'file://path/to/merges.txt',
+  voicesPath: 'file://path/to/voices.bin',
+});
+
+// Speak with neural voice
+await Speech.kokoro.speak(
+  'Hello! This is high-quality neural speech.',
+  'af_bella', // Voice ID
+  { speed: 1.0, volume: 1.0 }
+);
+```
+
+See the [Kokoro Guide](./docs/KOKORO_GUIDE.md) for complete setup instructions.
+
 To become more familiar with the usage of the library, check out the [example project](./example/).
+
+## Documentation
+
+- [Usage Guide](./docs/USAGE.md) - Complete API reference for OS native TTS
+- [Kokoro Guide](./docs/KOKORO_GUIDE.md) - Neural TTS engine setup and usage
+- [Model Management](./docs/KOKORO_MODEL_MANAGEMENT.md) - How to manage Kokoro models
+- [Example App](./example/) - Working examples of all features
 
 ## Testing
 
