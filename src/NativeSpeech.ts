@@ -142,7 +142,7 @@ export interface Spec extends TurboModule {
   initialize: (options: VoiceOptions) => void;
   openVoiceDataInstaller: () => Promise<void>;
   setEngine: (engineName: string) => Promise<void>;
-  getAvailableVoices: (language: string) => Promise<VoiceProps[]>;
+  getAvailableVoices: (language?: string) => Promise<VoiceProps[]>;
   speakWithOptions: (text: string, options: VoiceOptions) => Promise<void>;
 
   // Neural Audio Player Methods

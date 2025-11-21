@@ -362,7 +362,7 @@ export default class Speech {
    * Only works when using OS native engine
    */
   public static getAvailableVoices(language?: string): Promise<VoiceProps[]> {
-    return TurboSpeech.getAvailableVoices(language ?? '');
+    return TurboSpeech.getAvailableVoices(language);
   }
 
   /**
