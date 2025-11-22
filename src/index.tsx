@@ -1,28 +1,50 @@
-// Export enhanced Speech API as default (v2.0 with backward compatibility)
-export {default} from './SpeechEnhanced';
+/**
+ * React Native Speech - Multi-Engine TTS Library
+ *
+ * Supports:
+ * - OS Native TTS (iOS AVSpeechSynthesizer, Android TextToSpeech)
+ * - Kokoro Neural TTS (high quality, multi-language)
+ * - Supertonic Neural TTS (ultra-fast, lightweight)
+ */
 
-// Export original Speech API for users who want explicit v1.x behavior
-export {default as SpeechV1} from './Speech';
+// Export Speech API as default
+export {default} from './Speech';
 
-// Export types from original API
+// Export types from native API
 export type {
   VoiceProps,
   EventProps,
   VoiceOptions,
   ProgressEventProps,
+  EngineProps,
 } from './NativeSpeech';
 
-// Export new v2.0 types
+// Export TTSEngine enum (as value, not type)
+export {TTSEngine} from './types';
+
+// Export engine types
 export type {
-  TTSEngine,
   TTSEngineInterface,
   AudioBuffer,
   SynthesisOptions,
   EngineStatus,
+} from './types';
+
+// Export Kokoro types
+export type {
   KokoroVoice,
   KokoroConfig,
   KokoroSynthesisOptions,
   SupportedLanguage,
+} from './types';
+
+// Export Supertonic types
+export type {
+  SupertonicVoice,
+  SupertonicConfig,
+  SupertonicSynthesisOptions,
+  SupertonicLanguage,
+  InferenceSteps,
 } from './types';
 
 // Export component types
@@ -39,3 +61,4 @@ export {default as HighlightedText} from './components/HighlightedText';
 export {engineManager} from './engines/EngineManager';
 export {OSEngine} from './engines/OSEngine';
 export {KokoroEngine} from './engines/kokoro';
+export {SupertonicEngine} from './engines/supertonic';

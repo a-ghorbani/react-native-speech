@@ -6,7 +6,7 @@
 
 import React from 'react';
 import {View, Text, StyleSheet, Alert} from 'react-native';
-import Speech from '@mhpdev/react-native-speech';
+import Speech, {TTSEngine} from '@mhpdev/react-native-speech';
 import Button from '../components/Button';
 import {kokoroModelManager} from '../utils/ModelManager';
 
@@ -28,8 +28,11 @@ const KokoroExample: React.FC = () => {
       // Get bundled model configuration
       const config = kokoroModelManager.getBundledModelConfig();
 
-      // Initialize Kokoro engine
-      await Speech.kokoro.initialize(config);
+      // Initialize Kokoro engine using unified API
+      await Speech.initialize({
+        engine: TTSEngine.KOKORO,
+        ...config,
+      });
 
       setIsInitialized(true);
       Alert.alert('Success', 'Kokoro engine initialized!');
@@ -56,8 +59,8 @@ const KokoroExample: React.FC = () => {
     try {
       setIsSpeaking(true);
 
-      // Speak using Kokoro with a specific voice
-      await Speech.kokoro.speak(
+      // Speak using the unified API
+      await Speech.speak(
         'Hello! This is Kokoro neural text to speech.',
         'af_bella', // Voice ID
         {
@@ -87,7 +90,7 @@ const KokoroExample: React.FC = () => {
     }
 
     try {
-      const voices = await Speech.kokoro.getVoices();
+      const voices = await Speech.getVoicesWithMetadata();
       const voiceList = voices.map(v => `${v.name} (${v.id})`).join('\n');
       Alert.alert('Available Voices', voiceList);
     } catch (error) {

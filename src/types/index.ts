@@ -4,6 +4,7 @@
 
 export * from './Engine';
 export * from './Kokoro';
+export * from './Supertonic';
 
 // Re-export existing types for backward compatibility
 export type {

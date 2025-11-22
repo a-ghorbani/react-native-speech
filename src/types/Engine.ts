@@ -17,6 +17,15 @@ export enum TTSEngine {
    * - Requires model files
    */
   KOKORO = 'kokoro',
+
+  /**
+   * Use Supertonic neural TTS engine (offline, ONNX-based)
+   * - Ultra-fast neural voice synthesis (167× faster than real-time)
+   * - Lightweight (66M parameters)
+   * - Runs entirely on-device
+   * - Requires model files
+   */
+  SUPERTONIC = 'supertonic',
 }
 
 export interface EngineStatus {
