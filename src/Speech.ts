@@ -83,17 +83,24 @@ export default class Speech {
         kokoroEngine = new KokoroEngine();
         engineManager.registerEngine(kokoroEngine);
       }
-      await kokoroEngine.initialize(engineConfig as KokoroConfig);
+      await engineManager.initializeEngine(
+        engine,
+        engineConfig as KokoroConfig,
+      );
       engineManager.setDefaultEngine(engine);
     } else if (engine === 'supertonic') {
       if (!supertonicEngine) {
         supertonicEngine = new SupertonicEngine();
         engineManager.registerEngine(supertonicEngine);
       }
-      await supertonicEngine.initialize(engineConfig as SupertonicConfig);
+      await engineManager.initializeEngine(
+        engine,
+        engineConfig as SupertonicConfig,
+      );
       engineManager.setDefaultEngine(engine);
     } else if (engine === 'os-native') {
       // OS engine is already initialized
+      await engineManager.initializeEngine(engine);
       engineManager.setDefaultEngine(engine);
     } else {
       throw new Error(`Unknown engine: ${engine}`);

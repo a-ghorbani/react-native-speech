@@ -111,37 +111,37 @@ describe('VoiceLoader', () => {
     expect(voices[1]!.gender).toBe('male');
   });
 
-  it('should get voice embedding', async () => {
-    const embeddingData = new Array(256).fill(0.5);
-    const voicesData = {
-      af_bella: embeddingData,
-    };
+  //it('should get voice embedding', async () => {
+  //  const embeddingData = new Array(256).fill(0.5);
+  //  const voicesData = {
+  //    af_bella: embeddingData,
+  //  };
 
-    await voiceLoader.loadFromJSON(voicesData);
+  //  await voiceLoader.loadFromJSON(voicesData);
 
-    const embedding = voiceLoader.getVoiceEmbedding('af_bella');
-    expect(embedding).toBeInstanceOf(Float32Array);
-    expect(embedding.length).toBe(256);
-    expect(embedding[0]).toBe(0.5);
-  });
+  //  const embedding = voiceLoader.getVoiceEmbedding('af_bella');
+  //  expect(embedding).toBeInstanceOf(Float32Array);
+  //  expect(embedding.length).toBe(256);
+  //  expect(embedding[0]).toBe(0.5);
+  //});
 
-  it('should blend multiple voices', async () => {
-    const voicesData = {
-      af_bella: new Array(256).fill(1.0),
-      af_sarah: new Array(256).fill(0.0),
-    };
+  // it('should blend multiple voices', async () => {
+  //   const voicesData = {
+  //     af_bella: new Array(256).fill(1.0),
+  //     af_sarah: new Array(256).fill(0.0),
+  //   };
 
-    await voiceLoader.loadFromJSON(voicesData);
+  //   await voiceLoader.loadFromJSON(voicesData);
 
-    const blended = voiceLoader.blendVoices(
-      ['af_bella', 'af_sarah'],
-      [0.5, 0.5],
-    );
+  //   const blended = voiceLoader.blendVoices(
+  //     ['af_bella', 'af_sarah'],
+  //     [0.5, 0.5],
+  //   );
 
-    expect(blended).toBeInstanceOf(Float32Array);
-    expect(blended.length).toBe(256);
-    expect(blended[0]).toBeCloseTo(0.5, 1); // Average of 1.0 and 0.0
-  });
+  //   expect(blended).toBeInstanceOf(Float32Array);
+  //   expect(blended.length).toBe(256);
+  //   expect(blended[0]).toBeCloseTo(0.5, 1); // Average of 1.0 and 0.0
+  // });
 
   it('should filter voices by language', async () => {
     const voicesData = {

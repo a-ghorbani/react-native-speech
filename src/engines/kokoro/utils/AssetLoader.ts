@@ -5,6 +5,8 @@
  * Uses native module bridge to access bundled assets
  */
 
+import * as RNFS from '@dr.pogodin/react-native-fs';
+
 /**
  * Load asset as JSON
  * Path should be relative to the assets folder (Android) or Resources folder (iOS)
@@ -27,10 +29,12 @@ export async function loadAssetAsJSON(path: string): Promise<any> {
  */
 export async function loadAssetAsText(path: string): Promise<string> {
   try {
-    // Use fetch for file:// URLs
+    // Use RNFS for file:// URLs
     if (path.startsWith('file://')) {
-      const response = await fetch(path);
-      return await response.text();
+      // Remove file:// prefix for RNFS
+      const filePath = path.replace('file://', '');
+      const content = await RNFS.readFile(filePath, 'utf8');
+      return content;
     }
 
     // Require callers to provide absolute file:// URLs
@@ -52,10 +56,27 @@ export async function loadAssetAsArrayBuffer(
   path: string,
 ): Promise<ArrayBuffer> {
   try {
-    // Use fetch for file:// URLs
+    // Use RNFS for file:// URLs
     if (path.startsWith('file://')) {
-      const response = await fetch(path);
-      return await response.arrayBuffer();
+      console.log('[AssetLoader] Loading file:', path);
+      // Remove file:// prefix for RNFS
+      const filePath = path.replace('file://', '');
+
+      // Read file as base64 and convert to ArrayBuffer
+      const base64Data = await RNFS.readFile(filePath, 'base64');
+      const buffer = base64ToArrayBuffer(base64Data);
+
+      console.log('[AssetLoader] Buffer size:', buffer.byteLength);
+
+      // Log first 20 bytes for debugging
+      const view = new DataView(buffer);
+      const first20 = [];
+      for (let i = 0; i < Math.min(20, buffer.byteLength); i++) {
+        first20.push(view.getUint8(i));
+      }
+      console.log('[AssetLoader] First 20 bytes:', first20);
+
+      return buffer;
     }
 
     throw new Error(

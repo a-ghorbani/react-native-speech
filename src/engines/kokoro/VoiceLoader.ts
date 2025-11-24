@@ -11,13 +11,23 @@ export class VoiceLoader {
   private availableVoices: KokoroVoice[] = [];
   private isInitialized = false;
 
+  // Lazy loading support
+  private manifestBaseUrl?: string;
+  private manifestVoicesDir?: string;
+  private lazyLoadingEnabled = false;
+
   /**
    * Load voice embeddings from binary data
    * Format: [voice_id_length(4bytes)][voice_id][embedding_dim(4bytes)][embedding_data(float32[])]...
    */
   async loadFromBinary(data: ArrayBuffer): Promise<void> {
+    console.log(
+      '[VoiceLoader] loadFromBinary called, data size:',
+      data.byteLength,
+    );
     const view = new DataView(data);
     let offset = 0;
+    let voiceCount = 0;
 
     while (offset < data.byteLength) {
       try {
@@ -44,12 +54,21 @@ export class VoiceLoader {
         // Parse voice metadata from ID
         const voiceInfo = this.parseVoiceId(voiceId);
         this.availableVoices.push(voiceInfo);
+        voiceCount++;
       } catch (error) {
-        console.warn(`Failed to load voice at offset ${offset}:`, error);
+        console.warn(
+          `[VoiceLoader] Failed to load voice at offset ${offset}:`,
+          error,
+        );
         break;
       }
     }
 
+    console.log('[VoiceLoader] Loaded', voiceCount, 'voices');
+    console.log(
+      '[VoiceLoader] Voice IDs:',
+      Array.from(this.voiceEmbeddings.keys()),
+    );
     this.isInitialized = true;
   }
 
@@ -68,19 +87,168 @@ export class VoiceLoader {
   }
 
   /**
-   * Get voice embedding by ID
+   * Load voice embeddings from manifest (lazy loading mode)
+   * Voices will be downloaded on-demand when requested
    */
-  getVoiceEmbedding(voiceId: string): Float32Array {
+  async loadFromManifest(
+    manifest: {baseUrl: string; voices: string[]},
+    manifestPath: string,
+  ): Promise<void> {
+    console.log(
+      '[VoiceLoader] Loading from manifest, voices:',
+      manifest.voices.length,
+    );
+
+    this.manifestBaseUrl = manifest.baseUrl;
+    this.lazyLoadingEnabled = true;
+
+    // Extract voices directory from manifest path
+    // e.g., "file:///path/to/models/kokoro/q8/voices-manifest.json" -> "file:///path/to/models/kokoro/q8/voices"
+    const lastSlash = manifestPath.lastIndexOf('/');
+    const baseDir = manifestPath.substring(0, lastSlash);
+    this.manifestVoicesDir = `${baseDir}/voices`;
+
+    console.log('[VoiceLoader] Voices directory:', this.manifestVoicesDir);
+
+    // Create voice metadata for all available voices (without loading embeddings)
+    for (const voiceId of manifest.voices) {
+      const voiceInfo = this.parseVoiceId(voiceId);
+      this.availableVoices.push(voiceInfo);
+    }
+
+    this.isInitialized = true;
+    console.log(
+      '[VoiceLoader] Lazy loading initialized with',
+      this.availableVoices.length,
+      'voices',
+    );
+  }
+
+  /**
+   * Get voice embedding by ID and token count
+   * In lazy loading mode, downloads the voice file if not cached
+   *
+   * The voice files contain 510 style embeddings (one for each possible input length from 0 to 509 tokens).
+   * Each embedding is 256 floats (STYLE_DIM).
+   * Total: 510 × 256 = 130,560 floats (522,240 bytes)
+   *
+   * @param voiceId - The voice ID
+   * @param numTokens - The number of tokens in the input (used to select the appropriate style embedding)
+   */
+  async getVoiceEmbedding(
+    voiceId: string,
+    numTokens: number = 0,
+  ): Promise<Float32Array> {
+    const STYLE_DIM = 256;
+    const MAX_TOKENS = 509;
+
     if (!this.isInitialized) {
       throw new Error('VoiceLoader not initialized');
     }
 
-    const embedding = this.voiceEmbeddings.get(voiceId);
-    if (!embedding) {
-      throw new Error(`Voice not found: ${voiceId}`);
+    // Check if voice data is already loaded
+    let fullVoiceData = this.voiceEmbeddings.get(voiceId);
+    if (!fullVoiceData) {
+      // If lazy loading is enabled, try to load the voice
+      if (this.lazyLoadingEnabled) {
+        console.log('[VoiceLoader] Lazy loading voice:', voiceId);
+        fullVoiceData = await this.lazyLoadVoice(voiceId);
+        if (!fullVoiceData) {
+          throw new Error(`Voice not found: ${voiceId}`);
+        }
+      } else {
+        throw new Error(`Voice not found: ${voiceId}`);
+      }
     }
 
+    // Clamp numTokens to valid range [0, 509]
+    // Subtract 2 from token count (as per kokoro.js implementation)
+    const adjustedTokens = Math.min(Math.max(numTokens - 2, 0), MAX_TOKENS);
+
+    // Calculate offset based on number of tokens
+    const offset = adjustedTokens * STYLE_DIM;
+
+    // Extract the appropriate style embedding
+    const embedding = fullVoiceData.slice(offset, offset + STYLE_DIM);
+
+    console.log(
+      '[VoiceLoader] Selected embedding for',
+      voiceId,
+      'with',
+      numTokens,
+      'tokens (adjusted:',
+      adjustedTokens,
+      '), offset:',
+      offset,
+    );
+
     return embedding;
+  }
+
+  /**
+   * Lazy load a voice file from cache or download it
+   */
+  private async lazyLoadVoice(
+    voiceId: string,
+  ): Promise<Float32Array | undefined> {
+    if (!this.manifestVoicesDir || !this.manifestBaseUrl) {
+      return undefined;
+    }
+
+    try {
+      const localPath = `${this.manifestVoicesDir}/${voiceId}.bin`;
+
+      // Check if file exists locally
+      const {loadAssetAsArrayBuffer} = await import('./utils/AssetLoader');
+
+      let voiceData: ArrayBuffer;
+
+      try {
+        // Try to load from local cache
+        console.log('[VoiceLoader] Loading from cache:', localPath);
+        voiceData = await loadAssetAsArrayBuffer(localPath);
+      } catch (error) {
+        // Not cached, download it
+        console.log('[VoiceLoader] Downloading voice:', voiceId);
+        const remoteUrl = `${this.manifestBaseUrl}/${voiceId}.bin`;
+
+        const response = await fetch(remoteUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download voice: ${response.statusText}`);
+        }
+
+        voiceData = await response.arrayBuffer();
+
+        // Cache it for next time (using React Native FS)
+        // Note: This requires RNFS to be available in the library context
+        // For now, we'll just keep it in memory
+        console.log(
+          '[VoiceLoader] Downloaded voice, size:',
+          voiceData.byteLength,
+        );
+      }
+
+      // Convert ArrayBuffer to Float32Array
+      const fullArray = new Float32Array(voiceData);
+
+      // The voice files contain 130560 floats (510 embeddings × 256 floats each)
+      // We cache the full array and extract the appropriate embedding based on token count
+      // Cache the full voice data in memory
+      this.voiceEmbeddings.set(voiceId, fullArray);
+
+      console.log(
+        '[VoiceLoader] Voice loaded:',
+        voiceId,
+        'total embeddings:',
+        fullArray.length / 256,
+        'total floats:',
+        fullArray.length,
+      );
+      return fullArray;
+    } catch (error) {
+      console.error('[VoiceLoader] Failed to lazy load voice:', voiceId, error);
+      return undefined;
+    }
   }
 
   /**
@@ -102,7 +270,11 @@ export class VoiceLoader {
   /**
    * Blend multiple voices together
    */
-  blendVoices(voiceIds: string[], weights: number[]): Float32Array {
+  async blendVoices(
+    voiceIds: string[],
+    weights: number[],
+    numTokens: number = 0,
+  ): Promise<Float32Array> {
     if (voiceIds.length !== weights.length) {
       throw new Error('Voice IDs and weights must have same length');
     }
@@ -121,7 +293,10 @@ export class VoiceLoader {
       throw new Error('Invalid voice ID at index 0');
     }
 
-    const firstEmbedding = this.getVoiceEmbedding(firstVoiceId);
+    const firstEmbedding = await this.getVoiceEmbedding(
+      firstVoiceId,
+      numTokens,
+    );
     const embeddingDim = firstEmbedding.length;
 
     // Create blended embedding
@@ -135,7 +310,7 @@ export class VoiceLoader {
         continue;
       }
 
-      const embedding = this.getVoiceEmbedding(voiceId);
+      const embedding = await this.getVoiceEmbedding(voiceId, numTokens);
 
       for (let j = 0; j < embeddingDim; j++) {
         const embVal = embedding[j];
@@ -153,6 +328,11 @@ export class VoiceLoader {
    * Check if voice loader is ready
    */
   isReady(): boolean {
+    // In lazy loading mode, we're ready if initialized (even with no loaded voices)
+    if (this.lazyLoadingEnabled) {
+      return this.isInitialized && this.availableVoices.length > 0;
+    }
+    // In eager loading mode, we need at least one voice loaded
     return this.isInitialized && this.voiceEmbeddings.size > 0;
   }
 

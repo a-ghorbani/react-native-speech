@@ -136,23 +136,27 @@ export class KokoroEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
+    // Tokenize text first (needed to determine voice embedding offset)
+    const tokens = this.tokenizer.encode(text);
+
     // Get voice embedding
     const voiceId = options?.voiceId || this.defaultVoiceId;
     let voiceEmbedding: Float32Array;
 
     if (options?.voiceBlend) {
       // Blend multiple voices
-      voiceEmbedding = this.voiceLoader.blendVoices(
+      voiceEmbedding = await this.voiceLoader.blendVoices(
         options.voiceBlend.voices,
         options.voiceBlend.weights,
+        tokens.length,
       );
     } else {
       // Use single voice
-      voiceEmbedding = this.voiceLoader.getVoiceEmbedding(voiceId);
+      voiceEmbedding = await this.voiceLoader.getVoiceEmbedding(
+        voiceId,
+        tokens.length,
+      );
     }
-
-    // Tokenize text
-    const tokens = this.tokenizer.encode(text);
 
     // Convert to BigInt64Array for ONNX (int64)
     const tokensBigInt = new BigInt64Array(tokens.map(t => BigInt(t)));
@@ -171,17 +175,22 @@ export class KokoroEngine implements TTSEngineInterface {
 
     // Run inference
     const feeds = {
-      tokens: tokensTensor,
+      input_ids: tokensTensor,
       style: voiceTensor,
       speed: speedTensor,
     };
 
     const results = await this.session.run(feeds);
 
-    // Extract audio output
-    const audioTensor = results.audio;
+    // Debug: Log available output names
+    console.log('[KokoroEngine] Model outputs:', Object.keys(results));
+
+    // Extract audio output (kokoro.js uses 'waveform')
+    const audioTensor = results.waveform || results.audio;
     if (!audioTensor) {
-      throw new Error('No audio output from model');
+      throw new Error(
+        `No audio output from model. Available outputs: ${Object.keys(results).join(', ')}`,
+      );
     }
 
     const audioData = audioTensor.data as Float32Array;
@@ -300,10 +309,65 @@ export class KokoroEngine implements TTSEngineInterface {
    */
   private async loadVoices(voicesPath: string): Promise<void> {
     try {
-      const {loadAssetAsArrayBuffer} = await import('./utils/AssetLoader');
-      const voicesData = await loadAssetAsArrayBuffer(voicesPath);
-      await this.voiceLoader.loadFromBinary(voicesData);
+      console.log('[KokoroEngine] Loading voices from:', voicesPath);
+      console.log(
+        '[KokoroEngine] Path includes manifest?',
+        voicesPath.includes('manifest'),
+      );
+      console.log(
+        '[KokoroEngine] Path ends with .json?',
+        voicesPath.endsWith('.json'),
+      );
+
+      // Check if it's a manifest file (lazy loading) or direct voices file
+      // Check for both 'manifest' in path AND .json extension for manifest files
+      if (voicesPath.includes('manifest') && voicesPath.endsWith('.json')) {
+        console.log(
+          '[KokoroEngine] Detected manifest file - using lazy loading',
+        );
+        const {loadAssetAsJSON} = await import('./utils/AssetLoader');
+        const manifest = await loadAssetAsJSON(voicesPath);
+        console.log('[KokoroEngine] Manifest loaded successfully');
+        console.log(
+          '[KokoroEngine] Manifest voices count:',
+          manifest.voices?.length,
+        );
+        console.log('[KokoroEngine] Manifest baseUrl:', manifest.baseUrl);
+
+        // Initialize voice loader with manifest (lazy loading mode)
+        await this.voiceLoader.loadFromManifest(manifest, voicesPath);
+        console.log('[KokoroEngine] Voice loader initialized with manifest');
+      } else if (voicesPath.endsWith('.json')) {
+        console.log('[KokoroEngine] Loading voices from JSON (non-manifest)');
+        const {loadAssetAsJSON} = await import('./utils/AssetLoader');
+        const voicesData = await loadAssetAsJSON(voicesPath);
+        console.log(
+          '[KokoroEngine] Voices JSON loaded, keys:',
+          Object.keys(voicesData).length,
+        );
+        await this.voiceLoader.loadFromJSON(voicesData);
+      } else {
+        console.log('[KokoroEngine] Loading voices from binary file');
+        const {loadAssetAsArrayBuffer} = await import('./utils/AssetLoader');
+        const voicesData = await loadAssetAsArrayBuffer(voicesPath);
+        console.log(
+          '[KokoroEngine] Voices data loaded, size:',
+          voicesData.byteLength,
+        );
+        await this.voiceLoader.loadFromBinary(voicesData);
+      }
+
+      console.log('[KokoroEngine] Voice loader initialized');
+      console.log(
+        '[KokoroEngine] Voice loader ready:',
+        this.voiceLoader.isReady(),
+      );
+      console.log(
+        '[KokoroEngine] Available voices:',
+        this.voiceLoader.getAvailableVoices().length,
+      );
     } catch (error) {
+      console.error('[KokoroEngine] Failed to load voices:', error);
       throw new Error(
         `Failed to load voices: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
