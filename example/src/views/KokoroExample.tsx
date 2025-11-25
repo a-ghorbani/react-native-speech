@@ -32,6 +32,8 @@ const KokoroExample: React.FC = () => {
       await Speech.initialize({
         engine: TTSEngine.KOKORO,
         ...config,
+        phonemizerType: 'remote',
+        phonemizerUrl: 'http://192.168.0.82:3000',
       });
 
       setIsInitialized(true);

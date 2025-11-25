@@ -74,6 +74,10 @@ export interface KokoroConfig {
   vocabPath?: string;
   /** Path to BPE merges file (legacy format) */
   mergesPath?: string;
+  /** Phonemizer type: 'remote' uses server API, 'native' uses native module, 'none' disables phonemization */
+  phonemizerType?: 'remote' | 'native' | 'none';
+  /** URL for remote phonemizer server (default: http://localhost:3000) */
+  phonemizerUrl?: string;
 }
 
 export interface TokenizerConfig {

@@ -15,6 +15,8 @@ import type {
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
+import {createPhonemizer, type IPhonemizer} from './Phonemizer';
+import {TextNormalizer} from './TextNormalizer';
 
 // Lazy import ONNX Runtime to allow graceful handling if not installed
 let InferenceSession: any;
@@ -52,6 +54,8 @@ export class KokoroEngine implements TTSEngineInterface {
   private session: any = null; // InferenceSession type
   private tokenizer: BPETokenizer;
   private voiceLoader: VoiceLoader;
+  private phonemizer: IPhonemizer;
+  private normalizer: TextNormalizer;
 
   private config: KokoroConfig | null = null;
   private isInitialized = false;
@@ -64,6 +68,9 @@ export class KokoroEngine implements TTSEngineInterface {
   constructor() {
     this.tokenizer = new BPETokenizer();
     this.voiceLoader = new VoiceLoader();
+    this.normalizer = new TextNormalizer();
+    // Phonemizer will be initialized in initialize() based on config
+    this.phonemizer = createPhonemizer('none'); // Default to no phonemization for backward compatibility
   }
 
   /**
@@ -85,12 +92,38 @@ export class KokoroEngine implements TTSEngineInterface {
     this.initError = null;
 
     try {
+      console.log('[KokoroEngine.initialize] Received config:', config);
+
       // Config with model paths is required
       if (config) {
         this.config = config;
       } else {
         throw new Error('Kokoro config required for initialization');
       }
+
+      console.log('[KokoroEngine.initialize] Stored config:', this.config);
+      console.log(
+        '[KokoroEngine.initialize] Config phonemizerType:',
+        this.config.phonemizerType,
+      );
+      console.log(
+        '[KokoroEngine.initialize] Config phonemizerUrl:',
+        this.config.phonemizerUrl,
+      );
+
+      // Initialize phonemizer based on config
+      const phonemizerType = this.config.phonemizerType || 'none';
+      const phonemizerUrl =
+        this.config.phonemizerUrl || 'http://localhost:3000';
+      console.log(
+        '[KokoroEngine.initialize] Creating phonemizer with type:',
+        phonemizerType,
+      );
+      console.log(
+        '[KokoroEngine.initialize] Creating phonemizer with URL:',
+        phonemizerUrl,
+      );
+      this.phonemizer = createPhonemizer(phonemizerType, phonemizerUrl);
 
       // Load tokenizer (support both tokenizer.json and vocab+merges format)
       if (this.config.tokenizerPath) {
@@ -146,11 +179,44 @@ export class KokoroEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
-    // Tokenize text first (needed to determine voice embedding offset)
-    const tokens = this.tokenizer.encode(text);
+    // Get voice ID early (needed for language detection)
+    const voiceId = options?.voiceId || this.defaultVoiceId;
+
+    console.log(
+      '[KokoroEngine] ========== SYNTHESIS PIPELINE START ==========',
+    );
+    console.log('[KokoroEngine] Original text:', text);
+    console.log('[KokoroEngine] Voice ID:', voiceId);
+    console.log(
+      '[KokoroEngine] Phonemizer type:',
+      this.config?.phonemizerType || 'none',
+    );
+
+    // STEP 1: Normalize text (expand abbreviations, convert numbers, etc.)
+    const normalized = this.normalizer.normalize(text);
+    console.log('[KokoroEngine] STEP 1 - Normalized text:', normalized);
+
+    // STEP 2: Phonemize (convert text to phonemes)
+    // This is CRITICAL - the model is trained on phonemes, not raw text
+    const language = this.getLanguageFromVoice(voiceId);
+    console.log('[KokoroEngine] STEP 2 - Detected language:', language);
+    const phonemes = await this.phonemizer.phonemize(normalized, language);
+    console.log('[KokoroEngine] STEP 2 - Phonemes generated:', phonemes);
+    console.log(
+      '[KokoroEngine] STEP 2 - Phonemes length:',
+      phonemes.length,
+      'chars',
+    );
+
+    // STEP 3: Tokenize phonemes (not raw text!)
+    const tokens = this.tokenizer.encode(phonemes);
+    console.log('[KokoroEngine] STEP 3 - Tokens generated:', tokens.length);
+    console.log(
+      '[KokoroEngine] STEP 3 - First 10 tokens:',
+      tokens.slice(0, 10),
+    );
 
     // Get voice embedding
-    const voiceId = options?.voiceId || this.defaultVoiceId;
     let voiceEmbedding: Float32Array;
 
     if (options?.voiceBlend) {
@@ -434,6 +500,25 @@ export class KokoroEngine implements TTSEngineInterface {
       throw new Error(
         `Failed to load voices: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
+    }
+  }
+
+  /**
+   * Get language code from voice ID
+   * Voice IDs follow the pattern: {lang}{gender}_{name}
+   * e.g., 'af_bella' -> 'a' (American English)
+   *       'bf_emma' -> 'b' (British English)
+   */
+  private getLanguageFromVoice(voiceId: string): string {
+    const langCode = voiceId.charAt(0).toLowerCase();
+
+    switch (langCode) {
+      case 'a':
+        return 'a'; // American English
+      case 'b':
+        return 'b'; // British English
+      default:
+        return 'a'; // Default to American English
     }
   }
 }

@@ -74,8 +74,12 @@ export default class Speech {
   }): Promise<void> {
     const {engine, ...engineConfig} = config;
 
+    console.log(`[Speech.initialize] Initializing engine: ${engine}`);
     // Store current engine
     Speech.currentEngine = engine;
+    console.log(
+      `[Speech.initialize] currentEngine set to: ${Speech.currentEngine}`,
+    );
 
     // Initialize the specific engine
     if (engine === 'kokoro') {
@@ -162,6 +166,9 @@ export default class Speech {
     language?: string,
   ): Promise<KokoroVoice[] | SupertonicVoice[]> {
     const engine = Speech.currentEngine;
+    console.log(
+      `[Speech.getVoicesWithMetadata] currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}`,
+    );
 
     if (engine === 'kokoro') {
       if (!kokoroEngine) {

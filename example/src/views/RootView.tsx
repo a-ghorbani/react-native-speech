@@ -45,7 +45,7 @@ const RootView: React.FC = () => {
     TTSEngine.OS_NATIVE,
   );
   const [isInitializing, setIsInitializing] = React.useState<boolean>(false);
-  const [engineReady, setEngineReady] = React.useState<boolean>(true); // OS engine is ready by default
+  const [engineReady, setEngineReady] = React.useState<boolean>(false);
   const [availableVoices, setAvailableVoices] = React.useState<any[]>([]);
   const [selectedVoice, setSelectedVoice] = React.useState<string | null>(null);
   const [showVoicePicker, setShowVoicePicker] = React.useState<boolean>(false);
@@ -93,6 +93,8 @@ const RootView: React.FC = () => {
           await Speech.initialize({
             engine: TTSEngine.KOKORO,
             ...config,
+            phonemizerType: 'remote',
+            phonemizerUrl: 'http://192.168.0.82:3000',
             silentMode: 'obey',
             ducking: true,
           });
@@ -122,6 +124,8 @@ const RootView: React.FC = () => {
                     await Speech.initialize({
                       engine: TTSEngine.KOKORO,
                       ...downloadedConfig,
+                      phonemizerType: 'remote',
+                      phonemizerUrl: 'http://192.168.0.82:3000',
                       silentMode: 'obey',
                       ducking: true,
                     });
@@ -173,8 +177,10 @@ const RootView: React.FC = () => {
       `[loadVoices] Called - engineReady: ${engineReady}, selectedEngine: ${selectedEngine}`,
     );
 
-    if (!engineReady) {
-      console.log('[loadVoices] Engine not ready, clearing voices');
+    if (!engineReady || isInitializing) {
+      console.log(
+        '[loadVoices] Engine not ready or initializing, clearing voices',
+      );
       setAvailableVoices([]);
       setSelectedVoice(null);
       return;
@@ -215,7 +221,7 @@ const RootView: React.FC = () => {
       setAvailableVoices([]);
       setSelectedVoice(null);
     }
-  }, [engineReady, selectedEngine]);
+  }, [engineReady, selectedEngine, isInitializing]);
 
   React.useEffect(() => {
     loadVoices();
@@ -411,7 +417,10 @@ const RootView: React.FC = () => {
       <TouchableOpacity
         key={engine}
         style={[styles.engineButton, {backgroundColor}]}
-        onPress={() => setSelectedEngine(engine)}
+        onPress={() => {
+          setEngineReady(false);
+          setSelectedEngine(engine);
+        }}
         disabled={isInitializing || isStarted}>
         <Text style={[styles.engineButtonText, {color: textColorButton}]}>
           {label}
