@@ -405,7 +405,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         promise.resolve(voicesArray)
         return@ensureInitialized
       }
-      if (language != null) {
+      // Treat empty string as null (no language filter)
+      if (language != null && language.isNotEmpty()) {
         val lowercaseLanguage = language.lowercase()
         voices.forEach { voice ->
           val voiceLanguage = voice.locale.toLanguageTag().lowercase()

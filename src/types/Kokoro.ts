@@ -66,12 +66,14 @@ export interface ModelDownloadProgress {
 export interface KokoroConfig {
   /** Path to ONNX model file */
   modelPath: string;
-  /** Path to vocabulary JSON file */
-  vocabPath: string;
-  /** Path to BPE merges file */
-  mergesPath: string;
   /** Path to voices binary file */
   voicesPath: string;
+  /** Path to tokenizer JSON file (HuggingFace format) - alternative to vocabPath+mergesPath */
+  tokenizerPath?: string;
+  /** Path to vocabulary JSON file (legacy format) */
+  vocabPath?: string;
+  /** Path to BPE merges file (legacy format) */
+  mergesPath?: string;
 }
 
 export interface TokenizerConfig {

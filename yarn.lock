@@ -2302,7 +2302,6 @@ __metadata:
   resolution: "@mhpdev/react-native-speech@workspace:."
   dependencies:
     "@commitlint/config-conventional": ^19.6.0
-    "@dr.pogodin/react-native-fs": ^2.36.1
     "@eslint/compat": ^1.2.7
     "@eslint/eslintrc": ^3.3.0
     "@eslint/js": ^9.22.0
@@ -2327,6 +2326,7 @@ __metadata:
     turbo: ^1.10.7
     typescript: ^5.8.3
   peerDependencies:
+    "@dr.pogodin/react-native-fs": ^2.36.1
     onnxruntime-react-native: ^1.23.0
     react: "*"
     react-native: "*"
@@ -9603,6 +9603,26 @@ __metadata:
   languageName: node
   linkType: hard
 
+"onnxruntime-common@npm:1.23.2":
+  version: 1.23.2
+  resolution: "onnxruntime-common@npm:1.23.2"
+  checksum: e2d77cf0453ff9e00ce0011df8f5894a2f58dd7113ffaaaf66ad556b0e13432f27e954e61e7fe68bffcfadec1b6682f4dcc3d7a6c7af8d2e3441d2c42d81bb6a
+  languageName: node
+  linkType: hard
+
+"onnxruntime-react-native@npm:^1.23.2":
+  version: 1.23.2
+  resolution: "onnxruntime-react-native@npm:1.23.2"
+  dependencies:
+    buffer: ^6.0.3
+    onnxruntime-common: 1.23.2
+  peerDependencies:
+    react: "*"
+    react-native: "*"
+  checksum: 11b648ea787bc4d39135cf239e87d32f2e98777d6f234751b1f44ed9b361fa649e5c22329ac028abbf40399c220bf14ad676e6bd363e823fb1caeef80624b524
+  languageName: node
+  linkType: hard
+
 "open@npm:10.1.0":
   version: 10.1.0
   resolution: "open@npm:10.1.0"
@@ -10338,6 +10358,7 @@ __metadata:
     "@babel/core": ^7.25.2
     "@babel/preset-env": ^7.25.3
     "@babel/runtime": ^7.25.0
+    "@dr.pogodin/react-native-fs": ^2.36.1
     "@react-native-community/cli": 20.0.0
     "@react-native-community/cli-platform-android": 20.0.0
     "@react-native-community/cli-platform-ios": 20.0.0
@@ -10345,6 +10366,7 @@ __metadata:
     "@react-native/metro-config": 0.81.0
     "@react-native/typescript-config": 0.81.0
     "@types/react": ^19.1.0
+    onnxruntime-react-native: ^1.23.2
     react: 19.1.0
     react-native: 0.81.0
     react-native-builder-bob: ^0.40.13

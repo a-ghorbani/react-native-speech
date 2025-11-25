@@ -16,6 +16,7 @@ import type {
   SupertonicVoice,
 } from '../../types';
 import {VoicePresetLoader} from './VoicePresetLoader';
+import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 
 // Lazy import ONNX Runtime to allow graceful handling if not installed
 let InferenceSession: any;
@@ -120,12 +121,13 @@ export class SupertonicEngine implements TTSEngineInterface {
   }
 
   /**
-   * Synthesize text to audio
+   * Synthesize text to audio and play it
+   * This maintains the unified API - synthesize() now plays audio for neural engines
    */
   async synthesize(
     text: string,
     options?: SupertonicSynthesisOptions,
-  ): Promise<AudioBuffer> {
+  ): Promise<AudioBuffer | void> {
     if (!this.isInitialized || !this.session) {
       throw new Error('Supertonic engine not initialized');
     }
@@ -196,7 +198,15 @@ export class SupertonicEngine implements TTSEngineInterface {
       }
     }
 
-    return audioBuffer;
+    // Play audio using neural audio player
+    // This maintains the unified API - speak() works the same for all engines
+    await neuralAudioPlayer.play(audioBuffer, {
+      ducking: options?.ducking,
+      silentMode: options?.silentMode,
+    });
+
+    // Return void to match OS engine behavior (plays directly, doesn't return buffer)
+    return undefined;
   }
 
   /**
@@ -222,11 +232,10 @@ export class SupertonicEngine implements TTSEngineInterface {
   }
 
   /**
-   * Stop any ongoing synthesis
+   * Stop current playback
    */
   async stop(): Promise<void> {
-    // Supertonic is so fast that stopping mid-synthesis is rarely needed
-    // But we implement it for interface compliance
+    await neuralAudioPlayer.stop();
   }
 
   /**

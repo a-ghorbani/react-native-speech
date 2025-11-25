@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
+import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 
 // Lazy import ONNX Runtime to allow graceful handling if not installed
 let InferenceSession: any;
@@ -91,8 +92,16 @@ export class KokoroEngine implements TTSEngineInterface {
         throw new Error('Kokoro config required for initialization');
       }
 
-      // Load tokenizer
-      await this.loadTokenizer(this.config.vocabPath, this.config.mergesPath);
+      // Load tokenizer (support both tokenizer.json and vocab+merges format)
+      if (this.config.tokenizerPath) {
+        await this.loadTokenizerFromHF(this.config.tokenizerPath);
+      } else if (this.config.vocabPath && this.config.mergesPath) {
+        await this.loadTokenizer(this.config.vocabPath, this.config.mergesPath);
+      } else {
+        throw new Error(
+          'Either tokenizerPath or (vocabPath + mergesPath) must be provided',
+        );
+      }
 
       // Load voice embeddings
       await this.loadVoices(this.config.voicesPath);
@@ -122,12 +131,13 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Synthesize text to audio
+   * Synthesize text to audio and play it
+   * This maintains the unified API - synthesize() now plays audio for neural engines
    */
   async synthesize(
     text: string,
     options?: KokoroSynthesisOptions,
-  ): Promise<AudioBuffer> {
+  ): Promise<AudioBuffer | void> {
     if (!this.isInitialized || !this.session) {
       throw new Error('Kokoro engine not initialized');
     }
@@ -213,7 +223,15 @@ export class KokoroEngine implements TTSEngineInterface {
       }
     }
 
-    return audioBuffer;
+    // Play audio using neural audio player
+    // This maintains the unified API - speak() works the same for all engines
+    await neuralAudioPlayer.play(audioBuffer, {
+      ducking: options?.ducking,
+      silentMode: options?.silentMode,
+    });
+
+    // Return void to match OS engine behavior (plays directly, doesn't return buffer)
+    return undefined;
   }
 
   /**
@@ -232,11 +250,10 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Stop synthesis (not applicable for Kokoro as it's synchronous)
+   * Stop current playback
    */
   async stop(): Promise<void> {
-    // Kokoro synthesis is atomic, cannot be stopped mid-way
-    // This is a no-op for compatibility with engine interface
+    await neuralAudioPlayer.stop();
   }
 
   /**
@@ -286,20 +303,66 @@ export class KokoroEngine implements TTSEngineInterface {
     try {
       // These would typically be loaded from bundled assets
       // For now, we'll need to integrate with React Native's asset system
-      const {loadAssetAsJSON, loadAssetAsText} = await import(
-        './utils/AssetLoader'
+      console.log(
+        '[KokoroEngine] Loading tokenizer from:',
+        vocabPath,
+        mergesPath,
       );
+      const {loadAssetAsJSON, loadAssetAsText} = require('./utils/AssetLoader');
 
       const vocabData = await loadAssetAsJSON(vocabPath);
       const mergesText = await loadAssetAsText(mergesPath);
       const mergesArray = mergesText
         .split('\n')
-        .filter(line => line.trim() && !line.startsWith('#'));
+        .filter((line: string) => line.trim() && !line.startsWith('#'));
 
       await this.tokenizer.loadFromData(vocabData, mergesArray);
     } catch (error) {
       throw new Error(
         `Failed to load tokenizer: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Load BPE tokenizer from HuggingFace tokenizer.json format
+   */
+  private async loadTokenizerFromHF(tokenizerPath: string): Promise<void> {
+    try {
+      console.log(
+        '[KokoroEngine] Loading tokenizer from HF format:',
+        tokenizerPath,
+      );
+
+      console.log('[KokoroEngine] Requiring AssetLoader...');
+      const {loadAssetAsJSON} = require('./utils/AssetLoader');
+      console.log('[KokoroEngine] AssetLoader loaded successfully');
+
+      console.log('[KokoroEngine] Loading tokenizer JSON...');
+      const tokenizerData = await loadAssetAsJSON(tokenizerPath);
+      console.log(
+        '[KokoroEngine] Tokenizer JSON loaded, keys:',
+        Object.keys(tokenizerData),
+      );
+
+      // Extract vocab from HF tokenizer.json format
+      const vocab = tokenizerData.model?.vocab || {};
+      console.log('[KokoroEngine] Vocab size:', Object.keys(vocab).length);
+
+      // Extract merges from HF tokenizer.json format
+      const merges = tokenizerData.model?.merges || [];
+      console.log('[KokoroEngine] Merges count:', merges.length);
+
+      console.log('[KokoroEngine] Loading tokenizer data...');
+      await this.tokenizer.loadFromData(vocab, merges);
+      console.log('[KokoroEngine] Tokenizer loaded successfully');
+    } catch (error) {
+      console.error(
+        '[KokoroEngine] Error loading tokenizer from HF format:',
+        error,
+      );
+      throw new Error(
+        `Failed to load tokenizer from HF format: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }
@@ -325,7 +388,7 @@ export class KokoroEngine implements TTSEngineInterface {
         console.log(
           '[KokoroEngine] Detected manifest file - using lazy loading',
         );
-        const {loadAssetAsJSON} = await import('./utils/AssetLoader');
+        const {loadAssetAsJSON} = require('./utils/AssetLoader');
         const manifest = await loadAssetAsJSON(voicesPath);
         console.log('[KokoroEngine] Manifest loaded successfully');
         console.log(
@@ -339,7 +402,7 @@ export class KokoroEngine implements TTSEngineInterface {
         console.log('[KokoroEngine] Voice loader initialized with manifest');
       } else if (voicesPath.endsWith('.json')) {
         console.log('[KokoroEngine] Loading voices from JSON (non-manifest)');
-        const {loadAssetAsJSON} = await import('./utils/AssetLoader');
+        const {loadAssetAsJSON} = require('./utils/AssetLoader');
         const voicesData = await loadAssetAsJSON(voicesPath);
         console.log(
           '[KokoroEngine] Voices JSON loaded, keys:',
@@ -348,7 +411,7 @@ export class KokoroEngine implements TTSEngineInterface {
         await this.voiceLoader.loadFromJSON(voicesData);
       } else {
         console.log('[KokoroEngine] Loading voices from binary file');
-        const {loadAssetAsArrayBuffer} = await import('./utils/AssetLoader');
+        const {loadAssetAsArrayBuffer} = require('./utils/AssetLoader');
         const voicesData = await loadAssetAsArrayBuffer(voicesPath);
         console.log(
           '[KokoroEngine] Voices data loaded, size:',

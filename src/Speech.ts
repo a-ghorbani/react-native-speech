@@ -289,7 +289,7 @@ export default class Speech {
     return TurboSpeech.speakWithOptions(text, options);
   }
 
-  // Event listeners (OS TTS)
+  // Event listeners - unified for all engines (OS TTS and neural audio use the same events)
   public static onError = TurboSpeech.onError;
   public static onStart = TurboSpeech.onStart;
   public static onFinish = TurboSpeech.onFinish;

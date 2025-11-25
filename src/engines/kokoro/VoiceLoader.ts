@@ -199,7 +199,7 @@ export class VoiceLoader {
       const localPath = `${this.manifestVoicesDir}/${voiceId}.bin`;
 
       // Check if file exists locally
-      const {loadAssetAsArrayBuffer} = await import('./utils/AssetLoader');
+      const {loadAssetAsArrayBuffer} = require('./utils/AssetLoader');
 
       let voiceData: ArrayBuffer;
 

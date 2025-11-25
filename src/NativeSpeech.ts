@@ -89,6 +89,31 @@ interface ConstantsProps {
   maxInputLength?: number;
 }
 
+export interface AudioPlayerConfig {
+  /**
+   * Sample rate in Hz (e.g., 24000)
+   */
+  sampleRate: number;
+  /**
+   * Number of channels (1 = mono, 2 = stereo)
+   */
+  channels: number;
+  /**
+   * If `true`, audio from other apps will be temporarily lowered (ducked) while speech is active.
+   * @default false
+   */
+  ducking?: boolean;
+  /**
+   * Determines how speech audio interacts with the device's silent (ringer) switch.
+   * @platform iOS
+   *
+   * - `obey`: (Default) Does not change the app's audio session. Speech follows the system default.
+   * - `respect`: Speech will be silenced by the ringer switch. Use for non-critical audio.
+   * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
+   */
+  silentMode?: 'obey' | 'respect' | 'ignore';
+}
+
 export interface Spec extends TurboModule {
   getConstants: () => ConstantsProps;
   //Methods
@@ -104,6 +129,31 @@ export interface Spec extends TurboModule {
   setEngine: (engineName: string) => Promise<void>;
   getAvailableVoices: (language: string) => Promise<VoiceProps[]>;
   speakWithOptions: (text: string, options: VoiceOptions) => Promise<void>;
+
+  // Neural Audio Player Methods
+  /**
+   * Play PCM audio data (for neural TTS engines)
+   * @param audioData - Base64-encoded Int16 PCM audio data
+   * @param config - Audio configuration
+   */
+  playAudio: (audioData: string, config: AudioPlayerConfig) => Promise<void>;
+  /**
+   * Stop neural audio playback
+   */
+  stopAudio: () => Promise<void>;
+  /**
+   * Pause neural audio playback
+   */
+  pauseAudio: () => Promise<boolean>;
+  /**
+   * Resume neural audio playback
+   */
+  resumeAudio: () => Promise<boolean>;
+  /**
+   * Check if neural audio is playing
+   */
+  isAudioPlaying: () => Promise<boolean>;
+
   //Listeners
   readonly onError: EventEmitter<EventProps>;
   readonly onStart: EventEmitter<EventProps>;

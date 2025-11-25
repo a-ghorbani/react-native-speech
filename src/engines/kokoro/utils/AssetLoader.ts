@@ -28,24 +28,42 @@ export async function loadAssetAsJSON(path: string): Promise<any> {
  * Apps should handle platform-specific path resolution
  */
 export async function loadAssetAsText(path: string): Promise<string> {
-  try {
-    // Use RNFS for file:// URLs
-    if (path.startsWith('file://')) {
-      // Remove file:// prefix for RNFS
-      const filePath = path.replace('file://', '');
-      const content = await RNFS.readFile(filePath, 'utf8');
-      return content;
-    }
+  // Use RNFS for file:// URLs
+  if (path.startsWith('file://')) {
+    // Remove file:// prefix for RNFS
+    const filePath = path.replace('file://', '');
+    console.log('[AssetLoader] Reading text file:', filePath);
 
-    // Require callers to provide absolute file:// URLs
-    throw new Error(
-      'loadAssetAsText requires file:// URL. Provide absolute paths to model files.',
-    );
-  } catch (error) {
-    throw new Error(
-      `Failed to load text asset ${path}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    );
+    try {
+      // Check if file exists first
+      const exists = await RNFS.exists(filePath);
+      console.log('[AssetLoader] File exists:', exists);
+
+      if (!exists) {
+        throw new Error(`File does not exist: ${filePath}`);
+      }
+
+      const content = await RNFS.readFile(filePath, 'utf8');
+      console.log(
+        '[AssetLoader] File read successfully, length:',
+        content.length,
+      );
+      return content;
+    } catch (error) {
+      console.error('[AssetLoader] RNFS error details:', {
+        path: filePath,
+        error: error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
   }
+
+  // Require callers to provide absolute file:// URLs
+  throw new Error(
+    'loadAssetAsText requires file:// URL. Provide absolute paths to model files.',
+  );
 }
 
 /**

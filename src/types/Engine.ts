@@ -59,6 +59,22 @@ export interface SynthesisOptions {
   volume?: number;
   /** Language code (e.g., 'en-US') */
   language?: string;
+  /**
+   * If `true`, audio from other apps will be temporarily lowered (ducked) while speech is active.
+   * This is for critical announcements (e.g., navigation) and takes priority over `silentMode` on iOS.
+   * @default false
+   */
+  ducking?: boolean;
+  /**
+   * Determines how speech audio interacts with the device's silent (ringer) switch.
+   * This option is ignored if `ducking` is `true`.
+   * @platform iOS
+   *
+   * - `obey`: (Default) Does not change the app's audio session. Speech follows the system default.
+   * - `respect`: Speech will be silenced by the ringer switch. Use for non-critical audio.
+   * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
+   */
+  silentMode?: 'obey' | 'respect' | 'ignore';
 }
 
 export interface TTSEngineInterface {

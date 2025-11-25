@@ -14,6 +14,7 @@
 
 import {Platform} from 'react-native';
 import type {KokoroConfig} from '@mhpdev/react-native-speech';
+import * as RNFS from '@dr.pogodin/react-native-fs';
 
 // Model variant types
 export type ModelVariant = 'full' | 'fp16' | 'q8' | 'quantized';
@@ -41,35 +42,58 @@ export interface ModelDownloadProgress {
 const MODEL_BASE_URL = 'https://huggingface.co';
 
 const MODEL_URLS: Record<string, Record<ModelVariant, string>> = {
-  // Version 1.0 (multi-language)
+  // Version 1.0 (multi-language) - using onnx-community repo
   '1.0': {
-    full: `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0.onnx`,
-    fp16: `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0-fp16.onnx`,
-    q8: `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0-q8.onnx`,
-    quantized: `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0-quantized.onnx`,
+    full: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model.onnx`,
+    fp16: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_fp16.onnx`,
+    q8: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_q8f16.onnx`,
+    quantized: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx`,
   },
-  // Version 1.1 English
-  '1.1-en': {
-    full: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/model.onnx`,
-    fp16: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/model_fp16.onnx`,
-    q8: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/model_q8.onnx`,
-    quantized: `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/model_q8.onnx`,
-  },
-};
-
-const VOICES_URLS: Record<string, string> = {
-  '1.0': `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/voices-v1.0.bin`,
-  '1.1-en': `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/voices.bin`,
 };
 
 const VOCAB_URLS: Record<string, string> = {
-  '1.0': `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/vocab.json`,
-  '1.1-en': `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/vocab.json`,
+  '1.0': `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json`,
 };
 
-const MERGES_URLS: Record<string, string> = {
-  '1.0': `${MODEL_BASE_URL}/hexgrad/Kokoro-82M/resolve/main/merges.txt`,
-  '1.1-en': `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.1-en-ONNX/resolve/main/merges.txt`,
+// Kokoro v1.0 uses individual voice files in the voices/ folder
+// We create a manifest file that points to the HuggingFace repository
+// Voices will be lazy-loaded on demand
+const VOICES_BASE_URLS: Record<string, string> = {
+  '1.0': `${MODEL_BASE_URL}/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices`,
+};
+
+// List of available voices for each version
+const AVAILABLE_VOICES: Record<string, string[]> = {
+  '1.0': [
+    'af_heart',
+    'af_alloy',
+    'af_aoede',
+    'af_bella',
+    'af_jessica',
+    'af_kore',
+    'af_nicole',
+    'af_nova',
+    'af_river',
+    'af_sarah',
+    'af_sky',
+    'am_adam',
+    'am_echo',
+    'am_eric',
+    'am_fenrir',
+    'am_liam',
+    'am_michael',
+    'am_onyx',
+    'am_puck',
+    'am_santa',
+    'bf_emma',
+    'bf_isabella',
+    'bm_george',
+    'bm_lewis',
+    'bf_alice',
+    'bf_lily',
+    'bm_daniel',
+    'bm_fable',
+  ],
 };
 
 /**
@@ -90,15 +114,8 @@ export class KokoroModelManager {
    * This is where downloaded models will be stored
    */
   getModelsDirectory(): string {
-    // Platform-specific paths
-    // In a real app, you might use react-native-fs or expo-file-system
-    if (Platform.OS === 'ios') {
-      // iOS: Use Documents directory
-      return 'file://Documents/kokoro/models';
-    } else {
-      // Android: Use app's files directory
-      return 'file:///data/data/com.yourapp/files/kokoro/models';
-    }
+    // Use DocumentDirectoryPath for both iOS and Android
+    return `${RNFS.DocumentDirectoryPath}/kokoro/models`;
   }
 
   /**
@@ -119,66 +136,147 @@ export class KokoroModelManager {
   getBundledModelConfig(): KokoroConfig {
     const basePath =
       Platform.OS === 'ios'
-        ? 'file://Assets' // iOS bundle path
+        ? RNFS.MainBundlePath // iOS bundle path
         : 'file:///android_asset'; // Android assets path
 
+    // Use HuggingFace tokenizer format (same as downloaded models)
     return {
       modelPath: `${basePath}/kokoro-v1.0-q8.onnx`,
-      vocabPath: `${basePath}/vocab.json`,
-      mergesPath: `${basePath}/merges.txt`,
-      voicesPath: `${basePath}/voices-v1.0.bin`,
+      tokenizerPath: `${basePath}/tokenizer.json`,
+      voicesPath: `${basePath}/voices-manifest.json`,
     };
   }
 
   /**
-   * Download a model
-   *
-   * This is a placeholder implementation. In a real app, you would:
-   * 1. Use a download library (react-native-fs, expo-file-system, etc.)
-   * 2. Implement progress tracking
-   * 3. Handle errors and retries
-   * 4. Verify downloaded files
+   * Download a model with progress tracking
    */
-  async downloadModel(variant: ModelVariant = 'q8'): Promise<void> {
+  async downloadModel(
+    variant: ModelVariant = 'q8',
+    onProgress?: (progress: ModelDownloadProgress) => void,
+  ): Promise<void> {
     const modelUrl = MODEL_URLS[this.modelVersion]?.[variant];
-    const voicesUrl = VOICES_URLS[this.modelVersion];
+    const voicesBaseUrl = VOICES_BASE_URLS[this.modelVersion];
     const vocabUrl = VOCAB_URLS[this.modelVersion];
-    const mergesUrl = MERGES_URLS[this.modelVersion];
+    const availableVoices = AVAILABLE_VOICES[this.modelVersion];
 
-    if (!modelUrl || !voicesUrl || !vocabUrl || !mergesUrl) {
+    if (!modelUrl || !voicesBaseUrl || !vocabUrl || !availableVoices) {
       throw new Error(
         `Model ${this.modelVersion} variant ${variant} not found`,
       );
     }
 
-    // TODO: Implement actual download logic
-    // Example using fetch (basic, not recommended for large files):
-    /*
     const modelsDir = this.getModelsDirectory();
+    const modelKey = `${this.modelVersion}-${variant}`;
 
-    // Download model file
-    const modelResponse = await fetch(modelUrl);
-    const modelBlob = await modelResponse.blob();
-    // Save to filesystem using react-native-fs or similar
+    // Create models directory if it doesn't exist
+    await RNFS.mkdir(modelsDir, {NSURLIsExcludedFromBackupKey: true});
 
-    // Download supporting files
-    const voicesResponse = await fetch(voicesUrl);
-    const vocabResponse = await fetch(vocabUrl);
-    const mergesResponse = await fetch(mergesUrl);
+    // Define file paths
+    const modelPath = `${modelsDir}/${modelKey}.onnx`;
+    const vocabPath = `${modelsDir}/${this.modelVersion}-tokenizer.json`;
+    const manifestPath = `${modelsDir}/${this.modelVersion}-voices-manifest.json`;
 
-    // Track progress
-    if (onProgress) {
-      onProgress({
-        totalBytes: modelBlob.size,
-        downloadedBytes: modelBlob.size,
-        progress: 1.0,
+    try {
+      // Download files with progress tracking (only model and tokenizer)
+      let totalDownloaded = 0;
+      const files = [
+        {url: modelUrl, path: modelPath, name: 'model'},
+        {url: vocabUrl, path: vocabPath, name: 'tokenizer'},
+      ];
+
+      // Get total size (approximate - we'll update as we download)
+      let totalBytes = 0;
+
+      for (const file of files) {
+        console.log(`Downloading ${file.name} from ${file.url}...`);
+
+        const downloadResult = await RNFS.downloadFile({
+          fromUrl: file.url,
+          toFile: file.path,
+          background: false,
+          discretionary: false,
+          cacheable: false,
+          progressInterval: 500,
+          begin: res => {
+            console.log(
+              `${file.name}: Begin download, size: ${res.contentLength}`,
+            );
+            totalBytes += res.contentLength;
+          },
+          progress: res => {
+            const fileProgress = res.bytesWritten / res.contentLength;
+            const overallProgress =
+              (totalDownloaded + res.bytesWritten) / totalBytes;
+
+            if (onProgress) {
+              onProgress({
+                totalBytes,
+                downloadedBytes: totalDownloaded + res.bytesWritten,
+                progress: overallProgress,
+              });
+            }
+
+            console.log(
+              `${file.name}: ${(fileProgress * 100).toFixed(1)}% (${res.bytesWritten}/${res.contentLength})`,
+            );
+          },
+        }).promise;
+
+        if (downloadResult.statusCode !== 200) {
+          throw new Error(
+            `Failed to download ${file.name}: HTTP ${downloadResult.statusCode}`,
+          );
+        }
+
+        // Update total downloaded
+        const fileInfo = await RNFS.stat(file.path);
+        totalDownloaded += fileInfo.size;
+
+        console.log(`${file.name}: Download complete`);
+      }
+
+      // Create voices manifest file
+      const manifest = {
+        baseUrl: voicesBaseUrl,
+        voices: availableVoices,
+      };
+
+      await RNFS.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+      console.log('Voices manifest created:', manifestPath);
+
+      // Mark model as installed
+      this.installedModels.set(modelKey, {
+        version: this.modelVersion,
+        variant,
+        size: totalDownloaded,
+        isInstalled: true,
+        path: modelPath,
+        languages:
+          this.modelVersion === '1.1-en' ? ['en'] : ['en', 'ja', 'zh', 'ko'],
       });
-    }
-    */
 
-    throw new Error(
-      'Model download not implemented. Please implement using your preferred download library (react-native-fs, expo-file-system, etc.)',
-    );
+      console.log(`Model ${modelKey} downloaded successfully`);
+    } catch (error) {
+      // Clean up partial downloads
+      await this.cleanupPartialDownload(modelPath, vocabPath, manifestPath);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up partial downloads
+   */
+  private async cleanupPartialDownload(...paths: string[]): Promise<void> {
+    for (const path of paths) {
+      try {
+        const exists = await RNFS.exists(path);
+        if (exists) {
+          await RNFS.unlink(path);
+        }
+      } catch (error) {
+        console.warn(`Failed to cleanup ${path}:`, error);
+      }
+    }
   }
 
   /**
@@ -204,11 +302,34 @@ export class KokoroModelManager {
    */
   async deleteModel(version: string, variant: ModelVariant): Promise<void> {
     const key = `${version}-${variant}`;
-    this.installedModels.delete(key);
+    const modelsDir = this.getModelsDirectory();
 
-    // TODO: Delete files from filesystem
-    // Example using react-native-fs:
-    // await RNFS.unlink(modelPath);
+    // Delete model files
+    const modelPath = `${modelsDir}/${key}.onnx`;
+    const manifestPath = `${modelsDir}/${version}-voices-manifest.json`;
+    const tokenizerPath = `${modelsDir}/${version}-tokenizer.json`;
+
+    try {
+      if (await RNFS.exists(modelPath)) {
+        await RNFS.unlink(modelPath);
+      }
+      // Only delete shared files if no other variants of this version exist
+      const otherVariants = Array.from(this.installedModels.keys()).filter(
+        k => k.startsWith(`${version}-`) && k !== key,
+      );
+      if (otherVariants.length === 0) {
+        if (await RNFS.exists(manifestPath)) {
+          await RNFS.unlink(manifestPath);
+        }
+        if (await RNFS.exists(tokenizerPath)) {
+          await RNFS.unlink(tokenizerPath);
+        }
+      }
+    } catch (error) {
+      console.warn(`Failed to delete model files for ${key}:`, error);
+    }
+
+    this.installedModels.delete(key);
   }
 
   /**
@@ -246,12 +367,95 @@ export class KokoroModelManager {
     const modelsDir = this.getModelsDirectory();
     const modelKey = `${version}-${variant}`;
 
-    return {
-      modelPath: `${modelsDir}/${modelKey}.onnx`,
-      vocabPath: `${modelsDir}/${version}-vocab.json`,
-      mergesPath: `${modelsDir}/${version}-merges.txt`,
-      voicesPath: `${modelsDir}/${version}-voices.bin`,
+    const config = {
+      modelPath: `file://${modelsDir}/${modelKey}.onnx`,
+      tokenizerPath: `file://${modelsDir}/${version}-tokenizer.json`,
+      voicesPath: `file://${modelsDir}/${version}-voices-manifest.json`,
     };
+
+    console.log('[ModelManager] Generated config:', config);
+    return config;
+  }
+
+  /**
+   * Get list of available models for download
+   */
+  getAvailableModels(): Array<{version: string; variants: ModelVariant[]}> {
+    return Object.keys(MODEL_URLS).map(version => ({
+      version,
+      variants: Object.keys(MODEL_URLS[version]!) as ModelVariant[],
+    }));
+  }
+
+  /**
+   * Check if model files exist on disk
+   */
+  async checkModelInstallation(
+    version: string,
+    variant: ModelVariant,
+  ): Promise<boolean> {
+    const modelsDir = this.getModelsDirectory();
+    const modelKey = `${version}-${variant}`;
+
+    const modelPath = `${modelsDir}/${modelKey}.onnx`;
+    const manifestPath = `${modelsDir}/${version}-voices-manifest.json`;
+    const tokenizerPath = `${modelsDir}/${version}-tokenizer.json`;
+
+    try {
+      const [modelExists, manifestExists, tokenizerExists] = await Promise.all([
+        RNFS.exists(modelPath),
+        RNFS.exists(manifestPath),
+        RNFS.exists(tokenizerPath),
+      ]);
+
+      const isInstalled = modelExists && manifestExists && tokenizerExists;
+
+      // Update installed models map
+      if (isInstalled && !this.installedModels.has(modelKey)) {
+        const fileInfo = await RNFS.stat(modelPath);
+        this.installedModels.set(modelKey, {
+          version,
+          variant,
+          size: fileInfo.size,
+          isInstalled: true,
+          path: modelPath,
+          languages: ['en', 'ja', 'zh', 'ko'], // v1.0 supports all languages
+        });
+      }
+
+      return isInstalled;
+    } catch (error) {
+      console.warn(
+        `Failed to check model installation for ${modelKey}:`,
+        error,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Scan models directory and update installed models list
+   */
+  async scanInstalledModels(): Promise<void> {
+    const modelsDir = this.getModelsDirectory();
+
+    try {
+      const dirExists = await RNFS.exists(modelsDir);
+      if (!dirExists) {
+        return;
+      }
+
+      // Check all known model versions and variants
+      for (const version of Object.keys(MODEL_URLS)) {
+        for (const variant of Object.keys(
+          MODEL_URLS[version]!,
+        ) as ModelVariant[]) {
+          await this.checkModelInstallation(version, variant);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to scan installed models:', error);
+    }
   }
 }
 
