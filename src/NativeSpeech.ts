@@ -154,6 +154,14 @@ export interface Spec extends TurboModule {
    */
   isAudioPlaying: () => Promise<boolean>;
 
+  /**
+   * Convert text to phonemes using espeak-ng
+   * @param text - The input text
+   * @param language - Language code ('en-us', 'en-gb', etc.)
+   * @returns IPA phoneme string
+   */
+  phonemize: (text: string, language: string) => Promise<string>;
+
   //Listeners
   readonly onError: EventEmitter<EventProps>;
   readonly onStart: EventEmitter<EventProps>;

@@ -70,7 +70,7 @@ export class KokoroEngine implements TTSEngineInterface {
     this.voiceLoader = new VoiceLoader();
     this.normalizer = new TextNormalizer();
     // Phonemizer will be initialized in initialize() based on config
-    this.phonemizer = createPhonemizer('none'); // Default to no phonemization for backward compatibility
+    this.phonemizer = createPhonemizer('native'); // Default to no phonemization for backward compatibility
   }
 
   /**
@@ -113,17 +113,17 @@ export class KokoroEngine implements TTSEngineInterface {
 
       // Initialize phonemizer based on config
       const phonemizerType = this.config.phonemizerType || 'none';
-      const phonemizerUrl =
-        this.config.phonemizerUrl || 'http://localhost:3000';
+      // const phonemizerUrl =
+      //   this.config.phonemizerUrl || 'http://localhost:3000';
       console.log(
         '[KokoroEngine.initialize] Creating phonemizer with type:',
         phonemizerType,
       );
-      console.log(
-        '[KokoroEngine.initialize] Creating phonemizer with URL:',
-        phonemizerUrl,
-      );
-      this.phonemizer = createPhonemizer(phonemizerType, phonemizerUrl);
+      // console.log(
+      //   '[KokoroEngine.initialize] Creating phonemizer with URL:',
+      //   phonemizerUrl,
+      // );
+      this.phonemizer = createPhonemizer(phonemizerType);
 
       // Load tokenizer (support both tokenizer.json and vocab+merges format)
       if (this.config.tokenizerPath) {
@@ -506,19 +506,37 @@ export class KokoroEngine implements TTSEngineInterface {
   /**
    * Get language code from voice ID
    * Voice IDs follow the pattern: {lang}{gender}_{name}
-   * e.g., 'af_bella' -> 'a' (American English)
-   *       'bf_emma' -> 'b' (British English)
+   * e.g., 'af_bella' -> 'a' (American English for remote API)
+   *       'bf_emma' -> 'b' (British English for remote API)
+   *
+   * Returns format based on phonemizer type:
+   * - Remote API: 'a' or 'b'
+   * - Native espeak-ng: 'en-us' or 'en-gb'
    */
   private getLanguageFromVoice(voiceId: string): string {
     const langCode = voiceId.charAt(0).toLowerCase();
+    const phonemizerType = this.config?.phonemizerType || 'none';
 
+    // Remote API uses single-letter codes
+    if (phonemizerType === 'remote') {
+      switch (langCode) {
+        case 'a':
+          return 'a'; // American English
+        case 'b':
+          return 'b'; // British English
+        default:
+          return 'a';
+      }
+    }
+
+    // Native espeak-ng uses standard language codes
     switch (langCode) {
       case 'a':
-        return 'a'; // American English
+        return 'en-us'; // American English
       case 'b':
-        return 'b'; // British English
+        return 'en-gb'; // British English
       default:
-        return 'a'; // Default to American English
+        return 'en-us';
     }
   }
 }

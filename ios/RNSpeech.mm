@@ -1,4 +1,5 @@
 #import "RNSpeech.h"
+#import "EspeakWrapper.h"
 #import <React/RCTLog.h>
 
 using namespace JS::NativeSpeech;
@@ -590,6 +591,43 @@ RCT_EXPORT_MODULE();
                 reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     resolve(@(self->_isAudioPlaying));
+  });
+}
+
+- (void)phonemize:(NSString *)text
+         language:(NSString *)language
+          resolve:(RCTPromiseResolveBlock)resolve
+           reject:(RCTPromiseRejectBlock)reject {
+  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    @try {
+      // Ensure espeak-ng-data is available
+      NSString *dataPath = [EspeakWrapper ensureDataPath];
+
+      if (!dataPath) {
+        reject(@"PHONEMIZE_ERROR",
+               @"espeak-ng-data not found. Make sure the data files are bundled with the app.",
+               nil);
+        return;
+      }
+
+      // Phonemize the text
+      NSError *error = nil;
+      NSString *phonemes = [EspeakWrapper phonemizeText:text
+                                               language:language
+                                               dataPath:dataPath
+                                                  error:&error];
+
+      if (error) {
+        reject(@"PHONEMIZE_ERROR", error.localizedDescription, error);
+      } else {
+        resolve(phonemes);
+      }
+    }
+    @catch (NSException *exception) {
+      reject(@"PHONEMIZE_ERROR",
+             [NSString stringWithFormat:@"Phonemization failed: %@", exception.reason],
+             nil);
+    }
   });
 }
 

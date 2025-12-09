@@ -97,17 +97,28 @@ export class NoOpPhonemizer implements IPhonemizer {
 }
 
 /**
- * Native phonemizer (future implementation)
- * Will use espeak-ng native module when available
+ * Native phonemizer using espeak-ng
+ * Uses Turbo Module for native G2P conversion
  */
 export class NativePhonemizer implements IPhonemizer {
-  async phonemize(_text: string, _language: string): Promise<string> {
-    throw new Error(
-      'Native phonemizer not yet implemented. Use RemotePhonemizer instead.',
-    );
-    // Future implementation:
-    // const { EspeakNG } = NativeModules;
-    // return await EspeakNG.phonemize(text, language);
+  async phonemize(text: string, language: string): Promise<string> {
+    try {
+      console.log('[NativePhonemizer] Using NATIVE espeak-ng phonemizer');
+      console.log('[NativePhonemizer] Input text:', text);
+      console.log('[NativePhonemizer] Language:', language);
+
+      const TurboSpeech = require('../../NativeSpeech').default;
+      const phonemes = await TurboSpeech.phonemize(text, language);
+
+      console.log('[NativePhonemizer] Phonemes output:', phonemes);
+      return phonemes;
+    } catch (error) {
+      console.error('[NativePhonemizer] Error:', error);
+      if (error instanceof Error) {
+        throw new Error(`Native phonemization failed: ${error.message}`);
+      }
+      throw error;
+    }
   }
 }
 

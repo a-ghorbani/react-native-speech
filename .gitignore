@@ -84,3 +84,12 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+
+# espeak-ng build artifacts
+android/libs/espeak-ng/
+android/src/main/assets/espeak-ng-data/
+ios/espeak-ng-data/
+third-party/espeak-ng/build-*/
+third-party/espeak-ng/Makefile
+third-party/espeak-ng/config.log
+third-party/espeak-ng/config.status

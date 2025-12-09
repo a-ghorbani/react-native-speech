@@ -593,6 +593,30 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun phonemize(text: String, language: String, promise: Promise) {
+    try {
+      // Ensure espeak-ng-data is extracted
+      val dataPath = EspeakNative.ensureDataPath(reactApplicationContext)
+
+      // Call native phonemizer
+      val phonemes = EspeakNative.phonemize(text, language, dataPath)
+
+      promise.resolve(phonemes)
+    } catch (e: UnsatisfiedLinkError) {
+      promise.reject(
+        "PHONEMIZE_ERROR",
+        "espeak-ng native library not available. Make sure the library is properly built and bundled.",
+        e
+      )
+    } catch (e: Exception) {
+      promise.reject(
+        "PHONEMIZE_ERROR",
+        "Failed to phonemize text: ${e.message}",
+        e
+      )
+    }
+  }
+
   override fun invalidate() {
     super.invalidate()
     if (::synthesizer.isInitialized) {
