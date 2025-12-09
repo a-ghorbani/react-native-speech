@@ -18,8 +18,8 @@ NS_ASSUME_NONNULL_BEGIN
                                error:(NSError **)error;
 
 /**
- * Ensure espeak-ng-data is extracted to Documents directory
- * @return Path to espeak-ng-data directory
+ * Get path to espeak-ng-data directory in app bundle
+ * @return Path to espeak-ng-data directory, or nil if not found
  */
 + (NSString *)ensureDataPath;
 

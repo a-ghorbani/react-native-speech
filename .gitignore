@@ -85,11 +85,13 @@ android/generated
 # React Native Nitro Modules
 nitrogen/
 
-# espeak-ng build artifacts
-android/libs/espeak-ng/
-android/src/main/assets/espeak-ng-data/
-ios/espeak-ng-data/
+# espeak-ng temporary build artifacts (not needed with source distribution)
 third-party/espeak-ng/build-*/
 third-party/espeak-ng/Makefile
 third-party/espeak-ng/config.log
 third-party/espeak-ng/config.status
+ios/build-espeak/
+ios/espeak-ng-data/
+
+# Note: android/src/main/assets/espeak-ng-data/ should be committed
+# It's prepared from submodule via scripts/prepare-espeak-data.sh

@@ -32,7 +32,7 @@ static NSString *currentDataPath = nil;
                     return nil;
                 }
 
-                char *path = strdup(tempPath); // 🔐 Make a stable C-string copy
+                char *path = strdup(tempPath);
 
                 if (!path) {
                     if (error) {
@@ -45,19 +45,8 @@ static NSString *currentDataPath = nil;
                     return nil;
                 }
 
-                NSLog(@"[EspeakWrapper] Calling espeak_Initialize with path: %s", path);
-                NSLog(@"[EspeakWrapper] Path pointer address: %p", (void*)path);
-                NSLog(@"[EspeakWrapper] Path length: %zu", strlen(path));
-
-                // Verify the path exists and espeak-ng-data subdirectory is accessible
-                NSString *espeakDataPath = [dataPath stringByAppendingPathComponent:@"espeak-ng-data"];
-                NSLog(@"[EspeakWrapper] Expected espeak-ng-data at: %@", espeakDataPath);
-                NSLog(@"[EspeakWrapper] Directory exists: %d", [[NSFileManager defaultManager] fileExistsAtPath:espeakDataPath]);
-
                 int result = espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, path, 0);
-                NSLog(@"[EspeakWrapper] espeak_Initialize returned: %d", result);
-
-                free(path); // Clean up the duplicated string
+                free(path);
 
                 if (result < 0) {
                     if (error) {
@@ -72,7 +61,6 @@ static NSString *currentDataPath = nil;
 
                 espeakInitialized = YES;
                 currentDataPath = dataPath;
-                NSLog(@"[EspeakWrapper] Initialized espeak-ng with data path: %@", dataPath);
             }
 
             // Set language/voice
@@ -81,19 +69,14 @@ static NSString *currentDataPath = nil;
             voice_spec.languages = [language UTF8String];
 
             if (espeak_SetVoiceByProperties(&voice_spec) != EE_OK) {
-                NSLog(@"[EspeakWrapper] Warning: Failed to set voice for language: %@", language);
                 // Continue anyway - espeak will use default voice
             }
 
             // espeak_TextToPhonemes processes ONE CLAUSE at a time
             // We need to call it repeatedly until all text is processed
-            NSLog(@"[EspeakWrapper] Processing text (%lu chars): %@",
-                  (unsigned long)text.length, text);
-
             const char *textCStr = [text UTF8String];
             const char *textPtr = textCStr;
             NSMutableString *allPhonemes = [NSMutableString string];
-            int clauseCount = 0;
 
             // Keep calling espeak_TextToPhonemes until all text is processed
             while (textPtr && *textPtr != '\0') {
@@ -104,8 +87,6 @@ static NSString *currentDataPath = nil;
                     espeakCHARS_UTF8,
                     espeakPHONEMES_IPA
                 );
-
-                clauseCount++;
 
                 if (phonemes && strlen(phonemes) > 0) {
                     NSString *clausePhonemes = [NSString stringWithUTF8String:phonemes];
@@ -120,9 +101,6 @@ static NSString *currentDataPath = nil;
                         }
                         [allPhonemes appendString:clausePhonemes];
                     }
-
-                    NSLog(@"[EspeakWrapper] Clause %d phonemes (%lu chars): %@",
-                          clauseCount, (unsigned long)strlen(phonemes), clausePhonemes);
                 }
 
                 // Safety check: if pointer didn't advance, break to avoid infinite loop
@@ -132,7 +110,6 @@ static NSString *currentDataPath = nil;
             }
 
             if (allPhonemes.length > 0) {
-                NSLog(@"[EspeakWrapper] Total phonemes from %d clauses: %@", clauseCount, allPhonemes);
                 return [allPhonemes copy];
             } else {
                 if (error) {
@@ -164,8 +141,6 @@ static NSString *currentDataPath = nil;
     NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"espeak-ng-data" ofType:nil];
 
     if (!bundlePath) {
-        NSLog(@"[EspeakWrapper] ERROR: espeak-ng-data not found in main bundle");
-        NSLog(@"[EspeakWrapper] Make sure git submodule is initialized: git submodule update --init --recursive");
         return nil;
     }
 
@@ -174,13 +149,7 @@ static NSString *currentDataPath = nil;
     NSString *phondataPath = [bundlePath stringByAppendingPathComponent:@"phondata"];
     NSString *phontabPath = [bundlePath stringByAppendingPathComponent:@"phontab"];
 
-    if (![fileManager fileExistsAtPath:phondataPath]) {
-        NSLog(@"[EspeakWrapper] ERROR: phondata not found at: %@", phondataPath);
-        return nil;
-    }
-
-    if (![fileManager fileExistsAtPath:phontabPath]) {
-        NSLog(@"[EspeakWrapper] ERROR: phontab not found at: %@", phontabPath);
+    if (![fileManager fileExistsAtPath:phondataPath] || ![fileManager fileExistsAtPath:phontabPath]) {
         return nil;
     }
 
@@ -189,16 +158,9 @@ static NSString *currentDataPath = nil;
     unsigned long long phondataSize = [phondataAttrs fileSize];
 
     if (phondataSize < 1000) { // phondata should be much larger
-        NSLog(@"[EspeakWrapper] ERROR: phondata file too small (%llu bytes), data may be corrupted", phondataSize);
         return nil;
     }
 
-    NSLog(@"[EspeakWrapper] Using espeak-ng-data from bundle: %@", bundlePath);
-    NSLog(@"[EspeakWrapper] phondata size: %llu bytes", phondataSize);
-
-    // Return the espeak-ng-data directory directly
-    // espeak-ng will use this as-is
-    NSLog(@"[EspeakWrapper] Returning espeak-ng-data path: %@", bundlePath);
     return bundlePath;
 }
 

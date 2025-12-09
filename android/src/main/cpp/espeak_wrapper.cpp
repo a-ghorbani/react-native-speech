@@ -2,9 +2,6 @@
 #include <espeak-ng/speak_lib.h>
 #include <android/log.h>
 #include <string>
-#include <vector>
-#include <algorithm>
-#include <cctype>
 #include <mutex>
 
 #define LOG_TAG "EspeakWrapper"
@@ -15,26 +12,6 @@
 static bool espeak_initialized = false;
 static std::mutex espeak_mutex;
 static std::string current_data_path;
-
-// Helper function to split text into words
-static std::vector<std::string> splitWords(const std::string& text) {
-    std::vector<std::string> words;
-    std::string word;
-    for (char ch : text) {
-        if (std::isspace(ch)) {
-            if (!word.empty()) {
-                words.push_back(word);
-                word.clear();
-            }
-        } else {
-            word += ch;
-        }
-    }
-    if (!word.empty()) {
-        words.push_back(word);
-    }
-    return words;
-}
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_mhpdev_speech_EspeakNative_phonemize(
@@ -60,9 +37,6 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
         return env->NewStringUTF("");
     }
 
-    LOGI("phonemize called: text='%s', lang='%s', path='%s'",
-         textCStr, langCStr, pathCStr);
-
     // Initialize espeak-ng if not already initialized or if data path changed
     std::string new_path(pathCStr);
     if (!espeak_initialized || current_data_path != new_path) {
@@ -73,7 +47,6 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
 
         int result = espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, pathCStr, 0);
         if (result < 0) {
-            LOGE("Failed to initialize espeak-ng: %d", result);
             env->ReleaseStringUTFChars(text, textCStr);
             env->ReleaseStringUTFChars(language, langCStr);
             env->ReleaseStringUTFChars(dataPath, pathCStr);
@@ -82,7 +55,6 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
 
         espeak_initialized = true;
         current_data_path = new_path;
-        LOGI("espeak-ng initialized successfully with data path: %s", pathCStr);
     }
 
     // Set language/voice
@@ -91,17 +63,13 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
     voice_spec.languages = langCStr;
 
     if (espeak_SetVoiceByProperties(&voice_spec) != EE_OK) {
-        LOGE("Failed to set voice for language: %s", langCStr);
         // Continue anyway - espeak will use default voice
     }
 
     // espeak_TextToPhonemes processes ONE CLAUSE at a time
     // We need to call it repeatedly until all text is processed
-    LOGI("Processing text (%zu chars)", strlen(textCStr));
-
     const char *textPtr = textCStr;
     std::string all_phonemes;
-    int clause_count = 0;
 
     // Keep calling espeak_TextToPhonemes until all text is processed
     while (textPtr && *textPtr != '\0') {
@@ -112,8 +80,6 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
             espeakCHARS_UTF8,
             espeakPHONEMES_IPA
         );
-
-        clause_count++;
 
         if (phoneme_output && strlen(phoneme_output) > 0) {
             std::string clause_phonemes(phoneme_output);
@@ -132,19 +98,12 @@ Java_com_mhpdev_speech_EspeakNative_phonemize(
                 }
                 all_phonemes += clause_phonemes;
             }
-
-            LOGI("Clause %d phonemes (%zu chars): %s",
-                 clause_count, strlen(phoneme_output), clause_phonemes.c_str());
         }
 
         // Safety check: if pointer didn't advance, break to avoid infinite loop
         if (textPtr == before_ptr || textPtr == nullptr) {
             break;
         }
-    }
-
-    if (!all_phonemes.empty()) {
-        LOGI("Total phonemes from %d clauses: %s", clause_count, all_phonemes.c_str());
     }
 
     // Cleanup
