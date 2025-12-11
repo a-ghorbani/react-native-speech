@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
 
   # Our module sources
   s.source_files = "ios/**/*.{h,m,mm,cpp}"
-  s.private_header_files = "ios/**/*.h"
+  s.public_header_files = "ios/EspeakWrapper.h"
   s.exclude_files = "ios/generated/**/*"
 
   # Use script_phase to build espeak-ng as a static library before compilation

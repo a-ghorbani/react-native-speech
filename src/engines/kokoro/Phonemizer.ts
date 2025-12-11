@@ -99,19 +99,63 @@ export class NoOpPhonemizer implements IPhonemizer {
 /**
  * Native phonemizer using espeak-ng
  * Uses Turbo Module for native G2P conversion
+ *
+ * Features:
+ * - Direct phonemization via espeak-ng
+ * - Loop-based clause handling (concatenates all clauses)
+ * - Post-processing for Kokoro TTS compatibility
+ * - Thread-safe native implementation
+ *
+ * Note: Text normalization should be done BEFORE calling phonemize()
+ * (e.g., in KokoroEngine using TextNormalizer)
  */
 export class NativePhonemizer implements IPhonemizer {
+  /**
+   * Post-process phonemes for Kokoro TTS compatibility
+   * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js#L174
+   */
+  private postProcessPhonemes(phonemes: string, language: string): string {
+    let processed = phonemes
+      // Fix kokoro pronunciation (Japanese word)
+      .replace(/kəkˈoːɹoʊ/g, 'kˈoʊkəɹoʊ')
+      .replace(/kəkˈɔːɹəʊ/g, 'kˈəʊkəɹəʊ')
+      // Normalize phoneme symbols for Kokoro
+      .replace(/ʲ/g, 'j') // Palatalization marker
+      .replace(/r/g, 'ɹ') // Normalize r-sounds
+      .replace(/x/g, 'k') // Normalize velar fricative
+      .replace(/ɬ/g, 'l') // Normalize lateral fricative
+      // Add space before "hundred" when preceded by vowel/r
+      .replace(/(?<=[a-zɹː])(?=hˈʌndɹɪd)/g, ' ')
+      // Fix trailing z before punctuation
+      .replace(/ z(?=[;:,.!?¡¿—…"«»"" ]|$)/g, 'z');
+
+    // Additional post-processing for American English
+    if (language === 'en-us' || language === 'a') {
+      processed = processed.replace(/(?<=nˈaɪn)ti(?!ː)/g, 'di');
+    }
+
+    return processed.trim();
+  }
+
   async phonemize(text: string, language: string): Promise<string> {
     try {
       console.log('[NativePhonemizer] Using NATIVE espeak-ng phonemizer');
       console.log('[NativePhonemizer] Input text:', text);
       console.log('[NativePhonemizer] Language:', language);
 
+      // Step 1: Phonemize via espeak-ng
+      // Note: espeak-ng processes text clause-by-clause internally.
+      // The native wrapper loops through all clauses and concatenates them.
       const TurboSpeech = require('../../NativeSpeech').default;
-      const phonemes = await TurboSpeech.phonemize(text, language);
+      const rawPhonemes = await TurboSpeech.phonemize(text, language);
 
-      console.log('[NativePhonemizer] Phonemes output:', phonemes);
-      return phonemes;
+      console.log('[NativePhonemizer] Raw phonemes:', rawPhonemes);
+
+      // Step 2: Post-process for Kokoro TTS compatibility
+      const processed = this.postProcessPhonemes(rawPhonemes, language);
+
+      console.log('[NativePhonemizer] Processed phonemes:', processed);
+      return processed;
     } catch (error) {
       console.error('[NativePhonemizer] Error:', error);
       if (error instanceof Error) {

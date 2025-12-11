@@ -33,6 +33,9 @@
   "scripts": {
     "example": "yarn workspace react-native-speech-example",
     "test": "jest",
+    "test:ios": "./scripts/test-ios.sh",
+    "test:android": "./scripts/test-android.sh",
+    "test:native": "yarn test:ios && yarn test:android",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",

@@ -49,12 +49,56 @@ export class TextNormalizer {
         // 5. Handle numbers (basic implementation)
         .replace(/\b(\d{4})\b/g, match => this.convertYear(match))
 
-        // 6. Handle possessives
+        // // 6. Fix brand name possessives (iOS'S → iOS, macOS's → macOS)
+        // .replace(
+        //   /\b(iOS|macOS|iPadOS|watchOS|tvOS|iPhone|iPad|Mac)'[sS]\b/g,
+        //   '$1',
+        // )
+
+        // // 7. Handle possessives
         .replace(/(?<=[BCDFGHJ-NP-TV-Z])'?s\b/g, "'S")
 
-        // 7. Strip leading and trailing whitespace
+        // 8. Strip leading and trailing whitespace
         .trim()
     );
+  }
+
+  /**
+   * Split text into sentence-based chunks for streaming/processing
+   * Preserves sentence boundaries for natural speech flow
+   */
+  chunkBySentences(text: string, maxChunkSize: number = 1000): string[] {
+    // Split on sentence boundaries, keeping the punctuation
+    const sentencePattern = /[^.!?]+[.!?]+(?:\s+|$)/g;
+    const sentences = text.match(sentencePattern) || [text];
+
+    // Group sentences into chunks that don't exceed maxChunkSize
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (!trimmedSentence) continue;
+
+      // If adding this sentence would exceed maxChunkSize, start a new chunk
+      if (
+        currentChunk &&
+        currentChunk.length + trimmedSentence.length + 1 > maxChunkSize
+      ) {
+        chunks.push(currentChunk.trim());
+        currentChunk = trimmedSentence;
+      } else {
+        // Add to current chunk
+        currentChunk += (currentChunk ? ' ' : '') + trimmedSentence;
+      }
+    }
+
+    // Don't forget the last chunk
+    if (currentChunk) {
+      chunks.push(currentChunk.trim());
+    }
+
+    return chunks.length > 0 ? chunks : [text];
   }
 
   /**
