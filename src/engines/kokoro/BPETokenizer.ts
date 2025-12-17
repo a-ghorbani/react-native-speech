@@ -1,88 +1,82 @@
 /**
- * Byte-Pair Encoding (BPE) Tokenizer for Kokoro TTS
+ * Character-level Tokenizer for Kokoro TTS
  *
- * Implements BPE algorithm to convert text into token IDs
- * that can be fed into the Kokoro ONNX model.
+ * Kokoro uses a simple character-level tokenization (no BPE merging).
+ * Each valid IPA character maps directly to a token ID.
+ * The sequence is wrapped with '$' (token 0) at start and end.
  */
 
 import type {TokenizerConfig} from '../../types';
 
 export class BPETokenizer {
   private vocab: Map<string, number> = new Map();
-  private merges: Array<[string, number]> = [];
   private reverseVocab: Map<number, string> = new Map();
+  private validChars: Set<string> = new Set();
 
-  private unkTokenId = 0;
-  private bosTokenId = 1;
-  private eosTokenId = 2;
-  private padTokenId = 3;
+  // Special token - '$' is used as boundary marker (both BOS and EOS)
+  private boundaryTokenId = 0;
 
   private isInitialized = false;
 
   /**
-   * Load vocabulary and merges from JSON objects
+   * Load vocabulary from JSON objects
+   * Note: Kokoro doesn't use BPE merges - it's character-level tokenization
    */
   async loadFromData(
     vocabData: Record<string, number>,
-    mergesData: Array<string>,
+    _mergesData: Array<string>, // Ignored - Kokoro doesn't use merges
   ): Promise<void> {
     // Load vocabulary
     for (const [token, id] of Object.entries(vocabData)) {
       this.vocab.set(token, id);
       this.reverseVocab.set(id, token);
+      this.validChars.add(token);
     }
 
-    // Find special tokens
-    this.unkTokenId = this.vocab.get('<unk>') ?? 0;
-    this.bosTokenId = this.vocab.get('<s>') ?? 1;
-    this.eosTokenId = this.vocab.get('</s>') ?? 2;
-    this.padTokenId = this.vocab.get('<pad>') ?? 3;
-
-    // Load merges with priority index
-    this.merges = mergesData.map((merge, index) => {
-      return [merge, index] as [string, number];
-    });
+    // Boundary token is '$' with ID 0
+    this.boundaryTokenId = this.vocab.get('$') ?? 0;
 
     this.isInitialized = true;
   }
 
   /**
-   * Encode text into token IDs
+   * Encode phonemes into token IDs
+   * Kokoro tokenization:
+   * 1. Remove characters not in vocab (normalizer)
+   * 2. Split into individual characters (pre-tokenizer with empty regex)
+   * 3. Map each character to token ID
+   * 4. Wrap with '$' token at start and end (post-processor)
    */
   encode(
     text: string,
-    options?: {addBos?: boolean; addEos?: boolean},
+    _options?: {addBos?: boolean; addEos?: boolean},
   ): number[] {
     if (!this.isInitialized) {
       throw new Error('Tokenizer not initialized. Call loadFromData() first.');
     }
 
-    const addBos = options?.addBos ?? false;
-    const addEos = options?.addEos ?? false;
+    // Step 1: Normalize - remove characters not in vocab
+    const normalized = this.normalize(text);
 
-    // Normalize text
-    const normalized = this.normalizeText(text);
+    // Step 2 & 3: Split into characters and map to token IDs
+    const tokens: number[] = [];
 
-    // Pre-tokenize into words
-    const words = this.preTokenize(normalized);
+    // Add boundary token at start (post-processor template)
+    tokens.push(this.boundaryTokenId);
 
-    // Apply BPE to each word
-    const allTokens: number[] = [];
-
-    if (addBos) {
-      allTokens.push(this.bosTokenId);
+    // Tokenize each character
+    for (const char of normalized) {
+      const tokenId = this.vocab.get(char);
+      if (tokenId !== undefined) {
+        tokens.push(tokenId);
+      }
+      // Characters not in vocab are silently dropped (per normalizer behavior)
     }
 
-    for (const word of words) {
-      const wordTokens = this.bpeEncode(word);
-      allTokens.push(...wordTokens);
-    }
+    // Add boundary token at end (post-processor template)
+    tokens.push(this.boundaryTokenId);
 
-    if (addEos) {
-      allTokens.push(this.eosTokenId);
-    }
-
-    return allTokens;
+    return tokens;
   }
 
   /**
@@ -93,18 +87,12 @@ export class BPETokenizer {
       throw new Error('Tokenizer not initialized');
     }
 
-    const tokens = tokenIds
-      .filter(id => {
-        // Skip special tokens
-        return (
-          id !== this.bosTokenId &&
-          id !== this.eosTokenId &&
-          id !== this.padTokenId
-        );
-      })
-      .map(id => this.reverseVocab.get(id) ?? '<unk>');
+    const chars = tokenIds
+      .filter(id => id !== this.boundaryTokenId) // Skip boundary tokens
+      .map(id => this.reverseVocab.get(id) ?? '')
+      .filter(char => char !== '');
 
-    return tokens.join('').replace(/▁/g, ' ').trim();
+    return chars.join('');
   }
 
   /**
@@ -113,13 +101,11 @@ export class BPETokenizer {
   getConfig(): TokenizerConfig {
     return {
       vocab: this.vocab,
-      merges: this.merges.map(
-        ([merge]) => merge.split(' ') as [string, string],
-      ),
-      unkTokenId: this.unkTokenId,
-      bosTokenId: this.bosTokenId,
-      eosTokenId: this.eosTokenId,
-      padTokenId: this.padTokenId,
+      merges: [], // Kokoro doesn't use merges
+      unkTokenId: this.boundaryTokenId, // No UNK - invalid chars are dropped
+      bosTokenId: this.boundaryTokenId,
+      eosTokenId: this.boundaryTokenId,
+      padTokenId: this.boundaryTokenId,
     };
   }
 
@@ -131,98 +117,18 @@ export class BPETokenizer {
   }
 
   /**
-   * Normalize text (basic normalization)
+   * Normalize text by removing characters not in vocab
+   * This matches the tokenizer.json normalizer which uses a regex
+   * to keep only valid IPA characters
    */
-  private normalizeText(text: string): string {
-    return text
-      .trim()
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/[^\u0020-\u007F]/gu, match => {
-        // Handle non-ASCII characters (preserve them for multilingual support)
-        return match;
-      });
-  }
-
-  /**
-   * Pre-tokenize text into words
-   */
-  private preTokenize(text: string): string[] {
-    // Split on whitespace and add special marker
-    return text.split(/\s+/).map(word => '▁' + word);
-  }
-
-  /**
-   * Apply BPE algorithm to a single word
-   */
-  private bpeEncode(word: string): number[] {
-    // Split word into characters
-    let tokens = word.split('');
-
-    // Apply BPE merges iteratively
-    while (tokens.length > 1) {
-      const bestMerge = this.findBestMerge(tokens);
-      if (!bestMerge) {
-        break; // No more merges possible
+  private normalize(text: string): string {
+    let result = '';
+    for (const char of text) {
+      if (this.validChars.has(char)) {
+        result += char;
       }
-
-      tokens = this.applyMerge(tokens, bestMerge);
+      // Invalid characters are silently dropped
     }
-
-    // Convert tokens to IDs
-    return tokens.map(token => this.vocab.get(token) ?? this.unkTokenId);
-  }
-
-  /**
-   * Find the best merge to apply (lowest merge index = highest priority)
-   */
-  private findBestMerge(tokens: string[]): string | null {
-    let bestMerge: string | null = null;
-    let bestPriority = Infinity;
-
-    for (let i = 0; i < tokens.length - 1; i++) {
-      const pair = `${tokens[i]} ${tokens[i + 1]}`;
-
-      for (const [merge, priority] of this.merges) {
-        if (merge === pair && priority < bestPriority) {
-          bestPriority = priority;
-          bestMerge = pair;
-        }
-      }
-    }
-
-    return bestMerge;
-  }
-
-  /**
-   * Apply a specific merge to token array
-   */
-  private applyMerge(tokens: string[], mergeStr: string): string[] {
-    const parts = mergeStr.split(' ');
-    const first = parts[0];
-    const second = parts[1];
-
-    if (!first || !second) {
-      return tokens; // Invalid merge string
-    }
-
-    const newTokens: string[] = [];
-
-    let i = 0;
-    while (i < tokens.length) {
-      if (
-        i < tokens.length - 1 &&
-        tokens[i] === first &&
-        tokens[i + 1] === second
-      ) {
-        // Merge these two tokens
-        newTokens.push(first + second);
-        i += 2;
-      } else {
-        newTokens.push(tokens[i]!);
-        i += 1;
-      }
-    }
-
-    return newTokens;
+    return result;
   }
 }

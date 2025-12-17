@@ -7,6 +7,102 @@
  */
 
 /**
+ * Escapes regular expression special characters from a string
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Punctuation characters that are preserved during phonemization
+ */
+const PUNCTUATION = ';:,.!?¡¿—…"«»""(){}[]';
+export const PUNCTUATION_PATTERN = new RegExp(
+  `(\\s*[${escapeRegExp(PUNCTUATION)}]+\\s*)+`,
+  'g',
+);
+
+/**
+ * Split text on punctuation pattern, preserving the delimiters
+ * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js#L10
+ */
+export function splitOnPunctuation(
+  text: string,
+): {isPunctuation: boolean; text: string}[] {
+  const result: {isPunctuation: boolean; text: string}[] = [];
+  let prev = 0;
+
+  for (const match of text.matchAll(PUNCTUATION_PATTERN)) {
+    const fullMatch = match[0];
+    const index = match.index!;
+
+    if (prev < index) {
+      result.push({isPunctuation: false, text: text.slice(prev, index)});
+    }
+    if (fullMatch.length > 0) {
+      result.push({isPunctuation: true, text: fullMatch});
+    }
+    prev = index + fullMatch.length;
+  }
+
+  if (prev < text.length) {
+    result.push({isPunctuation: false, text: text.slice(prev)});
+  }
+
+  return result;
+}
+
+/**
+ * Rejoin phonemized chunks into a single string
+ * Punctuation chunks are kept as-is, phoneme chunks are joined
+ */
+export function rejoinChunks(
+  chunks: {isPunctuation: boolean; text: string; phoneme?: string}[],
+): string {
+  return chunks
+    .map(chunk => (chunk.isPunctuation ? chunk.text : chunk.phoneme || ''))
+    .join('');
+}
+
+/**
+ * Post-process phonemes for Kokoro TTS compatibility
+ * Exported separately for testing and reuse
+ * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js#L174
+ */
+export function postProcessPhonemes(
+  phonemes: string,
+  language: string,
+): string {
+  let processed = phonemes
+    // Fix kokoro pronunciation (Japanese word)
+    .replace(/kəkˈoːɹoʊ/g, 'kˈoʊkəɹoʊ')
+    .replace(/kəkˈɔːɹəʊ/g, 'kˈəʊkəɹəʊ')
+    // Normalize phoneme symbols for Kokoro
+    // ʲ (palatalization) - remove entirely (espeak version difference)
+    // kokoro.js converts ʲ→j but their espeak doesn't output ʲ in these positions
+    // Our espeak outputs ʲ in places like "libraryʲ", "ɹɪʲækt" where it shouldn't be
+    .replace(/ʲ/g, '')
+    .replace(/r/g, 'ɹ') // Normalize r-sounds
+    .replace(/x/g, 'k') // Normalize velar fricative
+    .replace(/ɬ/g, 'l') // Normalize lateral fricative
+    // Add space before "hundred" when preceded by vowel/r
+    .replace(/(?<=[a-zɹː])(?=hˈʌndɹɪd)/g, ' ')
+    // Fix trailing z before punctuation
+    .replace(/ z(?=[;:,.!?¡¿—…"«»"" ]|$)/g, 'z');
+
+  // Additional post-processing for American English
+  if (language === 'en-us' || language === 'a') {
+    processed = processed
+      // ninety -> nindi
+      .replace(/(?<=nˈaɪn)ti(?!ː)/g, 'di')
+      // fˈɔːɹ -> fˈoːɹ (four)
+      .replace(/fˈɔːɹ/g, 'fˈoːɹ');
+  }
+
+  return processed.trim();
+}
+
+/**
  * Interface for phonemization implementations
  */
 export interface IPhonemizer {
@@ -110,49 +206,36 @@ export class NoOpPhonemizer implements IPhonemizer {
  * (e.g., in KokoroEngine using TextNormalizer)
  */
 export class NativePhonemizer implements IPhonemizer {
-  /**
-   * Post-process phonemes for Kokoro TTS compatibility
-   * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js#L174
-   */
-  private postProcessPhonemes(phonemes: string, language: string): string {
-    let processed = phonemes
-      // Fix kokoro pronunciation (Japanese word)
-      .replace(/kəkˈoːɹoʊ/g, 'kˈoʊkəɹoʊ')
-      .replace(/kəkˈɔːɹəʊ/g, 'kˈəʊkəɹəʊ')
-      // Normalize phoneme symbols for Kokoro
-      .replace(/ʲ/g, 'j') // Palatalization marker
-      .replace(/r/g, 'ɹ') // Normalize r-sounds
-      .replace(/x/g, 'k') // Normalize velar fricative
-      .replace(/ɬ/g, 'l') // Normalize lateral fricative
-      // Add space before "hundred" when preceded by vowel/r
-      .replace(/(?<=[a-zɹː])(?=hˈʌndɹɪd)/g, ' ')
-      // Fix trailing z before punctuation
-      .replace(/ z(?=[;:,.!?¡¿—…"«»"" ]|$)/g, 'z');
-
-    // Additional post-processing for American English
-    if (language === 'en-us' || language === 'a') {
-      processed = processed.replace(/(?<=nˈaɪn)ti(?!ː)/g, 'di');
-    }
-
-    return processed.trim();
-  }
-
   async phonemize(text: string, language: string): Promise<string> {
     try {
       console.log('[NativePhonemizer] Using NATIVE espeak-ng phonemizer');
       console.log('[NativePhonemizer] Input text:', text);
       console.log('[NativePhonemizer] Language:', language);
 
-      // Step 1: Phonemize via espeak-ng
-      // Note: espeak-ng processes text clause-by-clause internally.
-      // The native wrapper loops through all clauses and concatenates them.
+      // Step 1: Split text on punctuation to preserve punctuation marks
+      // espeak-ng strips punctuation, so we need to handle it separately
+      const chunks = splitOnPunctuation(text);
+      console.log('[NativePhonemizer] Split into', chunks.length, 'chunks');
+
+      // Step 2: Phonemize each non-punctuation chunk via espeak-ng
       const TurboSpeech = require('../../NativeSpeech').default;
-      const rawPhonemes = await TurboSpeech.phonemize(text, language);
+      for (const chunk of chunks) {
+        if (!chunk.isPunctuation && chunk.text.trim()) {
+          const rawPhoneme = await TurboSpeech.phonemize(chunk.text, language);
+          (
+            chunk as {isPunctuation: boolean; text: string; phoneme?: string}
+          ).phoneme = rawPhoneme;
+        }
+      }
 
-      console.log('[NativePhonemizer] Raw phonemes:', rawPhonemes);
+      // Step 3: Rejoin chunks (punctuation passes through unchanged)
+      const rejoined = rejoinChunks(
+        chunks as {isPunctuation: boolean; text: string; phoneme?: string}[],
+      );
+      console.log('[NativePhonemizer] Rejoined phonemes:', rejoined);
 
-      // Step 2: Post-process for Kokoro TTS compatibility
-      const processed = this.postProcessPhonemes(rawPhonemes, language);
+      // Step 4: Post-process for Kokoro TTS compatibility
+      const processed = postProcessPhonemes(rejoined, language);
 
       console.log('[NativePhonemizer] Processed phonemes:', processed);
       return processed;

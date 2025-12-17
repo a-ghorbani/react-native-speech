@@ -33,6 +33,8 @@
   "scripts": {
     "example": "yarn workspace react-native-speech-example",
     "test": "jest",
+    "test:kokoro": "jest --testPathPattern='kokoro/__tests__'",
+    "test:watch": "jest --watch",
     "test:ios": "./scripts/test-ios.sh",
     "test:android": "./scripts/test-android.sh",
     "test:native": "yarn test:ios && yarn test:android",
