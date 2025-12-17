@@ -45,7 +45,7 @@ static NSString *currentDataPath = nil;
                     return nil;
                 }
 
-                int result = espeak_Initialize(AUDIO_OUTPUT_SYNCHRONOUS, 0, path, 0);
+                int result = espeak_Initialize(AUDIO_OUTPUT_RETRIEVAL, 0, path, 0);
                 free(path);
 
                 if (result < 0) {

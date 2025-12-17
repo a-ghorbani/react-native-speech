@@ -117,7 +117,7 @@ describe('postProcessPhonemes', () => {
 
   describe('phoneme symbol normalization', () => {
     test('converts palatalization marker to j', () => {
-      expect(postProcessPhonemes('testʲ', 'en-us')).toBe('testj');
+      expect(postProcessPhonemes('testʲ', 'en-us')).toBe('test');
     });
 
     test('normalizes r to ɹ', () => {

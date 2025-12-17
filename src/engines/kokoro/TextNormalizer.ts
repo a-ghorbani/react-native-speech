@@ -165,7 +165,13 @@ export class TextNormalizer {
     result = result.replace(/(?<=\d)S/g, ' S');
 
     // 7. Handle possessives
-    result = result.replace(/(?<=[BCDFGHJ-NP-TV-Z])'?s\b/g, "'S");
+    // result = result.replace(/(?<=[BCDFGHJ-NP-TV-Z])'?s\b/g, "'S");
+    // result = result.replace(/(?<=X')S\b/g, 's');
+    // ALL-CAPS words (>=2 letters)
+    result = result.replace(/(?<=\b[A-Z]{2,})'?s\b/g, "'S");
+    // single-letter uppercase tokens (C's, B's)
+    result = result.replace(/(?<=\b[A-Z])'?s\b/g, "'S");
+    // X → /ɪz/ exception
     result = result.replace(/(?<=X')S\b/g, 's');
 
     // 8. Handle acronyms with periods (U.S.A. -> U-S-A-)
