@@ -46,7 +46,7 @@ A high-performance text-to-speech library built for bare React Native and Expo, 
 - ⚡ &nbsp;**Ultra-Fast** - Supertonic delivers 167× faster than real-time performance
 - 🔄 &nbsp;**Unified API** - Simple, consistent API across all engines
 
-> **New in v2.0:** Neural TTS engine support with Kokoro and Supertonic! See [Kokoro Guide](./docs/KOKORO_GUIDE.md) and [Supertonic Guide](./docs/SUPERTONIC_GUIDE.md) for details.
+> **New in v2.0:** Neural TTS engine support with Kokoro and Supertonic!
 
 ## Installation
 
@@ -95,10 +95,6 @@ npm install onnxruntime-react-native
 ```
 
 > **Note:** `onnxruntime-react-native` is an **optional peer dependency**. It's only required if you want to use neural TTS engines (Kokoro or Supertonic). The OS native TTS works without it.
-
-Then follow the model management guides:
-- [Kokoro Model Management Guide](./docs/KOKORO_MODEL_MANAGEMENT.md)
-- [Supertonic Model Management Guide](./docs/SUPERTONIC_MODEL_MANAGEMENT.md)
 
 ## Usage
 
@@ -176,19 +172,7 @@ await Speech.speak(
 
 **To switch engines, just change the config - no code changes needed!**
 
-See the [Kokoro Guide](./docs/KOKORO_GUIDE.md) and [Supertonic Guide](./docs/SUPERTONIC_GUIDE.md) for complete setup instructions.
-
 To become more familiar with the usage of the library, check out the [example project](./example/).
-
-## Documentation
-
-- [Usage Guide](./docs/USAGE.md) - Complete API reference for OS native TTS
-- [Kokoro Guide](./docs/KOKORO_GUIDE.md) - Kokoro neural TTS engine setup and usage
-- [Supertonic Guide](./docs/SUPERTONIC_GUIDE.md) - Supertonic neural TTS engine setup and usage
-- [Kokoro Model Management](./docs/KOKORO_MODEL_MANAGEMENT.md) - How to manage Kokoro models
-- [Supertonic Model Management](./docs/SUPERTONIC_MODEL_MANAGEMENT.md) - How to manage Supertonic models
-- [Migration Guide](./docs/MIGRATION_V2.md) - Migrating from v1.x to v2.0
-- [Example App](./example/) - Working examples of all features
 
 ## Testing
 
