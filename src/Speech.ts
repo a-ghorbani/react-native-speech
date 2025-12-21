@@ -43,6 +43,9 @@ engineManager.registerEngine(osEngine);
 let kokoroEngine: KokoroEngine | null = null;
 let supertonicEngine: SupertonicEngine | null = null;
 
+// Store pending chunk progress callback (set before engine is initialized)
+let pendingChunkProgressCallback: ChunkProgressCallback | null = null;
+
 export default class Speech {
   /**
    * The maximum number of characters allowed in a single call to the speak methods.
@@ -94,6 +97,11 @@ export default class Speech {
         engineConfig as KokoroConfig,
       );
       engineManager.setDefaultEngine(engine);
+
+      // Apply pending chunk progress callback if one was set before initialization
+      if (pendingChunkProgressCallback) {
+        kokoroEngine.setChunkProgressCallback(pendingChunkProgressCallback);
+      }
     } else if (engine === 'supertonic') {
       if (!supertonicEngine) {
         supertonicEngine = new SupertonicEngine();
@@ -238,6 +246,10 @@ export default class Speech {
   public static setChunkProgressCallback(
     callback: ChunkProgressCallback | null,
   ): void {
+    // Store the callback for later if engine not yet initialized
+    pendingChunkProgressCallback = callback;
+
+    // Apply immediately if engine is already initialized
     if (kokoroEngine) {
       kokoroEngine.setChunkProgressCallback(callback);
     }

@@ -324,21 +324,11 @@ export class KokoroEngine implements TTSEngineInterface {
       });
     }
 
-    // Emit final progress event (100%)
-    if (chunks.length > 0) {
-      const lastChunk = chunks[chunks.length - 1] as TextChunk;
-      this.emitChunkProgress({
-        id: utteranceId,
-        chunkIndex: chunks.length - 1,
-        totalChunks: chunks.length,
-        chunkText: lastChunk.text,
-        textRange: {
-          start: lastChunk.startIndex,
-          end: lastChunk.endIndex,
-        },
-        progress: 100,
-      });
-    }
+    // Note: We don't emit a final 100% progress event here because:
+    // 1. The last chunk's progress event was already emitted before playback
+    // 2. The native onFinish event fires when playback completes
+    // 3. Emitting another progress event after onFinish would re-set highlights
+    //    that the app already cleared in response to onFinish
 
     console.log('[KokoroEngine] ========== SYNTHESIS COMPLETE ==========');
     return undefined;
