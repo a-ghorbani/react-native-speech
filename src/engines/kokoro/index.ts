@@ -5,7 +5,7 @@
 export {KokoroEngine} from './KokoroEngine';
 export {BPETokenizer} from './BPETokenizer';
 export {VoiceLoader} from './VoiceLoader';
-export {TextNormalizer} from './TextNormalizer';
+export {TextNormalizer, type TextChunk} from './TextNormalizer';
 export {
   createPhonemizer,
   RemotePhonemizer,

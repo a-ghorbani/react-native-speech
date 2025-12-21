@@ -113,3 +113,32 @@ export interface ProgressEvent {
   /** Progress percentage (0-100) */
   progress: number;
 }
+
+/**
+ * Event emitted when a new chunk (sentence) starts being spoken
+ * Used by neural TTS engines that process text in chunks
+ */
+export interface ChunkProgressEvent {
+  /** Utterance ID */
+  id: number;
+  /** Current chunk index (0-based) */
+  chunkIndex: number;
+  /** Total number of chunks */
+  totalChunks: number;
+  /** The text content of the current chunk */
+  chunkText: string;
+  /** Position range in the original text */
+  textRange: {
+    /** Start position in original text */
+    start: number;
+    /** End position in original text */
+    end: number;
+  };
+  /** Overall progress percentage (0-100) */
+  progress: number;
+}
+
+/**
+ * Callback type for chunk progress events
+ */
+export type ChunkProgressCallback = (event: ChunkProgressEvent) => void;

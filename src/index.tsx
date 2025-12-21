@@ -28,6 +28,8 @@ export type {
   AudioBuffer,
   SynthesisOptions,
   EngineStatus,
+  ChunkProgressEvent,
+  ChunkProgressCallback,
 } from './types';
 
 // Export Kokoro types

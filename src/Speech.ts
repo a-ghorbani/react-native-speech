@@ -27,6 +27,8 @@ import type {
   SupertonicConfig,
   SupertonicVoice,
   SynthesisOptions,
+  ChunkProgressEvent,
+  ChunkProgressCallback,
 } from './types';
 import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
@@ -216,6 +218,52 @@ export default class Speech {
   }
 
   // ============================================================
+  // CHUNK PROGRESS (Neural TTS only)
+  // ============================================================
+
+  /**
+   * Set callback for chunk progress events (Neural TTS only)
+   * This is called when each sentence/chunk starts being spoken
+   *
+   * @param callback - Function to call on chunk progress, or null to remove
+   * @example
+   * Speech.setChunkProgressCallback((event) => {
+   *   console.log(`Speaking chunk ${event.chunkIndex + 1}/${event.totalChunks}`);
+   *   console.log(`Current sentence: "${event.chunkText}"`);
+   *   console.log(`Progress: ${event.progress}%`);
+   *   // Highlight current text in UI
+   *   highlightText(event.textRange.start, event.textRange.end);
+   * });
+   */
+  public static setChunkProgressCallback(
+    callback: ChunkProgressCallback | null,
+  ): void {
+    if (kokoroEngine) {
+      kokoroEngine.setChunkProgressCallback(callback);
+    }
+    // TODO: Add support for supertonicEngine when implemented
+  }
+
+  /**
+   * Convenience method to add a chunk progress listener
+   * Returns an unsubscribe function
+   *
+   * @param callback - Function to call on chunk progress
+   * @returns Function to unsubscribe the listener
+   * @example
+   * const unsubscribe = Speech.onChunkProgress((event) => {
+   *   console.log(`Chunk ${event.chunkIndex + 1}/${event.totalChunks}: ${event.chunkText}`);
+   * });
+   *
+   * // Later, to stop listening:
+   * unsubscribe();
+   */
+  public static onChunkProgress(callback: ChunkProgressCallback): () => void {
+    Speech.setChunkProgressCallback(callback);
+    return () => Speech.setChunkProgressCallback(null);
+  }
+
+  // ============================================================
   // OS NATIVE TTS HELPERS (for backward compatibility)
   // ============================================================
 
@@ -260,8 +308,19 @@ export default class Speech {
 
   /**
    * Immediately stops any ongoing synthesis
+   * Works for both OS native and neural TTS engines
    */
-  public static stop(): Promise<void> {
+  public static async stop(): Promise<void> {
+    const engine = Speech.currentEngine;
+
+    // Stop neural engine if active
+    if (engine === 'kokoro' && kokoroEngine) {
+      await kokoroEngine.stop();
+    } else if (engine === 'supertonic' && supertonicEngine) {
+      await supertonicEngine.stop();
+    }
+
+    // Always call native stop as well (for OS TTS and neural audio player)
     return TurboSpeech.stop();
   }
 
@@ -307,4 +366,11 @@ export default class Speech {
 }
 
 // Re-export types
-export type {TTSEngine, KokoroVoice, KokoroConfig, SynthesisOptions};
+export type {
+  TTSEngine,
+  KokoroVoice,
+  KokoroConfig,
+  SynthesisOptions,
+  ChunkProgressEvent,
+  ChunkProgressCallback,
+};

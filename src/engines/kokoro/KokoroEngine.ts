@@ -2,6 +2,7 @@
  * Kokoro TTS Engine
  *
  * Neural TTS engine using ONNX Runtime for inference
+ * Supports sentence-level chunking for long text with progress events
  */
 
 import type {
@@ -11,12 +12,14 @@ import type {
   KokoroConfig,
   KokoroSynthesisOptions,
   KokoroVoice,
+  ChunkProgressEvent,
+  ChunkProgressCallback,
 } from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, type IPhonemizer} from './Phonemizer';
-import {TextNormalizer} from './TextNormalizer';
+import {TextNormalizer, type TextChunk} from './TextNormalizer';
 
 // Lazy import ONNX Runtime to allow graceful handling if not installed
 let InferenceSession: any;
@@ -48,6 +51,13 @@ function ensureONNXRuntime() {
   }
 }
 
+// Maximum tokens the Kokoro model supports (voice embeddings are for 0-509 tokens)
+const MAX_TOKEN_LIMIT = 500;
+
+// Default max chunk size in characters (conservative to stay within token limits)
+// Apps can override this via KokoroConfig.maxChunkSize for streaming-like UX
+const DEFAULT_MAX_CHUNK_SIZE = 400;
+
 export class KokoroEngine implements TTSEngineInterface {
   readonly name: TTSEngine = 'kokoro' as TTSEngine;
 
@@ -65,12 +75,34 @@ export class KokoroEngine implements TTSEngineInterface {
   private defaultVoiceId = 'af_bella'; // Default voice
   private sampleRate = 24000; // Kokoro outputs 24kHz audio
 
+  // Chunking and progress tracking
+  private stopRequested = false;
+  private currentUtteranceId = 0;
+  private chunkProgressCallback: ChunkProgressCallback | null = null;
+
   constructor() {
     this.tokenizer = new BPETokenizer();
     this.voiceLoader = new VoiceLoader();
     this.normalizer = new TextNormalizer();
     // Phonemizer will be initialized in initialize() based on config
     this.phonemizer = createPhonemizer('native'); // Default to no phonemization for backward compatibility
+  }
+
+  /**
+   * Set callback for chunk progress events
+   * @param callback - Function to call when chunk progress changes
+   */
+  setChunkProgressCallback(callback: ChunkProgressCallback | null): void {
+    this.chunkProgressCallback = callback;
+  }
+
+  /**
+   * Emit a chunk progress event
+   */
+  private emitChunkProgress(event: ChunkProgressEvent): void {
+    if (this.chunkProgressCallback) {
+      this.chunkProgressCallback(event);
+    }
   }
 
   /**
@@ -165,6 +197,7 @@ export class KokoroEngine implements TTSEngineInterface {
 
   /**
    * Synthesize text to audio and play it
+   * Automatically chunks long text by sentences for better performance and progress tracking
    * This maintains the unified API - synthesize() now plays audio for neural engines
    */
   async synthesize(
@@ -179,43 +212,187 @@ export class KokoroEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
+    // Reset stop flag and generate new utterance ID
+    this.stopRequested = false;
+    this.currentUtteranceId = Date.now();
+    const utteranceId = this.currentUtteranceId;
+
     // Get voice ID early (needed for language detection)
     const voiceId = options?.voiceId || this.defaultVoiceId;
+    const language = this.getLanguageFromVoice(voiceId);
 
     console.log(
       '[KokoroEngine] ========== SYNTHESIS PIPELINE START ==========',
     );
     console.log('[KokoroEngine] Original text:', text);
     console.log('[KokoroEngine] Voice ID:', voiceId);
+    console.log('[KokoroEngine] Utterance ID:', utteranceId);
     console.log(
       '[KokoroEngine] Phonemizer type:',
       this.config?.phonemizerType || 'none',
     );
 
-    // STEP 1: Normalize text (expand abbreviations, convert numbers, etc.)
-    const normalized = this.normalizer.normalize(text);
-    console.log('[KokoroEngine] STEP 1 - Normalized text:', normalized);
+    // STEP 1: Chunk text by sentences for streaming playback
+    // Use the original text for chunking to preserve positions
+    // Use configured maxChunkSize or fall back to default
+    const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
+    const chunks = this.normalizer.chunkBySentencesWithMetadata(
+      text,
+      maxChunkSize,
+    );
 
-    // STEP 2: Phonemize (convert text to phonemes)
-    // This is CRITICAL - the model is trained on phonemes, not raw text
-    const language = this.getLanguageFromVoice(voiceId);
-    console.log('[KokoroEngine] STEP 2 - Detected language:', language);
-    const phonemes = await this.phonemizer.phonemize(normalized, language);
-    console.log('[KokoroEngine] STEP 2 - Phonemes generated:', phonemes);
     console.log(
-      '[KokoroEngine] STEP 2 - Phonemes length:',
+      '[KokoroEngine] STEP 1 - Text chunked into',
+      chunks.length,
+      'chunks',
+    );
+
+    // Use pipelined synthesis: synthesize next chunk while current one plays
+    // This eliminates the gap between chunks
+    let nextAudioPromise: Promise<AudioBuffer> | null = null;
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      // Check if stop was requested
+      if (this.stopRequested) {
+        console.log('[KokoroEngine] Stop requested, aborting synthesis');
+        return undefined;
+      }
+
+      const chunk = chunks[chunkIndex] as TextChunk;
+      const progress = Math.round((chunkIndex / chunks.length) * 100);
+
+      console.log(
+        `[KokoroEngine] Processing chunk ${chunkIndex + 1}/${chunks.length}:`,
+        chunk.text.substring(0, 50) + (chunk.text.length > 50 ? '...' : ''),
+      );
+
+      // Emit chunk start progress event
+      this.emitChunkProgress({
+        id: utteranceId,
+        chunkIndex,
+        totalChunks: chunks.length,
+        chunkText: chunk.text,
+        textRange: {
+          start: chunk.startIndex,
+          end: chunk.endIndex,
+        },
+        progress,
+      });
+
+      // Get current chunk's audio (either from pipeline or synthesize now)
+      let audioBuffer: AudioBuffer;
+
+      if (nextAudioPromise) {
+        // We already started synthesizing this chunk, wait for it
+        audioBuffer = await nextAudioPromise;
+        nextAudioPromise = null;
+      } else {
+        // First chunk - synthesize it now
+        audioBuffer = await this.synthesizeTextChunk(
+          chunk.text,
+          voiceId,
+          language,
+          options,
+        );
+      }
+
+      // Check if stop was requested before playing
+      if (this.stopRequested) {
+        console.log('[KokoroEngine] Stop requested, aborting before playback');
+        return undefined;
+      }
+
+      // Start synthesizing next chunk in parallel with playback
+      const nextChunkIndex = chunkIndex + 1;
+      if (nextChunkIndex < chunks.length) {
+        const nextChunk = chunks[nextChunkIndex] as TextChunk;
+        console.log(
+          `[KokoroEngine] Pre-synthesizing chunk ${nextChunkIndex + 1}/${chunks.length}`,
+        );
+        nextAudioPromise = this.synthesizeTextChunk(
+          nextChunk.text,
+          voiceId,
+          language,
+          options,
+        );
+      }
+
+      // Play current chunk audio (this waits for playback to complete)
+      await neuralAudioPlayer.play(audioBuffer, {
+        ducking: options?.ducking,
+        silentMode: options?.silentMode,
+      });
+    }
+
+    // Emit final progress event (100%)
+    if (chunks.length > 0) {
+      const lastChunk = chunks[chunks.length - 1] as TextChunk;
+      this.emitChunkProgress({
+        id: utteranceId,
+        chunkIndex: chunks.length - 1,
+        totalChunks: chunks.length,
+        chunkText: lastChunk.text,
+        textRange: {
+          start: lastChunk.startIndex,
+          end: lastChunk.endIndex,
+        },
+        progress: 100,
+      });
+    }
+
+    console.log('[KokoroEngine] ========== SYNTHESIS COMPLETE ==========');
+    return undefined;
+  }
+
+  /**
+   * Synthesize a text chunk to audio (normalize -> phonemize -> tokenize -> infer)
+   * This is the full pipeline for a single chunk
+   */
+  private async synthesizeTextChunk(
+    chunkText: string,
+    voiceId: string,
+    language: string,
+    options?: KokoroSynthesisOptions,
+  ): Promise<AudioBuffer> {
+    // STEP 2: Normalize chunk text
+    const normalized = this.normalizer.normalize(chunkText);
+    console.log(
+      '[KokoroEngine] STEP 2 - Normalized chunk:',
+      normalized.substring(0, 50),
+    );
+
+    // STEP 3: Phonemize (convert text to phonemes)
+    const phonemes = await this.phonemizer.phonemize(normalized, language);
+    console.log(
+      '[KokoroEngine] STEP 3 - Phonemes length:',
       phonemes.length,
       'chars',
     );
 
-    // STEP 3: Tokenize phonemes (not raw text!)
+    // STEP 4: Tokenize phonemes
     const tokens = this.tokenizer.encode(phonemes);
-    console.log('[KokoroEngine] STEP 3 - Tokens generated:', tokens.length);
-    console.log(
-      '[KokoroEngine] STEP 3 - First 10 tokens:',
-      tokens.slice(0, 10),
-    );
+    console.log('[KokoroEngine] STEP 4 - Tokens generated:', tokens.length);
 
+    // Check token limit
+    if (tokens.length > MAX_TOKEN_LIMIT) {
+      console.warn(
+        `[KokoroEngine] Warning: Chunk has ${tokens.length} tokens, exceeding limit of ${MAX_TOKEN_LIMIT}. Audio may be truncated.`,
+      );
+    }
+
+    // STEP 5: Generate audio for this chunk
+    return this.synthesizeChunk(tokens, voiceId, options);
+  }
+
+  /**
+   * Synthesize a single chunk of tokens to audio
+   * This is the core inference method without playback
+   */
+  private async synthesizeChunk(
+    tokens: number[],
+    voiceId: string,
+    options?: KokoroSynthesisOptions,
+  ): Promise<AudioBuffer> {
     // Get voice embedding
     let voiceEmbedding: Float32Array;
 
@@ -258,9 +435,6 @@ export class KokoroEngine implements TTSEngineInterface {
 
     const results = await this.session.run(feeds);
 
-    // Debug: Log available output names
-    console.log('[KokoroEngine] Model outputs:', Object.keys(results));
-
     // Extract audio output (kokoro.js uses 'waveform')
     const audioTensor = results.waveform || results.audio;
     if (!audioTensor) {
@@ -289,15 +463,7 @@ export class KokoroEngine implements TTSEngineInterface {
       }
     }
 
-    // Play audio using neural audio player
-    // This maintains the unified API - speak() works the same for all engines
-    await neuralAudioPlayer.play(audioBuffer, {
-      ducking: options?.ducking,
-      silentMode: options?.silentMode,
-    });
-
-    // Return void to match OS engine behavior (plays directly, doesn't return buffer)
-    return undefined;
+    return audioBuffer;
   }
 
   /**
@@ -316,9 +482,10 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Stop current playback
+   * Stop current playback and abort any ongoing synthesis
    */
   async stop(): Promise<void> {
+    this.stopRequested = true;
     await neuralAudioPlayer.stop();
   }
 

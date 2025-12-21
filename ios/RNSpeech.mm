@@ -525,6 +525,8 @@ RCT_EXPORT_MODULE();
       [self emitOnStart:[self getAudioEventData]];
 
       // Schedule buffer for playback
+      // We need to resolve the promise when playback completes, not when it starts
+      // This allows sequential chunk playback to work correctly
       __weak RNSpeech *weakSelf = self;
       [self->_playerNode scheduleBuffer:pcmBuffer
                          atTime:nil
@@ -536,14 +538,14 @@ RCT_EXPORT_MODULE();
             strongSelf->_isAudioPlaying = NO;
             [strongSelf deactivateAudioSession];
             [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
+            // Resolve promise when playback is complete
+            resolve(nil);
           });
         }
       }];
 
       // Start playback
       [self->_playerNode play];
-
-      resolve(nil);
     }
     @catch (NSException *exception) {
       reject(@"audio_error", exception.reason, nil);

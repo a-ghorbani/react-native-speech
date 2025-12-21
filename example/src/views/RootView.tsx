@@ -17,6 +17,7 @@ import Speech, {
   HighlightedText,
   type HighlightedSegmentArgs,
   type HighlightedSegmentProps,
+  type ChunkProgressEvent,
   TTSEngine,
 } from '@mhpdev/react-native-speech';
 import Button from '../components/Button';
@@ -54,6 +55,10 @@ const RootView: React.FC = () => {
     React.useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = React.useState<number>(0);
   const [installedModels, setInstalledModels] = React.useState<any[]>([]);
+
+  // Chunk progress for neural engines
+  const [currentChunk, setCurrentChunk] =
+    React.useState<ChunkProgressEvent | null>(null);
 
   // Initialize engine when selection changes
   const initializeEngine = React.useCallback(async (engine: TTSEngine) => {
@@ -97,6 +102,7 @@ const RootView: React.FC = () => {
             // phonemizerUrl: 'http://192.168.0.82:3000',
             silentMode: 'obey',
             ducking: true,
+            maxChunkSize: 100,
           });
           setEngineReady(true);
         } catch (initError) {
@@ -245,6 +251,7 @@ const RootView: React.FC = () => {
       setIsStarted(false);
       setIsPaused(false);
       setHighlights([]);
+      setCurrentChunk(null);
     };
 
     const startSubscription = Speech.onStart(({id}) => {
@@ -267,6 +274,7 @@ const RootView: React.FC = () => {
       onSpeechEnd();
       console.log(`Speech ${id} stopped`);
     });
+    // Word-level progress (OS TTS only)
     const progressSubscription = Speech.onProgress(({id, location, length}) => {
       setHighlights([
         {
@@ -279,21 +287,22 @@ const RootView: React.FC = () => {
       );
     });
 
-    // (async () => {
-    //   const enVoices = await Speech.getAvailableVoices('en-us');
-    //   Speech.initialize({
-    //     rate: 0.5,
-    //     volume: 1,
-    //     voice: enVoices[3]?.identifier,
-    //   });
-    // })();
-
-    // (async () => {
-    //   const engines = await Speech.getEngines();
-    //   if (engines?.[0]) {
-    //     await Speech.setEngine(engines[0].name);
-    //   }
-    // })();
+    // Chunk-level progress (Neural TTS - Kokoro/Supertonic)
+    const unsubscribeChunkProgress = Speech.onChunkProgress(
+      (event: ChunkProgressEvent) => {
+        console.log(
+          `[ChunkProgress] Chunk ${event.chunkIndex + 1}/${event.totalChunks}: "${event.chunkText.substring(0, 30)}..."`,
+        );
+        setCurrentChunk(event);
+        // Update highlights for neural engines using chunk text range
+        setHighlights([
+          {
+            start: event.textRange.start,
+            end: event.textRange.end,
+          },
+        ]);
+      },
+    );
 
     return () => {
       startSubscription.remove();
@@ -302,6 +311,7 @@ const RootView: React.FC = () => {
       resumeSubscription.remove();
       stoppedSubscription.remove();
       progressSubscription.remove();
+      unsubscribeChunkProgress();
     };
   }, []);
 
@@ -709,6 +719,29 @@ const RootView: React.FC = () => {
         )}
       </View>
 
+      {/* Chunk Progress Indicator (Neural TTS) */}
+      {currentChunk && isStarted && (
+        <View style={styles.chunkProgressContainer}>
+          <View style={styles.chunkProgressHeader}>
+            <Text style={[styles.chunkProgressLabel, {color: textColor}]}>
+              Sentence {currentChunk.chunkIndex + 1} of{' '}
+              {currentChunk.totalChunks}
+            </Text>
+            <Text style={[styles.chunkProgressPercent, {color: textColor}]}>
+              {currentChunk.progress}%
+            </Text>
+          </View>
+          <View style={styles.chunkProgressBarBg}>
+            <View
+              style={[
+                styles.chunkProgressBarFill,
+                {width: `${currentChunk.progress}%`},
+              ]}
+            />
+          </View>
+        </View>
+      )}
+
       <View style={gs.flex}>
         <Text style={[gs.title, {color: textColor}]}>Introduction</Text>
         <HighlightedText
@@ -960,5 +993,39 @@ const styles = StyleSheet.create({
   downloadVariantSubtext: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 13,
+  },
+  // Chunk progress styles (Neural TTS)
+  chunkProgressContainer: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: 'rgba(25, 118, 210, 0.1)',
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#1976d2',
+  },
+  chunkProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  chunkProgressLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  chunkProgressPercent: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  chunkProgressBarBg: {
+    height: 6,
+    backgroundColor: 'rgba(128, 128, 128, 0.2)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  chunkProgressBarFill: {
+    height: '100%',
+    backgroundColor: '#1976d2',
+    borderRadius: 3,
   },
 });

@@ -78,6 +78,13 @@ export interface KokoroConfig {
   phonemizerType?: 'remote' | 'native' | 'none';
   /** URL for remote phonemizer server (default: http://localhost:3000) */
   phonemizerUrl?: string;
+  /**
+   * Maximum chunk size in characters for text splitting (default: 400)
+   * Smaller values = faster first audio & more progress events, but more inference calls
+   * Larger values = fewer inference calls, but longer wait before first audio
+   * Set to a small value (e.g., 100-200) for streaming-like UX
+   */
+  maxChunkSize?: number;
 }
 
 export interface TokenizerConfig {
