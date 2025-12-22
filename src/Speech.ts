@@ -91,11 +91,19 @@ export default class Speech {
       if (!kokoroEngine) {
         kokoroEngine = new KokoroEngine();
         engineManager.registerEngine(kokoroEngine);
+        // First time: use regular initialization
+        await engineManager.initializeEngine(
+          engine,
+          engineConfig as KokoroConfig,
+        );
+      } else {
+        // Already initialized: force re-initialization to apply new config
+        // This is important when switching execution providers (gpu/ane/cpu)
+        await engineManager.reinitializeEngine(
+          engine,
+          engineConfig as KokoroConfig,
+        );
       }
-      await engineManager.initializeEngine(
-        engine,
-        engineConfig as KokoroConfig,
-      );
       engineManager.setDefaultEngine(engine);
 
       // Apply pending chunk progress callback if one was set before initialization

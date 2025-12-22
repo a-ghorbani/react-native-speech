@@ -38,6 +38,13 @@ export type {
   KokoroConfig,
   KokoroSynthesisOptions,
   SupportedLanguage,
+  // Execution provider types for hardware acceleration
+  ExecutionProvider,
+  ExecutionProviderPreset,
+  CoreMLExecutionProviderOption,
+  NNAPIExecutionProviderOption,
+  XNNPackExecutionProviderOption,
+  CPUExecutionProviderOption,
 } from './types';
 
 // Export Supertonic types

@@ -85,6 +85,32 @@ export interface KokoroConfig {
    * Set to a small value (e.g., 100-200) for streaming-like UX
    */
   maxChunkSize?: number;
+  /**
+   * Execution providers for ONNX Runtime inference
+   * Controls hardware acceleration (GPU, ANE on iOS; NNAPI on Android)
+   *
+   * Can be:
+   * - A preset string: 'auto' | 'cpu' | 'gpu' | 'ane'
+   * - An array of execution providers with fallback order
+   *
+   * Default: 'auto' (CoreML with GPU on iOS, NNAPI on Android, with CPU fallback)
+   *
+   * @example
+   * // Use automatic platform-specific acceleration
+   * executionProviders: 'auto'
+   *
+   * @example
+   * // Force CPU-only execution
+   * executionProviders: 'cpu'
+   *
+   * @example
+   * // Custom provider configuration with CoreML options
+   * executionProviders: [
+   *   { name: 'coreml', useCPUAndGPU: true, enableOnSubgraph: true },
+   *   'cpu'
+   * ]
+   */
+  executionProviders?: ExecutionProviderPreset | ExecutionProvider[];
 }
 
 export interface TokenizerConfig {
@@ -108,3 +134,64 @@ export interface VoiceEmbedding {
   /** Embedding vector (typically 256 dimensions for Kokoro) */
   embedding: Float32Array;
 }
+
+/**
+ * CoreML execution provider options for iOS
+ * Enables hardware acceleration via GPU (Metal) and Apple Neural Engine (ANE)
+ */
+export interface CoreMLExecutionProviderOption {
+  readonly name: 'coreml';
+  /** Use CPU only (disables GPU/ANE acceleration) */
+  useCPUOnly?: boolean;
+  /** Enable both CPU and GPU execution via Metal */
+  useCPUAndGPU?: boolean;
+  /** Enable CoreML on subgraphs for better coverage */
+  enableOnSubgraph?: boolean;
+  /** Only enable on devices with Apple Neural Engine */
+  onlyEnableDeviceWithANE?: boolean;
+}
+
+/**
+ * NNAPI execution provider options for Android
+ * Enables hardware acceleration via Android Neural Networks API
+ */
+export interface NNAPIExecutionProviderOption {
+  readonly name: 'nnapi';
+}
+
+/**
+ * XNNPACK execution provider options
+ * Optimized CPU execution using XNNPACK library
+ */
+export interface XNNPackExecutionProviderOption {
+  readonly name: 'xnnpack';
+}
+
+/**
+ * CPU execution provider options
+ */
+export interface CPUExecutionProviderOption {
+  readonly name: 'cpu';
+}
+
+/**
+ * Union type for all supported execution providers
+ */
+export type ExecutionProvider =
+  | CoreMLExecutionProviderOption
+  | NNAPIExecutionProviderOption
+  | XNNPackExecutionProviderOption
+  | CPUExecutionProviderOption
+  | 'coreml'
+  | 'nnapi'
+  | 'xnnpack'
+  | 'cpu';
+
+/**
+ * Preset execution provider configurations for common use cases
+ */
+export type ExecutionProviderPreset =
+  | 'auto' // Automatically select best provider for platform
+  | 'cpu' // Force CPU-only execution
+  | 'gpu' // Prefer GPU acceleration
+  | 'ane'; // Prefer Apple Neural Engine (iOS only)

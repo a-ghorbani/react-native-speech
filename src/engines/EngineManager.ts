@@ -81,6 +81,27 @@ class TTSEngineManager {
   }
 
   /**
+   * Force re-initialization of an engine with new config
+   * Destroys existing engine state and re-initializes
+   */
+  async reinitializeEngine(name: TTSEngine, config?: any): Promise<void> {
+    const engine = this.getEngine(name);
+
+    // Destroy existing state
+    await engine.destroy();
+    this.initialized.delete(name);
+
+    // Re-initialize with new config
+    if (config !== undefined) {
+      await engine.initialize(config);
+    } else {
+      await engine.initialize();
+    }
+
+    this.initialized.add(name);
+  }
+
+  /**
    * Check if engine is initialized
    */
   isEngineInitialized(name: TTSEngine): boolean {

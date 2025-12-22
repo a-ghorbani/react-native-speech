@@ -18,6 +18,7 @@ import Speech, {
   type HighlightedSegmentArgs,
   type HighlightedSegmentProps,
   type ChunkProgressEvent,
+  type ExecutionProviderPreset,
   TTSEngine,
 } from '@mhpdev/react-native-speech';
 import Button from '../components/Button';
@@ -56,126 +57,139 @@ const RootView: React.FC = () => {
   const [downloadProgress, setDownloadProgress] = React.useState<number>(0);
   const [installedModels, setInstalledModels] = React.useState<any[]>([]);
 
+  // Execution provider selection for hardware acceleration
+  const [selectedProvider, setSelectedProvider] =
+    React.useState<ExecutionProviderPreset>('auto');
+
   // Chunk progress for neural engines
   const [currentChunk, setCurrentChunk] =
     React.useState<ChunkProgressEvent | null>(null);
 
   // Initialize engine when selection changes
-  const initializeEngine = React.useCallback(async (engine: TTSEngine) => {
-    try {
-      setIsInitializing(true);
-      setEngineReady(false);
+  const initializeEngine = React.useCallback(
+    async (engine: TTSEngine, provider: ExecutionProviderPreset = 'auto') => {
+      try {
+        setIsInitializing(true);
+        setEngineReady(false);
 
-      if (engine === TTSEngine.OS_NATIVE) {
-        // OS engine doesn't need initialization
-        await Speech.initialize({
-          engine: TTSEngine.OS_NATIVE,
-          silentMode: 'obey',
-          ducking: true,
-        });
-        setEngineReady(true);
-      } else if (engine === TTSEngine.KOKORO) {
-        // First, scan for installed models
-        await kokoroModelManager.scanInstalledModels();
-        const models = kokoroModelManager.getInstalledModels();
-
-        let config;
-        if (models.length > 0 && models[0]) {
-          // Use first installed model
-          const model = models[0];
-          config = kokoroModelManager.getDownloadedModelConfig(
-            model.version,
-            model.variant,
-          );
-          console.log('Using downloaded Kokoro model:', model);
-        } else {
-          // Try bundled model (will fail if not bundled)
-          config = kokoroModelManager.getBundledModelConfig();
-          console.log('Attempting to use bundled Kokoro model');
-        }
-
-        try {
+        if (engine === TTSEngine.OS_NATIVE) {
+          // OS engine doesn't need initialization
           await Speech.initialize({
-            engine: TTSEngine.KOKORO,
-            ...config,
-            phonemizerType: 'native',
-            // phonemizerUrl: 'http://192.168.0.82:3000',
+            engine: TTSEngine.OS_NATIVE,
             silentMode: 'obey',
             ducking: true,
-            maxChunkSize: 100,
           });
           setEngineReady(true);
-        } catch (initError) {
-          // If initialization fails, likely no models available
-          console.error('Kokoro initialization failed:', initError);
-          Alert.alert(
-            'No Kokoro Models Found',
-            'No Kokoro models are installed. Would you like to download one now?\n\n' +
-              'Recommended: q8 variant (~82MB)',
-            [
-              {text: 'Cancel', style: 'cancel'},
-              {
-                text: 'Download q8',
-                onPress: async () => {
-                  try {
-                    setIsInitializing(true);
-                    await kokoroModelManager.downloadModel('q8', progress => {
-                      console.log(
-                        `Download: ${(progress.progress * 100).toFixed(1)}%`,
+        } else if (engine === TTSEngine.KOKORO) {
+          // First, scan for installed models
+          await kokoroModelManager.scanInstalledModels();
+          const models = kokoroModelManager.getInstalledModels();
+
+          let config;
+          if (models.length > 0 && models[0]) {
+            // Use first installed model
+            const model = models[0];
+            config = kokoroModelManager.getDownloadedModelConfig(
+              model.version,
+              model.variant,
+            );
+            console.log('Using downloaded Kokoro model:', model);
+          } else {
+            // Try bundled model (will fail if not bundled)
+            config = kokoroModelManager.getBundledModelConfig();
+            console.log('Attempting to use bundled Kokoro model');
+          }
+
+          try {
+            console.log(
+              `Initializing Kokoro with execution provider: ${provider}`,
+            );
+            await Speech.initialize({
+              engine: TTSEngine.KOKORO,
+              ...config,
+              phonemizerType: 'native',
+              silentMode: 'obey',
+              ducking: true,
+              maxChunkSize: 100,
+              executionProviders: provider,
+            });
+            setEngineReady(true);
+          } catch (initError) {
+            // If initialization fails, likely no models available
+            console.error('Kokoro initialization failed:', initError);
+            Alert.alert(
+              'No Kokoro Models Found',
+              'No Kokoro models are installed. Would you like to download one now?\n\n' +
+                'Recommended: q8 variant (~82MB)',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Download q8',
+                  onPress: async () => {
+                    try {
+                      setIsInitializing(true);
+                      await kokoroModelManager.downloadModel('q8', progress => {
+                        console.log(
+                          `Download: ${(progress.progress * 100).toFixed(1)}%`,
+                        );
+                      });
+                      // Retry initialization with downloaded model
+                      const downloadedConfig =
+                        kokoroModelManager.getDownloadedModelConfig(
+                          '1.0',
+                          'q8',
+                        );
+                      await Speech.initialize({
+                        engine: TTSEngine.KOKORO,
+                        ...downloadedConfig,
+                        phonemizerType: 'native',
+                        silentMode: 'obey',
+                        ducking: true,
+                        executionProviders: provider,
+                      });
+                      setEngineReady(true);
+                      Alert.alert('Success', 'Kokoro model ready to use!');
+                    } catch (err) {
+                      Alert.alert(
+                        'Error',
+                        `Failed to download/initialize: ${err instanceof Error ? err.message : 'Unknown error'}`,
                       );
-                    });
-                    // Retry initialization with downloaded model
-                    const downloadedConfig =
-                      kokoroModelManager.getDownloadedModelConfig('1.0', 'q8');
-                    await Speech.initialize({
-                      engine: TTSEngine.KOKORO,
-                      ...downloadedConfig,
-                      phonemizerType: 'native',
-                      // phonemizerUrl: 'http://192.168.0.82:3000',
-                      silentMode: 'obey',
-                      ducking: true,
-                    });
-                    setEngineReady(true);
-                    Alert.alert('Success', 'Kokoro model ready to use!');
-                  } catch (err) {
-                    Alert.alert(
-                      'Error',
-                      `Failed to download/initialize: ${err instanceof Error ? err.message : 'Unknown error'}`,
-                    );
-                    setEngineReady(false);
-                  } finally {
-                    setIsInitializing(false);
-                  }
+                      setEngineReady(false);
+                    } finally {
+                      setIsInitializing(false);
+                    }
+                  },
                 },
-              },
-            ],
+              ],
+            );
+            setEngineReady(false);
+            return;
+          }
+        } else if (engine === TTSEngine.SUPERTONIC) {
+          // TODO: Add Supertonic model manager
+          Alert.alert(
+            'Not Implemented',
+            'Supertonic engine is not yet configured in this example. Please add model files.',
           );
           setEngineReady(false);
-          return;
         }
-      } else if (engine === TTSEngine.SUPERTONIC) {
-        // TODO: Add Supertonic model manager
+      } catch (error) {
+        console.error('Failed to initialize engine:', error);
         Alert.alert(
-          'Not Implemented',
-          'Supertonic engine is not yet configured in this example. Please add model files.',
+          'Initialization Error',
+          `Failed to initialize ${engine}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
         setEngineReady(false);
+      } finally {
+        setIsInitializing(false);
       }
-    } catch (error) {
-      console.error('Failed to initialize engine:', error);
-      Alert.alert(
-        'Initialization Error',
-        `Failed to initialize ${engine}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-      setEngineReady(false);
-    } finally {
-      setIsInitializing(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   React.useEffect(() => {
-    initializeEngine(selectedEngine);
-  }, [selectedEngine, initializeEngine]);
+    initializeEngine(selectedEngine, selectedProvider);
+  }, [selectedEngine, selectedProvider, initializeEngine]);
 
   // Load voices when engine is ready
   const loadVoices = React.useCallback(async () => {
@@ -670,6 +684,84 @@ const RootView: React.FC = () => {
           </Text>
         </View>
 
+        {/* Execution Provider Selection (Kokoro only) */}
+        {selectedEngine === TTSEngine.KOKORO && (
+          <View style={styles.providerSection}>
+            <Text style={[styles.providerLabel, {color: textColor}]}>
+              Acceleration:
+            </Text>
+            <View style={styles.providerButtons}>
+              {(
+                [
+                  {key: 'auto', label: '🚀 Auto', desc: 'Best for device'},
+                  {
+                    key: 'gpu',
+                    label: '🎮 GPU',
+                    desc: Platform.OS === 'ios' ? 'Metal' : 'NNAPI',
+                  },
+                  {
+                    key: 'ane',
+                    label: '🧠 ANE',
+                    desc: Platform.OS === 'ios' ? 'Neural Engine' : 'N/A',
+                  },
+                  {key: 'cpu', label: '💻 CPU', desc: 'Fallback'},
+                ] as const
+              ).map(item => {
+                const isSelected = selectedProvider === item.key;
+                const isDisabled = item.key === 'ane' && Platform.OS !== 'ios';
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[
+                      styles.providerButton,
+                      {
+                        backgroundColor: isSelected
+                          ? scheme === 'dark'
+                            ? '#4A90E2'
+                            : '#007AFF'
+                          : scheme === 'dark'
+                            ? '#333'
+                            : '#E0E0E0',
+                        opacity: isDisabled ? 0.5 : 1,
+                      },
+                    ]}
+                    onPress={() =>
+                      setSelectedProvider(item.key as ExecutionProviderPreset)
+                    }
+                    disabled={isDisabled || isInitializing || isStarted}>
+                    <Text
+                      style={[
+                        styles.providerButtonText,
+                        {
+                          color: isSelected
+                            ? 'white'
+                            : scheme === 'dark'
+                              ? '#CCC'
+                              : '#333',
+                        },
+                      ]}>
+                      {item.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.providerButtonDesc,
+                        {
+                          color: isSelected
+                            ? 'rgba(255,255,255,0.8)'
+                            : scheme === 'dark'
+                              ? '#999'
+                              : '#666',
+                        },
+                      ]}>
+                      {item.desc}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* Voice Selection and Download */}
         {engineReady && (
           <View style={styles.voiceControls}>
@@ -837,6 +929,34 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  providerSection: {
+    marginTop: 12,
+  },
+  providerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  providerButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  providerButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  providerButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  providerButtonDesc: {
+    fontSize: 9,
+    marginTop: 2,
   },
   voiceControls: {
     flexDirection: 'row',

@@ -5,6 +5,7 @@
  * Supports sentence-level chunking for long text with progress events
  */
 
+import {Platform} from 'react-native';
 import type {
   TTSEngine,
   TTSEngineInterface,
@@ -14,6 +15,8 @@ import type {
   KokoroVoice,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  ExecutionProvider,
+  ExecutionProviderPreset,
 } from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
@@ -57,6 +60,91 @@ const MAX_TOKEN_LIMIT = 500;
 // Default max chunk size in characters (conservative to stay within token limits)
 // Apps can override this via KokoroConfig.maxChunkSize for streaming-like UX
 const DEFAULT_MAX_CHUNK_SIZE = 400;
+
+/**
+ * Resolve execution provider preset or array to ONNX Runtime format
+ * Returns the executionProviders array for InferenceSession.create()
+ */
+function resolveExecutionProviders(
+  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
+): any[] {
+  // If not specified, use 'auto' preset
+  if (!config) {
+    config = 'auto';
+  }
+
+  // Handle preset strings
+  if (typeof config === 'string') {
+    const isIOS = Platform.OS === 'ios';
+
+    switch (config) {
+      case 'auto':
+        // Platform-specific defaults with hardware acceleration
+        if (isIOS) {
+          return [
+            {
+              name: 'coreml',
+              useCPUOnly: false,
+              useCPUAndGPU: true,
+              enableOnSubgraph: true,
+            },
+            'xnnpack',
+            'cpu',
+          ];
+        } else {
+          // Android
+          return ['nnapi', 'xnnpack', 'cpu'];
+        }
+
+      case 'cpu':
+        // Force CPU-only execution
+        return ['cpu'];
+
+      case 'gpu':
+        // Prefer GPU acceleration
+        if (isIOS) {
+          return [
+            {
+              name: 'coreml',
+              useCPUOnly: false,
+              useCPUAndGPU: true,
+              enableOnSubgraph: true,
+            },
+            'cpu',
+          ];
+        } else {
+          return ['nnapi', 'cpu'];
+        }
+
+      case 'ane':
+        // Prefer Apple Neural Engine (iOS only)
+        if (isIOS) {
+          return [
+            {
+              name: 'coreml',
+              useCPUOnly: false,
+              useCPUAndGPU: false, // Let CoreML decide (may use ANE)
+              onlyEnableDeviceWithANE: true,
+              enableOnSubgraph: true,
+            },
+            'cpu',
+          ];
+        } else {
+          // Fall back to NNAPI on Android
+          console.warn(
+            '[KokoroEngine] ANE preset is iOS-only, falling back to NNAPI on Android',
+          );
+          return ['nnapi', 'cpu'];
+        }
+
+      default:
+        return ['cpu'];
+    }
+  }
+
+  // Handle array of providers - pass through as-is
+  return config;
+}
 
 export class KokoroEngine implements TTSEngineInterface {
   readonly name: TTSEngine = 'kokoro' as TTSEngine;
@@ -383,9 +471,12 @@ export class KokoroEngine implements TTSEngineInterface {
     voiceId: string,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer> {
+    const chunkStartTime = Date.now();
+
     // Get voice embedding
     let voiceEmbedding: Float32Array;
 
+    const voiceStartTime = Date.now();
     if (options?.voiceBlend) {
       // Blend multiple voices
       voiceEmbedding = await this.voiceLoader.blendVoices(
@@ -400,6 +491,7 @@ export class KokoroEngine implements TTSEngineInterface {
         tokens.length,
       );
     }
+    const voiceTime = Date.now() - voiceStartTime;
 
     // Convert to BigInt64Array for ONNX (int64)
     const tokensBigInt = new BigInt64Array(tokens.map(t => BigInt(t)));
@@ -423,7 +515,9 @@ export class KokoroEngine implements TTSEngineInterface {
       speed: speedTensor,
     };
 
+    const inferenceStartTime = Date.now();
     const results = await this.session.run(feeds);
+    const inferenceTime = Date.now() - inferenceStartTime;
 
     // Extract audio output (kokoro.js uses 'waveform')
     const audioTensor = results.waveform || results.audio;
@@ -453,6 +547,11 @@ export class KokoroEngine implements TTSEngineInterface {
       }
     }
 
+    const totalChunkTime = Date.now() - chunkStartTime;
+    console.log(
+      `[KokoroEngine] STEP 5 - Chunk synthesis complete: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, tokens=${tokens.length}, audio=${audioBuffer.duration.toFixed(2)}s`,
+    );
+
     return audioBuffer;
   }
 
@@ -481,14 +580,21 @@ export class KokoroEngine implements TTSEngineInterface {
 
   /**
    * Destroy engine and free resources
+   * After calling destroy(), the engine can be re-initialized with new config
    */
   async destroy(): Promise<void> {
+    // Stop any ongoing synthesis
+    this.stopRequested = true;
+
     if (this.session) {
       // Note: onnxruntime-react-native doesn't have explicit dispose
       this.session = null;
     }
 
+    // Reset all state to allow re-initialization
     this.isInitialized = false;
+    this.isLoading = false;
+    this.initError = null;
     this.config = null;
   }
 
@@ -504,15 +610,55 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Load ONNX model
+   * Load ONNX model with hardware acceleration
    */
   private async loadModel(modelPath: string): Promise<void> {
     try {
-      this.session = await InferenceSession.create(modelPath);
-    } catch (error) {
-      throw new Error(
-        `Failed to load ONNX model: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      // Resolve execution providers from config
+      const executionProviders = resolveExecutionProviders(
+        this.config?.executionProviders,
       );
+
+      console.log(
+        '[KokoroEngine] Loading model with execution providers:',
+        JSON.stringify(executionProviders),
+      );
+      console.log(
+        '[KokoroEngine] Configured preset:',
+        this.config?.executionProviders,
+      );
+
+      // Create session with execution providers for hardware acceleration
+      const sessionOptions = {
+        executionProviders,
+      };
+
+      console.log('[KokoroEngine] Creating InferenceSession...');
+      const startTime = Date.now();
+      this.session = await InferenceSession.create(modelPath, sessionOptions);
+      const loadTime = Date.now() - startTime;
+
+      console.log(
+        `[KokoroEngine] Model loaded successfully in ${loadTime}ms with providers:`,
+        JSON.stringify(executionProviders),
+      );
+    } catch (error) {
+      // If hardware acceleration fails, try CPU-only as fallback
+      console.warn(
+        '[KokoroEngine] Failed to load with acceleration, trying CPU fallback:',
+        error instanceof Error ? error.message : 'Unknown error',
+      );
+
+      try {
+        this.session = await InferenceSession.create(modelPath, {
+          executionProviders: ['cpu'],
+        });
+        console.log('[KokoroEngine] Model loaded with CPU fallback');
+      } catch (fallbackError) {
+        throw new Error(
+          `Failed to load ONNX model: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
+        );
+      }
     }
   }
 
