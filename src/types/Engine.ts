@@ -60,6 +60,13 @@ export interface SynthesisOptions {
   /** Language code (e.g., 'en-US') */
   language?: string;
   /**
+   * Number of inference/diffusion steps for neural TTS engines.
+   * Higher values = better quality but slower synthesis.
+   * - Supertonic: 2-16 steps (default: 5)
+   * @platform neural-engines
+   */
+  inferenceSteps?: number;
+  /**
    * If `true`, audio from other apps will be temporarily lowered (ducked) while speech is active.
    * This is for critical announcements (e.g., navigation) and takes priority over `silentMode` on iOS.
    * @default false

@@ -69,6 +69,10 @@ const RootView: React.FC = () => {
   const [currentChunk, setCurrentChunk] =
     React.useState<ChunkProgressEvent | null>(null);
 
+  // Supertonic synthesis options
+  const [speed, setSpeed] = React.useState<number>(1.0);
+  const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
+
   // Initialize engine when selection changes
   const initializeEngine = React.useCallback(
     async (engine: TTSEngine, provider: ExecutionProviderPreset = 'auto') => {
@@ -411,8 +415,16 @@ const RootView: React.FC = () => {
 
   const onStartPress = React.useCallback(async () => {
     // Use voiceId parameter for all engines (unified API)
-    await Speech.speak(Introduction, selectedVoice || undefined);
-  }, [selectedVoice]);
+    // For Supertonic, pass speed and inferenceSteps options
+    if (selectedEngine === TTSEngine.SUPERTONIC) {
+      await Speech.speak(Introduction, selectedVoice || undefined, {
+        speed,
+        inferenceSteps,
+      });
+    } else {
+      await Speech.speak(Introduction, selectedVoice || undefined);
+    }
+  }, [selectedVoice, selectedEngine, speed, inferenceSteps]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -1019,6 +1031,97 @@ const RootView: React.FC = () => {
             )}
           </View>
         )}
+
+        {/* Speed and Quality Controls (Supertonic only) */}
+        {engineReady && selectedEngine === TTSEngine.SUPERTONIC && (
+          <View style={styles.synthesisControls}>
+            {/* Speed Control */}
+            <View style={styles.controlRow}>
+              <Text style={[styles.controlLabel, {color: textColor}]}>
+                Speed: {speed.toFixed(1)}x
+              </Text>
+              <View style={styles.controlButtons}>
+                {[1.0, 1.25, 1.5, 1.75, 2.0].map(s => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      styles.controlButton,
+                      {
+                        backgroundColor:
+                          speed === s
+                            ? scheme === 'dark'
+                              ? '#4A90E2'
+                              : '#007AFF'
+                            : scheme === 'dark'
+                              ? '#333'
+                              : '#E0E0E0',
+                      },
+                    ]}
+                    onPress={() => setSpeed(s)}
+                    disabled={isStarted}>
+                    <Text
+                      style={[
+                        styles.controlButtonText,
+                        {
+                          color:
+                            speed === s
+                              ? 'white'
+                              : scheme === 'dark'
+                                ? '#CCC'
+                                : '#333',
+                        },
+                      ]}>
+                      {s}x
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* Quality (Inference Steps) Control */}
+            <View style={styles.controlRow}>
+              <Text style={[styles.controlLabel, {color: textColor}]}>
+                Quality: {inferenceSteps} steps
+              </Text>
+              <View style={styles.controlButtons}>
+                {[2, 3, 5, 8, 12, 16].map(steps => (
+                  <TouchableOpacity
+                    key={steps}
+                    style={[
+                      styles.controlButton,
+                      {
+                        backgroundColor:
+                          inferenceSteps === steps
+                            ? scheme === 'dark'
+                              ? '#34C759'
+                              : '#28A745'
+                            : scheme === 'dark'
+                              ? '#333'
+                              : '#E0E0E0',
+                      },
+                    ]}
+                    onPress={() => setInferenceSteps(steps)}
+                    disabled={isStarted}>
+                    <Text
+                      style={[
+                        styles.controlButtonText,
+                        {
+                          color:
+                            inferenceSteps === steps
+                              ? 'white'
+                              : scheme === 'dark'
+                                ? '#CCC'
+                                : '#333',
+                        },
+                      ]}>
+                      {steps}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
       </View>
 
       {/* Chunk Progress Indicator (Neural TTS) */}
@@ -1392,5 +1495,34 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#1976d2',
     borderRadius: 3,
+  },
+  // Synthesis controls (speed, quality)
+  synthesisControls: {
+    marginTop: 12,
+    gap: 12,
+  },
+  controlRow: {
+    gap: 8,
+  },
+  controlLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  controlButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  controlButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    minWidth: 44,
+    alignItems: 'center',
+  },
+  controlButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
