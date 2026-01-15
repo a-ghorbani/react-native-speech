@@ -114,12 +114,25 @@ export default class Speech {
       if (!supertonicEngine) {
         supertonicEngine = new SupertonicEngine();
         engineManager.registerEngine(supertonicEngine);
+        // First time: use regular initialization
+        await engineManager.initializeEngine(
+          engine,
+          engineConfig as SupertonicConfig,
+        );
+      } else {
+        // Already initialized: force re-initialization to apply new config
+        // This is important when switching execution providers (gpu/ane/cpu)
+        await engineManager.reinitializeEngine(
+          engine,
+          engineConfig as SupertonicConfig,
+        );
       }
-      await engineManager.initializeEngine(
-        engine,
-        engineConfig as SupertonicConfig,
-      );
       engineManager.setDefaultEngine(engine);
+
+      // Apply pending chunk progress callback if one was set before initialization
+      if (pendingChunkProgressCallback) {
+        supertonicEngine.setChunkProgressCallback(pendingChunkProgressCallback);
+      }
     } else if (engine === 'os-native') {
       // OS engine is already initialized
       await engineManager.initializeEngine(engine);
@@ -257,11 +270,13 @@ export default class Speech {
     // Store the callback for later if engine not yet initialized
     pendingChunkProgressCallback = callback;
 
-    // Apply immediately if engine is already initialized
+    // Apply immediately if engines are already initialized
     if (kokoroEngine) {
       kokoroEngine.setChunkProgressCallback(callback);
     }
-    // TODO: Add support for supertonicEngine when implemented
+    if (supertonicEngine) {
+      supertonicEngine.setChunkProgressCallback(callback);
+    }
   }
 
   /**

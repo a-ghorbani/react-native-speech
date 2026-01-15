@@ -2,12 +2,12 @@
  * Asset Loader for Supertonic
  *
  * Utilities for loading model files and assets
- * Uses fetch() with file:// URLs (same approach as Kokoro)
+ * Supports both local file:// URLs and remote https:// URLs
  */
 
 /**
  * Load asset as ArrayBuffer
- * Requires absolute file:// URLs
+ * Supports file:// URLs for local files
  */
 export async function loadAssetAsArrayBuffer(
   path: string,
@@ -31,7 +31,7 @@ export async function loadAssetAsArrayBuffer(
 
 /**
  * Load asset as JSON
- * Path should be absolute file:// URL
+ * Supports both file:// URLs and https:// URLs
  */
 export async function loadAssetAsJSON(path: string): Promise<any> {
   try {
@@ -46,19 +46,32 @@ export async function loadAssetAsJSON(path: string): Promise<any> {
 
 /**
  * Load asset as text
- * Requires absolute file:// URLs
+ * Supports both file:// URLs and https:// URLs (for remote voice files)
  */
 export async function loadAssetAsText(path: string): Promise<string> {
   try {
     // Use fetch for file:// URLs
     if (path.startsWith('file://')) {
       const response = await fetch(path);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       return await response.text();
     }
 
-    // Require callers to provide absolute file:// URLs
+    // Use fetch for https:// URLs (remote voice files from HuggingFace)
+    if (path.startsWith('https://')) {
+      console.log(`[AssetLoader] Fetching remote asset: ${path}`);
+      const response = await fetch(path);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return await response.text();
+    }
+
+    // Require callers to provide absolute URLs
     throw new Error(
-      'loadAssetAsText requires file:// URL. Provide absolute paths to model files.',
+      'loadAssetAsText requires file:// or https:// URL. Provide absolute paths to assets.',
     );
   } catch (error) {
     throw new Error(

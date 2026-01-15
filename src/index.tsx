@@ -53,6 +53,7 @@ export type {
   SupertonicConfig,
   SupertonicSynthesisOptions,
   SupertonicLanguage,
+  SupertonicModelPaths,
   InferenceSteps,
 } from './types';
 

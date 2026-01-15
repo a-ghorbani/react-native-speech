@@ -1,10 +1,18 @@
 /**
  * Supertonic TTS Engine
  *
- * Ultra-fast neural TTS engine using ONNX Runtime for inference
+ * Ultra-fast neural TTS engine using ONNX Runtime for inference.
+ * Uses a 4-model pipeline:
+ * 1. Duration Predictor - predicts phoneme durations
+ * 2. Text Encoder - encodes text into embeddings
+ * 3. Vector Estimator - iterative diffusion for mel-spectrogram
+ * 4. Vocoder - converts mel-spectrogram to audio
+ *
+ * Features:
  * - 167× faster than real-time on M4 Pro
  * - 66M parameters (lightweight)
- * - Built-in text normalization
+ * - No G2P/phonemization needed (uses raw Unicode)
+ * - Sentence-level chunking with progress events
  */
 
 import type {
@@ -14,66 +22,145 @@ import type {
   SupertonicConfig,
   SupertonicSynthesisOptions,
   SupertonicVoice,
+  ChunkProgressEvent,
+  ChunkProgressCallback,
 } from '../../types';
-import {VoicePresetLoader} from './VoicePresetLoader';
+import {SupertonicInference} from './SupertonicInference';
+import {StyleLoader} from './StyleLoader';
+import {UnicodeProcessor} from './UnicodeProcessor';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
+import {loadAssetAsJSON} from './utils/AssetLoader';
 
-// Lazy import ONNX Runtime to allow graceful handling if not installed
-let InferenceSession: any;
-let Tensor: any;
+// Default max chunk size in characters
+const DEFAULT_MAX_CHUNK_SIZE = 400;
+
+// Default number of diffusion steps
+const DEFAULT_INFERENCE_STEPS = 5;
 
 /**
- * Check if ONNX Runtime is available
- * Throws helpful error if not installed
+ * Simple text chunker that splits by sentences
  */
-function ensureONNXRuntime() {
-  if (!InferenceSession || !Tensor) {
-    try {
-      const onnx = require('onnxruntime-react-native');
-      InferenceSession = onnx.InferenceSession;
-      Tensor = onnx.Tensor;
-    } catch (error) {
-      throw new Error(
-        'onnxruntime-react-native is required to use the Supertonic engine.\n\n' +
-          'Install it with:\n' +
-          '  npm install onnxruntime-react-native\n' +
-          '  # or\n' +
-          '  yarn add onnxruntime-react-native\n\n' +
-          'Then rebuild your app:\n' +
-          '  iOS: cd ios && pod install && cd ..\n' +
-          '  Android: Rebuild the app\n\n' +
-          'See https://github.com/a-ghorbani/react-native-speech/blob/main/docs/SUPERTONIC_GUIDE.md for details.',
-      );
+interface TextChunk {
+  text: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+/**
+ * Split text into chunks by sentences
+ */
+function chunkBySentences(text: string, maxChunkSize: number): TextChunk[] {
+  const chunks: TextChunk[] = [];
+
+  // Split by sentence-ending punctuation
+  const sentenceRegex = /[.!?]+[\s]*/g;
+  const sentences: {text: string; start: number; end: number}[] = [];
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = sentenceRegex.exec(text)) !== null) {
+    const sentenceEnd = match.index + match[0].length;
+    sentences.push({
+      text: text.slice(lastIndex, sentenceEnd),
+      start: lastIndex,
+      end: sentenceEnd,
+    });
+    lastIndex = sentenceEnd;
+  }
+
+  // Add remaining text if any
+  if (lastIndex < text.length) {
+    sentences.push({
+      text: text.slice(lastIndex),
+      start: lastIndex,
+      end: text.length,
+    });
+  }
+
+  // Group sentences into chunks respecting maxChunkSize
+  let currentChunk = '';
+  let chunkStart = 0;
+
+  for (const sentence of sentences) {
+    if (
+      currentChunk.length + sentence.text.length > maxChunkSize &&
+      currentChunk.length > 0
+    ) {
+      // Save current chunk
+      chunks.push({
+        text: currentChunk.trim(),
+        startIndex: chunkStart,
+        endIndex: chunkStart + currentChunk.length,
+      });
+      currentChunk = sentence.text;
+      chunkStart = sentence.start;
+    } else {
+      if (currentChunk.length === 0) {
+        chunkStart = sentence.start;
+      }
+      currentChunk += sentence.text;
     }
   }
+
+  // Add final chunk
+  if (currentChunk.length > 0) {
+    chunks.push({
+      text: currentChunk.trim(),
+      startIndex: chunkStart,
+      endIndex: chunkStart + currentChunk.length,
+    });
+  }
+
+  return chunks;
 }
 
 export class SupertonicEngine implements TTSEngineInterface {
   readonly name: TTSEngine = 'supertonic' as TTSEngine;
 
-  private session: any = null; // InferenceSession type
-  private voiceLoader: VoicePresetLoader;
+  private inference: SupertonicInference;
+  private styleLoader: StyleLoader;
+  private unicodeProcessor: UnicodeProcessor;
 
   private config: SupertonicConfig | null = null;
   private isInitialized = false;
   private isLoading = false;
   private initError: string | null = null;
 
-  private defaultVoiceId = 'preset_1'; // Default voice
-  private sampleRate = 24000; // Supertonic outputs 24kHz audio
-  private defaultInferenceSteps = 2; // 2-step for speed by default
+  private defaultVoiceId = 'F1'; // Female voice 1
+  private defaultInferenceSteps = DEFAULT_INFERENCE_STEPS;
+
+  // Chunking and progress tracking
+  private stopRequested = false;
+  private currentUtteranceId = 0;
+  private chunkProgressCallback: ChunkProgressCallback | null = null;
 
   constructor() {
-    this.voiceLoader = new VoicePresetLoader();
+    this.inference = new SupertonicInference();
+    this.styleLoader = new StyleLoader();
+    this.unicodeProcessor = new UnicodeProcessor();
+  }
+
+  /**
+   * Set callback for chunk progress events
+   */
+  setChunkProgressCallback(callback: ChunkProgressCallback | null): void {
+    this.chunkProgressCallback = callback;
+  }
+
+  /**
+   * Emit a chunk progress event
+   */
+  private emitChunkProgress(event: ChunkProgressEvent): void {
+    if (this.chunkProgressCallback) {
+      this.chunkProgressCallback(event);
+    }
   }
 
   /**
    * Initialize the Supertonic engine with model files
    */
   async initialize(config?: SupertonicConfig): Promise<void> {
-    // Check if ONNX Runtime is available
-    ensureONNXRuntime();
-
     if (this.isInitialized) {
       return;
     }
@@ -86,27 +173,45 @@ export class SupertonicEngine implements TTSEngineInterface {
     this.initError = null;
 
     try {
-      // Config with model paths is required
-      if (config) {
-        this.config = config;
-        if (config.defaultInferenceSteps) {
-          this.defaultInferenceSteps = config.defaultInferenceSteps;
-        }
-      } else {
+      if (!config) {
         throw new Error('Supertonic config required for initialization');
       }
 
-      // Load voice presets
-      await this.loadVoices(this.config.voicesPath);
+      this.config = config;
 
-      // Load ONNX model
-      await this.loadModel(this.config.modelPath);
+      if (config.defaultInferenceSteps) {
+        this.defaultInferenceSteps = config.defaultInferenceSteps;
+      }
+
+      console.log('[SupertonicEngine] Initializing with config:', {
+        durationPredictorPath: config.durationPredictorPath,
+        textEncoderPath: config.textEncoderPath,
+        vectorEstimatorPath: config.vectorEstimatorPath,
+        vocoderPath: config.vocoderPath,
+        voicesPath: config.voicesPath,
+        unicodeIndexerPath: config.unicodeIndexerPath,
+      });
+
+      // Initialize unicode processor (uses JSON file if provided, otherwise default)
+      await this.unicodeProcessor.initialize(config.unicodeIndexerPath);
+
+      // Pass unicode processor to inference
+      this.inference.setUnicodeProcessor(this.unicodeProcessor);
+
+      // Initialize inference pipeline (loads all 4 ONNX models)
+      await this.inference.initialize(config);
+
+      // Load voice styles
+      await this.loadVoices(config.voicesPath);
 
       this.isInitialized = true;
       this.isLoading = false;
+
+      console.log('[SupertonicEngine] Initialization complete');
     } catch (error) {
       this.isLoading = false;
       this.initError = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[SupertonicEngine] Initialization failed:', error);
       throw error;
     }
   }
@@ -116,19 +221,22 @@ export class SupertonicEngine implements TTSEngineInterface {
    */
   async isReady(): Promise<boolean> {
     return (
-      this.isInitialized && this.session !== null && this.voiceLoader.isReady()
+      this.isInitialized &&
+      this.inference.isReady() &&
+      this.unicodeProcessor.isReady() &&
+      this.styleLoader.isReady()
     );
   }
 
   /**
    * Synthesize text to audio and play it
-   * This maintains the unified API - synthesize() now plays audio for neural engines
+   * Automatically chunks long text by sentences for better performance
    */
   async synthesize(
     text: string,
     options?: SupertonicSynthesisOptions,
   ): Promise<AudioBuffer | void> {
-    if (!this.isInitialized || !this.session) {
+    if (!this.isInitialized) {
       throw new Error('Supertonic engine not initialized');
     }
 
@@ -136,77 +244,141 @@ export class SupertonicEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
-    // Get voice preset
-    const voiceId = options?.voiceId || this.defaultVoiceId;
-    const voicePreset = this.voiceLoader.getVoicePreset(voiceId);
+    // Reset stop flag and generate new utterance ID
+    this.stopRequested = false;
+    this.currentUtteranceId = Date.now();
+    const utteranceId = this.currentUtteranceId;
 
-    // Get inference steps
+    // Get synthesis options
+    const voiceId = options?.voiceId || this.defaultVoiceId;
     const inferenceSteps =
       options?.inferenceSteps || this.defaultInferenceSteps;
-
-    // Get speed parameter
     const speed = options?.speed ?? 1.0;
 
-    // Create input tensors
-    // Note: Actual tensor structure depends on Supertonic model's input requirements
-    // This is a placeholder - needs to be updated based on actual model spec
-    const textTensor = new Tensor('string', [text], [1]);
-    const voiceTensor = new Tensor('float32', voicePreset, [
-      1,
-      voicePreset.length,
-    ]);
-    const speedTensor = new Tensor('float32', new Float32Array([speed]), [1]);
-    const stepsTensor = new Tensor(
-      'int64',
-      new BigInt64Array([BigInt(inferenceSteps)]),
-      [1],
+    console.log('[SupertonicEngine] ========== SYNTHESIS START ==========');
+    console.log(`[SupertonicEngine] Text: "${text.substring(0, 50)}..."`);
+    console.log(
+      `[SupertonicEngine] Voice: ${voiceId}, Steps: ${inferenceSteps}, Speed: ${speed}`,
     );
 
-    // Run inference
-    const feeds = {
-      text: textTensor,
-      voice: voiceTensor,
-      speed: speedTensor,
-      steps: stepsTensor,
-    };
+    // Load voice style
+    const voiceStyle = await this.styleLoader.getVoiceStyle(voiceId);
 
-    const results = await this.session.run(feeds);
+    // Chunk text by sentences
+    const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
+    const chunks = chunkBySentences(text, maxChunkSize);
 
-    // Extract audio output
-    const audioTensor = results.audio;
-    if (!audioTensor) {
-      throw new Error('No audio output from model');
-    }
+    console.log(`[SupertonicEngine] Split into ${chunks.length} chunks`);
 
-    const audioData = audioTensor.data as Float32Array;
+    // Pipelined synthesis: synthesize next chunk while current one plays
+    let nextAudioPromise: Promise<AudioBuffer> | null = null;
 
-    // Create audio buffer
-    const audioBuffer: AudioBuffer = {
-      samples: audioData,
-      sampleRate: this.sampleRate,
-      channels: 1, // Mono
-      duration: audioData.length / this.sampleRate,
-    };
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      if (this.stopRequested) {
+        console.log('[SupertonicEngine] Stop requested, aborting synthesis');
+        return undefined;
+      }
 
-    // Apply volume if specified
-    if (options?.volume !== undefined && options.volume !== 1.0) {
-      for (let i = 0; i < audioBuffer.samples.length; i++) {
-        const sample = audioBuffer.samples[i];
-        if (sample !== undefined) {
-          audioBuffer.samples[i] = sample * options.volume;
+      const chunk = chunks[chunkIndex] as TextChunk;
+      const progress = Math.round((chunkIndex / chunks.length) * 100);
+
+      console.log(
+        `[SupertonicEngine] Processing chunk ${chunkIndex + 1}/${chunks.length}`,
+      );
+
+      // Emit chunk progress event
+      this.emitChunkProgress({
+        id: utteranceId,
+        chunkIndex,
+        totalChunks: chunks.length,
+        chunkText: chunk.text,
+        textRange: {
+          start: chunk.startIndex,
+          end: chunk.endIndex,
+        },
+        progress,
+      });
+
+      // Get current chunk's audio
+      let audioBuffer: AudioBuffer;
+
+      try {
+        if (nextAudioPromise) {
+          audioBuffer = await nextAudioPromise;
+          nextAudioPromise = null;
+        } else {
+          audioBuffer = await this.synthesizeChunk(
+            chunk.text,
+            voiceStyle,
+            inferenceSteps,
+            speed,
+          );
+        }
+        console.log(
+          `[SupertonicEngine] Chunk synthesized: ${audioBuffer.samples.length} samples`,
+        );
+      } catch (synthError) {
+        console.error('[SupertonicEngine] Synthesis error:', synthError);
+        throw synthError;
+      }
+
+      if (this.stopRequested) {
+        console.log('[SupertonicEngine] Stop requested before playback');
+        return undefined;
+      }
+
+      // Start synthesizing next chunk in parallel
+      const nextChunkIndex = chunkIndex + 1;
+      if (nextChunkIndex < chunks.length) {
+        const nextChunk = chunks[nextChunkIndex] as TextChunk;
+        nextAudioPromise = this.synthesizeChunk(
+          nextChunk.text,
+          voiceStyle,
+          inferenceSteps,
+          speed,
+        );
+      }
+
+      // Apply volume if specified
+      if (options?.volume !== undefined && options.volume !== 1.0) {
+        for (let i = 0; i < audioBuffer.samples.length; i++) {
+          const sample = audioBuffer.samples[i];
+          if (sample !== undefined) {
+            audioBuffer.samples[i] = sample * options.volume;
+          }
         }
       }
+
+      // Play current chunk
+      await neuralAudioPlayer.play(audioBuffer, {
+        ducking: options?.ducking,
+        silentMode: options?.silentMode,
+      });
     }
 
-    // Play audio using neural audio player
-    // This maintains the unified API - speak() works the same for all engines
-    await neuralAudioPlayer.play(audioBuffer, {
-      ducking: options?.ducking,
-      silentMode: options?.silentMode,
-    });
-
-    // Return void to match OS engine behavior (plays directly, doesn't return buffer)
+    console.log('[SupertonicEngine] ========== SYNTHESIS COMPLETE ==========');
     return undefined;
+  }
+
+  /**
+   * Synthesize a single chunk of text
+   */
+  private async synthesizeChunk(
+    text: string,
+    voiceStyle: any,
+    inferenceSteps: number,
+    speed: number,
+  ): Promise<AudioBuffer> {
+    // Normalize text
+    const normalized = this.unicodeProcessor.normalize(text);
+
+    // Run inference pipeline
+    return this.inference.synthesize(
+      normalized,
+      voiceStyle,
+      inferenceSteps,
+      speed,
+    );
   }
 
   /**
@@ -217,7 +389,7 @@ export class SupertonicEngine implements TTSEngineInterface {
       throw new Error('Supertonic engine not initialized');
     }
 
-    return this.voiceLoader.getVoiceIds(language);
+    return this.styleLoader.getVoiceIds(language);
   }
 
   /**
@@ -228,13 +400,14 @@ export class SupertonicEngine implements TTSEngineInterface {
       throw new Error('Supertonic engine not initialized');
     }
 
-    return this.voiceLoader.getVoices(language);
+    return this.styleLoader.getVoices(language);
   }
 
   /**
    * Stop current playback
    */
   async stop(): Promise<void> {
+    this.stopRequested = true;
     await neuralAudioPlayer.stop();
   }
 
@@ -242,12 +415,14 @@ export class SupertonicEngine implements TTSEngineInterface {
    * Clean up resources
    */
   async destroy(): Promise<void> {
-    if (this.session) {
-      await this.session.release();
-      this.session = null;
-    }
+    this.stopRequested = true;
+
+    await this.inference.destroy();
+    this.styleLoader.clear();
 
     this.isInitialized = false;
+    this.isLoading = false;
+    this.initError = null;
     this.config = null;
   }
 
@@ -262,32 +437,44 @@ export class SupertonicEngine implements TTSEngineInterface {
     };
   }
 
-  // ============================================================
-  // PRIVATE METHODS
-  // ============================================================
-
   /**
-   * Load ONNX model
-   */
-  private async loadModel(modelPath: string): Promise<void> {
-    try {
-      this.session = await InferenceSession.create(modelPath);
-    } catch (error) {
-      throw new Error(
-        `Failed to load Supertonic model: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
-    }
-  }
-
-  /**
-   * Load voice presets
+   * Load voice styles from manifest or directory
    */
   private async loadVoices(voicesPath: string): Promise<void> {
     try {
-      await this.voiceLoader.loadVoices(voicesPath);
+      console.log('[SupertonicEngine] Loading voices from:', voicesPath);
+
+      if (voicesPath.includes('manifest') && voicesPath.endsWith('.json')) {
+        // Manifest mode - lazy loading
+        const manifest = await loadAssetAsJSON(voicesPath);
+        await this.styleLoader.loadFromManifest(manifest, voicesPath);
+        console.log('[SupertonicEngine] Loaded voice manifest');
+      } else if (voicesPath.endsWith('.json')) {
+        // Single voice file or voice list
+        const data = await loadAssetAsJSON(voicesPath);
+        if (data.voices && Array.isArray(data.voices)) {
+          // Manifest format
+          await this.styleLoader.loadFromManifest(data, voicesPath);
+        } else if (data.style_dp && data.style_ttl) {
+          // Single voice style
+          const voiceId =
+            voicesPath.split('/').pop()?.replace('.json', '') || 'default';
+          this.styleLoader.loadVoiceFromData(voiceId, data);
+        }
+      } else {
+        throw new Error(
+          'Supertonic requires a voices manifest JSON file. ' +
+            'Directory scanning is not supported.',
+        );
+      }
+
+      console.log(
+        '[SupertonicEngine] Voices loaded:',
+        this.styleLoader.getVoiceIds().length,
+      );
     } catch (error) {
       throw new Error(
-        `Failed to load voice presets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Failed to load voices: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

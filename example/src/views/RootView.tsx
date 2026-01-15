@@ -24,6 +24,10 @@ import Speech, {
 import Button from '../components/Button';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {kokoroModelManager} from '../utils/ModelManager';
+import {
+  supertonicModelManager,
+  type SupertonicVersion,
+} from '../utils/SupertonicModelManager';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
@@ -166,12 +170,81 @@ const RootView: React.FC = () => {
             return;
           }
         } else if (engine === TTSEngine.SUPERTONIC) {
-          // TODO: Add Supertonic model manager
-          Alert.alert(
-            'Not Implemented',
-            'Supertonic engine is not yet configured in this example. Please add model files.',
-          );
-          setEngineReady(false);
+          // First, scan for installed model
+          await supertonicModelManager.scanInstalledModel();
+          const model = supertonicModelManager.getInstalledModel();
+
+          let config;
+          if (model) {
+            // Use installed model
+            config = supertonicModelManager.getDownloadedModelConfig();
+            console.log('Using downloaded Supertonic model:', model);
+          } else {
+            // Try bundled model (will fail if not bundled)
+            config = supertonicModelManager.getBundledModelConfig();
+            console.log('Attempting to use bundled Supertonic model');
+          }
+
+          try {
+            console.log(
+              `Initializing Supertonic with execution provider: ${provider}`,
+            );
+            await Speech.initialize({
+              engine: TTSEngine.SUPERTONIC,
+              ...config,
+              silentMode: 'obey',
+              ducking: true,
+              maxChunkSize: 200,
+              executionProviders: provider,
+            });
+            setEngineReady(true);
+          } catch (initError) {
+            // If initialization fails, likely no models available
+            console.error('Supertonic initialization failed:', initError);
+            Alert.alert(
+              'No Supertonic Models Found',
+              'No Supertonic models are installed. Would you like to download the model now?\n\n' +
+                'Size: ~265MB (4 ONNX models + 10 voices)',
+              [
+                {text: 'Cancel', style: 'cancel'},
+                {
+                  text: 'Download',
+                  onPress: async () => {
+                    try {
+                      setIsInitializing(true);
+                      await supertonicModelManager.downloadModel(progress => {
+                        console.log(
+                          `Download: ${(progress.progress * 100).toFixed(1)}%`,
+                        );
+                      });
+                      // Retry initialization with downloaded model
+                      const downloadedConfig =
+                        supertonicModelManager.getDownloadedModelConfig();
+                      await Speech.initialize({
+                        engine: TTSEngine.SUPERTONIC,
+                        ...downloadedConfig,
+                        silentMode: 'obey',
+                        ducking: true,
+                        executionProviders: provider,
+                      });
+                      setEngineReady(true);
+                      Alert.alert('Success', 'Supertonic model ready to use!');
+                    } catch (err) {
+                      Alert.alert(
+                        'Error',
+                        `Failed to download/initialize: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                      );
+                      setEngineReady(false);
+                    } finally {
+                      setIsInitializing(false);
+                    }
+                  },
+                },
+              ],
+            );
+            setEngineReady(false);
+            return;
+          }
         }
       } catch (error) {
         console.error('Failed to initialize engine:', error);
@@ -253,6 +326,13 @@ const RootView: React.FC = () => {
       await kokoroModelManager.scanInstalledModels();
       const models = kokoroModelManager.getInstalledModels();
       setInstalledModels(models);
+    } else if (selectedEngine === TTSEngine.SUPERTONIC) {
+      await supertonicModelManager.scanInstalledModel();
+      // Get all installed models (both v1 and v2)
+      const models = supertonicModelManager.getAllInstalledModels();
+      setInstalledModels(models);
+    } else {
+      setInstalledModels([]);
     }
   }, [selectedEngine]);
 
@@ -344,13 +424,11 @@ const RootView: React.FC = () => {
   );
 
   const handleDownloadModel = React.useCallback(() => {
-    if (selectedEngine === TTSEngine.KOKORO) {
+    if (
+      selectedEngine === TTSEngine.KOKORO ||
+      selectedEngine === TTSEngine.SUPERTONIC
+    ) {
       setShowModelManager(true);
-    } else if (selectedEngine === TTSEngine.SUPERTONIC) {
-      Alert.alert(
-        'Download Supertonic Model',
-        'Supertonic model manager is not yet implemented. Please add model files manually.',
-      );
     } else {
       Alert.alert('Info', 'System TTS does not require model downloads.');
     }
@@ -367,23 +445,64 @@ const RootView: React.FC = () => {
         setIsDownloading(true);
         setDownloadProgress(0);
 
-        await kokoroModelManager.downloadModel(variant, progress => {
+        if (selectedEngine === TTSEngine.KOKORO) {
+          await kokoroModelManager.downloadModel(variant, progress => {
+            setDownloadProgress(progress.progress);
+            console.log(
+              `Download progress: ${(progress.progress * 100).toFixed(1)}%`,
+            );
+          });
+
+          Alert.alert(
+            'Success',
+            'Kokoro model downloaded successfully! Initializing...',
+          );
+
+          // Reload installed models
+          await loadInstalledModels();
+
+          // Reinitialize with downloaded model
+          await initializeEngine(TTSEngine.KOKORO);
+        }
+
+        setShowModelManager(false);
+      } catch (err) {
+        Alert.alert(
+          'Download Failed',
+          `Failed to download model: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        );
+      } finally {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+      }
+    },
+    [initializeEngine, loadInstalledModels, selectedEngine],
+  );
+
+  const downloadSupertonicVersion = React.useCallback(
+    async (version: SupertonicVersion) => {
+      try {
+        setIsDownloading(true);
+        setDownloadProgress(0);
+
+        await supertonicModelManager.downloadModel(progress => {
           setDownloadProgress(progress.progress);
           console.log(
             `Download progress: ${(progress.progress * 100).toFixed(1)}%`,
           );
-        });
+        }, version);
 
         Alert.alert(
           'Success',
-          'Kokoro model downloaded successfully! Initializing...',
+          `Supertonic ${version.toUpperCase()} downloaded successfully! Initializing...`,
         );
 
-        // Reload installed models
+        // Set as active version and reload
+        supertonicModelManager.setActiveVersion(version);
         await loadInstalledModels();
 
         // Reinitialize with downloaded model
-        await initializeEngine(TTSEngine.KOKORO);
+        await initializeEngine(TTSEngine.SUPERTONIC);
 
         setShowModelManager(false);
       } catch (err) {
@@ -400,9 +519,19 @@ const RootView: React.FC = () => {
   );
 
   const deleteModelVariant = React.useCallback(
-    async (version: string, variant: 'q8' | 'fp16' | 'full') => {
+    async (version: string, variant: 'q8' | 'fp16' | 'full' | 'v1' | 'v2') => {
       try {
-        await kokoroModelManager.deleteModel(version, variant);
+        if (selectedEngine === TTSEngine.KOKORO) {
+          await kokoroModelManager.deleteModel(
+            version,
+            variant as 'q8' | 'fp16' | 'full',
+          );
+        } else if (selectedEngine === TTSEngine.SUPERTONIC) {
+          // For Supertonic, version is the variant (v1 or v2)
+          await supertonicModelManager.deleteModel(
+            variant as SupertonicVersion,
+          );
+        }
         Alert.alert('Success', 'Model deleted successfully');
         await loadInstalledModels();
       } catch (err) {
@@ -412,7 +541,7 @@ const RootView: React.FC = () => {
         );
       }
     },
-    [loadInstalledModels],
+    [loadInstalledModels, selectedEngine],
   );
 
   const getVoiceDisplayName = (voice: any): string => {
@@ -473,7 +602,9 @@ const RootView: React.FC = () => {
               {backgroundColor: scheme === 'dark' ? '#1C1C1E' : 'white'},
             ]}>
             <Text style={[styles.modalTitle, {color: textColor}]}>
-              Kokoro Models
+              {selectedEngine === TTSEngine.SUPERTONIC
+                ? 'Supertonic Models'
+                : 'Kokoro Models'}
             </Text>
 
             {/* Installed Models */}
@@ -486,34 +617,76 @@ const RootView: React.FC = () => {
             </Text>
             {installedModels.length > 0 ? (
               <ScrollView style={styles.modelList}>
-                {installedModels.map(model => (
-                  <View
-                    key={`${model.version}-${model.variant}`}
-                    style={[
-                      styles.modelItem,
-                      {
-                        backgroundColor:
-                          scheme === 'dark' ? '#2C2C2E' : '#F0F0F0',
-                      },
-                    ]}>
-                    <View style={styles.modelInfo}>
-                      <Text style={[styles.modelName, {color: textColor}]}>
-                        {model.version} - {model.variant}
-                      </Text>
-                      <Text
-                        style={[styles.modelSize, {color: textColor + '99'}]}>
-                        {(model.size / 1024 / 1024).toFixed(1)} MB
-                      </Text>
+                {installedModels.map((model, index) => {
+                  const isActive =
+                    selectedEngine === TTSEngine.SUPERTONIC &&
+                    supertonicModelManager.getActiveVersion() === model.variant;
+                  return (
+                    <View
+                      key={
+                        model.variant
+                          ? `${model.version}-${model.variant}`
+                          : `${model.version}-${index}`
+                      }
+                      style={[
+                        styles.modelItem,
+                        {
+                          backgroundColor:
+                            scheme === 'dark' ? '#2C2C2E' : '#F0F0F0',
+                          borderWidth: isActive ? 2 : 0,
+                          borderColor: isActive ? '#34C759' : 'transparent',
+                        },
+                      ]}>
+                      <View style={styles.modelInfo}>
+                        <View style={styles.modelNameRow}>
+                          <Text style={[styles.modelName, {color: textColor}]}>
+                            {selectedEngine === TTSEngine.SUPERTONIC
+                              ? `Supertonic ${(model.variant || model.version).toUpperCase()}`
+                              : model.variant
+                                ? `${model.version} - ${model.variant}`
+                                : `v${model.version}`}
+                          </Text>
+                          {isActive && (
+                            <Text style={styles.activeLabel}>ACTIVE</Text>
+                          )}
+                        </View>
+                        <Text
+                          style={[styles.modelSize, {color: textColor + '99'}]}>
+                          {(model.size / 1024 / 1024).toFixed(1)} MB
+                          {model.languages &&
+                            ` • ${model.languages.join(', ').toUpperCase()}`}
+                        </Text>
+                      </View>
+                      <View style={styles.modelActions}>
+                        {selectedEngine === TTSEngine.SUPERTONIC &&
+                          installedModels.length > 1 &&
+                          !isActive && (
+                            <TouchableOpacity
+                              style={styles.useButton}
+                              onPress={async () => {
+                                supertonicModelManager.setActiveVersion(
+                                  model.variant as SupertonicVersion,
+                                );
+                                setShowModelManager(false);
+                                await initializeEngine(TTSEngine.SUPERTONIC);
+                              }}>
+                              <Text style={styles.useButtonText}>Use</Text>
+                            </TouchableOpacity>
+                          )}
+                        <TouchableOpacity
+                          style={styles.deleteButton}
+                          onPress={() =>
+                            deleteModelVariant(
+                              model.version,
+                              model.variant || 'q8',
+                            )
+                          }>
+                          <Text style={styles.deleteButtonText}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                    <TouchableOpacity
-                      style={styles.deleteButton}
-                      onPress={() =>
-                        deleteModelVariant(model.version, model.variant)
-                      }>
-                      <Text style={styles.deleteButtonText}>🗑️</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
+                  );
+                })}
               </ScrollView>
             ) : (
               <Text style={[styles.emptyText, {color: textColor + '99'}]}>
@@ -544,6 +717,42 @@ const RootView: React.FC = () => {
                     ]}
                   />
                 </View>
+              </View>
+            ) : selectedEngine === TTSEngine.SUPERTONIC ? (
+              <View style={styles.downloadButtons}>
+                {supertonicModelManager.getAvailableVersions().map(variant => {
+                  const isInstalled = installedModels.some(
+                    m => m.variant === variant.version,
+                  );
+                  return (
+                    <TouchableOpacity
+                      key={variant.version}
+                      style={[
+                        styles.downloadVariantButton,
+                        {
+                          backgroundColor: isInstalled
+                            ? '#8E8E93'
+                            : variant.version === 'v2'
+                              ? '#34C759'
+                              : '#007AFF',
+                        },
+                      ]}
+                      onPress={() => downloadSupertonicVersion(variant.version)}
+                      disabled={isInstalled}>
+                      <Text style={styles.downloadVariantText}>
+                        {isInstalled
+                          ? `${variant.version.toUpperCase()} Installed`
+                          : `Download ${variant.version.toUpperCase()} (~${Math.round(variant.estimatedSize / 1024 / 1024)}MB)`}
+                      </Text>
+                      <Text style={styles.downloadVariantSubtext}>
+                        {variant.description}
+                      </Text>
+                      <Text style={styles.downloadVariantLangs}>
+                        Languages: {variant.languages.join(', ').toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             ) : (
               <View style={styles.downloadButtons}>
@@ -684,8 +893,9 @@ const RootView: React.FC = () => {
           </Text>
         </View>
 
-        {/* Execution Provider Selection (Kokoro only) */}
-        {selectedEngine === TTSEngine.KOKORO && (
+        {/* Execution Provider Selection (Neural engines) */}
+        {(selectedEngine === TTSEngine.KOKORO ||
+          selectedEngine === TTSEngine.SUPERTONIC) && (
           <View style={styles.providerSection}>
             <Text style={[styles.providerLabel, {color: textColor}]}>
               Acceleration:
@@ -1057,13 +1267,43 @@ const styles = StyleSheet.create({
   modelInfo: {
     flex: 1,
   },
+  modelNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   modelName: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
   },
+  activeLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#34C759',
+    backgroundColor: 'rgba(52, 199, 89, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
   modelSize: {
     fontSize: 14,
+  },
+  modelActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  useButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  useButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
   deleteButton: {
     padding: 8,
@@ -1113,6 +1353,11 @@ const styles = StyleSheet.create({
   downloadVariantSubtext: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 13,
+  },
+  downloadVariantLangs: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
+    marginTop: 4,
   },
   // Chunk progress styles (Neural TTS)
   chunkProgressContainer: {
