@@ -129,8 +129,11 @@ function resolveExecutionProviders(
 
 /**
  * Generate random noise for diffusion
+ *
+ * @param shape - [batch, latentDim, latentLen]
+ * @param mask - Optional latent mask [latentLen] to zero out padding regions
  */
-function generateNoise(shape: number[]): Float32Array {
+function generateNoise(shape: number[], mask?: Float32Array): Float32Array {
   const size = shape.reduce((a, b) => a * b, 1);
   const noise = new Float32Array(size);
 
@@ -144,6 +147,22 @@ function generateNoise(shape: number[]): Float32Array {
     noise[i] = r * Math.cos(theta);
     if (i + 1 < size) {
       noise[i + 1] = r * Math.sin(theta);
+    }
+  }
+
+  // Apply mask to zero out padding regions (matches official implementation)
+  // This is critical for consistent audio output
+  if (mask && shape.length === 3) {
+    const latentDim = shape[1]!;
+    const latentLen = shape[2]!;
+    for (let d = 0; d < latentDim; d++) {
+      for (let t = 0; t < latentLen; t++) {
+        const idx = d * latentLen + t;
+        const maskValue = mask[t];
+        if (maskValue !== undefined && noise[idx] !== undefined) {
+          noise[idx] = noise[idx]! * maskValue;
+        }
+      }
     }
   }
 
@@ -376,6 +395,21 @@ export class SupertonicInference {
   }
 
   /**
+   * Convert speed to duration factor (matches official implementation)
+   * Formula: durationFactor = 1 / (speed + offset)
+   *
+   * The offset of 0.05 ensures:
+   * - Speed 1.0x → factor 0.952 (slightly faster baseline)
+   * - Speed 2.0x → factor 0.488 (much faster)
+   *
+   * @param speed - Speech speed multiplier (1.0 = normal)
+   * @param offset - Small offset to prevent division by zero and tune baseline
+   */
+  private speedToDurationFactor(speed: number, offset: number = 0.05): number {
+    return 1 / (speed + offset);
+  }
+
+  /**
    * Step 1: Predict total audio duration (in seconds)
    *
    * The duration predictor outputs a SCALAR value representing
@@ -442,11 +476,12 @@ export class SupertonicInference {
       }
 
       // Duration is a scalar [batch_size] - get first element
-      // Apply speed factor (higher speed = shorter duration)
-      const durationSeconds = (durOutput.data[0] as number) / speed;
+      // Apply duration factor (matches official implementation formula)
+      const durationFactor = this.speedToDurationFactor(speed);
+      const durationSeconds = (durOutput.data[0] as number) * durationFactor;
 
       console.log(
-        `[SupertonicInference] Raw duration output shape: [${durOutput.dims}], value: ${durOutput.data[0]}, adjusted: ${durationSeconds}s`,
+        `[SupertonicInference] Raw duration output shape: [${durOutput.dims}], value: ${durOutput.data[0]}, factor: ${durationFactor.toFixed(3)}, adjusted: ${durationSeconds.toFixed(3)}s`,
       );
 
       return Math.max(0.1, durationSeconds); // Minimum 0.1 seconds
@@ -555,12 +590,13 @@ export class SupertonicInference {
       `[SupertonicInference] estimateVector: seqLen=${seqLen}, embDim=${embDim}, latentLen=${latentLen}, numSteps=${numSteps}`,
     );
 
-    // Initialize with random noise [1, 144, latent_len]
-    const latentShape = [1, this.latentDim, latentLen];
-    let latent = generateNoise(latentShape);
-
     // Create latent mask [latent_len] of 1s
     const latentMask = createLatentMask(latentLen);
+
+    // Initialize with random noise [1, 144, latent_len]
+    // Apply mask to zero out padding regions (matches official implementation)
+    const latentShape = [1, this.latentDim, latentLen];
+    let latent = generateNoise(latentShape, latentMask);
 
     // style_ttl: [1, 50, 256] - 12800 elements from voice JSON
     const styleTtlShape =
