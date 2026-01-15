@@ -11,6 +11,76 @@ import type {SupertonicVoice, SupertonicVoiceStyle} from '../../types';
 import {loadAssetAsJSON} from './utils/AssetLoader';
 
 /**
+ * Official voice names and descriptions from Supertonic demo
+ * https://huggingface.co/spaces/Supertone/supertonic-2
+ */
+const OFFICIAL_VOICE_DATA: Record<
+  string,
+  {name: string; description: string; gender: 'f' | 'm'}
+> = {
+  F1: {
+    name: 'Sarah',
+    description:
+      'A calm female voice with a slightly low tone; steady and composed.',
+    gender: 'f',
+  },
+  F2: {
+    name: 'Lily',
+    description:
+      'A bright, cheerful female voice; lively, playful, and youthful.',
+    gender: 'f',
+  },
+  F3: {
+    name: 'Jessica',
+    description:
+      'A clear, professional announcer-style female voice; articulate and broadcast-ready.',
+    gender: 'f',
+  },
+  F4: {
+    name: 'Olivia',
+    description:
+      'A crisp, confident female voice; distinct and expressive with strong delivery.',
+    gender: 'f',
+  },
+  F5: {
+    name: 'Emily',
+    description:
+      'A kind, gentle female voice; soft-spoken, calm, and naturally soothing.',
+    gender: 'f',
+  },
+  M1: {
+    name: 'Alex',
+    description:
+      'A lively, upbeat male voice with confident energy and a standard, clear tone.',
+    gender: 'm',
+  },
+  M2: {
+    name: 'James',
+    description:
+      'A deep, robust male voice; calm, composed, and serious with a grounded presence.',
+    gender: 'm',
+  },
+  M3: {
+    name: 'Robert',
+    description:
+      'A polished, authoritative male voice; confident and trustworthy.',
+    gender: 'm',
+  },
+  M4: {
+    name: 'Sam',
+    description:
+      'A soft, neutral-toned male voice; gentle and approachable with a youthful quality.',
+    gender: 'm',
+  },
+  M5: {
+    name: 'Daniel',
+    description:
+      'A warm, soft-spoken male voice; calm and soothing with a natural storytelling quality.',
+    gender: 'm',
+  },
+};
+
+/**
  * Voice manifest structure for lazy loading
  */
 interface VoiceManifest {
@@ -335,18 +405,29 @@ export class StyleLoader {
   /**
    * Create voice metadata from voice ID
    *
+   * Uses official voice names and descriptions from Supertonic demo.
    * Supertonic voice IDs follow format: {gender}{number}
    * - F1, F2, F3... = Female voices
    * - M1, M2, M3... = Male voices
-   *
-   * Also supports legacy format: {lang}{gender}_{name}
-   * e.g., 'af_heart' -> American Female Heart
    */
   private createVoiceMetadata(voiceId: string): SupertonicVoice {
+    // Check for official Supertonic voice data
+    const officialData = OFFICIAL_VOICE_DATA[voiceId];
+    if (officialData) {
+      return {
+        id: voiceId,
+        name: officialData.name,
+        language: 'en',
+        gender: officialData.gender,
+        description: officialData.description,
+      };
+    }
+
+    // Fallback for unknown voice IDs
     let name = voiceId;
     let gender: 'f' | 'm' = 'f';
 
-    // Check for Supertonic official format: F1, F2, M1, M2, etc.
+    // Check for Supertonic format: F1, F2, M1, M2, etc.
     const supertonicMatch = voiceId.match(/^([FM])(\d+)$/);
     if (supertonicMatch) {
       const [, genderCode, voiceNumber] = supertonicMatch;
@@ -361,14 +442,6 @@ export class StyleLoader {
         gender,
         description: `Supertonic ${genderName.toLowerCase()} voice ${voiceNumber}`,
       };
-    }
-
-    // Legacy format: {region}{gender}_{name}
-    const legacyMatch = voiceId.match(/^([a-z])([fm])_(.+)$/);
-    if (legacyMatch) {
-      const [, , genderCode, voiceName] = legacyMatch;
-      gender = genderCode === 'm' ? 'm' : 'f';
-      name = voiceName!.charAt(0).toUpperCase() + voiceName!.slice(1);
     }
 
     return {
