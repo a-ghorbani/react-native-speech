@@ -921,16 +921,10 @@ const RootView: React.FC = () => {
                     label: '🎮 GPU',
                     desc: Platform.OS === 'ios' ? 'Metal' : 'NNAPI',
                   },
-                  {
-                    key: 'ane',
-                    label: '🧠 ANE',
-                    desc: Platform.OS === 'ios' ? 'Neural Engine' : 'N/A',
-                  },
                   {key: 'cpu', label: '💻 CPU', desc: 'Fallback'},
                 ] as const
               ).map(item => {
                 const isSelected = selectedProvider === item.key;
-                const isDisabled = item.key === 'ane' && Platform.OS !== 'ios';
                 return (
                   <TouchableOpacity
                     key={item.key}
@@ -944,13 +938,12 @@ const RootView: React.FC = () => {
                           : scheme === 'dark'
                             ? '#333'
                             : '#E0E0E0',
-                        opacity: isDisabled ? 0.5 : 1,
                       },
                     ]}
                     onPress={() =>
                       setSelectedProvider(item.key as ExecutionProviderPreset)
                     }
-                    disabled={isDisabled || isInitializing || isStarted}>
+                    disabled={isInitializing || isStarted}>
                     <Text
                       style={[
                         styles.providerButtonText,

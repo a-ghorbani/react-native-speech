@@ -158,6 +158,7 @@ export class SupertonicModelManager {
       vectorEstimatorPath: `${basePath}/${subfolder}/vector_estimator.onnx`,
       vocoderPath: `${basePath}/${subfolder}/vocoder.onnx`,
       voicesPath: `${basePath}/${subfolder}/voices-manifest.json`,
+      unicodeIndexerPath: `${basePath}/${subfolder}/unicode_indexer.json`,
     };
   }
 

@@ -191,7 +191,6 @@ export type ExecutionProvider =
  * Preset execution provider configurations for common use cases
  */
 export type ExecutionProviderPreset =
-  | 'auto' // Automatically select best provider for platform
+  | 'auto' // Automatically select best provider for platform (CoreML on iOS, NNAPI on Android)
   | 'cpu' // Force CPU-only execution
-  | 'gpu' // Prefer GPU acceleration
-  | 'ane'; // Prefer Apple Neural Engine (iOS only)
+  | 'gpu'; // Prefer GPU acceleration (CoreML with GPU on iOS, NNAPI on Android)

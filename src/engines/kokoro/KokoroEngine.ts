@@ -116,27 +116,6 @@ function resolveExecutionProviders(
           return ['nnapi', 'cpu'];
         }
 
-      case 'ane':
-        // Prefer Apple Neural Engine (iOS only)
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: false, // Let CoreML decide (may use ANE)
-              onlyEnableDeviceWithANE: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          // Fall back to NNAPI on Android
-          console.warn(
-            '[KokoroEngine] ANE preset is iOS-only, falling back to NNAPI on Android',
-          );
-          return ['nnapi', 'cpu'];
-        }
-
       default:
         return ['cpu'];
     }

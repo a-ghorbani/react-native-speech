@@ -22,6 +22,7 @@ import type {
   SupertonicConfig,
   SupertonicSynthesisOptions,
   SupertonicVoice,
+  SupertonicVoiceStyle,
   ChunkProgressEvent,
   ChunkProgressCallback,
 } from '../../types';
@@ -30,90 +31,10 @@ import {StyleLoader} from './StyleLoader';
 import {UnicodeProcessor} from './UnicodeProcessor';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {loadAssetAsJSON} from './utils/AssetLoader';
+import {TextChunker, type TextChunk} from './utils/TextChunker';
+import {SUPERTONIC_CONSTANTS} from './constants';
 
-// Default max chunk size in characters
-const DEFAULT_MAX_CHUNK_SIZE = 400;
-
-// Default number of diffusion steps
-const DEFAULT_INFERENCE_STEPS = 5;
-
-/**
- * Simple text chunker that splits by sentences
- */
-interface TextChunk {
-  text: string;
-  startIndex: number;
-  endIndex: number;
-}
-
-/**
- * Split text into chunks by sentences
- */
-function chunkBySentences(text: string, maxChunkSize: number): TextChunk[] {
-  const chunks: TextChunk[] = [];
-
-  // Split by sentence-ending punctuation
-  const sentenceRegex = /[.!?]+[\s]*/g;
-  const sentences: {text: string; start: number; end: number}[] = [];
-
-  let lastIndex = 0;
-  let match;
-
-  while ((match = sentenceRegex.exec(text)) !== null) {
-    const sentenceEnd = match.index + match[0].length;
-    sentences.push({
-      text: text.slice(lastIndex, sentenceEnd),
-      start: lastIndex,
-      end: sentenceEnd,
-    });
-    lastIndex = sentenceEnd;
-  }
-
-  // Add remaining text if any
-  if (lastIndex < text.length) {
-    sentences.push({
-      text: text.slice(lastIndex),
-      start: lastIndex,
-      end: text.length,
-    });
-  }
-
-  // Group sentences into chunks respecting maxChunkSize
-  let currentChunk = '';
-  let chunkStart = 0;
-
-  for (const sentence of sentences) {
-    if (
-      currentChunk.length + sentence.text.length > maxChunkSize &&
-      currentChunk.length > 0
-    ) {
-      // Save current chunk
-      chunks.push({
-        text: currentChunk.trim(),
-        startIndex: chunkStart,
-        endIndex: chunkStart + currentChunk.length,
-      });
-      currentChunk = sentence.text;
-      chunkStart = sentence.start;
-    } else {
-      if (currentChunk.length === 0) {
-        chunkStart = sentence.start;
-      }
-      currentChunk += sentence.text;
-    }
-  }
-
-  // Add final chunk
-  if (currentChunk.length > 0) {
-    chunks.push({
-      text: currentChunk.trim(),
-      startIndex: chunkStart,
-      endIndex: chunkStart + currentChunk.length,
-    });
-  }
-
-  return chunks;
-}
+const {DEFAULT_MAX_CHUNK_SIZE, DEFAULT_INFERENCE_STEPS} = SUPERTONIC_CONSTANTS;
 
 export class SupertonicEngine implements TTSEngineInterface {
   readonly name: TTSEngine = 'supertonic' as TTSEngine;
@@ -128,7 +49,7 @@ export class SupertonicEngine implements TTSEngineInterface {
   private initError: string | null = null;
 
   private defaultVoiceId = 'F1'; // Female voice 1
-  private defaultInferenceSteps = DEFAULT_INFERENCE_STEPS;
+  private defaultInferenceSteps: number = DEFAULT_INFERENCE_STEPS;
 
   // Chunking and progress tracking
   private stopRequested = false;
@@ -158,7 +79,8 @@ export class SupertonicEngine implements TTSEngineInterface {
   }
 
   /**
-   * Initialize the Supertonic engine with model files
+   * Initialize the Supertonic engine with model files.
+   * If initialization fails partway through, cleans up any partial state.
    */
   async initialize(config?: SupertonicConfig): Promise<void> {
     if (this.isInitialized) {
@@ -192,7 +114,7 @@ export class SupertonicEngine implements TTSEngineInterface {
         unicodeIndexerPath: config.unicodeIndexerPath,
       });
 
-      // Initialize unicode processor (uses JSON file if provided, otherwise default)
+      // Initialize unicode processor
       await this.unicodeProcessor.initialize(config.unicodeIndexerPath);
 
       // Pass unicode processor to inference
@@ -205,14 +127,15 @@ export class SupertonicEngine implements TTSEngineInterface {
       await this.loadVoices(config.voicesPath);
 
       this.isInitialized = true;
-      this.isLoading = false;
-
       console.log('[SupertonicEngine] Initialization complete');
     } catch (error) {
-      this.isLoading = false;
+      // Clean up any partial initialization to allow retry
+      await this.destroy();
       this.initError = error instanceof Error ? error.message : 'Unknown error';
       console.error('[SupertonicEngine] Initialization failed:', error);
       throw error;
+    } finally {
+      this.isLoading = false;
     }
   }
 
@@ -266,7 +189,7 @@ export class SupertonicEngine implements TTSEngineInterface {
 
     // Chunk text by sentences
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const chunks = chunkBySentences(text, maxChunkSize);
+    const chunks = TextChunker.chunkBySentences(text, maxChunkSize);
 
     console.log(`[SupertonicEngine] Split into ${chunks.length} chunks`);
 
@@ -339,12 +262,15 @@ export class SupertonicEngine implements TTSEngineInterface {
         );
       }
 
-      // Apply volume if specified
+      // Apply volume if specified (with bounds checking to prevent clipping)
       if (options?.volume !== undefined && options.volume !== 1.0) {
+        const clampedVolume = Math.max(0, Math.min(1, options.volume));
         for (let i = 0; i < audioBuffer.samples.length; i++) {
           const sample = audioBuffer.samples[i];
           if (sample !== undefined) {
-            audioBuffer.samples[i] = sample * options.volume;
+            // Apply volume and clamp to [-1, 1] to prevent clipping
+            const adjusted = sample * clampedVolume;
+            audioBuffer.samples[i] = Math.max(-1, Math.min(1, adjusted));
           }
         }
       }
@@ -365,7 +291,7 @@ export class SupertonicEngine implements TTSEngineInterface {
    */
   private async synthesizeChunk(
     text: string,
-    voiceStyle: any,
+    voiceStyle: SupertonicVoiceStyle,
     inferenceSteps: number,
     speed: number,
   ): Promise<AudioBuffer> {
@@ -429,7 +355,7 @@ export class SupertonicEngine implements TTSEngineInterface {
   /**
    * Get engine status
    */
-  getStatus() {
+  getStatus(): {isReady: boolean; isLoading: boolean; error: string | null} {
     return {
       isReady: this.isInitialized,
       isLoading: this.isLoading,

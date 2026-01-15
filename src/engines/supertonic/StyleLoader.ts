@@ -177,6 +177,9 @@ export class StyleLoader {
   private manifest: VoiceManifest | null = null;
   private voicesBasePath: string = '';
   private isInitialized = false;
+  /** Track in-progress loading to prevent race conditions */
+  private loadingPromises: Map<string, Promise<SupertonicVoiceStyle>> =
+    new Map();
 
   /**
    * Load voices from a manifest file (lazy loading mode)
@@ -227,10 +230,12 @@ export class StyleLoader {
   }
 
   /**
-   * Load a voice style from JSON data
+   * Load a voice style from JSON data.
+   * Validates that required fields exist and converted arrays are not empty.
    *
    * @param voiceId - Voice identifier
    * @param data - Raw voice style JSON data
+   * @throws Error if required fields are missing or conversion fails
    */
   loadVoiceFromData(voiceId: string, data: RawVoiceStyleData): void {
     if (!data.style_dp || !data.style_ttl) {
@@ -249,6 +254,20 @@ export class StyleLoader {
 
     const styleDp = toFloat32Array(data.style_dp);
     const styleTtl = toFloat32Array(data.style_ttl);
+
+    // Validate converted arrays are not empty
+    if (styleDp.length === 0) {
+      throw new Error(
+        `Voice style ${voiceId}: style_dp is empty after conversion. ` +
+          `Data format may be unsupported.`,
+      );
+    }
+    if (styleTtl.length === 0) {
+      throw new Error(
+        `Voice style ${voiceId}: style_ttl is empty after conversion. ` +
+          `Data format may be unsupported.`,
+      );
+    }
 
     console.log(
       `[StyleLoader] Converted styleDp length: ${styleDp.length}, styleTtl length: ${styleTtl.length}`,
@@ -274,7 +293,9 @@ export class StyleLoader {
 
   /**
    * Get voice style for a given voice ID
-   * Loads the voice on-demand if using lazy loading
+   * Loads the voice on-demand if using lazy loading.
+   * Uses promise caching to prevent race conditions when multiple
+   * concurrent calls request the same voice.
    *
    * @param voiceId - Voice identifier
    * @returns Voice style data
@@ -286,18 +307,31 @@ export class StyleLoader {
       return cached;
     }
 
+    // Check if already loading (prevents race condition)
+    const existingPromise = this.loadingPromises.get(voiceId);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
     // Try lazy loading from manifest
     if (this.manifest) {
       if (!this.manifest.voices.includes(voiceId)) {
         throw new Error(`Voice '${voiceId}' not found in manifest`);
       }
 
-      await this.loadVoiceFile(voiceId);
-      const loaded = this.styles.get(voiceId);
-      if (!loaded) {
-        throw new Error(`Failed to load voice '${voiceId}'`);
-      }
-      return loaded;
+      // Create loading promise and cache it
+      const loadPromise = this.loadVoiceFile(voiceId).then(() => {
+        // Clean up loading promise after completion
+        this.loadingPromises.delete(voiceId);
+        const loaded = this.styles.get(voiceId);
+        if (!loaded) {
+          throw new Error(`Failed to load voice '${voiceId}'`);
+        }
+        return loaded;
+      });
+
+      this.loadingPromises.set(voiceId, loadPromise);
+      return loadPromise;
     }
 
     throw new Error(`Voice '${voiceId}' not found`);
@@ -454,11 +488,12 @@ export class StyleLoader {
   }
 
   /**
-   * Clear all cached voices
+   * Clear all cached voices and pending loads
    */
   clear(): void {
     this.styles.clear();
     this.voiceMetadata.clear();
+    this.loadingPromises.clear();
     this.manifest = null;
     this.voicesBasePath = '';
     this.isInitialized = false;

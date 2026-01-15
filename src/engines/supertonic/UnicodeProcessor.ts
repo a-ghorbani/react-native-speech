@@ -7,21 +7,16 @@
  */
 
 import {loadAssetAsJSON} from './utils/AssetLoader';
+import {SUPERTONIC_CONSTANTS, type SupportedLanguage} from './constants';
+
+const {PAD_TOKEN_ID, UNK_TOKEN_ID, AVAILABLE_LANGS} = SUPERTONIC_CONSTANTS;
 
 /**
- * Pad token ID used for sequence padding (usually 0 or a special token)
+ * Check if a language code is supported
  */
-const PAD_TOKEN_ID = 0;
-
-/**
- * Unknown/OOV token ID for characters not in vocabulary
- */
-const UNK_TOKEN_ID = 0; // Map unknown to space
-
-/**
- * Available languages for Supertonic TTS v2 (multilingual)
- */
-const AVAILABLE_LANGS = ['en', 'ko', 'es', 'pt', 'fr'];
+function isSupportedLanguage(lang: string): lang is SupportedLanguage {
+  return (AVAILABLE_LANGS as readonly string[]).includes(lang);
+}
 
 /**
  * Advanced text normalization for Supertonic
@@ -110,7 +105,7 @@ function normalizeText(
   // Add language tags only for v2 models (multilingual)
   // v1 models don't have < and > in their vocabulary
   if (addLanguageTags) {
-    const validLang = AVAILABLE_LANGS.includes(lang) ? lang : 'en';
+    const validLang = isSupportedLanguage(lang) ? lang : 'en';
     normalized = `<${validLang}>${normalized}</${validLang}>`;
   }
 
@@ -237,101 +232,30 @@ export class UnicodeProcessor {
   /**
    * Initialize the Unicode processor by loading the indexer from JSON
    *
-   * @param unicodeIndexerPath - Path to unicode_indexer.json file (optional)
+   * @param unicodeIndexerPath - Path to unicode_indexer.json file
    */
-  async initialize(unicodeIndexerPath?: string): Promise<void> {
-    if (unicodeIndexerPath) {
-      try {
-        console.log(
-          '[UnicodeProcessor] Loading unicode indexer from:',
-          unicodeIndexerPath,
-        );
-        const indexerData = await loadAssetAsJSON(unicodeIndexerPath);
-        this.indexer = indexerData as number[];
-        this.isInitialized = true;
-
-        // Check if this indexer supports language tags (< and > characters)
-        // v2 models have < at index 60 with vocab_idx 27, v1 has -1
-        const lessThanIdx = this.indexer[60]; // '<' character
-        const greaterThanIdx = this.indexer[62]; // '>' character
-        this.supportsLanguageTags =
-          lessThanIdx !== undefined &&
-          lessThanIdx >= 0 &&
-          greaterThanIdx !== undefined &&
-          greaterThanIdx >= 0;
-
-        console.log(
-          `[UnicodeProcessor] Loaded indexer with ${this.indexer.length} entries, language tags: ${this.supportsLanguageTags ? 'supported' : 'not supported'}`,
-        );
-        return;
-      } catch (error) {
-        console.warn(
-          '[UnicodeProcessor] Failed to load unicode indexer, using default:',
-          error,
-        );
-        // Fall through to use default indexer
-      }
-    }
-
-    // Use default indexer as fallback (v1 compatible, no language tags)
-    console.log('[UnicodeProcessor] Using default hardcoded indexer (v1 mode)');
-    this.indexer = this.buildDefaultIndexerArray();
-    this.isInitialized = true;
-    this.supportsLanguageTags = false; // Default indexer is v1 compatible
+  async initialize(unicodeIndexerPath: string): Promise<void> {
     console.log(
-      `[UnicodeProcessor] Default indexer ready with ${this.indexer.length} entries, language tags: not supported`,
+      '[UnicodeProcessor] Loading unicode indexer from:',
+      unicodeIndexerPath,
     );
-  }
+    const indexerData = await loadAssetAsJSON(unicodeIndexerPath);
+    this.indexer = indexerData as number[];
+    this.isInitialized = true;
 
-  /**
-   * Build default indexer as an array (matching unicode_indexer.json format)
-   * This provides backward compatibility when no JSON file is available
-   */
-  private buildDefaultIndexerArray(): number[] {
-    // Build array-based indexer where index = code point, value = vocab index
-    // Maximum code point we need to support (basic ASCII + some extended)
-    const maxCodePoint = 256;
-    const indexer = new Array(maxCodePoint).fill(-1);
+    // Check if this indexer supports language tags (< and > characters)
+    // v2 models have < at index 60 with vocab_idx 27, v1 has -1
+    const lessThanIdx = this.indexer[60]; // '<' character
+    const greaterThanIdx = this.indexer[62]; // '>' character
+    this.supportsLanguageTags =
+      lessThanIdx !== undefined &&
+      lessThanIdx >= 0 &&
+      greaterThanIdx !== undefined &&
+      greaterThanIdx >= 0;
 
-    indexer[32] = 0; // space
-    indexer[33] = 1; // !
-    indexer[34] = 2; // "
-    indexer[36] = 3; // $
-    indexer[37] = 4; // %
-    indexer[38] = 5; // &
-    indexer[39] = 6; // '
-    indexer[40] = 7; // (
-    indexer[41] = 8; // )
-    indexer[42] = 9; // *
-    indexer[43] = 10; // +
-    indexer[44] = 11; // ,
-    indexer[45] = 12; // -
-    indexer[46] = 13; // .
-    indexer[48] = 14; // 0
-    indexer[49] = 15; // 1
-    indexer[50] = 16; // 2
-    indexer[51] = 17; // 3
-    indexer[52] = 18; // 4
-    indexer[53] = 19; // 5
-    indexer[54] = 20; // 6
-    indexer[55] = 21; // 7
-    indexer[56] = 22; // 8
-    indexer[57] = 23; // 9
-    indexer[58] = 24; // :
-    indexer[59] = 25; // ;
-    indexer[63] = 26; // ?
-
-    // A-Z: 27-52
-    for (let i = 0; i < 26; i++) {
-      indexer[65 + i] = 27 + i;
-    }
-
-    // a-z: 53-78
-    for (let i = 0; i < 26; i++) {
-      indexer[97 + i] = 53 + i;
-    }
-
-    return indexer;
+    console.log(
+      `[UnicodeProcessor] Loaded indexer with ${this.indexer.length} entries, language tags: ${this.supportsLanguageTags ? 'supported' : 'not supported'}`,
+    );
   }
 
   /**
@@ -418,79 +342,4 @@ export class UnicodeProcessor {
   hasLanguageTagSupport(): boolean {
     return this.supportsLanguageTags;
   }
-}
-
-/**
- * Legacy function for backward compatibility
- * Uses default hardcoded indexer - prefer UnicodeProcessor.textToUnicodeIds() instead
- * @deprecated Use UnicodeProcessor class instead
- */
-export function textToUnicodeIds(
-  text: string,
-  lang: string = 'en',
-): BigInt64Array {
-  // Default hardcoded indexer for backward compatibility
-  const defaultIndexer = buildDefaultIndexer();
-  const normalized = normalizeText(text, lang);
-  const ids = new BigInt64Array(normalized.length);
-
-  for (let i = 0; i < normalized.length; i++) {
-    const codePoint = normalized.codePointAt(i) ?? 0;
-    const vocabIdx = defaultIndexer.get(codePoint);
-    if (vocabIdx !== undefined) {
-      ids[i] = BigInt(vocabIdx);
-    } else {
-      ids[i] = BigInt(UNK_TOKEN_ID);
-    }
-  }
-
-  return ids;
-}
-
-/**
- * Build default unicode indexer for backward compatibility
- * This is the basic ASCII mapping - the actual model may have a different indexer
- */
-function buildDefaultIndexer(): Map<number, number> {
-  const indexer = new Map<number, number>();
-
-  indexer.set(32, 0); // space
-  indexer.set(33, 1); // !
-  indexer.set(34, 2); // "
-  indexer.set(36, 3); // $
-  indexer.set(37, 4); // %
-  indexer.set(38, 5); // &
-  indexer.set(39, 6); // '
-  indexer.set(40, 7); // (
-  indexer.set(41, 8); // )
-  indexer.set(42, 9); // *
-  indexer.set(43, 10); // +
-  indexer.set(44, 11); // ,
-  indexer.set(45, 12); // -
-  indexer.set(46, 13); // .
-  indexer.set(48, 14); // 0
-  indexer.set(49, 15); // 1
-  indexer.set(50, 16); // 2
-  indexer.set(51, 17); // 3
-  indexer.set(52, 18); // 4
-  indexer.set(53, 19); // 5
-  indexer.set(54, 20); // 6
-  indexer.set(55, 21); // 7
-  indexer.set(56, 22); // 8
-  indexer.set(57, 23); // 9
-  indexer.set(58, 24); // :
-  indexer.set(59, 25); // ;
-  indexer.set(63, 26); // ?
-
-  // A-Z: 27-52
-  for (let i = 0; i < 26; i++) {
-    indexer.set(65 + i, 27 + i);
-  }
-
-  // a-z: 53-78
-  for (let i = 0; i < 26; i++) {
-    indexer.set(97 + i, 53 + i);
-  }
-
-  return indexer;
 }

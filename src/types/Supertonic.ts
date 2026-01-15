@@ -53,8 +53,8 @@ export interface SupertonicModelPaths {
   vectorEstimatorPath: string;
   /** Path to vocoder ONNX model */
   vocoderPath: string;
-  /** Path to unicode indexer JSON file (optional - uses default if not provided) */
-  unicodeIndexerPath?: string;
+  /** Path to unicode indexer JSON file */
+  unicodeIndexerPath: string;
 }
 
 export interface SupertonicConfig extends SupertonicModelPaths {
@@ -95,15 +95,4 @@ export interface SupertonicVoiceStyle {
   styleDp: Float32Array;
   /** Style embedding for text-to-latent (style_ttl) */
   styleTtl: Float32Array;
-}
-
-/**
- * Deprecated - use SupertonicVoiceStyle instead
- * @deprecated
- */
-export interface VoicePreset {
-  /** Voice ID */
-  voiceId: string;
-  /** Embedding vector for the voice */
-  embedding: Float32Array;
 }

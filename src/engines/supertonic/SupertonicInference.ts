@@ -17,38 +17,46 @@ import type {
   AudioBuffer,
   ExecutionProvider,
   ExecutionProviderPreset,
+  OnnxInferenceSession,
+  OnnxInferenceSessionConstructor,
+  OnnxTensorConstructor,
 } from '../../types';
 import {
   createTextMask,
   createLatentMask,
   UnicodeProcessor,
 } from './UnicodeProcessor';
+import {SUPERTONIC_CONSTANTS} from './constants';
 
-// Lazy import ONNX Runtime
-let InferenceSession: any;
-let Tensor: any;
+// Lazy import ONNX Runtime - initialized by ensureONNXRuntime()
+let InferenceSession: OnnxInferenceSessionConstructor;
+let Tensor: OnnxTensorConstructor;
+let onnxInitialized = false;
 
 /**
- * Ensure ONNX Runtime is available
+ * Ensure ONNX Runtime is available and initialize module-level variables
  */
-function ensureONNXRuntime() {
-  if (!InferenceSession || !Tensor) {
-    try {
-      const onnx = require('onnxruntime-react-native');
-      InferenceSession = onnx.InferenceSession;
-      Tensor = onnx.Tensor;
-    } catch (error) {
-      throw new Error(
-        'onnxruntime-react-native is required to use the Supertonic engine.\n\n' +
-          'Install it with:\n' +
-          '  npm install onnxruntime-react-native\n' +
-          '  # or\n' +
-          '  yarn add onnxruntime-react-native\n\n' +
-          'Then rebuild your app:\n' +
-          '  iOS: cd ios && pod install && cd ..\n' +
-          '  Android: Rebuild the app',
-      );
-    }
+function ensureONNXRuntime(): void {
+  if (onnxInitialized) {
+    return;
+  }
+
+  try {
+    const onnx = require('onnxruntime-react-native');
+    InferenceSession = onnx.InferenceSession;
+    Tensor = onnx.Tensor;
+    onnxInitialized = true;
+  } catch (error) {
+    throw new Error(
+      'onnxruntime-react-native is required to use the Supertonic engine.\n\n' +
+        'Install it with:\n' +
+        '  npm install onnxruntime-react-native\n' +
+        '  # or\n' +
+        '  yarn add onnxruntime-react-native\n\n' +
+        'Then rebuild your app:\n' +
+        '  iOS: cd ios && pod install && cd ..\n' +
+        '  Android: Rebuild the app',
+    );
   }
 }
 
@@ -97,25 +105,6 @@ function resolveExecutionProviders(
             'cpu',
           ];
         } else {
-          return ['nnapi', 'cpu'];
-        }
-
-      case 'ane':
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: false,
-              onlyEnableDeviceWithANE: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          console.warn(
-            '[SupertonicInference] ANE preset is iOS-only, falling back to NNAPI on Android',
-          );
           return ['nnapi', 'cpu'];
         }
 
@@ -169,19 +158,38 @@ function generateNoise(shape: number[], mask?: Float32Array): Float32Array {
   return noise;
 }
 
-// Constants from official Supertonic tts.json config
-// ae.base_chunk_size = 512, ttl.chunk_compress_factor = 6
-const AE_BASE_CHUNK_SIZE = 512; // From ae.base_chunk_size in tts.json
-const TTL_CHUNK_COMPRESS_FACTOR = 6; // From ttl.chunk_compress_factor in tts.json
-const LATENT_DIM = 24; // From ttl.latent_dim in tts.json
-const EFFECTIVE_LATENT_DIM = LATENT_DIM * TTL_CHUNK_COMPRESS_FACTOR; // 144
-const CHUNK_SIZE = AE_BASE_CHUNK_SIZE * TTL_CHUNK_COMPRESS_FACTOR; // 3072 samples per latent frame
+const {
+  CHUNK_SIZE,
+  EFFECTIVE_LATENT_DIM,
+  STYLE_DP_SIZE,
+  STYLE_TTL_SIZE,
+  SPEED_OFFSET,
+} = SUPERTONIC_CONSTANTS;
+
+/**
+ * Validate voice style tensor dimensions
+ * Throws an error if dimensions don't match expected sizes
+ */
+function validateVoiceStyle(style: SupertonicVoiceStyle): void {
+  if (style.styleDp.length !== STYLE_DP_SIZE) {
+    throw new Error(
+      `Invalid style_dp size: expected ${STYLE_DP_SIZE}, got ${style.styleDp.length}. ` +
+        `Voice style may be corrupted or from an incompatible model version.`,
+    );
+  }
+  if (style.styleTtl.length !== STYLE_TTL_SIZE) {
+    throw new Error(
+      `Invalid style_ttl size: expected ${STYLE_TTL_SIZE}, got ${style.styleTtl.length}. ` +
+        `Voice style may be corrupted or from an incompatible model version.`,
+    );
+  }
+}
 
 export class SupertonicInference {
-  private durationPredictorSession: any = null;
-  private textEncoderSession: any = null;
-  private vectorEstimatorSession: any = null;
-  private vocoderSession: any = null;
+  private durationPredictorSession: OnnxInferenceSession | null = null;
+  private textEncoderSession: OnnxInferenceSession | null = null;
+  private vectorEstimatorSession: OnnxInferenceSession | null = null;
+  private vocoderSession: OnnxInferenceSession | null = null;
 
   private sampleRate = 44100; // Supertonic vocoder outputs 44.1kHz audio
   private latentDim = EFFECTIVE_LATENT_DIM; // 144 = 24 * 6
@@ -303,6 +311,9 @@ export class SupertonicInference {
       throw new Error('UnicodeProcessor not initialized');
     }
 
+    // Validate voice style dimensions before synthesis
+    validateVoiceStyle(voiceStyle);
+
     const totalStartTime = Date.now();
 
     // Step 1: Convert text to Unicode IDs
@@ -405,7 +416,10 @@ export class SupertonicInference {
    * @param speed - Speech speed multiplier (1.0 = normal)
    * @param offset - Small offset to prevent division by zero and tune baseline
    */
-  private speedToDurationFactor(speed: number, offset: number = 0.05): number {
+  private speedToDurationFactor(
+    speed: number,
+    offset: number = SPEED_OFFSET,
+  ): number {
     return 1 / (speed + offset);
   }
 
@@ -456,6 +470,9 @@ export class SupertonicInference {
     };
 
     try {
+      if (!this.durationPredictorSession) {
+        throw new Error('Duration predictor session not initialized');
+      }
       const results = await this.durationPredictorSession.run(feeds);
 
       console.log(
@@ -531,6 +548,9 @@ export class SupertonicInference {
     };
 
     try {
+      if (!this.textEncoderSession) {
+        throw new Error('Text encoder session not initialized');
+      }
       const results = await this.textEncoderSession.run(feeds);
 
       console.log(
@@ -552,7 +572,7 @@ export class SupertonicInference {
       );
 
       return {
-        textEmbedding: new Float32Array(textEmb.data),
+        textEmbedding: new Float32Array(textEmb.data as Float32Array),
         embDim,
       };
     } catch (error) {
@@ -649,6 +669,9 @@ export class SupertonicInference {
       }
 
       try {
+        if (!this.vectorEstimatorSession) {
+          throw new Error('Vector estimator session not initialized');
+        }
         const results = await this.vectorEstimatorSession.run(feeds);
 
         const xt =
@@ -662,7 +685,7 @@ export class SupertonicInference {
           );
         }
 
-        latent = new Float32Array(xt.data);
+        latent = new Float32Array(xt.data as Float32Array);
       } catch (error) {
         console.error(
           `[SupertonicInference] estimateVector step ${step} error:`,
@@ -701,6 +724,9 @@ export class SupertonicInference {
     };
 
     try {
+      if (!this.vocoderSession) {
+        throw new Error('Vocoder session not initialized');
+      }
       const results = await this.vocoderSession.run(feeds);
 
       console.log(
@@ -721,7 +747,7 @@ export class SupertonicInference {
 
       console.log(`[SupertonicInference] Audio output shape: [${wav.dims}]`);
 
-      return new Float32Array(wav.data);
+      return new Float32Array(wav.data as Float32Array);
     } catch (error) {
       console.error('[SupertonicInference] vocode error:', error);
       throw error;
