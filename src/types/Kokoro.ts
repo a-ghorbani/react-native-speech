@@ -74,10 +74,8 @@ export interface KokoroConfig {
   vocabPath?: string;
   /** Path to BPE merges file (legacy format) */
   mergesPath?: string;
-  /** Phonemizer type: 'remote' uses server API, 'native' uses native module, 'none' disables phonemization */
-  phonemizerType?: 'remote' | 'native' | 'none';
-  /** URL for remote phonemizer server (default: http://localhost:3000) */
-  phonemizerUrl?: string;
+  /** Phonemizer type: 'native' uses espeak-ng, 'none' disables phonemization (not recommended) */
+  phonemizerType?: 'native' | 'none';
   /**
    * Maximum chunk size in characters for text splitting (default: 400)
    * Smaller values = faster first audio & more progress events, but more inference calls

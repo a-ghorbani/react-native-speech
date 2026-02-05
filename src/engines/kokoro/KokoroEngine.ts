@@ -1,8 +1,14 @@
 /**
  * Kokoro TTS Engine
  *
- * Neural TTS engine using ONNX Runtime for inference
- * Supports sentence-level chunking for long text with progress events
+ * Neural TTS engine using ONNX Runtime for inference.
+ * Supports sentence-level chunking for long text with progress events.
+ *
+ * Features:
+ * - High-quality neural voice synthesis
+ * - Hardware acceleration (CoreML on iOS, NNAPI on Android)
+ * - Pipelined synthesis for seamless playback
+ * - Voice blending support
  */
 
 import {Platform} from 'react-native';
@@ -23,22 +29,27 @@ import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, type IPhonemizer} from './Phonemizer';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
+import {createComponentLogger} from '../../utils/logger';
+import {KOKORO_CONSTANTS} from './constants';
 
-// Lazy import ONNX Runtime to allow graceful handling if not installed
-let InferenceSession: any;
-let Tensor: any;
+const log = createComponentLogger('Kokoro', 'Engine');
+
+// Lazy-loaded ONNX Runtime references (typed as any for dynamic import)
+let OnnxRuntime: {InferenceSession: any; Tensor: any} | null = null;
 
 /**
- * Check if ONNX Runtime is available
- * Throws helpful error if not installed
+ * Ensure ONNX Runtime is available and return it
+ * @throws Error with installation instructions if not installed
  */
-function ensureONNXRuntime() {
-  if (!InferenceSession || !Tensor) {
+function getOnnxRuntime(): {InferenceSession: any; Tensor: any} {
+  if (!OnnxRuntime) {
     try {
       const onnx = require('onnxruntime-react-native');
-      InferenceSession = onnx.InferenceSession;
-      Tensor = onnx.Tensor;
-    } catch (error) {
+      OnnxRuntime = {
+        InferenceSession: onnx.InferenceSession,
+        Tensor: onnx.Tensor,
+      };
+    } catch {
       throw new Error(
         'onnxruntime-react-native is required to use the Kokoro engine.\n\n' +
           'Install it with:\n' +
@@ -52,14 +63,10 @@ function ensureONNXRuntime() {
       );
     }
   }
+  return OnnxRuntime;
 }
 
-// Maximum tokens the Kokoro model supports (voice embeddings are for 0-509 tokens)
-const MAX_TOKEN_LIMIT = 500;
-
-// Default max chunk size in characters (conservative to stay within token limits)
-// Apps can override this via KokoroConfig.maxChunkSize for streaming-like UX
-const DEFAULT_MAX_CHUNK_SIZE = 400;
+const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
 
 /**
  * Resolve execution provider preset or array to ONNX Runtime format
@@ -140,7 +147,6 @@ export class KokoroEngine implements TTSEngineInterface {
   private initError: string | null = null;
 
   private defaultVoiceId = 'af_bella'; // Default voice
-  private sampleRate = 24000; // Kokoro outputs 24kHz audio
 
   // Chunking and progress tracking
   private stopRequested = false;
@@ -176,8 +182,8 @@ export class KokoroEngine implements TTSEngineInterface {
    * Initialize the Kokoro engine with model files
    */
   async initialize(config?: KokoroConfig): Promise<void> {
-    // Check if ONNX Runtime is available
-    ensureONNXRuntime();
+    // Check if ONNX Runtime is available (throws if not installed)
+    getOnnxRuntime();
 
     if (this.isInitialized) {
       return;
@@ -191,37 +197,18 @@ export class KokoroEngine implements TTSEngineInterface {
     this.initError = null;
 
     try {
-      console.log('[KokoroEngine.initialize] Received config:', config);
-
       // Config with model paths is required
-      if (config) {
-        this.config = config;
-      } else {
+      if (!config) {
         throw new Error('Kokoro config required for initialization');
       }
+      this.config = config;
 
-      console.log('[KokoroEngine.initialize] Stored config:', this.config);
-      console.log(
-        '[KokoroEngine.initialize] Config phonemizerType:',
-        this.config.phonemizerType,
-      );
-      console.log(
-        '[KokoroEngine.initialize] Config phonemizerUrl:',
-        this.config.phonemizerUrl,
+      log.debug(
+        `Initializing with phonemizerType=${config.phonemizerType || 'none'}`,
       );
 
       // Initialize phonemizer based on config
-      const phonemizerType = this.config.phonemizerType || 'none';
-      // const phonemizerUrl =
-      //   this.config.phonemizerUrl || 'http://localhost:3000';
-      console.log(
-        '[KokoroEngine.initialize] Creating phonemizer with type:',
-        phonemizerType,
-      );
-      // console.log(
-      //   '[KokoroEngine.initialize] Creating phonemizer with URL:',
-      //   phonemizerUrl,
-      // );
+      const phonemizerType = config.phonemizerType || 'none';
       this.phonemizer = createPhonemizer(phonemizerType);
 
       // Load tokenizer (support both tokenizer.json and vocab+merges format)
@@ -288,31 +275,18 @@ export class KokoroEngine implements TTSEngineInterface {
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const language = this.getLanguageFromVoice(voiceId);
 
-    console.log(
-      '[KokoroEngine] ========== SYNTHESIS PIPELINE START ==========',
-    );
-    console.log('[KokoroEngine] Original text:', text);
-    console.log('[KokoroEngine] Voice ID:', voiceId);
-    console.log('[KokoroEngine] Utterance ID:', utteranceId);
-    console.log(
-      '[KokoroEngine] Phonemizer type:',
-      this.config?.phonemizerType || 'none',
+    log.debug(
+      `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
-    // STEP 1: Chunk text by sentences for streaming playback
-    // Use the original text for chunking to preserve positions
-    // Use configured maxChunkSize or fall back to default
+    // Chunk text by sentences for streaming playback
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
     const chunks = this.normalizer.chunkBySentencesWithMetadata(
       text,
       maxChunkSize,
     );
 
-    console.log(
-      '[KokoroEngine] STEP 1 - Text chunked into',
-      chunks.length,
-      'chunks',
-    );
+    log.debug(`Text chunked into ${chunks.length} chunks`);
 
     // Use pipelined synthesis: synthesize next chunk while current one plays
     // This eliminates the gap between chunks
@@ -321,17 +295,14 @@ export class KokoroEngine implements TTSEngineInterface {
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       // Check if stop was requested
       if (this.stopRequested) {
-        console.log('[KokoroEngine] Stop requested, aborting synthesis');
+        log.debug('Stop requested, aborting synthesis');
         return undefined;
       }
 
       const chunk = chunks[chunkIndex] as TextChunk;
       const progress = Math.round((chunkIndex / chunks.length) * 100);
 
-      console.log(
-        `[KokoroEngine] Processing chunk ${chunkIndex + 1}/${chunks.length}:`,
-        chunk.text.substring(0, 50) + (chunk.text.length > 50 ? '...' : ''),
-      );
+      log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
 
       // Emit chunk start progress event
       this.emitChunkProgress({
@@ -365,7 +336,7 @@ export class KokoroEngine implements TTSEngineInterface {
 
       // Check if stop was requested before playing
       if (this.stopRequested) {
-        console.log('[KokoroEngine] Stop requested, aborting before playback');
+        log.debug('Stop requested, aborting before playback');
         return undefined;
       }
 
@@ -373,9 +344,6 @@ export class KokoroEngine implements TTSEngineInterface {
       const nextChunkIndex = chunkIndex + 1;
       if (nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
-        console.log(
-          `[KokoroEngine] Pre-synthesizing chunk ${nextChunkIndex + 1}/${chunks.length}`,
-        );
         nextAudioPromise = this.synthesizeTextChunk(
           nextChunk.text,
           voiceId,
@@ -391,13 +359,7 @@ export class KokoroEngine implements TTSEngineInterface {
       });
     }
 
-    // Note: We don't emit a final 100% progress event here because:
-    // 1. The last chunk's progress event was already emitted before playback
-    // 2. The native onFinish event fires when playback completes
-    // 3. Emitting another progress event after onFinish would re-set highlights
-    //    that the app already cleared in response to onFinish
-
-    console.log('[KokoroEngine] ========== SYNTHESIS COMPLETE ==========');
+    log.debug('Synthesis complete');
     return undefined;
   }
 
@@ -411,33 +373,23 @@ export class KokoroEngine implements TTSEngineInterface {
     language: string,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer> {
-    // STEP 2: Normalize chunk text
+    // Normalize chunk text
     const normalized = this.normalizer.normalize(chunkText);
-    console.log(
-      '[KokoroEngine] STEP 2 - Normalized chunk:',
-      normalized.substring(0, 50),
-    );
 
-    // STEP 3: Phonemize (convert text to phonemes)
+    // Phonemize (convert text to phonemes)
     const phonemes = await this.phonemizer.phonemize(normalized, language);
-    console.log(
-      '[KokoroEngine] STEP 3 - Phonemes length:',
-      phonemes.length,
-      'chars',
-    );
 
-    // STEP 4: Tokenize phonemes
+    // Tokenize phonemes
     const tokens = this.tokenizer.encode(phonemes);
-    console.log('[KokoroEngine] STEP 4 - Tokens generated:', tokens.length);
 
     // Check token limit
     if (tokens.length > MAX_TOKEN_LIMIT) {
-      console.warn(
-        `[KokoroEngine] Warning: Chunk has ${tokens.length} tokens, exceeding limit of ${MAX_TOKEN_LIMIT}. Audio may be truncated.`,
+      log.warn(
+        `Chunk has ${tokens.length} tokens, exceeding limit of ${MAX_TOKEN_LIMIT}. Audio may be truncated.`,
       );
     }
 
-    // STEP 5: Generate audio for this chunk
+    // Generate audio for this chunk
     return this.synthesizeChunk(tokens, voiceId, options);
   }
 
@@ -479,7 +431,8 @@ export class KokoroEngine implements TTSEngineInterface {
     const speed = options?.speed ?? 1.0;
     const speedArray = new Float32Array([speed]);
 
-    // Create input tensors
+    // Create input tensors using ONNX Runtime
+    const {Tensor} = getOnnxRuntime();
     const tokensTensor = new Tensor('int64', tokensBigInt, [1, tokens.length]);
     const voiceTensor = new Tensor('float32', voiceEmbedding, [
       1,
@@ -511,24 +464,27 @@ export class KokoroEngine implements TTSEngineInterface {
     // Create audio buffer
     const audioBuffer: AudioBuffer = {
       samples: audioData,
-      sampleRate: this.sampleRate,
+      sampleRate: SAMPLE_RATE,
       channels: 1, // Mono
-      duration: audioData.length / this.sampleRate,
+      duration: audioData.length / SAMPLE_RATE,
     };
 
-    // Apply volume if specified
+    // Apply volume if specified (with bounds checking to prevent clipping)
     if (options?.volume !== undefined && options.volume !== 1.0) {
+      const clampedVolume = Math.max(0, Math.min(1, options.volume));
       for (let i = 0; i < audioBuffer.samples.length; i++) {
         const sample = audioBuffer.samples[i];
         if (sample !== undefined) {
-          audioBuffer.samples[i] = sample * options.volume;
+          // Apply volume and clamp to [-1, 1] to prevent clipping
+          const adjusted = sample * clampedVolume;
+          audioBuffer.samples[i] = Math.max(-1, Math.min(1, adjusted));
         }
       }
     }
 
     const totalChunkTime = Date.now() - chunkStartTime;
-    console.log(
-      `[KokoroEngine] STEP 5 - Chunk synthesis complete: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, tokens=${tokens.length}, audio=${audioBuffer.duration.toFixed(2)}s`,
+    log.debug(
+      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${audioBuffer.duration.toFixed(2)}s`,
     );
 
     return audioBuffer;
@@ -592,47 +548,38 @@ export class KokoroEngine implements TTSEngineInterface {
    * Load ONNX model with hardware acceleration
    */
   private async loadModel(modelPath: string): Promise<void> {
+    const {InferenceSession} = getOnnxRuntime();
+
     try {
       // Resolve execution providers from config
       const executionProviders = resolveExecutionProviders(
         this.config?.executionProviders,
       );
 
-      console.log(
-        '[KokoroEngine] Loading model with execution providers:',
-        JSON.stringify(executionProviders),
-      );
-      console.log(
-        '[KokoroEngine] Configured preset:',
-        this.config?.executionProviders,
+      log.debug(
+        `Loading model with providers: ${JSON.stringify(executionProviders)}`,
       );
 
-      // Create session with execution providers for hardware acceleration
       const sessionOptions = {
         executionProviders,
       };
 
-      console.log('[KokoroEngine] Creating InferenceSession...');
       const startTime = Date.now();
       this.session = await InferenceSession.create(modelPath, sessionOptions);
       const loadTime = Date.now() - startTime;
 
-      console.log(
-        `[KokoroEngine] Model loaded successfully in ${loadTime}ms with providers:`,
-        JSON.stringify(executionProviders),
-      );
+      log.info(`Model loaded in ${loadTime}ms`);
     } catch (error) {
       // If hardware acceleration fails, try CPU-only as fallback
-      console.warn(
-        '[KokoroEngine] Failed to load with acceleration, trying CPU fallback:',
-        error instanceof Error ? error.message : 'Unknown error',
+      log.warn(
+        `Failed to load with acceleration, trying CPU fallback: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
 
       try {
         this.session = await InferenceSession.create(modelPath, {
           executionProviders: ['cpu'],
         });
-        console.log('[KokoroEngine] Model loaded with CPU fallback');
+        log.info('Model loaded with CPU fallback');
       } catch (fallbackError) {
         throw new Error(
           `Failed to load ONNX model: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
@@ -642,21 +589,18 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Load BPE tokenizer
+   * Load BPE tokenizer from vocab and merges files
    */
   private async loadTokenizer(
     vocabPath: string,
     mergesPath: string,
   ): Promise<void> {
     try {
-      // These would typically be loaded from bundled assets
-      // For now, we'll need to integrate with React Native's asset system
-      console.log(
-        '[KokoroEngine] Loading tokenizer from:',
-        vocabPath,
-        mergesPath,
-      );
-      const {loadAssetAsJSON, loadAssetAsText} = require('./utils/AssetLoader');
+      log.debug('Loading tokenizer from vocab+merges files');
+      const {
+        loadAssetAsJSON,
+        loadAssetAsText,
+      } = require('../../utils/AssetLoader');
 
       const vocabData = await loadAssetAsJSON(vocabPath);
       const mergesText = await loadAssetAsText(mergesPath);
@@ -665,6 +609,7 @@ export class KokoroEngine implements TTSEngineInterface {
         .filter((line: string) => line.trim() && !line.startsWith('#'));
 
       await this.tokenizer.loadFromData(vocabData, mergesArray);
+      log.debug('Tokenizer loaded');
     } catch (error) {
       throw new Error(
         `Failed to load tokenizer: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -677,37 +622,24 @@ export class KokoroEngine implements TTSEngineInterface {
    */
   private async loadTokenizerFromHF(tokenizerPath: string): Promise<void> {
     try {
-      console.log(
-        '[KokoroEngine] Loading tokenizer from HF format:',
-        tokenizerPath,
-      );
+      log.debug('Loading tokenizer from HuggingFace format');
+      const {loadAssetAsJSON} = require('../../utils/AssetLoader');
 
-      console.log('[KokoroEngine] Requiring AssetLoader...');
-      const {loadAssetAsJSON} = require('./utils/AssetLoader');
-      console.log('[KokoroEngine] AssetLoader loaded successfully');
-
-      console.log('[KokoroEngine] Loading tokenizer JSON...');
       const tokenizerData = await loadAssetAsJSON(tokenizerPath);
-      console.log(
-        '[KokoroEngine] Tokenizer JSON loaded, keys:',
-        Object.keys(tokenizerData),
-      );
 
       // Extract vocab from HF tokenizer.json format
       const vocab = tokenizerData.model?.vocab || {};
-      console.log('[KokoroEngine] Vocab size:', Object.keys(vocab).length);
-
-      // Extract merges from HF tokenizer.json format
       const merges = tokenizerData.model?.merges || [];
-      console.log('[KokoroEngine] Merges count:', merges.length);
 
-      console.log('[KokoroEngine] Loading tokenizer data...');
+      log.debug(
+        `Tokenizer vocab size: ${Object.keys(vocab).length}, merges: ${merges.length}`,
+      );
+
       await this.tokenizer.loadFromData(vocab, merges);
-      console.log('[KokoroEngine] Tokenizer loaded successfully');
+      log.debug('Tokenizer loaded');
     } catch (error) {
-      console.error(
-        '[KokoroEngine] Error loading tokenizer from HF format:',
-        error,
+      log.error(
+        `Failed to load tokenizer: ${error instanceof Error ? error.message : String(error)}`,
       );
       throw new Error(
         `Failed to load tokenizer from HF format: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -716,69 +648,42 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Load voice embeddings
+   * Load voice embeddings from manifest, JSON, or binary file
    */
   private async loadVoices(voicesPath: string): Promise<void> {
     try {
-      console.log('[KokoroEngine] Loading voices from:', voicesPath);
-      console.log(
-        '[KokoroEngine] Path includes manifest?',
-        voicesPath.includes('manifest'),
-      );
-      console.log(
-        '[KokoroEngine] Path ends with .json?',
-        voicesPath.endsWith('.json'),
-      );
+      const {
+        loadAssetAsJSON,
+        loadAssetAsArrayBuffer,
+      } = require('../../utils/AssetLoader');
 
       // Check if it's a manifest file (lazy loading) or direct voices file
-      // Check for both 'manifest' in path AND .json extension for manifest files
       if (voicesPath.includes('manifest') && voicesPath.endsWith('.json')) {
-        console.log(
-          '[KokoroEngine] Detected manifest file - using lazy loading',
-        );
-        const {loadAssetAsJSON} = require('./utils/AssetLoader');
+        log.debug('Loading voices from manifest (lazy loading mode)');
         const manifest = await loadAssetAsJSON(voicesPath);
-        console.log('[KokoroEngine] Manifest loaded successfully');
-        console.log(
-          '[KokoroEngine] Manifest voices count:',
-          manifest.voices?.length,
-        );
-        console.log('[KokoroEngine] Manifest baseUrl:', manifest.baseUrl);
-
-        // Initialize voice loader with manifest (lazy loading mode)
         await this.voiceLoader.loadFromManifest(manifest, voicesPath);
-        console.log('[KokoroEngine] Voice loader initialized with manifest');
+        log.debug(
+          `Manifest loaded: ${manifest.voices?.length || 0} voices available`,
+        );
       } else if (voicesPath.endsWith('.json')) {
-        console.log('[KokoroEngine] Loading voices from JSON (non-manifest)');
-        const {loadAssetAsJSON} = require('./utils/AssetLoader');
+        log.debug('Loading voices from JSON file');
         const voicesData = await loadAssetAsJSON(voicesPath);
-        console.log(
-          '[KokoroEngine] Voices JSON loaded, keys:',
-          Object.keys(voicesData).length,
-        );
         await this.voiceLoader.loadFromJSON(voicesData);
+        log.debug(`Voices loaded: ${Object.keys(voicesData).length} voices`);
       } else {
-        console.log('[KokoroEngine] Loading voices from binary file');
-        const {loadAssetAsArrayBuffer} = require('./utils/AssetLoader');
+        log.debug('Loading voices from binary file');
         const voicesData = await loadAssetAsArrayBuffer(voicesPath);
-        console.log(
-          '[KokoroEngine] Voices data loaded, size:',
-          voicesData.byteLength,
-        );
         await this.voiceLoader.loadFromBinary(voicesData);
+        log.debug(`Voices loaded: ${voicesData.byteLength} bytes`);
       }
 
-      console.log('[KokoroEngine] Voice loader initialized');
-      console.log(
-        '[KokoroEngine] Voice loader ready:',
-        this.voiceLoader.isReady(),
-      );
-      console.log(
-        '[KokoroEngine] Available voices:',
-        this.voiceLoader.getAvailableVoices().length,
+      log.info(
+        `Voice loader ready: ${this.voiceLoader.getAvailableVoices().length} voices`,
       );
     } catch (error) {
-      console.error('[KokoroEngine] Failed to load voices:', error);
+      log.error(
+        `Failed to load voices: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new Error(
         `Failed to load voices: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
@@ -788,30 +693,14 @@ export class KokoroEngine implements TTSEngineInterface {
   /**
    * Get language code from voice ID
    * Voice IDs follow the pattern: {lang}{gender}_{name}
-   * e.g., 'af_bella' -> 'a' (American English for remote API)
-   *       'bf_emma' -> 'b' (British English for remote API)
+   * e.g., 'af_bella' -> 'en-us' (American English)
+   *       'bf_emma' -> 'en-gb' (British English)
    *
-   * Returns format based on phonemizer type:
-   * - Remote API: 'a' or 'b'
-   * - Native espeak-ng: 'en-us' or 'en-gb'
+   * Returns espeak-ng language codes for phonemization.
    */
   private getLanguageFromVoice(voiceId: string): string {
     const langCode = voiceId.charAt(0).toLowerCase();
-    const phonemizerType = this.config?.phonemizerType || 'none';
 
-    // Remote API uses single-letter codes
-    if (phonemizerType === 'remote') {
-      switch (langCode) {
-        case 'a':
-          return 'a'; // American English
-        case 'b':
-          return 'b'; // British English
-        default:
-          return 'a';
-      }
-    }
-
-    // Native espeak-ng uses standard language codes
     switch (langCode) {
       case 'a':
         return 'en-us'; // American English

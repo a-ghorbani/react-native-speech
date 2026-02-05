@@ -8,9 +8,9 @@ export {VoiceLoader} from './VoiceLoader';
 export {TextNormalizer, type TextChunk} from './TextNormalizer';
 export {
   createPhonemizer,
-  RemotePhonemizer,
   NoOpPhonemizer,
   NativePhonemizer,
   type IPhonemizer,
+  type PhonemizerType,
 } from './Phonemizer';
-export * from './utils/AssetLoader';
+export {KOKORO_CONSTANTS, VOICE_EMBEDDING_CONSTANTS} from './constants';

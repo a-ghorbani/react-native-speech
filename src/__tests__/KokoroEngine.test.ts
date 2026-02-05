@@ -167,9 +167,9 @@ describe('VoiceLoader', () => {
 
     await voiceLoader.loadFromJSON(voicesData);
 
-    expect(() => {
-      voiceLoader.getVoiceEmbedding('non_existent');
-    }).toThrow();
+    await expect(
+      voiceLoader.getVoiceEmbedding('non_existent'),
+    ).rejects.toThrow();
   });
 });
 

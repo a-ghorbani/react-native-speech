@@ -27,7 +27,11 @@ import type {
   ChunkProgressCallback,
 } from '../../types';
 import {SupertonicInference} from './SupertonicInference';
-import {StyleLoader} from './StyleLoader';
+import {
+  StyleLoader,
+  type VoiceManifest,
+  type RawVoiceStyleData,
+} from './StyleLoader';
 import {UnicodeProcessor} from './UnicodeProcessor';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {loadAssetAsJSON} from './utils/AssetLoader';
@@ -372,20 +376,28 @@ export class SupertonicEngine implements TTSEngineInterface {
 
       if (voicesPath.includes('manifest') && voicesPath.endsWith('.json')) {
         // Manifest mode - lazy loading
-        const manifest = await loadAssetAsJSON(voicesPath);
+        const manifest = await loadAssetAsJSON<VoiceManifest>(voicesPath);
         await this.styleLoader.loadFromManifest(manifest, voicesPath);
         console.log('[SupertonicEngine] Loaded voice manifest');
       } else if (voicesPath.endsWith('.json')) {
-        // Single voice file or voice list
-        const data = await loadAssetAsJSON(voicesPath);
-        if (data.voices && Array.isArray(data.voices)) {
+        // Single voice file or voice list - could be manifest or single voice
+        const data = await loadAssetAsJSON<VoiceManifest | RawVoiceStyleData>(
+          voicesPath,
+        );
+        if ('voices' in data && Array.isArray(data.voices)) {
           // Manifest format
-          await this.styleLoader.loadFromManifest(data, voicesPath);
-        } else if (data.style_dp && data.style_ttl) {
+          await this.styleLoader.loadFromManifest(
+            data as VoiceManifest,
+            voicesPath,
+          );
+        } else if ('style_dp' in data && 'style_ttl' in data) {
           // Single voice style
           const voiceId =
             voicesPath.split('/').pop()?.replace('.json', '') || 'default';
-          this.styleLoader.loadVoiceFromData(voiceId, data);
+          this.styleLoader.loadVoiceFromData(
+            voiceId,
+            data as RawVoiceStyleData,
+          );
         }
       } else {
         throw new Error(

@@ -1,10 +1,20 @@
 /**
  * Voice Loader for Kokoro TTS
  *
- * Loads and manages voice embeddings from the voices.bin file
+ * Loads and manages voice embeddings for Kokoro synthesis.
+ * Supports:
+ * - Binary voice files (voices.bin)
+ * - JSON voice data
+ * - Lazy loading from manifest (on-demand download)
  */
 
 import type {KokoroVoice} from '../../types';
+import {createComponentLogger} from '../../utils/logger';
+import {VOICE_EMBEDDING_CONSTANTS} from './constants';
+
+const log = createComponentLogger('Kokoro', 'VoiceLoader');
+
+const {STYLE_DIM, MAX_TOKEN_INDEX, EXPECTED_SIZE} = VOICE_EMBEDDING_CONSTANTS;
 
 export class VoiceLoader {
   private voiceEmbeddings: Map<string, Float32Array> = new Map();
@@ -16,15 +26,16 @@ export class VoiceLoader {
   private manifestVoicesDir?: string;
   private lazyLoadingEnabled = false;
 
+  // Race condition prevention: track in-progress voice loads
+  private pendingLoads: Map<string, Promise<Float32Array | undefined>> =
+    new Map();
+
   /**
    * Load voice embeddings from binary data
    * Format: [voice_id_length(4bytes)][voice_id][embedding_dim(4bytes)][embedding_data(float32[])]...
    */
   async loadFromBinary(data: ArrayBuffer): Promise<void> {
-    console.log(
-      '[VoiceLoader] loadFromBinary called, data size:',
-      data.byteLength,
-    );
+    log.debug(`Loading from binary, size: ${data.byteLength} bytes`);
     const view = new DataView(data);
     let offset = 0;
     let voiceCount = 0;
@@ -48,6 +59,13 @@ export class VoiceLoader {
         const embedding = new Float32Array(data, offset, embeddingDim);
         offset += embeddingDim * 4; // 4 bytes per float32
 
+        // Validate embedding size
+        if (embeddingDim !== EXPECTED_SIZE) {
+          log.warn(
+            `Voice ${voiceId} has unexpected size: ${embeddingDim} (expected ${EXPECTED_SIZE})`,
+          );
+        }
+
         // Store embedding
         this.voiceEmbeddings.set(voiceId, new Float32Array(embedding));
 
@@ -56,19 +74,14 @@ export class VoiceLoader {
         this.availableVoices.push(voiceInfo);
         voiceCount++;
       } catch (error) {
-        console.warn(
-          `[VoiceLoader] Failed to load voice at offset ${offset}:`,
-          error,
+        log.warn(
+          `Failed to load voice at offset ${offset}: ${error instanceof Error ? error.message : String(error)}`,
         );
         break;
       }
     }
 
-    console.log('[VoiceLoader] Loaded', voiceCount, 'voices');
-    console.log(
-      '[VoiceLoader] Voice IDs:',
-      Array.from(this.voiceEmbeddings.keys()),
-    );
+    log.debug(`Loaded ${voiceCount} voices`);
     this.isInitialized = true;
   }
 
@@ -94,10 +107,7 @@ export class VoiceLoader {
     manifest: {baseUrl: string; voices: string[]},
     manifestPath: string,
   ): Promise<void> {
-    console.log(
-      '[VoiceLoader] Loading from manifest, voices:',
-      manifest.voices.length,
-    );
+    log.debug(`Loading from manifest: ${manifest.voices.length} voices`);
 
     this.manifestBaseUrl = manifest.baseUrl;
     this.lazyLoadingEnabled = true;
@@ -108,8 +118,6 @@ export class VoiceLoader {
     const baseDir = manifestPath.substring(0, lastSlash);
     this.manifestVoicesDir = `${baseDir}/voices`;
 
-    console.log('[VoiceLoader] Voices directory:', this.manifestVoicesDir);
-
     // Create voice metadata for all available voices (without loading embeddings)
     for (const voiceId of manifest.voices) {
       const voiceInfo = this.parseVoiceId(voiceId);
@@ -117,10 +125,8 @@ export class VoiceLoader {
     }
 
     this.isInitialized = true;
-    console.log(
-      '[VoiceLoader] Lazy loading initialized with',
-      this.availableVoices.length,
-      'voices',
+    log.debug(
+      `Lazy loading initialized with ${this.availableVoices.length} voices`,
     );
   }
 
@@ -139,9 +145,6 @@ export class VoiceLoader {
     voiceId: string,
     numTokens: number = 0,
   ): Promise<Float32Array> {
-    const STYLE_DIM = 256;
-    const MAX_TOKENS = 509;
-
     if (!this.isInitialized) {
       throw new Error('VoiceLoader not initialized');
     }
@@ -151,7 +154,6 @@ export class VoiceLoader {
     if (!fullVoiceData) {
       // If lazy loading is enabled, try to load the voice
       if (this.lazyLoadingEnabled) {
-        console.log('[VoiceLoader] Lazy loading voice:', voiceId);
         fullVoiceData = await this.lazyLoadVoice(voiceId);
         if (!fullVoiceData) {
           throw new Error(`Voice not found: ${voiceId}`);
@@ -161,9 +163,19 @@ export class VoiceLoader {
       }
     }
 
+    // Validate embedding data
+    if (fullVoiceData.length < EXPECTED_SIZE) {
+      throw new Error(
+        `Voice ${voiceId} has invalid size: ${fullVoiceData.length} (expected ${EXPECTED_SIZE})`,
+      );
+    }
+
     // Clamp numTokens to valid range [0, 509]
     // Subtract 2 from token count (as per kokoro.js implementation)
-    const adjustedTokens = Math.min(Math.max(numTokens - 2, 0), MAX_TOKENS);
+    const adjustedTokens = Math.min(
+      Math.max(numTokens - 2, 0),
+      MAX_TOKEN_INDEX,
+    );
 
     // Calculate offset based on number of tokens
     const offset = adjustedTokens * STYLE_DIM;
@@ -171,22 +183,13 @@ export class VoiceLoader {
     // Extract the appropriate style embedding
     const embedding = fullVoiceData.slice(offset, offset + STYLE_DIM);
 
-    console.log(
-      '[VoiceLoader] Selected embedding for',
-      voiceId,
-      'with',
-      numTokens,
-      'tokens (adjusted:',
-      adjustedTokens,
-      '), offset:',
-      offset,
-    );
-
     return embedding;
   }
 
   /**
    * Lazy load a voice file from cache or download it
+   * Uses a pending loads map to prevent race conditions when multiple
+   * requests for the same voice arrive simultaneously.
    */
   private async lazyLoadVoice(
     voiceId: string,
@@ -195,21 +198,45 @@ export class VoiceLoader {
       return undefined;
     }
 
+    // Check if there's already a pending load for this voice
+    const pendingLoad = this.pendingLoads.get(voiceId);
+    if (pendingLoad) {
+      log.debug(`Waiting for pending load: ${voiceId}`);
+      return pendingLoad;
+    }
+
+    // Create a new load promise
+    const loadPromise = this.doLazyLoadVoice(voiceId);
+    this.pendingLoads.set(voiceId, loadPromise);
+
+    try {
+      const result = await loadPromise;
+      return result;
+    } finally {
+      // Clean up pending load
+      this.pendingLoads.delete(voiceId);
+    }
+  }
+
+  /**
+   * Internal method to actually load a voice file
+   */
+  private async doLazyLoadVoice(
+    voiceId: string,
+  ): Promise<Float32Array | undefined> {
     try {
       const localPath = `${this.manifestVoicesDir}/${voiceId}.bin`;
-
-      // Check if file exists locally
-      const {loadAssetAsArrayBuffer} = require('./utils/AssetLoader');
+      const {loadAssetAsArrayBuffer} = require('../../utils/AssetLoader');
 
       let voiceData: ArrayBuffer;
 
       try {
         // Try to load from local cache
-        console.log('[VoiceLoader] Loading from cache:', localPath);
+        log.debug(`Loading from cache: ${voiceId}`);
         voiceData = await loadAssetAsArrayBuffer(localPath);
-      } catch (error) {
+      } catch {
         // Not cached, download it
-        console.log('[VoiceLoader] Downloading voice:', voiceId);
+        log.debug(`Downloading voice: ${voiceId}`);
         const remoteUrl = `${this.manifestBaseUrl}/${voiceId}.bin`;
 
         const response = await fetch(remoteUrl);
@@ -218,35 +245,32 @@ export class VoiceLoader {
         }
 
         voiceData = await response.arrayBuffer();
-
-        // Cache it for next time (using React Native FS)
-        // Note: This requires RNFS to be available in the library context
-        // For now, we'll just keep it in memory
-        console.log(
-          '[VoiceLoader] Downloaded voice, size:',
-          voiceData.byteLength,
+        log.debug(
+          `Downloaded voice: ${voiceId}, size: ${voiceData.byteLength} bytes`,
         );
       }
 
       // Convert ArrayBuffer to Float32Array
       const fullArray = new Float32Array(voiceData);
 
-      // The voice files contain 130560 floats (510 embeddings × 256 floats each)
-      // We cache the full array and extract the appropriate embedding based on token count
+      // Validate size
+      if (fullArray.length !== EXPECTED_SIZE) {
+        log.warn(
+          `Voice ${voiceId} has unexpected size: ${fullArray.length} (expected ${EXPECTED_SIZE})`,
+        );
+      }
+
       // Cache the full voice data in memory
       this.voiceEmbeddings.set(voiceId, fullArray);
 
-      console.log(
-        '[VoiceLoader] Voice loaded:',
-        voiceId,
-        'total embeddings:',
-        fullArray.length / 256,
-        'total floats:',
-        fullArray.length,
+      log.debug(
+        `Voice loaded: ${voiceId}, embeddings: ${fullArray.length / STYLE_DIM}`,
       );
       return fullArray;
     } catch (error) {
-      console.error('[VoiceLoader] Failed to lazy load voice:', voiceId, error);
+      log.error(
+        `Failed to lazy load voice ${voiceId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return undefined;
     }
   }

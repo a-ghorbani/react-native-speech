@@ -93,5 +93,5 @@ third-party/espeak-ng/config.status
 ios/build-espeak/
 ios/espeak-ng-data/
 
-# Note: android/src/main/assets/espeak-ng-data/ should be committed
-# It's prepared from submodule via scripts/prepare-espeak-data.sh
+# espeak-ng-data is copied from submodule at build time (see android/build.gradle)
+android/src/main/assets/espeak-ng-data/

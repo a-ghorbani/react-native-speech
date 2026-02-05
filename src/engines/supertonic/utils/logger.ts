@@ -1,63 +1,29 @@
 /**
  * Logger Utility for Supertonic TTS
  *
- * Provides consistent logging format across all Supertonic components.
+ * Re-exports the shared logger configured for Supertonic.
  * All logs are prefixed with [Supertonic][Component] for easy filtering.
  */
 
-/**
- * Available log levels
- */
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+import {
+  createLogger as createSharedLogger,
+  createComponentLogger,
+  supertonicLogger,
+} from '../../../utils/logger';
 
-const LOG_PREFIX = '[Supertonic]';
+// Re-export types
+export type {LogLevel} from '../../../utils/logger';
 
-/**
- * Logger with consistent formatting for Supertonic components
- */
-export const logger = {
-  /**
-   * Log debug message (for development/troubleshooting)
-   */
-  debug: (component: string, message: string, ...args: unknown[]): void => {
-    console.log(`${LOG_PREFIX}[${component}] ${message}`, ...args);
-  },
-
-  /**
-   * Log info message (general operational info)
-   */
-  info: (component: string, message: string, ...args: unknown[]): void => {
-    console.log(`${LOG_PREFIX}[${component}] ${message}`, ...args);
-  },
-
-  /**
-   * Log warning message (potential issues)
-   */
-  warn: (component: string, message: string, ...args: unknown[]): void => {
-    console.warn(`${LOG_PREFIX}[${component}] ${message}`, ...args);
-  },
-
-  /**
-   * Log error message (errors and failures)
-   */
-  error: (component: string, message: string, ...args: unknown[]): void => {
-    console.error(`${LOG_PREFIX}[${component}] ${message}`, ...args);
-  },
-};
+// Pre-configured Supertonic logger
+export const logger = supertonicLogger;
 
 /**
- * Create a component-specific logger
+ * Create a component-specific logger for Supertonic
  * @param component - Component name (e.g., 'Engine', 'Inference', 'StyleLoader')
  */
 export function createLogger(component: string) {
-  return {
-    debug: (message: string, ...args: unknown[]) =>
-      logger.debug(component, message, ...args),
-    info: (message: string, ...args: unknown[]) =>
-      logger.info(component, message, ...args),
-    warn: (message: string, ...args: unknown[]) =>
-      logger.warn(component, message, ...args),
-    error: (message: string, ...args: unknown[]) =>
-      logger.error(component, message, ...args),
-  };
+  return createComponentLogger('Supertonic', component);
 }
+
+// Also export the shared createLogger for backward compatibility
+export {createSharedLogger};

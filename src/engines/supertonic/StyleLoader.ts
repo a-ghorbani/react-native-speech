@@ -83,7 +83,7 @@ const OFFICIAL_VOICE_DATA: Record<
 /**
  * Voice manifest structure for lazy loading
  */
-interface VoiceManifest {
+export interface VoiceManifest {
   /** Base URL for voice files */
   baseUrl: string;
   /** List of available voice IDs */
@@ -97,10 +97,10 @@ interface VoiceManifest {
  * - Flat array format: [...]
  * - Nested array format: [[...], [...]]
  */
-interface RawVoiceStyleData {
-  style_dp?: any; // Can be tensor object or array
-  style_ttl?: any; // Can be tensor object or array
-  metadata?: any;
+export interface RawVoiceStyleData {
+  style_dp?: unknown; // Can be tensor object or array
+  style_ttl?: unknown; // Can be tensor object or array
+  metadata?: unknown;
 }
 
 /**
@@ -356,7 +356,7 @@ export class StyleLoader {
     console.log(`[StyleLoader] Loading voice from: ${voicePath}`);
 
     try {
-      const data = await loadAssetAsJSON(voicePath);
+      const data = await loadAssetAsJSON<RawVoiceStyleData>(voicePath);
       this.loadVoiceFromData(voiceId, data);
     } catch (error) {
       throw new Error(
