@@ -34,8 +34,8 @@ import {
 } from './StyleLoader';
 import {UnicodeProcessor} from './UnicodeProcessor';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
-import {loadAssetAsJSON} from './utils/AssetLoader';
-import {TextChunker, type TextChunk} from './utils/TextChunker';
+import {loadAssetAsJSON} from '../../utils/AssetLoader';
+import {TextChunker, type TextChunk} from '../../utils/TextChunker';
 import {SUPERTONIC_CONSTANTS} from './constants';
 
 const {DEFAULT_MAX_CHUNK_SIZE, DEFAULT_INFERENCE_STEPS} = SUPERTONIC_CONSTANTS;

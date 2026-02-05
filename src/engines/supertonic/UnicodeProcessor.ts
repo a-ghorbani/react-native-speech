@@ -6,7 +6,7 @@
  * Characters not in the vocabulary are mapped to -1 and should use fallback.
  */
 
-import {loadAssetAsJSON} from './utils/AssetLoader';
+import {loadAssetAsJSON} from '../../utils/AssetLoader';
 import {SUPERTONIC_CONSTANTS, type SupportedLanguage} from './constants';
 
 const {PAD_TOKEN_ID, UNK_TOKEN_ID, AVAILABLE_LANGS} = SUPERTONIC_CONSTANTS;

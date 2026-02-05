@@ -8,7 +8,7 @@
  */
 
 import type {SupertonicVoice, SupertonicVoiceStyle} from '../../types';
-import {loadAssetAsJSON} from './utils/AssetLoader';
+import {loadAssetAsJSON} from '../../utils/AssetLoader';
 
 /**
  * Official voice names and descriptions from Supertonic demo
