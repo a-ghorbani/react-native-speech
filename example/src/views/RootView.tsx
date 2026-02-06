@@ -34,15 +34,64 @@ const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 const Introduction =
   "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.";
 
+// Model Manager Tab Type
+type ModelTab = 'kokoro' | 'supertonic';
+
 const RootView: React.FC = () => {
   const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
 
-  const textColor = scheme === 'dark' ? 'white' : 'black';
+  const textColor = isDark ? '#FFFFFF' : '#000000';
+  const secondaryTextColor = isDark ? '#8E8E93' : '#6D6D72';
+  const cardBg = isDark ? '#1C1C1E' : '#F2F2F7';
+  const cardBgSecondary = isDark ? '#2C2C2E' : '#FFFFFF';
+  const inputBg = isDark ? '#3A3A3C' : '#E5E5EA';
+
+  // Memoized theme-dependent styles to avoid inline styles
+  const themedStyles = React.useMemo(
+    () =>
+      StyleSheet.create({
+        // Text colors
+        textPrimary: {color: textColor},
+        textSecondary: {color: secondaryTextColor},
+        textWhite: {color: 'white'},
+        // Backgrounds
+        bgCard: {backgroundColor: cardBg},
+        bgCardSecondary: {backgroundColor: cardBgSecondary},
+        bgInput: {backgroundColor: inputBg},
+        bgChunkProgress: {backgroundColor: 'rgba(0, 122, 255, 0.1)'},
+        // Button states
+        btnSelected: {backgroundColor: '#007AFF'},
+        btnUnselected: {backgroundColor: inputBg},
+        btnSelectedGreen: {backgroundColor: '#34C759'},
+        // Status colors
+        statusReady: {color: '#34C759'},
+        statusNotReady: {color: '#FF3B30'},
+        statusAccent: {color: '#007AFF'},
+        // Voice item
+        voiceItemSelected: {backgroundColor: isDark ? '#3A3A3C' : '#E8F4FD'},
+        voiceItemUnselected: {backgroundColor: 'transparent'},
+        // Download card colors
+        downloadTextInstalled: {color: secondaryTextColor},
+        downloadTextWhite: {color: 'white'},
+        downloadMetaWhite: {color: 'rgba(255,255,255,0.8)'},
+        downloadLangsWhite: {color: 'rgba(255,255,255,0.7)'},
+        // Opacity
+        opacityFaded: {opacity: 0.5},
+        opacityFull: {opacity: 1},
+        // Section label with margin
+        sectionLabelWithMargin: {marginTop: 20},
+        // Download card variants
+        downloadCardBlue: {backgroundColor: '#007AFF'},
+        downloadCardGreen: {backgroundColor: '#34C759'},
+        downloadCardOrange: {backgroundColor: '#FF9500'},
+        downloadCardInstalled: {backgroundColor: cardBg},
+      }),
+    [textColor, secondaryTextColor, cardBg, cardBgSecondary, inputBg, isDark],
+  );
 
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
-
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
-
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
@@ -50,16 +99,26 @@ const RootView: React.FC = () => {
   const [selectedEngine, setSelectedEngine] = React.useState<TTSEngine>(
     TTSEngine.OS_NATIVE,
   );
+  const [initializedEngine, setInitializedEngine] =
+    React.useState<TTSEngine | null>(null);
   const [isInitializing, setIsInitializing] = React.useState<boolean>(false);
   const [engineReady, setEngineReady] = React.useState<boolean>(false);
   const [availableVoices, setAvailableVoices] = React.useState<any[]>([]);
   const [selectedVoice, setSelectedVoice] = React.useState<string | null>(null);
   const [showVoicePicker, setShowVoicePicker] = React.useState<boolean>(false);
-  const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
+
+  // Model Manager State
   const [showModelManager, setShowModelManager] =
     React.useState<boolean>(false);
+  const [modelManagerTab, setModelManagerTab] =
+    React.useState<ModelTab>('kokoro');
+  const [isDownloading, setIsDownloading] = React.useState<boolean>(false);
   const [downloadProgress, setDownloadProgress] = React.useState<number>(0);
-  const [installedModels, setInstalledModels] = React.useState<any[]>([]);
+  const [downloadingItem, setDownloadingItem] = React.useState<string | null>(
+    null,
+  );
+  const [kokoroModels, setKokoroModels] = React.useState<any[]>([]);
+  const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
 
   // Execution provider selection for hardware acceleration
   const [selectedProvider, setSelectedProvider] =
@@ -79,184 +138,99 @@ const RootView: React.FC = () => {
       try {
         setIsInitializing(true);
         setEngineReady(false);
+        setInitializedEngine(null);
 
         if (engine === TTSEngine.OS_NATIVE) {
-          // OS engine doesn't need initialization
           await Speech.initialize({
             engine: TTSEngine.OS_NATIVE,
             silentMode: 'obey',
             ducking: true,
           });
+          setInitializedEngine(TTSEngine.OS_NATIVE);
           setEngineReady(true);
         } else if (engine === TTSEngine.KOKORO) {
-          // First, scan for installed models
           await kokoroModelManager.scanInstalledModels();
           const models = kokoroModelManager.getInstalledModels();
 
-          let config;
-          if (models.length > 0 && models[0]) {
-            // Use first installed model
-            const model = models[0];
-            config = kokoroModelManager.getDownloadedModelConfig(
-              model.version,
-              model.variant,
-            );
-            console.log('Using downloaded Kokoro model:', model);
-          } else {
-            // Try bundled model (will fail if not bundled)
-            config = kokoroModelManager.getBundledModelConfig();
-            console.log('Attempting to use bundled Kokoro model');
-          }
-
-          try {
-            console.log(
-              `Initializing Kokoro with execution provider: ${provider}`,
-            );
-            await Speech.initialize({
-              engine: TTSEngine.KOKORO,
-              ...config,
-              phonemizerType: 'native',
-              silentMode: 'obey',
-              ducking: true,
-              maxChunkSize: 100,
-              executionProviders: provider,
-            });
-            setEngineReady(true);
-          } catch (initError) {
-            // If initialization fails, likely no models available
-            console.error('Kokoro initialization failed:', initError);
+          if (models.length === 0) {
+            // No models - prompt to download
+            setEngineReady(false);
             Alert.alert(
-              'No Kokoro Models Found',
-              'No Kokoro models are installed. Would you like to download one now?\n\n' +
-                'Recommended: q8 variant (~82MB)',
+              'Kokoro Model Required',
+              'Download a model to use Kokoro TTS.',
               [
-                {text: 'Cancel', style: 'cancel'},
+                {text: 'Later', style: 'cancel'},
                 {
-                  text: 'Download q8',
-                  onPress: async () => {
-                    try {
-                      setIsInitializing(true);
-                      await kokoroModelManager.downloadModel('q8', progress => {
-                        console.log(
-                          `Download: ${(progress.progress * 100).toFixed(1)}%`,
-                        );
-                      });
-                      // Retry initialization with downloaded model
-                      const downloadedConfig =
-                        kokoroModelManager.getDownloadedModelConfig(
-                          '1.0',
-                          'q8',
-                        );
-                      await Speech.initialize({
-                        engine: TTSEngine.KOKORO,
-                        ...downloadedConfig,
-                        phonemizerType: 'native',
-                        silentMode: 'obey',
-                        ducking: true,
-                        executionProviders: provider,
-                      });
-                      setEngineReady(true);
-                      Alert.alert('Success', 'Kokoro model ready to use!');
-                    } catch (err) {
-                      Alert.alert(
-                        'Error',
-                        `Failed to download/initialize: ${err instanceof Error ? err.message : 'Unknown error'}`,
-                      );
-                      setEngineReady(false);
-                    } finally {
-                      setIsInitializing(false);
-                    }
+                  text: 'Download',
+                  onPress: () => {
+                    setModelManagerTab('kokoro');
+                    setShowModelManager(true);
                   },
                 },
               ],
             );
-            setEngineReady(false);
             return;
           }
+
+          const model = models[0]!;
+          const config = kokoroModelManager.getDownloadedModelConfig(
+            model.version,
+            model.variant,
+          );
+
+          await Speech.initialize({
+            engine: TTSEngine.KOKORO,
+            ...config,
+            phonemizerType: 'native',
+            silentMode: 'obey',
+            ducking: true,
+            maxChunkSize: 100,
+            executionProviders: provider,
+          });
+          setInitializedEngine(TTSEngine.KOKORO);
+          setEngineReady(true);
         } else if (engine === TTSEngine.SUPERTONIC) {
-          // First, scan for installed model
           await supertonicModelManager.scanInstalledModel();
           const model = supertonicModelManager.getInstalledModel();
 
-          let config;
-          if (model) {
-            // Use installed model
-            config = supertonicModelManager.getDownloadedModelConfig();
-            console.log('Using downloaded Supertonic model:', model);
-          } else {
-            // Try bundled model (will fail if not bundled)
-            config = supertonicModelManager.getBundledModelConfig();
-            console.log('Attempting to use bundled Supertonic model');
-          }
-
-          try {
-            console.log(
-              `Initializing Supertonic with execution provider: ${provider}`,
-            );
-            await Speech.initialize({
-              engine: TTSEngine.SUPERTONIC,
-              ...config,
-              silentMode: 'obey',
-              ducking: true,
-              maxChunkSize: 200,
-              executionProviders: provider,
-            });
-            setEngineReady(true);
-          } catch (initError) {
-            // If initialization fails, likely no models available
-            console.error('Supertonic initialization failed:', initError);
+          if (!model) {
+            setEngineReady(false);
             Alert.alert(
-              'No Supertonic Models Found',
-              'No Supertonic models are installed. Would you like to download the model now?\n\n' +
-                'Size: ~265MB (4 ONNX models + 10 voices)',
+              'Supertonic Model Required',
+              'Download a model to use Supertonic TTS.',
               [
-                {text: 'Cancel', style: 'cancel'},
+                {text: 'Later', style: 'cancel'},
                 {
                   text: 'Download',
-                  onPress: async () => {
-                    try {
-                      setIsInitializing(true);
-                      await supertonicModelManager.downloadModel(progress => {
-                        console.log(
-                          `Download: ${(progress.progress * 100).toFixed(1)}%`,
-                        );
-                      });
-                      // Retry initialization with downloaded model
-                      const downloadedConfig =
-                        supertonicModelManager.getDownloadedModelConfig();
-                      await Speech.initialize({
-                        engine: TTSEngine.SUPERTONIC,
-                        ...downloadedConfig,
-                        silentMode: 'obey',
-                        ducking: true,
-                        executionProviders: provider,
-                      });
-                      setEngineReady(true);
-                      Alert.alert('Success', 'Supertonic model ready to use!');
-                    } catch (err) {
-                      Alert.alert(
-                        'Error',
-                        `Failed to download/initialize: ${err instanceof Error ? err.message : 'Unknown error'}`,
-                      );
-                      setEngineReady(false);
-                    } finally {
-                      setIsInitializing(false);
-                    }
+                  onPress: () => {
+                    setModelManagerTab('supertonic');
+                    setShowModelManager(true);
                   },
                 },
               ],
             );
-            setEngineReady(false);
             return;
           }
+
+          const config = supertonicModelManager.getDownloadedModelConfig();
+          await Speech.initialize({
+            engine: TTSEngine.SUPERTONIC,
+            ...config,
+            silentMode: 'obey',
+            ducking: true,
+            maxChunkSize: 200,
+            executionProviders: provider,
+          });
+          setInitializedEngine(TTSEngine.SUPERTONIC);
+          setEngineReady(true);
         }
       } catch (error) {
         console.error('Failed to initialize engine:', error);
+        setEngineReady(false);
         Alert.alert(
           'Initialization Error',
-          `Failed to initialize ${engine}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
-        setEngineReady(false);
       } finally {
         setIsInitializing(false);
       }
@@ -270,23 +244,19 @@ const RootView: React.FC = () => {
 
   // Load voices when engine is ready
   const loadVoices = React.useCallback(async () => {
-    console.log(
-      `[loadVoices] Called - engineReady: ${engineReady}, selectedEngine: ${selectedEngine}`,
-    );
-
-    if (!engineReady || isInitializing) {
-      console.log(
-        '[loadVoices] Engine not ready or initializing, clearing voices',
-      );
+    // Only load voices if engine is ready and matches what we expect
+    if (
+      !engineReady ||
+      isInitializing ||
+      initializedEngine !== selectedEngine
+    ) {
       setAvailableVoices([]);
       setSelectedVoice(null);
       return;
     }
 
     try {
-      if (selectedEngine === TTSEngine.OS_NATIVE) {
-        console.log('[loadVoices] Loading OS voices');
-        // Get OS voices
+      if (initializedEngine === TTSEngine.OS_NATIVE) {
         const voices = await Speech.getAvailableVoices();
         setAvailableVoices(
           voices.map(v => ({
@@ -295,20 +265,12 @@ const RootView: React.FC = () => {
             language: v.language,
           })),
         );
-        // Set first voice as default
         if (voices.length > 0 && voices[0]) {
           setSelectedVoice(voices[0].identifier);
         }
-      } else if (
-        selectedEngine === TTSEngine.KOKORO ||
-        selectedEngine === TTSEngine.SUPERTONIC
-      ) {
-        console.log('[loadVoices] Loading neural engine voices');
-        // Get neural engine voices with metadata
+      } else {
         const voices = await Speech.getVoicesWithMetadata();
-        console.log(`[loadVoices] Got ${voices.length} voices`);
         setAvailableVoices(voices);
-        // Set first voice as default
         if (voices.length > 0 && voices[0]) {
           setSelectedVoice(voices[0].id);
         }
@@ -318,7 +280,7 @@ const RootView: React.FC = () => {
       setAvailableVoices([]);
       setSelectedVoice(null);
     }
-  }, [engineReady, selectedEngine, isInitializing]);
+  }, [engineReady, selectedEngine, initializedEngine, isInitializing]);
 
   React.useEffect(() => {
     loadVoices();
@@ -326,24 +288,18 @@ const RootView: React.FC = () => {
 
   // Load installed models
   const loadInstalledModels = React.useCallback(async () => {
-    if (selectedEngine === TTSEngine.KOKORO) {
-      await kokoroModelManager.scanInstalledModels();
-      const models = kokoroModelManager.getInstalledModels();
-      setInstalledModels(models);
-    } else if (selectedEngine === TTSEngine.SUPERTONIC) {
-      await supertonicModelManager.scanInstalledModel();
-      // Get all installed models (both v1 and v2)
-      const models = supertonicModelManager.getAllInstalledModels();
-      setInstalledModels(models);
-    } else {
-      setInstalledModels([]);
-    }
-  }, [selectedEngine]);
+    await kokoroModelManager.scanInstalledModels();
+    setKokoroModels(kokoroModelManager.getInstalledModels());
+
+    await supertonicModelManager.scanInstalledModel();
+    setSupertonicModels(supertonicModelManager.getAllInstalledModels());
+  }, []);
 
   React.useEffect(() => {
     loadInstalledModels();
   }, [loadInstalledModels]);
 
+  // Speech event handlers
   React.useEffect(() => {
     const onSpeechEnd = () => {
       setIsStarted(false);
@@ -352,52 +308,19 @@ const RootView: React.FC = () => {
       setCurrentChunk(null);
     };
 
-    const startSubscription = Speech.onStart(({id}) => {
-      setIsStarted(true);
-      console.log(`Speech ${id} started`);
+    const startSubscription = Speech.onStart(() => setIsStarted(true));
+    const finishSubscription = Speech.onFinish(() => onSpeechEnd());
+    const pauseSubscription = Speech.onPause(() => setIsPaused(true));
+    const resumeSubscription = Speech.onResume(() => setIsPaused(false));
+    const stoppedSubscription = Speech.onStopped(() => onSpeechEnd());
+    const progressSubscription = Speech.onProgress(({location, length}) => {
+      setHighlights([{start: location, end: location + length}]);
     });
-    const finishSubscription = Speech.onFinish(({id}) => {
-      onSpeechEnd();
-      console.log(`Speech ${id} finished`);
-    });
-    const pauseSubscription = Speech.onPause(({id}) => {
-      setIsPaused(true);
-      console.log(`Speech ${id} paused`);
-    });
-    const resumeSubscription = Speech.onResume(({id}) => {
-      setIsPaused(false);
-      console.log(`Speech ${id} resumed`);
-    });
-    const stoppedSubscription = Speech.onStopped(({id}) => {
-      onSpeechEnd();
-      console.log(`Speech ${id} stopped`);
-    });
-    // Word-level progress (OS TTS only)
-    const progressSubscription = Speech.onProgress(({id, location, length}) => {
-      setHighlights([
-        {
-          start: location,
-          end: location + length,
-        },
-      ]);
-      console.log(
-        `Speech ${id} progress, current word length: ${length}, current char position: ${location}`,
-      );
-    });
-
-    // Chunk-level progress (Neural TTS - Kokoro/Supertonic)
     const unsubscribeChunkProgress = Speech.onChunkProgress(
       (event: ChunkProgressEvent) => {
-        console.log(
-          `[ChunkProgress] Chunk ${event.chunkIndex + 1}/${event.totalChunks}: "${event.chunkText.substring(0, 30)}..."`,
-        );
         setCurrentChunk(event);
-        // Update highlights for neural engines using chunk text range
         setHighlights([
-          {
-            start: event.textRange.start,
-            end: event.textRange.end,
-          },
+          {start: event.textRange.start, end: event.textRange.end},
         ]);
       },
     );
@@ -414,8 +337,6 @@ const RootView: React.FC = () => {
   }, []);
 
   const onStartPress = React.useCallback(async () => {
-    // Use voiceId parameter for all engines (unified API)
-    // For Supertonic, pass speed and inferenceSteps options
     if (selectedEngine === TTSEngine.SUPERTONIC) {
       await Speech.speak(Introduction, selectedVoice || undefined, {
         speed,
@@ -428,132 +349,110 @@ const RootView: React.FC = () => {
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
-      Alert.alert(
-        'Highlighted',
-        `The current segment is "${text}", starting at ${start} and ending at ${end}`,
-      ),
+      Alert.alert('Highlighted', `"${text}" (${start}-${end})`),
     [],
   );
 
-  const handleDownloadModel = React.useCallback(() => {
-    if (
-      selectedEngine === TTSEngine.KOKORO ||
-      selectedEngine === TTSEngine.SUPERTONIC
-    ) {
-      setShowModelManager(true);
-    } else {
-      Alert.alert('Info', 'System TTS does not require model downloads.');
-    }
-  }, [selectedEngine]);
-
-  const handleManageModels = React.useCallback(() => {
-    // Always show Kokoro model manager
-    setShowModelManager(true);
-  }, []);
-
-  const downloadModelVariant = React.useCallback(
+  // Download handlers
+  const downloadKokoroModel = React.useCallback(
     async (variant: 'q8' | 'fp16' | 'full') => {
       try {
         setIsDownloading(true);
+        setDownloadingItem(`kokoro-${variant}`);
         setDownloadProgress(0);
 
+        await kokoroModelManager.downloadModel(variant, progress => {
+          setDownloadProgress(progress.progress);
+        });
+
+        await loadInstalledModels();
+
+        Alert.alert('Success', `Kokoro ${variant} model downloaded!`);
+
+        // If Kokoro is selected, reinitialize
         if (selectedEngine === TTSEngine.KOKORO) {
-          await kokoroModelManager.downloadModel(variant, progress => {
-            setDownloadProgress(progress.progress);
-            console.log(
-              `Download progress: ${(progress.progress * 100).toFixed(1)}%`,
-            );
-          });
-
-          Alert.alert(
-            'Success',
-            'Kokoro model downloaded successfully! Initializing...',
-          );
-
-          // Reload installed models
-          await loadInstalledModels();
-
-          // Reinitialize with downloaded model
-          await initializeEngine(TTSEngine.KOKORO);
+          await initializeEngine(TTSEngine.KOKORO, selectedProvider);
         }
-
-        setShowModelManager(false);
       } catch (err) {
         Alert.alert(
-          'Download Failed',
-          `Failed to download model: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          'Error',
+          `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
         );
       } finally {
         setIsDownloading(false);
+        setDownloadingItem(null);
         setDownloadProgress(0);
       }
     },
-    [initializeEngine, loadInstalledModels, selectedEngine],
+    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
   );
 
-  const downloadSupertonicVersion = React.useCallback(
+  const downloadSupertonicModel = React.useCallback(
     async (version: SupertonicVersion) => {
       try {
         setIsDownloading(true);
+        setDownloadingItem(`supertonic-${version}`);
         setDownloadProgress(0);
 
         await supertonicModelManager.downloadModel(progress => {
           setDownloadProgress(progress.progress);
-          console.log(
-            `Download progress: ${(progress.progress * 100).toFixed(1)}%`,
-          );
         }, version);
 
-        Alert.alert(
-          'Success',
-          `Supertonic ${version.toUpperCase()} downloaded successfully! Initializing...`,
-        );
-
-        // Set as active version and reload
         supertonicModelManager.setActiveVersion(version);
         await loadInstalledModels();
 
-        // Reinitialize with downloaded model
-        await initializeEngine(TTSEngine.SUPERTONIC);
+        Alert.alert(
+          'Success',
+          `Supertonic ${version.toUpperCase()} downloaded!`,
+        );
 
-        setShowModelManager(false);
+        // If Supertonic is selected, reinitialize
+        if (selectedEngine === TTSEngine.SUPERTONIC) {
+          await initializeEngine(TTSEngine.SUPERTONIC, selectedProvider);
+        }
       } catch (err) {
         Alert.alert(
-          'Download Failed',
-          `Failed to download model: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          'Error',
+          `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
         );
       } finally {
         setIsDownloading(false);
+        setDownloadingItem(null);
         setDownloadProgress(0);
       }
     },
-    [initializeEngine, loadInstalledModels],
+    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
   );
 
-  const deleteModelVariant = React.useCallback(
-    async (version: string, variant: 'q8' | 'fp16' | 'full' | 'v1' | 'v2') => {
-      try {
-        if (selectedEngine === TTSEngine.KOKORO) {
-          await kokoroModelManager.deleteModel(
-            version,
-            variant as 'q8' | 'fp16' | 'full',
-          );
-        } else if (selectedEngine === TTSEngine.SUPERTONIC) {
-          // For Supertonic, version is the variant (v1 or v2)
-          await supertonicModelManager.deleteModel(
-            variant as SupertonicVersion,
-          );
-        }
-        Alert.alert('Success', 'Model deleted successfully');
-        await loadInstalledModels();
-      } catch (err) {
-        Alert.alert(
-          'Delete Failed',
-          `Failed to delete model: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        );
-      }
+  const deleteModel = React.useCallback(
+    async (type: 'kokoro' | 'supertonic', version: string, variant: string) => {
+      Alert.alert('Delete Model', 'Are you sure?', [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (type === 'kokoro') {
+                await kokoroModelManager.deleteModel(
+                  version,
+                  variant as 'q8' | 'fp16' | 'full',
+                );
+              } else {
+                await supertonicModelManager.deleteModel(
+                  variant as SupertonicVersion,
+                );
+              }
+              await loadInstalledModels();
+              Alert.alert('Deleted', 'Model removed.');
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete model.');
+            }
+          },
+        },
+      ]);
     },
-    [loadInstalledModels, selectedEngine],
+    [loadInstalledModels],
   );
 
   const getVoiceDisplayName = (voice: any): string => {
@@ -563,382 +462,565 @@ const RootView: React.FC = () => {
     return `${voice.name} - ${voice.description || voice.id}`;
   };
 
-  const renderEngineButton = (engine: TTSEngine, label: string) => {
-    const isSelected = selectedEngine === engine;
-    const backgroundColor = isSelected
-      ? scheme === 'dark'
-        ? '#4A90E2'
-        : '#007AFF'
-      : scheme === 'dark'
-        ? '#333'
-        : '#E0E0E0';
-    const textColorButton = isSelected
-      ? 'white'
-      : scheme === 'dark'
-        ? '#CCC'
-        : '#333';
-
-    return (
-      <TouchableOpacity
-        key={engine}
-        style={[styles.engineButton, {backgroundColor}]}
-        onPress={() => {
-          setEngineReady(false);
-          setSelectedEngine(engine);
-        }}
-        disabled={isInitializing || isStarted}>
-        <Text style={[styles.engineButtonText, {color: textColorButton}]}>
-          {label}
-        </Text>
-        {isSelected && isInitializing && (
-          <ActivityIndicator size="small" color="white" />
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  console.log('availableVoices.length:', availableVoices.length);
+  // ==================== RENDER ====================
 
   return (
     <SafeAreaView style={[gs.flex, gs.p10]}>
-      {/* Model Manager Modal */}
+      {/* ==================== MODEL MANAGER MODAL ==================== */}
       <Modal
         visible={showModelManager}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowModelManager(false)}>
+        onRequestClose={() => {
+          if (!isDownloading) setShowModelManager(false);
+        }}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              {backgroundColor: scheme === 'dark' ? '#1C1C1E' : 'white'},
-            ]}>
-            <Text style={[styles.modalTitle, {color: textColor}]}>
-              {selectedEngine === TTSEngine.SUPERTONIC
-                ? 'Supertonic Models'
-                : 'Kokoro Models'}
-            </Text>
+          <View style={[styles.modalContent, themedStyles.bgCardSecondary]}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, themedStyles.textPrimary]}>
+                Model Manager
+              </Text>
+              <TouchableOpacity
+                onPress={() => !isDownloading && setShowModelManager(false)}
+                disabled={isDownloading}
+                style={styles.closeIcon}>
+                <Text
+                  style={[styles.closeIconText, themedStyles.textSecondary]}>
+                  ×
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            {/* Installed Models */}
-            <Text
-              style={[
-                styles.sectionTitle,
-                {color: textColor, marginBottom: 8},
-              ]}>
-              Installed Models ({installedModels.length})
-            </Text>
-            {installedModels.length > 0 ? (
-              <ScrollView style={styles.modelList}>
-                {installedModels.map((model, index) => {
-                  const isActive =
-                    selectedEngine === TTSEngine.SUPERTONIC &&
-                    supertonicModelManager.getActiveVersion() === model.variant;
-                  return (
-                    <View
-                      key={
-                        model.variant
-                          ? `${model.version}-${model.variant}`
-                          : `${model.version}-${index}`
-                      }
-                      style={[
-                        styles.modelItem,
-                        {
-                          backgroundColor:
-                            scheme === 'dark' ? '#2C2C2E' : '#F0F0F0',
-                          borderWidth: isActive ? 2 : 0,
-                          borderColor: isActive ? '#34C759' : 'transparent',
-                        },
-                      ]}>
-                      <View style={styles.modelInfo}>
-                        <View style={styles.modelNameRow}>
-                          <Text style={[styles.modelName, {color: textColor}]}>
-                            {selectedEngine === TTSEngine.SUPERTONIC
-                              ? `Supertonic ${(model.variant || model.version).toUpperCase()}`
-                              : model.variant
-                                ? `${model.version} - ${model.variant}`
-                                : `v${model.version}`}
+            {/* Tabs */}
+            <View style={[styles.tabBar, themedStyles.bgCard]}>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  modelManagerTab === 'kokoro' && styles.tabActive,
+                  modelManagerTab === 'kokoro' && themedStyles.bgCardSecondary,
+                ]}
+                onPress={() => setModelManagerTab('kokoro')}
+                disabled={isDownloading}>
+                <Text
+                  style={[
+                    styles.tabText,
+                    modelManagerTab === 'kokoro'
+                      ? themedStyles.textPrimary
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Kokoro
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  modelManagerTab === 'supertonic' && styles.tabActive,
+                  modelManagerTab === 'supertonic' &&
+                    themedStyles.bgCardSecondary,
+                ]}
+                onPress={() => setModelManagerTab('supertonic')}
+                disabled={isDownloading}>
+                <Text
+                  style={[
+                    styles.tabText,
+                    modelManagerTab === 'supertonic'
+                      ? themedStyles.textPrimary
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Supertonic
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalBody}
+              showsVerticalScrollIndicator={false}>
+              {/* ====== KOKORO TAB ====== */}
+              {modelManagerTab === 'kokoro' && (
+                <View>
+                  {/* Installed */}
+                  <Text
+                    style={[styles.sectionLabel, themedStyles.textSecondary]}>
+                    INSTALLED
+                  </Text>
+                  {kokoroModels.length === 0 ? (
+                    <Text
+                      style={[styles.emptyText, themedStyles.textSecondary]}>
+                      No models installed
+                    </Text>
+                  ) : (
+                    kokoroModels.map((model, idx) => (
+                      <View
+                        key={idx}
+                        style={[styles.modelCard, themedStyles.bgCard]}>
+                        <View style={styles.modelCardInfo}>
+                          <Text
+                            style={[
+                              styles.modelCardName,
+                              themedStyles.textPrimary,
+                            ]}>
+                            Kokoro {model.variant?.toUpperCase() || 'Model'}
                           </Text>
-                          {isActive && (
-                            <Text style={styles.activeLabel}>ACTIVE</Text>
-                          )}
+                          <Text
+                            style={[
+                              styles.modelCardMeta,
+                              themedStyles.textSecondary,
+                            ]}>
+                            {(model.size / 1024 / 1024).toFixed(0)} MB
+                          </Text>
                         </View>
-                        <Text
-                          style={[styles.modelSize, {color: textColor + '99'}]}>
-                          {(model.size / 1024 / 1024).toFixed(1)} MB
-                          {model.languages &&
-                            ` • ${model.languages.join(', ').toUpperCase()}`}
-                        </Text>
-                      </View>
-                      <View style={styles.modelActions}>
-                        {selectedEngine === TTSEngine.SUPERTONIC &&
-                          installedModels.length > 1 &&
-                          !isActive && (
-                            <TouchableOpacity
-                              style={styles.useButton}
-                              onPress={async () => {
-                                supertonicModelManager.setActiveVersion(
-                                  model.variant as SupertonicVersion,
-                                );
-                                setShowModelManager(false);
-                                await initializeEngine(TTSEngine.SUPERTONIC);
-                              }}>
-                              <Text style={styles.useButtonText}>Use</Text>
-                            </TouchableOpacity>
-                          )}
                         <TouchableOpacity
-                          style={styles.deleteButton}
                           onPress={() =>
-                            deleteModelVariant(
+                            deleteModel(
+                              'kokoro',
                               model.version,
                               model.variant || 'q8',
                             )
-                          }>
-                          <Text style={styles.deleteButtonText}>🗑️</Text>
+                          }
+                          style={styles.deleteBtn}>
+                          <Text style={styles.deleteBtnText}>Delete</Text>
                         </TouchableOpacity>
                       </View>
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <Text style={[styles.emptyText, {color: textColor + '99'}]}>
-                No models installed
-              </Text>
-            )}
+                    ))
+                  )}
 
-            {/* Download Section */}
-            <Text
-              style={[
-                styles.sectionTitle,
-                {color: textColor, marginTop: 16, marginBottom: 8},
-              ]}>
-              Download Models
-            </Text>
-
-            {isDownloading ? (
-              <View style={styles.downloadingContainer}>
-                <ActivityIndicator size="large" color="#007AFF" />
-                <Text style={[styles.downloadingText, {color: textColor}]}>
-                  Downloading... {(downloadProgress * 100).toFixed(0)}%
-                </Text>
-                <View style={styles.progressBar}>
-                  <View
+                  {/* Available */}
+                  <Text
                     style={[
-                      styles.progressFill,
-                      {width: `${downloadProgress * 100}%`},
-                    ]}
-                  />
+                      styles.sectionLabel,
+                      themedStyles.textSecondary,
+                      themedStyles.sectionLabelWithMargin,
+                    ]}>
+                    AVAILABLE DOWNLOADS
+                  </Text>
+                  {[
+                    {
+                      variant: 'q8',
+                      size: '82 MB',
+                      desc: 'Recommended',
+                      color: '#007AFF',
+                    },
+                    {
+                      variant: 'fp16',
+                      size: '164 MB',
+                      desc: 'Higher quality',
+                      color: '#34C759',
+                    },
+                    {
+                      variant: 'full',
+                      size: '328 MB',
+                      desc: 'Best quality',
+                      color: '#FF9500',
+                    },
+                  ].map(item => {
+                    const isInstalled = kokoroModels.some(
+                      m => m.variant === item.variant,
+                    );
+                    const isThisDownloading =
+                      downloadingItem === `kokoro-${item.variant}`;
+
+                    return (
+                      <TouchableOpacity
+                        key={item.variant}
+                        style={[
+                          styles.downloadCard,
+                          isInstalled
+                            ? themedStyles.downloadCardInstalled
+                            : {backgroundColor: item.color},
+                          isDownloading && !isThisDownloading
+                            ? themedStyles.opacityFaded
+                            : themedStyles.opacityFull,
+                        ]}
+                        onPress={() =>
+                          downloadKokoroModel(
+                            item.variant as 'q8' | 'fp16' | 'full',
+                          )
+                        }
+                        disabled={isInstalled || isDownloading}>
+                        {isThisDownloading ? (
+                          <View style={styles.downloadingState}>
+                            <ActivityIndicator color="white" size="small" />
+                            <Text style={styles.downloadingText}>
+                              {Math.round(downloadProgress * 100)}%
+                            </Text>
+                            <View style={styles.progressBarContainer}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  {width: `${downloadProgress * 100}%`},
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <>
+                            <View>
+                              <Text
+                                style={[
+                                  styles.downloadCardTitle,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.textWhite,
+                                ]}>
+                                {isInstalled
+                                  ? `${item.variant.toUpperCase()} Installed`
+                                  : item.variant.toUpperCase()}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardMeta,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadMetaWhite,
+                                ]}>
+                                {item.size} • {item.desc}
+                              </Text>
+                            </View>
+                            {!isInstalled && (
+                              <Text style={styles.downloadIcon}>↓</Text>
+                            )}
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              </View>
-            ) : selectedEngine === TTSEngine.SUPERTONIC ? (
-              <View style={styles.downloadButtons}>
-                {supertonicModelManager.getAvailableVersions().map(variant => {
-                  const isInstalled = installedModels.some(
-                    m => m.variant === variant.version,
-                  );
-                  return (
-                    <TouchableOpacity
-                      key={variant.version}
-                      style={[
-                        styles.downloadVariantButton,
-                        {
-                          backgroundColor: isInstalled
-                            ? '#8E8E93'
-                            : variant.version === 'v2'
-                              ? '#34C759'
-                              : '#007AFF',
-                        },
-                      ]}
-                      onPress={() => downloadSupertonicVersion(variant.version)}
-                      disabled={isInstalled}>
-                      <Text style={styles.downloadVariantText}>
-                        {isInstalled
-                          ? `${variant.version.toUpperCase()} Installed`
-                          : `Download ${variant.version.toUpperCase()} (~${Math.round(variant.estimatedSize / 1024 / 1024)}MB)`}
-                      </Text>
-                      <Text style={styles.downloadVariantSubtext}>
-                        {variant.description}
-                      </Text>
-                      <Text style={styles.downloadVariantLangs}>
-                        Languages: {variant.languages.join(', ').toUpperCase()}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={styles.downloadButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.downloadVariantButton,
-                    {backgroundColor: '#007AFF'},
-                  ]}
-                  onPress={() => downloadModelVariant('q8')}>
-                  <Text style={styles.downloadVariantText}>
-                    Download q8 (82MB)
-                  </Text>
-                  <Text style={styles.downloadVariantSubtext}>Recommended</Text>
-                </TouchableOpacity>
+              )}
 
-                <TouchableOpacity
-                  style={[
-                    styles.downloadVariantButton,
-                    {backgroundColor: '#34C759'},
-                  ]}
-                  onPress={() => downloadModelVariant('fp16')}>
-                  <Text style={styles.downloadVariantText}>
-                    Download fp16 (164MB)
+              {/* ====== SUPERTONIC TAB ====== */}
+              {modelManagerTab === 'supertonic' && (
+                <View>
+                  {/* Installed */}
+                  <Text
+                    style={[styles.sectionLabel, themedStyles.textSecondary]}>
+                    INSTALLED
                   </Text>
-                  <Text style={styles.downloadVariantSubtext}>
-                    Better Quality
-                  </Text>
-                </TouchableOpacity>
+                  {supertonicModels.length === 0 ? (
+                    <Text
+                      style={[styles.emptyText, themedStyles.textSecondary]}>
+                      No models installed
+                    </Text>
+                  ) : (
+                    supertonicModels.map((model, idx) => {
+                      const isActive =
+                        supertonicModelManager.getActiveVersion() ===
+                        model.variant;
+                      return (
+                        <View
+                          key={idx}
+                          style={[
+                            styles.modelCard,
+                            themedStyles.bgCard,
+                            isActive && styles.modelCardActive,
+                          ]}>
+                          <View style={styles.modelCardInfo}>
+                            <View style={styles.modelCardNameRow}>
+                              <Text
+                                style={[
+                                  styles.modelCardName,
+                                  themedStyles.textPrimary,
+                                ]}>
+                                Supertonic{' '}
+                                {(model.variant || 'v1').toUpperCase()}
+                              </Text>
+                              {isActive && (
+                                <View style={styles.activeBadge}>
+                                  <Text style={styles.activeBadgeText}>
+                                    ACTIVE
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text
+                              style={[
+                                styles.modelCardMeta,
+                                themedStyles.textSecondary,
+                              ]}>
+                              {(model.size / 1024 / 1024).toFixed(0)} MB
+                              {model.languages &&
+                                ` • ${model.languages.join(', ').toUpperCase()}`}
+                            </Text>
+                          </View>
+                          <View style={styles.modelCardActions}>
+                            {!isActive && supertonicModels.length > 1 && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  supertonicModelManager.setActiveVersion(
+                                    model.variant,
+                                  );
+                                  loadInstalledModels();
+                                  if (selectedEngine === TTSEngine.SUPERTONIC) {
+                                    initializeEngine(
+                                      TTSEngine.SUPERTONIC,
+                                      selectedProvider,
+                                    );
+                                  }
+                                }}
+                                style={styles.useBtn}>
+                                <Text style={styles.useBtnText}>Use</Text>
+                              </TouchableOpacity>
+                            )}
+                            <TouchableOpacity
+                              onPress={() =>
+                                deleteModel(
+                                  'supertonic',
+                                  model.version,
+                                  model.variant || 'v1',
+                                )
+                              }
+                              style={styles.deleteBtn}>
+                              <Text style={styles.deleteBtnText}>Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
 
-                <TouchableOpacity
-                  style={[
-                    styles.downloadVariantButton,
-                    {backgroundColor: '#FF9500'},
-                  ]}
-                  onPress={() => downloadModelVariant('full')}>
-                  <Text style={styles.downloadVariantText}>
-                    Download Full (328MB)
+                  {/* Available */}
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      themedStyles.textSecondary,
+                      themedStyles.sectionLabelWithMargin,
+                    ]}>
+                    AVAILABLE DOWNLOADS
                   </Text>
-                  <Text style={styles.downloadVariantSubtext}>
-                    Best Quality
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                  {supertonicModelManager.getAvailableVersions().map(item => {
+                    const isInstalled = supertonicModels.some(
+                      m => m.variant === item.version,
+                    );
+                    const isThisDownloading =
+                      downloadingItem === `supertonic-${item.version}`;
 
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowModelManager(false)}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
+                    return (
+                      <TouchableOpacity
+                        key={item.version}
+                        style={[
+                          styles.downloadCard,
+                          isInstalled
+                            ? themedStyles.downloadCardInstalled
+                            : item.version === 'v2'
+                              ? themedStyles.downloadCardGreen
+                              : themedStyles.downloadCardBlue,
+                          isDownloading && !isThisDownloading
+                            ? themedStyles.opacityFaded
+                            : themedStyles.opacityFull,
+                        ]}
+                        onPress={() => downloadSupertonicModel(item.version)}
+                        disabled={isInstalled || isDownloading}>
+                        {isThisDownloading ? (
+                          <View style={styles.downloadingState}>
+                            <ActivityIndicator color="white" size="small" />
+                            <Text style={styles.downloadingText}>
+                              {Math.round(downloadProgress * 100)}%
+                            </Text>
+                            <View style={styles.progressBarContainer}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  {width: `${downloadProgress * 100}%`},
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <>
+                            <View style={styles.downloadCardContent}>
+                              <Text
+                                style={[
+                                  styles.downloadCardTitle,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.textWhite,
+                                ]}>
+                                {isInstalled
+                                  ? `${item.version.toUpperCase()} Installed`
+                                  : item.version.toUpperCase()}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardMeta,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadMetaWhite,
+                                ]}>
+                                {Math.round(item.estimatedSize / 1024 / 1024)}{' '}
+                                MB • {item.description}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardLangs,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadLangsWhite,
+                                ]}>
+                                Languages:{' '}
+                                {item.languages.join(', ').toUpperCase()}
+                              </Text>
+                            </View>
+                            {!isInstalled && (
+                              <Text style={styles.downloadIcon}>↓</Text>
+                            )}
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* Voice Picker Modal */}
+      {/* ==================== VOICE PICKER MODAL ==================== */}
       <Modal
         visible={showVoicePicker}
         transparent
         animationType="slide"
         onRequestClose={() => setShowVoicePicker(false)}>
         <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalContent,
-              {backgroundColor: scheme === 'dark' ? '#1C1C1E' : 'white'},
-            ]}>
-            <Text style={[styles.modalTitle, {color: textColor}]}>
-              Select Voice
-            </Text>
+          <View style={[styles.modalContent, themedStyles.bgCardSecondary]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, themedStyles.textPrimary]}>
+                Select Voice
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowVoicePicker(false)}
+                style={styles.closeIcon}>
+                <Text
+                  style={[styles.closeIconText, themedStyles.textSecondary]}>
+                  ×
+                </Text>
+              </TouchableOpacity>
+            </View>
             <ScrollView style={styles.voiceList}>
               {availableVoices.map(voice => {
-                const voiceId =
-                  selectedEngine === TTSEngine.OS_NATIVE ? voice.id : voice.id;
-                const isSelected = selectedVoice === voiceId;
+                const voiceId = voice.id;
+                const isVoiceSelected = selectedVoice === voiceId;
                 return (
                   <Pressable
                     key={voiceId}
                     style={[
                       styles.voiceItem,
-                      isSelected && styles.voiceItemSelected,
-                      {
-                        backgroundColor: isSelected
-                          ? scheme === 'dark'
-                            ? '#2C2C2E'
-                            : '#E8F4FD'
-                          : 'transparent',
-                      },
+                      isVoiceSelected
+                        ? themedStyles.voiceItemSelected
+                        : themedStyles.voiceItemUnselected,
                     ]}
                     onPress={() => {
                       setSelectedVoice(voiceId);
                       setShowVoicePicker(false);
                     }}>
-                    <Text style={[styles.voiceName, {color: textColor}]}>
+                    <Text style={[styles.voiceName, themedStyles.textPrimary]}>
                       {getVoiceDisplayName(voice)}
                     </Text>
-                    {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                    {isVoiceSelected && <Text style={styles.checkmark}>✓</Text>}
                   </Pressable>
                 );
               })}
             </ScrollView>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => setShowVoicePicker(false)}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Engine Selector */}
-      <View style={styles.engineSelector}>
-        <View style={styles.engineHeader}>
-          <Text style={[styles.selectorTitle, {color: textColor}]}>
-            TTS Engine:
+      {/* ==================== ENGINE SELECTOR ==================== */}
+      <View style={[styles.engineSelector, themedStyles.bgCard]}>
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, themedStyles.textPrimary]}>
+            Engine
           </Text>
-          <TouchableOpacity
-            style={[
-              styles.manageModelsButton,
-              {backgroundColor: scheme === 'dark' ? '#4A90E2' : '#007AFF'},
-            ]}
-            onPress={handleManageModels}>
-            <Text style={styles.manageModelsButtonText}>📥 Manage Models</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.engineButtons}>
-          {renderEngineButton(TTSEngine.OS_NATIVE, 'System')}
-          {renderEngineButton(TTSEngine.KOKORO, 'Kokoro')}
-          {renderEngineButton(TTSEngine.SUPERTONIC, 'Supertonic')}
-        </View>
-        <View style={styles.statusRow}>
-          <Text style={[styles.statusText, {color: textColor}]}>
-            Status:{' '}
-            {isInitializing
-              ? '⏳ Initializing...'
-              : engineReady
-                ? '✅ Ready'
-                : '❌ Not Ready'}
-          </Text>
+          {/* Only show Manage Models for neural engines */}
+          {selectedEngine !== TTSEngine.OS_NATIVE && (
+            <TouchableOpacity
+              style={styles.manageBtn}
+              onPress={() => {
+                setModelManagerTab(
+                  selectedEngine === TTSEngine.KOKORO ? 'kokoro' : 'supertonic',
+                );
+                setShowModelManager(true);
+              }}>
+              <Text style={styles.manageBtnText}>Manage Models</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Execution Provider Selection (Neural engines) */}
-        {(selectedEngine === TTSEngine.KOKORO ||
-          selectedEngine === TTSEngine.SUPERTONIC) && (
-          <View style={styles.providerSection}>
-            <Text style={[styles.providerLabel, {color: textColor}]}>
-              Acceleration:
+        <View style={styles.engineButtons}>
+          {[
+            {engine: TTSEngine.OS_NATIVE, label: 'System'},
+            {engine: TTSEngine.KOKORO, label: 'Kokoro'},
+            {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
+          ].map(item => {
+            const isEngineSelected = selectedEngine === item.engine;
+            return (
+              <TouchableOpacity
+                key={item.engine}
+                style={[
+                  styles.engineBtn,
+                  isEngineSelected
+                    ? themedStyles.btnSelected
+                    : themedStyles.btnUnselected,
+                ]}
+                onPress={() => setSelectedEngine(item.engine)}
+                disabled={isInitializing || isStarted}>
+                <Text
+                  style={[
+                    styles.engineBtnText,
+                    isEngineSelected
+                      ? themedStyles.textWhite
+                      : themedStyles.textPrimary,
+                  ]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Status */}
+        <View style={styles.statusRow}>
+          {isInitializing ? (
+            <View style={styles.statusLoading}>
+              <ActivityIndicator size="small" color="#007AFF" />
+              <Text style={[styles.statusText, themedStyles.textSecondary]}>
+                Initializing...
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={[
+                styles.statusText,
+                engineReady
+                  ? themedStyles.statusReady
+                  : themedStyles.statusNotReady,
+              ]}>
+              {engineReady ? '● Ready' : '● Not Ready'}
             </Text>
-            <View style={styles.providerButtons}>
-              {(
-                [
-                  {key: 'auto', label: '🚀 Auto', desc: 'Best for device'},
-                  {
-                    key: 'gpu',
-                    label: '🎮 GPU',
-                    desc: Platform.OS === 'ios' ? 'Metal' : 'NNAPI',
-                  },
-                  {key: 'cpu', label: '💻 CPU', desc: 'Fallback'},
-                ] as const
-              ).map(item => {
-                const isSelected = selectedProvider === item.key;
+          )}
+        </View>
+
+        {/* Acceleration (neural only) */}
+        {selectedEngine !== TTSEngine.OS_NATIVE && (
+          <View style={styles.accelerationSection}>
+            <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+              Acceleration
+            </Text>
+            <View style={styles.accelerationButtons}>
+              {[
+                {key: 'auto', label: 'Auto'},
+                {key: 'gpu', label: Platform.OS === 'ios' ? 'Metal' : 'GPU'},
+                {key: 'cpu', label: 'CPU'},
+              ].map(item => {
+                const isProviderSelected = selectedProvider === item.key;
                 return (
                   <TouchableOpacity
                     key={item.key}
                     style={[
-                      styles.providerButton,
-                      {
-                        backgroundColor: isSelected
-                          ? scheme === 'dark'
-                            ? '#4A90E2'
-                            : '#007AFF'
-                          : scheme === 'dark'
-                            ? '#333'
-                            : '#E0E0E0',
-                      },
+                      styles.accelBtn,
+                      isProviderSelected
+                        ? themedStyles.btnSelected
+                        : themedStyles.btnUnselected,
                     ]}
                     onPress={() =>
                       setSelectedProvider(item.key as ExecutionProviderPreset)
@@ -946,29 +1028,12 @@ const RootView: React.FC = () => {
                     disabled={isInitializing || isStarted}>
                     <Text
                       style={[
-                        styles.providerButtonText,
-                        {
-                          color: isSelected
-                            ? 'white'
-                            : scheme === 'dark'
-                              ? '#CCC'
-                              : '#333',
-                        },
+                        styles.accelBtnText,
+                        isProviderSelected
+                          ? themedStyles.textWhite
+                          : themedStyles.textPrimary,
                       ]}>
                       {item.label}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.providerButtonDesc,
-                        {
-                          color: isSelected
-                            ? 'rgba(255,255,255,0.8)'
-                            : scheme === 'dark'
-                              ? '#999'
-                              : '#666',
-                        },
-                      ]}>
-                      {item.desc}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -977,162 +1042,120 @@ const RootView: React.FC = () => {
           </View>
         )}
 
-        {/* Voice Selection and Download */}
+        {/* Voice selector */}
         {engineReady && (
-          <View style={styles.voiceControls}>
+          <View style={styles.voiceSection}>
+            <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+              Voice
+            </Text>
             <TouchableOpacity
-              style={[
-                styles.voiceButton,
-                {
-                  backgroundColor: '#c04a4aff',
-                  flex: 1,
-                },
-              ]}
-              onPress={() => {
-                console.log('Voice button pressed');
-                setShowVoicePicker(true);
-              }}
+              style={[styles.voiceSelector, themedStyles.bgInput]}
+              onPress={() => setShowVoicePicker(true)}
               disabled={availableVoices.length === 0}>
-              <Text style={[styles.voiceButtonText, {color: textColor}]}>
-                🎤{' '}
+              <Text
+                style={[styles.voiceSelectorText, themedStyles.textPrimary]}
+                numberOfLines={1}>
                 {selectedVoice
-                  ? availableVoices.find(v =>
-                      selectedEngine === TTSEngine.OS_NATIVE
-                        ? v.id === selectedVoice
-                        : v.id === selectedVoice,
-                    )?.name || 'Select Voice'
+                  ? availableVoices.find(v => v.id === selectedVoice)?.name ||
+                    'Select'
                   : 'Select Voice'}
               </Text>
+              <Text style={[styles.dropdownArrow, themedStyles.textSecondary]}>
+                ▼
+              </Text>
             </TouchableOpacity>
-
-            {selectedEngine !== TTSEngine.OS_NATIVE && (
-              <TouchableOpacity
-                style={[
-                  styles.downloadButton,
-                  {backgroundColor: scheme === 'dark' ? '#2C2C2E' : '#F0F0F0'},
-                ]}
-                onPress={handleDownloadModel}
-                disabled={isDownloading}>
-                {isDownloading ? (
-                  <ActivityIndicator size="small" color={textColor} />
-                ) : (
-                  <Text style={[styles.downloadButtonText, {color: textColor}]}>
-                    ⬇️
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
           </View>
         )}
 
-        {/* Speed and Quality Controls (Supertonic only) */}
+        {/* Supertonic controls */}
         {engineReady && selectedEngine === TTSEngine.SUPERTONIC && (
-          <View style={styles.synthesisControls}>
-            {/* Speed Control */}
-            <View style={styles.controlRow}>
-              <Text style={[styles.controlLabel, {color: textColor}]}>
-                Speed: {speed.toFixed(1)}x
+          <View style={styles.supertonicControls}>
+            {/* Speed */}
+            <View style={styles.controlGroup}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                Speed: {speed.toFixed(2)}x
               </Text>
-              <View style={styles.controlButtons}>
-                {[1.0, 1.25, 1.5, 1.75, 2.0].map(s => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[
-                      styles.controlButton,
-                      {
-                        backgroundColor:
-                          speed === s
-                            ? scheme === 'dark'
-                              ? '#4A90E2'
-                              : '#007AFF'
-                            : scheme === 'dark'
-                              ? '#333'
-                              : '#E0E0E0',
-                      },
-                    ]}
-                    onPress={() => setSpeed(s)}
-                    disabled={isStarted}>
-                    <Text
+              <View style={styles.controlBtns}>
+                {[1.0, 1.25, 1.5, 1.75, 2.0].map(s => {
+                  const isSpeedSelected = speed === s;
+                  return (
+                    <TouchableOpacity
+                      key={s}
                       style={[
-                        styles.controlButtonText,
-                        {
-                          color:
-                            speed === s
-                              ? 'white'
-                              : scheme === 'dark'
-                                ? '#CCC'
-                                : '#333',
-                        },
-                      ]}>
-                      {s}x
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                        styles.controlBtn,
+                        isSpeedSelected
+                          ? themedStyles.btnSelected
+                          : themedStyles.btnUnselected,
+                      ]}
+                      onPress={() => setSpeed(s)}
+                      disabled={isStarted}>
+                      <Text
+                        style={[
+                          styles.controlBtnText,
+                          isSpeedSelected
+                            ? themedStyles.textWhite
+                            : themedStyles.textPrimary,
+                        ]}>
+                        {s}x
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 
-            {/* Quality (Inference Steps) Control */}
-            <View style={styles.controlRow}>
-              <Text style={[styles.controlLabel, {color: textColor}]}>
+            {/* Quality */}
+            <View style={styles.controlGroup}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
                 Quality: {inferenceSteps} steps
               </Text>
-              <View style={styles.controlButtons}>
-                {[2, 3, 5, 8, 12, 16].map(steps => (
-                  <TouchableOpacity
-                    key={steps}
-                    style={[
-                      styles.controlButton,
-                      {
-                        backgroundColor:
-                          inferenceSteps === steps
-                            ? scheme === 'dark'
-                              ? '#34C759'
-                              : '#28A745'
-                            : scheme === 'dark'
-                              ? '#333'
-                              : '#E0E0E0',
-                      },
-                    ]}
-                    onPress={() => setInferenceSteps(steps)}
-                    disabled={isStarted}>
-                    <Text
+              <View style={styles.controlBtns}>
+                {[2, 3, 5, 8, 12, 16].map(steps => {
+                  const isStepsSelected = inferenceSteps === steps;
+                  return (
+                    <TouchableOpacity
+                      key={steps}
                       style={[
-                        styles.controlButtonText,
-                        {
-                          color:
-                            inferenceSteps === steps
-                              ? 'white'
-                              : scheme === 'dark'
-                                ? '#CCC'
-                                : '#333',
-                        },
-                      ]}>
-                      {steps}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                        styles.controlBtn,
+                        isStepsSelected
+                          ? themedStyles.btnSelectedGreen
+                          : themedStyles.btnUnselected,
+                      ]}
+                      onPress={() => setInferenceSteps(steps)}
+                      disabled={isStarted}>
+                      <Text
+                        style={[
+                          styles.controlBtnText,
+                          isStepsSelected
+                            ? themedStyles.textWhite
+                            : themedStyles.textPrimary,
+                        ]}>
+                        {steps}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           </View>
         )}
       </View>
 
-      {/* Chunk Progress Indicator (Neural TTS) */}
+      {/* Chunk Progress */}
       {currentChunk && isStarted && (
-        <View style={styles.chunkProgressContainer}>
-          <View style={styles.chunkProgressHeader}>
-            <Text style={[styles.chunkProgressLabel, {color: textColor}]}>
-              Sentence {currentChunk.chunkIndex + 1} of{' '}
-              {currentChunk.totalChunks}
+        <View style={[styles.chunkProgress, themedStyles.bgChunkProgress]}>
+          <View style={styles.chunkHeader}>
+            <Text style={[styles.chunkLabel, themedStyles.textPrimary]}>
+              Sentence {currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}
             </Text>
-            <Text style={[styles.chunkProgressPercent, {color: textColor}]}>
+            <Text style={[styles.chunkPercent, themedStyles.statusAccent]}>
               {currentChunk.progress}%
             </Text>
           </View>
-          <View style={styles.chunkProgressBarBg}>
+          <View style={styles.chunkBarBg}>
             <View
               style={[
-                styles.chunkProgressBarFill,
+                styles.chunkBarFill,
                 {width: `${currentChunk.progress}%`},
               ]}
             />
@@ -1140,16 +1163,19 @@ const RootView: React.FC = () => {
         </View>
       )}
 
+      {/* Main Content */}
       <View style={gs.flex}>
-        <Text style={[gs.title, {color: textColor}]}>Introduction</Text>
+        <Text style={[gs.title, themedStyles.textPrimary]}>Introduction</Text>
         <HighlightedText
           text={Introduction}
           highlights={highlights}
           highlightedStyle={styles.highlighted}
           onHighlightedPress={onHighlightedPress}
-          style={[gs.paragraph, {color: textColor}]}
+          style={[gs.paragraph, themedStyles.textPrimary]}
         />
       </View>
+
+      {/* Controls */}
       <View style={[gs.row, gs.p10]}>
         <Button
           label="Start"
@@ -1157,8 +1183,8 @@ const RootView: React.FC = () => {
           onPress={onStartPress}
         />
         <Button label="Stop" disabled={!isStarted} onPress={Speech.stop} />
-        {isAndroidLowerThan26 ? null : (
-          <React.Fragment>
+        {!isAndroidLowerThan26 && (
+          <>
             <Button
               label="Pause"
               onPress={Speech.pause}
@@ -1169,7 +1195,7 @@ const RootView: React.FC = () => {
               disabled={!isPaused}
               onPress={Speech.resume}
             />
-          </React.Fragment>
+          </>
         )}
       </View>
     </SafeAreaView>
@@ -1184,338 +1210,353 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     backgroundColor: '#ffff00',
   },
-  engineSelector: {
-    marginBottom: 20,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
-  },
-  engineHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  selectorTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  manageModelsButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  manageModelsButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  engineButtons: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  engineButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  engineButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  statusRow: {
-    marginTop: 4,
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  providerSection: {
-    marginTop: 12,
-  },
-  providerLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  providerButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  providerButton: {
-    flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  providerButtonDesc: {
-    fontSize: 9,
-    marginTop: 2,
-  },
-  voiceControls: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  voiceButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  voiceButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  downloadButton: {
-    width: 50,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  downloadButtonText: {
-    fontSize: 18,
-  },
+  // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '70%',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    maxHeight: '75%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(128, 128, 128, 0.3)',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 16,
-    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '600',
   },
+  closeIcon: {
+    padding: 4,
+  },
+  modalBody: {
+    padding: 16,
+  },
+  // Tabs
+  tabBar: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 8,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  tabActive: {},
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  // Sections
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  // Model Cards
+  modelCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  modelCardActive: {
+    borderWidth: 2,
+    borderColor: '#34C759',
+  },
+  modelCardInfo: {
+    flex: 1,
+  },
+  modelCardNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modelCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modelCardMeta: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  modelCardActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  activeBadge: {
+    backgroundColor: 'rgba(52, 199, 89, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#34C759',
+  },
+  useBtn: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  useBtnText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deleteBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  deleteBtnText: {
+    color: '#FF3B30',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  // Download Cards
+  downloadCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  downloadCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  downloadCardMeta: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  downloadCardLangs: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  downloadIcon: {
+    fontSize: 20,
+    color: 'white',
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  downloadingState: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  downloadingText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: 'white',
+  },
+  // Voice Picker
   voiceList: {
     maxHeight: 400,
+    padding: 16,
   },
   voiceItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 8,
-    marginBottom: 8,
-  },
-  voiceItemSelected: {
-    borderWidth: 2,
-    borderColor: '#007AFF',
+    marginBottom: 6,
   },
   voiceName: {
     fontSize: 15,
     flex: 1,
   },
   checkmark: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#007AFF',
     fontWeight: '700',
   },
-  closeButton: {
-    marginTop: 16,
-    paddingVertical: 14,
-    backgroundColor: '#007AFF',
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  modelList: {
-    maxHeight: 200,
+  // Engine Selector
+  engineSelector: {
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 16,
   },
-  modelItem: {
+  sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  modelInfo: {
-    flex: 1,
-  },
-  modelNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modelName: {
+  sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 4,
   },
-  activeLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#34C759',
-    backgroundColor: 'rgba(52, 199, 89, 0.15)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  modelSize: {
-    fontSize: 14,
-  },
-  modelActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  useButton: {
+  manageBtn: {
     backgroundColor: '#007AFF',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
   },
-  useButtonText: {
+  manageBtnText: {
     color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  deleteButtonText: {
-    fontSize: 20,
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginVertical: 16,
-  },
-  downloadingContainer: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  downloadingText: {
-    fontSize: 16,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  progressBar: {
-    width: '100%',
-    height: 8,
-    backgroundColor: 'rgba(128, 128, 128, 0.2)',
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: '#007AFF',
-  },
-  downloadButtons: {
-    gap: 12,
-  },
-  downloadVariantButton: {
-    padding: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  downloadVariantText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  downloadVariantSubtext: {
-    color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 13,
+    fontWeight: '600',
   },
-  downloadVariantLangs: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 11,
-    marginTop: 4,
+  engineButtons: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  // Chunk progress styles (Neural TTS)
-  chunkProgressContainer: {
-    marginBottom: 12,
-    padding: 12,
-    backgroundColor: 'rgba(25, 118, 210, 0.1)',
+  engineBtn: {
+    flex: 1,
+    paddingVertical: 10,
     borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#1976d2',
+    alignItems: 'center',
   },
-  chunkProgressHeader: {
+  engineBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statusRow: {
+    marginTop: 10,
+  },
+  statusLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Acceleration
+  accelerationSection: {
+    marginTop: 14,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 6,
+  },
+  accelerationButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accelBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  accelBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Voice Section
+  voiceSection: {
+    marginTop: 14,
+  },
+  voiceSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
-  chunkProgressLabel: {
+  voiceSelectorText: {
     fontSize: 14,
-    fontWeight: '600',
+    flex: 1,
   },
-  chunkProgressPercent: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  chunkProgressBarBg: {
-    height: 6,
-    backgroundColor: 'rgba(128, 128, 128, 0.2)',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  chunkProgressBarFill: {
-    height: '100%',
-    backgroundColor: '#1976d2',
-    borderRadius: 3,
-  },
-  // Synthesis controls (speed, quality)
-  synthesisControls: {
-    marginTop: 12,
+  // Supertonic Controls
+  supertonicControls: {
+    marginTop: 14,
     gap: 12,
   },
-  controlRow: {
-    gap: 8,
-  },
-  controlLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  controlButtons: {
+  controlGroup: {},
+  controlBtns: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
   },
-  controlButton: {
-    paddingVertical: 8,
+  controlBtn: {
+    paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
     minWidth: 44,
     alignItems: 'center',
   },
-  controlButtonText: {
+  controlBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  // Chunk Progress
+  chunkProgress: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+  },
+  chunkHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  chunkLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chunkPercent: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  chunkBarBg: {
+    height: 4,
+    backgroundColor: 'rgba(128,128,128,0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  chunkBarFill: {
+    height: '100%',
+    backgroundColor: '#007AFF',
+  },
+  // Common
+  closeIconText: {
+    fontSize: 24,
+  },
+  dropdownArrow: {
+    fontSize: 14,
+  },
+  downloadCardContent: {
+    flex: 1,
   },
 });
