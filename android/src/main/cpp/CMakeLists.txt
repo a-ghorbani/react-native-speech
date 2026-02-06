@@ -16,14 +16,21 @@ file(GLOB ESPEAK_SOURCES
     "${ESPEAK_SRC_DIR}/libespeak-ng/*.c"
 )
 
-# Exclude files we don't need
+# Collect ucd-tools source files (required for Unicode character classification)
+file(GLOB UCD_SOURCES
+    "${ESPEAK_SRC_DIR}/ucd-tools/src/*.c"
+)
+
+# Exclude files we don't need (matching iOS podspec exclusions)
 list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*espeak_command\\.c$")      # CLI tool
 list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*compiledict\\.c$")         # Build-time only
 list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*compilembrola\\.c$")       # Build-time only
 list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*compiledata\\.c$")         # Build-time only
+list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*sPlayer\\.c$")             # Requires speechPlayer.h (not available)
+list(FILTER ESPEAK_SOURCES EXCLUDE REGEX ".*klatt\\.c$")               # Klatt synthesizer (not needed for phonemization)
 
 # Build espeak-ng as static library
-add_library(espeak-ng STATIC ${ESPEAK_SOURCES})
+add_library(espeak-ng STATIC ${ESPEAK_SOURCES} ${UCD_SOURCES})
 
 # espeak-ng include paths
 target_include_directories(espeak-ng PUBLIC
@@ -36,6 +43,7 @@ target_include_directories(espeak-ng PUBLIC
 target_compile_definitions(espeak-ng PRIVATE
     LIBESPEAK_NG_EXPORT=
     N_PHONEME_LIST=4000  # Increased from default 1000 to support longer text
+    PATH_ESPEAK_DATA=""  # Data path is set at runtime via espeak_Initialize()
 )
 
 # Build the wrapper library

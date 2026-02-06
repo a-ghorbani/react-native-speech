@@ -1,8 +1,33 @@
 #include "espeak_wrapper.h"
 #include <espeak-ng/speak_lib.h>
+#include <espeak-ng/espeak_ng.h>
 #include <android/log.h>
 #include <string>
 #include <mutex>
+
+// Stubs for dictionary compilation functions we don't need at runtime
+// These are referenced by espeak-ng but we don't use dictionary compilation
+extern "C" {
+    espeak_ng_STATUS espeak_ng_CompileDictionary(
+        const char *dsource,
+        const char *dict_name,
+        FILE *log,
+        int flags,
+        espeak_ng_ERROR_CONTEXT *context
+    ) {
+        return ENS_NOT_SUPPORTED;
+    }
+
+    void DecodeRule(const char *group, int group_length, char *rule, int *err) {
+        // Stub - not used at runtime
+        if (err) *err = 0;
+    }
+
+    void print_dictionary_flags(unsigned int *flags, char *buf, int buf_len) {
+        // Stub - not used at runtime
+        if (buf && buf_len > 0) buf[0] = '\0';
+    }
+}
 
 #define LOG_TAG "EspeakWrapper"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
