@@ -1,16 +1,10 @@
-import React, {useMemo, useCallback} from 'react';
-import {
-  Text,
-  StyleSheet,
-  type StyleProp,
-  type TextStyle,
-  TouchableWithoutFeedback,
-} from 'react-native';
+import React from 'react';
 import type {
   TextSegmentProps,
   HighlightedTextProps,
   HighlightedSegmentProps,
 } from '../types';
+import {Text, StyleSheet} from 'react-native';
 
 const HighlightedText: React.FC<HighlightedTextProps> = ({
   text,
@@ -20,85 +14,97 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({
   onHighlightedPress,
   ...rest
 }) => {
-  const segments = useMemo(() => {
-    const sorted = [...highlights].sort((a, b) => a.start - b.start);
+  const baseStyle = [style, highlightedStyle ?? styles.isHighlighted];
+
+  const segments = React.useMemo(() => {
+    if (!text || !highlights.length) {
+      return [];
+    }
+    let cursor = 0;
+    let isSorted = true;
 
     const parts: TextSegmentProps[] = [];
-    let currentIndex = 0;
 
-    for (let i = 0; i < sorted.length; ++i) {
-      const currentSegment = sorted[i] as HighlightedSegmentProps;
-      const {start, end} = currentSegment;
+    for (let i = 1; i < highlights.length; i++) {
+      if (highlights[i - 1]!.start > highlights[i]!.start) {
+        isSorted = false;
+        break;
+      }
+    }
+    const ordered = isSorted
+      ? highlights
+      : [...highlights].sort((a, b) => a.start - b.start);
 
-      if (start > currentIndex) {
+    for (let i = 0; i < ordered.length; i++) {
+      const {
+        end,
+        start,
+        style: segmentStyle,
+      } = ordered[i] as HighlightedSegmentProps;
+
+      if (start >= text.length || end <= cursor) continue;
+
+      const clampedStart = Math.max(cursor, start);
+      const clampedEnd = Math.min(end, text.length);
+
+      if (clampedStart > cursor) {
         parts.push({
           isHighlighted: false,
-          text: text.slice(currentIndex, start),
+          text: text.slice(cursor, clampedStart),
         });
       }
       parts.push({
-        ...currentSegment,
+        end: clampedEnd,
+        start: clampedStart,
+        style: segmentStyle,
         isHighlighted: true,
-        text: text.slice(start, end),
+        text: text.slice(clampedStart, clampedEnd),
       });
-      currentIndex = end;
+
+      cursor = clampedEnd;
     }
-    if (currentIndex < text.length) {
+    if (cursor < text.length) {
       parts.push({
         isHighlighted: false,
-        text: text.slice(currentIndex),
+        text: text.slice(cursor),
       });
     }
     return parts;
   }, [highlights, text]);
 
-  const getHighlightedSegmentStyle = useCallback(
-    (isHighlighted = false, segmentStyle?: StyleProp<TextStyle>) => {
-      return !isHighlighted
-        ? style
-        : StyleSheet.flatten([
-            style,
-            highlightedStyle ?? styles.isHighlighted,
-            segmentStyle,
-          ]);
+  const onHighlightedSegmentPress = React.useCallback(
+    (segment: TextSegmentProps) => {
+      if (!segment.isHighlighted) return;
+      onHighlightedPress?.({
+        end: segment.end!,
+        start: segment.start!,
+        text: segment.text,
+      });
     },
-    [highlightedStyle, style],
+    [onHighlightedPress],
   );
 
-  const renderText = useCallback(
-    (segment: TextSegmentProps, index: number) => {
-      return !segment.isHighlighted ? (
-        <Text
-          key={index}
-          style={getHighlightedSegmentStyle(segment.isHighlighted)}>
-          {segment.text}
-        </Text>
-      ) : (
-        <TouchableWithoutFeedback
-          key={index}
-          onPress={() =>
-            onHighlightedPress?.({
-              end: segment.end!,
-              text: segment.text,
-              start: segment.start!,
-            })
-          }>
-          <Text
-            style={getHighlightedSegmentStyle(
-              segment.isHighlighted,
-              segment.style,
-            )}>
-            {segment.text}
-          </Text>
-        </TouchableWithoutFeedback>
-      );
-    },
-    [getHighlightedSegmentStyle, onHighlightedPress],
-  );
+  const renderText = (segment: TextSegmentProps, index: number) => {
+    const segmentStyle = segment.isHighlighted
+      ? segment.style
+        ? [baseStyle, segment.style]
+        : baseStyle
+      : style;
+
+    return (
+      <Text
+        style={segmentStyle}
+        suppressHighlighting
+        key={`segment-${index}`}
+        onPress={() => onHighlightedSegmentPress(segment)}>
+        {segment.text}
+      </Text>
+    );
+  };
 
   return (
     <Text style={style} {...rest}>
-      {segments.map(renderText)}
+      {segments.length ? segments.map(renderText) : text}
     </Text>
   );
 };
