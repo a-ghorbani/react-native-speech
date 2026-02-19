@@ -772,4 +772,64 @@ export class SupertonicInference {
     this.vocoderSession = null;
     this.isInitialized = false;
   }
+
+  /**
+   * Release all ONNX sessions to free memory.
+   * Unlike destroy(), this method calls session.release() if available
+   * to properly free native resources.
+   *
+   * @returns Array of errors that occurred during release (empty if all succeeded)
+   */
+  async release(): Promise<Error[]> {
+    const errors: Error[] = [];
+    const sessionNames = [
+      'durationPredictor',
+      'textEncoder',
+      'vectorEstimator',
+      'vocoder',
+    ];
+    const sessions = [
+      this.durationPredictorSession,
+      this.textEncoderSession,
+      this.vectorEstimatorSession,
+      this.vocoderSession,
+    ];
+
+    // Release all sessions in parallel, collecting errors
+    const results = await Promise.all(
+      sessions.map(async (session, index) => {
+        if (session && typeof (session as any).release === 'function') {
+          try {
+            await (session as any).release();
+            return null;
+          } catch (error) {
+            const sessionName = sessionNames[index];
+            console.warn(
+              `[SupertonicInference] ${sessionName} session release failed:`,
+              error,
+            );
+            return new Error(
+              `${sessionName}: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+        return null;
+      }),
+    );
+
+    // Collect non-null errors
+    for (const error of results) {
+      if (error) {
+        errors.push(error);
+      }
+    }
+
+    this.durationPredictorSession = null;
+    this.textEncoderSession = null;
+    this.vectorEstimatorSession = null;
+    this.vocoderSession = null;
+    this.isInitialized = false;
+
+    return errors;
+  }
 }

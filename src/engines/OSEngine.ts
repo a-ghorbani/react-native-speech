@@ -11,6 +11,7 @@ import type {
   TTSEngineInterface,
   AudioBuffer,
   SynthesisOptions,
+  ReleaseResult,
 } from '../types';
 
 export class OSEngine implements TTSEngineInterface {
@@ -78,5 +79,14 @@ export class OSEngine implements TTSEngineInterface {
    */
   async destroy(): Promise<void> {
     // Nothing to clean up for OS TTS
+  }
+
+  /**
+   * Release engine resources (no-op for OS TTS)
+   * OS TTS doesn't load models into memory, so there's nothing to release
+   */
+  async release(): Promise<ReleaseResult> {
+    // Nothing to release for OS TTS
+    return {success: true, partialRelease: false, errors: []};
   }
 }

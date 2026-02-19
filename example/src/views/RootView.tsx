@@ -4,6 +4,7 @@ import {
   Text,
   View,
   Alert,
+  AppState,
   Platform,
   StyleSheet,
   useColorScheme,
@@ -13,6 +14,7 @@ import {
   ScrollView,
   Pressable,
 } from 'react-native';
+import type {AppStateStatus} from 'react-native';
 import Speech, {
   HighlightedText,
   type HighlightedSegmentArgs,
@@ -124,6 +126,9 @@ const RootView: React.FC = () => {
   const [selectedProvider, setSelectedProvider] =
     React.useState<ExecutionProviderPreset>('auto');
 
+  // Model release state
+  const [isReleasing, setIsReleasing] = React.useState<boolean>(false);
+
   // Chunk progress for neural engines
   const [currentChunk, setCurrentChunk] =
     React.useState<ChunkProgressEvent | null>(null);
@@ -132,6 +137,21 @@ const RootView: React.FC = () => {
   const [speed, setSpeed] = React.useState<number>(1.0);
   const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
 
+  // Release current engine before switching
+  const releaseCurrentEngine = React.useCallback(async () => {
+    try {
+      const result = await Speech.release();
+      if (!result.success) {
+        console.warn(
+          '[RootView] Engine release had errors:',
+          result.errors.map(e => `${e.component}: ${e.error.message}`),
+        );
+      }
+    } catch (error) {
+      console.warn('[RootView] Failed to release engine:', error);
+    }
+  }, []);
+
   // Initialize engine when selection changes
   const initializeEngine = React.useCallback(
     async (engine: TTSEngine, provider: ExecutionProviderPreset = 'auto') => {
@@ -139,6 +159,9 @@ const RootView: React.FC = () => {
         setIsInitializing(true);
         setEngineReady(false);
         setInitializedEngine(null);
+
+        // Release previous engine resources before initializing new one
+        await releaseCurrentEngine();
 
         if (engine === TTSEngine.OS_NATIVE) {
           await Speech.initialize({
@@ -235,7 +258,7 @@ const RootView: React.FC = () => {
         setIsInitializing(false);
       }
     },
-    [],
+    [releaseCurrentEngine],
   );
 
   React.useEffect(() => {
@@ -299,6 +322,35 @@ const RootView: React.FC = () => {
     loadInstalledModels();
   }, [loadInstalledModels]);
 
+  // Release engine resources when app goes to background
+  React.useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'background') {
+        // Release neural engine resources when app is backgrounded
+        Speech.release().catch(err =>
+          console.warn('[RootView] Background release failed:', err),
+        );
+        setEngineReady(false);
+        setInitializedEngine(null);
+      }
+    };
+
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
+    return () => subscription.remove();
+  }, []);
+
+  // Release engine on unmount
+  React.useEffect(() => {
+    return () => {
+      Speech.release().catch(err =>
+        console.warn('[RootView] Unmount release failed:', err),
+      );
+    };
+  }, []);
+
   // Speech event handlers
   React.useEffect(() => {
     const onSpeechEnd = () => {
@@ -335,6 +387,36 @@ const RootView: React.FC = () => {
       unsubscribeChunkProgress();
     };
   }, []);
+
+  // Unload: release engine resources without switching engine
+  const onUnloadPress = React.useCallback(async () => {
+    setIsReleasing(true);
+    try {
+      const result = await Speech.release();
+      setEngineReady(false);
+      setInitializedEngine(null);
+      setAvailableVoices([]);
+      setSelectedVoice(null);
+      if (!result.success) {
+        Alert.alert(
+          'Release Warning',
+          `Released with ${result.errors.length} error(s): ${result.errors.map(e => e.component).join(', ')}`,
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Release Error',
+        `Failed to release: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    } finally {
+      setIsReleasing(false);
+    }
+  }, []);
+
+  // Reload: re-initialize the currently selected engine
+  const onReloadPress = React.useCallback(() => {
+    initializeEngine(selectedEngine, selectedProvider);
+  }, [initializeEngine, selectedEngine, selectedProvider]);
 
   const onStartPress = React.useCallback(async () => {
     if (selectedEngine === TTSEngine.SUPERTONIC) {
@@ -978,13 +1060,13 @@ const RootView: React.FC = () => {
           })}
         </View>
 
-        {/* Status */}
+        {/* Status + Load/Unload */}
         <View style={styles.statusRow}>
-          {isInitializing ? (
+          {isInitializing || isReleasing ? (
             <View style={styles.statusLoading}>
               <ActivityIndicator size="small" color="#007AFF" />
               <Text style={[styles.statusText, themedStyles.textSecondary]}>
-                Initializing...
+                {isReleasing ? 'Releasing...' : 'Initializing...'}
               </Text>
             </View>
           ) : (
@@ -997,6 +1079,27 @@ const RootView: React.FC = () => {
               ]}>
               {engineReady ? '● Ready' : '● Not Ready'}
             </Text>
+          )}
+
+          {/* Load/Unload for neural engines */}
+          {selectedEngine !== TTSEngine.OS_NATIVE && (
+            <View style={styles.loadUnloadButtons}>
+              {engineReady ? (
+                <TouchableOpacity
+                  style={styles.unloadBtn}
+                  onPress={onUnloadPress}
+                  disabled={isStarted || isReleasing || isInitializing}>
+                  <Text style={styles.unloadBtnText}>Unload</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.loadBtn}
+                  onPress={onReloadPress}
+                  disabled={isInitializing || isReleasing}>
+                  <Text style={styles.loadBtnText}>Load</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         </View>
 
@@ -1447,6 +1550,9 @@ const styles = StyleSheet.create({
   },
   statusRow: {
     marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   statusLoading: {
     flexDirection: 'row',
@@ -1456,6 +1562,32 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  loadUnloadButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  unloadBtn: {
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  unloadBtnText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  loadBtn: {
+    backgroundColor: '#34C759',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  loadBtnText: {
+    color: 'white',
+    fontSize: 13,
+    fontWeight: '600',
   },
   // Acceleration
   accelerationSection: {

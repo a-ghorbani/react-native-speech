@@ -84,6 +84,28 @@ export interface SynthesisOptions {
   silentMode?: 'obey' | 'respect' | 'ignore';
 }
 
+/**
+ * Error details for a failed release operation on a specific component
+ */
+export interface ReleaseError {
+  /** Component that failed to release (e.g., 'session', 'voiceLoader', 'tokenizer') */
+  component: string;
+  /** The error that occurred */
+  error: Error;
+}
+
+/**
+ * Result of a release operation
+ */
+export interface ReleaseResult {
+  /** Whether all resources were released successfully */
+  success: boolean;
+  /** Whether some resources were released but others failed */
+  partialRelease: boolean;
+  /** List of errors that occurred during release */
+  errors: ReleaseError[];
+}
+
 export interface TTSEngineInterface {
   /** Unique engine identifier */
   readonly name: TTSEngine;
@@ -108,6 +130,22 @@ export interface TTSEngineInterface {
 
   /** Clean up engine resources */
   destroy(): Promise<void>;
+
+  /**
+   * Release model resources from memory while keeping engine instance reusable.
+   * After calling release(), initialize() must be called before synthesize().
+   * Unlike destroy(), the engine instance remains valid for re-initialization.
+   *
+   * @returns ReleaseResult with success status and any errors encountered
+   *
+   * @example
+   * // Free memory when app goes to background
+   * await engine.release();
+   *
+   * // Later, when needed again
+   * await engine.initialize(config);
+   */
+  release(): Promise<ReleaseResult>;
 }
 
 export interface ProgressEvent {

@@ -342,4 +342,14 @@ export class UnicodeProcessor {
   hasLanguageTagSupport(): boolean {
     return this.supportsLanguageTags;
   }
+
+  /**
+   * Clear all processor data and reset to uninitialized state.
+   * After calling clear(), initialize() must be called again before use.
+   */
+  clear(): void {
+    this.indexer = null;
+    this.isInitialized = false;
+    this.supportsLanguageTags = false;
+  }
 }

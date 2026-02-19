@@ -23,6 +23,8 @@ import type {
   ChunkProgressCallback,
   ExecutionProvider,
   ExecutionProviderPreset,
+  ReleaseResult,
+  ReleaseError,
 } from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
@@ -153,6 +155,10 @@ export class KokoroEngine implements TTSEngineInterface {
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
+  // Synthesis state tracking for safe resource release
+  private isSynthesizing = false;
+  private synthesisCompleteResolver: (() => void) | null = null;
+
   constructor() {
     this.tokenizer = new BPETokenizer();
     this.voiceLoader = new VoiceLoader();
@@ -266,6 +272,27 @@ export class KokoroEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
+    // Track synthesis state for safe resource release
+    this.isSynthesizing = true;
+    try {
+      return await this.doSynthesize(text, options);
+    } finally {
+      this.isSynthesizing = false;
+      // Resolve any pending waitForSynthesisComplete() calls
+      if (this.synthesisCompleteResolver) {
+        this.synthesisCompleteResolver();
+        this.synthesisCompleteResolver = null;
+      }
+    }
+  }
+
+  /**
+   * Internal synthesis implementation
+   */
+  private async doSynthesize(
+    text: string,
+    options?: KokoroSynthesisOptions,
+  ): Promise<AudioBuffer | void> {
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
     this.currentUtteranceId = Date.now();
@@ -531,6 +558,144 @@ export class KokoroEngine implements TTSEngineInterface {
     this.isLoading = false;
     this.initError = null;
     this.config = null;
+  }
+
+  /**
+   * Wait for any ongoing synthesis to complete or abort
+   */
+  private async waitForSynthesisComplete(
+    timeoutMs: number = 5000,
+  ): Promise<void> {
+    if (!this.isSynthesizing) {
+      return;
+    }
+
+    log.debug('Waiting for synthesis to complete...');
+
+    return new Promise<void>(resolve => {
+      // Set up resolver for when synthesis completes
+      this.synthesisCompleteResolver = resolve;
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (this.synthesisCompleteResolver === resolve) {
+          log.warn('Synthesis wait timeout, proceeding with release');
+          this.synthesisCompleteResolver = null;
+          resolve();
+        }
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Reset engine state to uninitialized
+   */
+  private resetState(): void {
+    this.isInitialized = false;
+    this.isLoading = false;
+    this.initError = null;
+    this.config = null;
+  }
+
+  /**
+   * Release model resources from memory while keeping engine instance reusable.
+   * After calling release(), initialize() must be called before synthesize().
+   *
+   * This method properly releases:
+   * - ONNX InferenceSession (main memory consumer ~450MB)
+   * - Voice embeddings cache
+   * - Tokenizer vocabulary data
+   *
+   * @returns ReleaseResult with success status and any errors encountered
+   */
+  async release(): Promise<ReleaseResult> {
+    const errors: ReleaseError[] = [];
+
+    // Guard: Already released / not initialized
+    if (!this.isInitialized && !this.isLoading) {
+      log.debug('Engine already released, skipping');
+      return {success: true, partialRelease: false, errors: []};
+    }
+
+    log.info('Releasing engine resources...');
+
+    // Guard: Don't release while loading
+    if (this.isLoading) {
+      log.warn('Cannot release while engine is loading');
+      return {
+        success: false,
+        partialRelease: false,
+        errors: [
+          {
+            component: 'engine',
+            error: new Error('Cannot release while loading'),
+          },
+        ],
+      };
+    }
+
+    // 1. Signal stop and wait for any ongoing synthesis to complete
+    this.stopRequested = true;
+
+    // 2. Stop audio player first
+    try {
+      await neuralAudioPlayer.stop();
+      log.debug('Audio player stopped');
+    } catch (e) {
+      log.warn('Failed to stop audio player:', e);
+      errors.push({component: 'audioPlayer', error: e as Error});
+    }
+
+    // 3. Wait for synthesis to complete (with timeout)
+    await this.waitForSynthesisComplete();
+
+    // 4. Release ONNX session (main memory consumer)
+    if (this.session) {
+      try {
+        if (typeof this.session.release === 'function') {
+          await this.session.release();
+          log.debug('ONNX session released');
+        }
+      } catch (e) {
+        log.warn('Failed to release ONNX session:', e);
+        errors.push({component: 'session', error: e as Error});
+      }
+      this.session = null;
+    }
+
+    // 5. Clear voice embeddings cache
+    try {
+      this.voiceLoader.clear();
+      log.debug('Voice loader cleared');
+    } catch (e) {
+      log.warn('Failed to clear voice loader:', e);
+      errors.push({component: 'voiceLoader', error: e as Error});
+    }
+
+    // 6. Clear tokenizer data
+    try {
+      this.tokenizer.clear();
+      log.debug('Tokenizer cleared');
+    } catch (e) {
+      log.warn('Failed to clear tokenizer:', e);
+      errors.push({component: 'tokenizer', error: e as Error});
+    }
+
+    // 7. Reset state to allow re-initialization
+    this.resetState();
+
+    const success = errors.length === 0;
+    log.info(
+      success
+        ? 'Engine resources released successfully'
+        : `Engine released with ${errors.length} error(s)`,
+    );
+
+    return {
+      success,
+      partialRelease: errors.length > 0,
+      errors,
+    };
   }
 
   /**

@@ -29,6 +29,7 @@ import type {
   SynthesisOptions,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  ReleaseResult,
 } from './types';
 import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
@@ -360,6 +361,47 @@ export default class Speech {
   }
 
   /**
+   * Release the current neural engine's resources from memory.
+   * The engine can be re-initialized later with initialize().
+   * OS native engine does not need releasing.
+   *
+   * Use this when:
+   * - App goes to background and won't use TTS
+   * - Switching between engines and want to free previous engine's memory
+   * - Memory pressure situations
+   *
+   * After release(), call initialize() before using speak().
+   *
+   * @returns ReleaseResult with success status and any errors
+   *
+   * @example
+   * // Free memory when app goes to background
+   * AppState.addEventListener('change', async (state) => {
+   *   if (state === 'background') {
+   *     await Speech.release();
+   *   }
+   * });
+   *
+   * // Later, when needed again
+   * await Speech.initialize({ engine: 'kokoro', ... });
+   */
+  public static async release(): Promise<ReleaseResult> {
+    const engine = Speech.currentEngine;
+
+    // Log the release operation - using console since Speech is a static API layer
+    console.debug(`[Speech.release] Releasing engine: ${engine}`);
+
+    if (engine === 'kokoro' && kokoroEngine) {
+      return kokoroEngine.release();
+    } else if (engine === 'supertonic' && supertonicEngine) {
+      return supertonicEngine.release();
+    }
+
+    // OS engine doesn't need releasing
+    return {success: true, partialRelease: false, errors: []};
+  }
+
+  /**
    * Pauses the current speech
    */
   public static pause(): Promise<boolean> {
@@ -408,4 +450,5 @@ export type {
   SynthesisOptions,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  ReleaseResult,
 };

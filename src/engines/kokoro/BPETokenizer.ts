@@ -117,6 +117,18 @@ export class BPETokenizer {
   }
 
   /**
+   * Clear all tokenizer data and reset to uninitialized state.
+   * After calling clear(), loadFromData() must be called again before use.
+   */
+  clear(): void {
+    this.vocab.clear();
+    this.reverseVocab.clear();
+    this.validChars.clear();
+    this.boundaryTokenId = 0;
+    this.isInitialized = false;
+  }
+
+  /**
    * Normalize text by removing characters not in vocab
    * This matches the tokenizer.json normalizer which uses a regex
    * to keep only valid IPA characters

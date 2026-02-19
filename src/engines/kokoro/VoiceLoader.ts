@@ -361,6 +361,20 @@ export class VoiceLoader {
   }
 
   /**
+   * Clear all voice data and reset to uninitialized state.
+   * After calling clear(), one of the load methods must be called again before use.
+   */
+  clear(): void {
+    this.voiceEmbeddings.clear();
+    this.availableVoices = [];
+    this.pendingLoads.clear();
+    this.manifestBaseUrl = undefined;
+    this.manifestVoicesDir = undefined;
+    this.lazyLoadingEnabled = false;
+    this.isInitialized = false;
+  }
+
+  /**
    * Parse voice ID to extract metadata
    * Format examples:
    * - af_bella -> female, English, name: Bella

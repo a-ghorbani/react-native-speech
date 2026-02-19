@@ -25,6 +25,8 @@ import type {
   SupertonicVoiceStyle,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  ReleaseResult,
+  ReleaseError,
 } from '../../types';
 import {SupertonicInference} from './SupertonicInference';
 import {
@@ -37,6 +39,9 @@ import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {loadAssetAsJSON} from '../../utils/AssetLoader';
 import {TextChunker, type TextChunk} from '../../utils/TextChunker';
 import {SUPERTONIC_CONSTANTS} from './constants';
+import {createComponentLogger} from '../../utils/logger';
+
+const log = createComponentLogger('Supertonic', 'Engine');
 
 const {DEFAULT_MAX_CHUNK_SIZE, DEFAULT_INFERENCE_STEPS} = SUPERTONIC_CONSTANTS;
 
@@ -59,6 +64,10 @@ export class SupertonicEngine implements TTSEngineInterface {
   private stopRequested = false;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
+
+  // Synthesis state tracking for safe resource release
+  private isSynthesizing = false;
+  private synthesisCompleteResolver: (() => void) | null = null;
 
   constructor() {
     this.inference = new SupertonicInference();
@@ -171,6 +180,27 @@ export class SupertonicEngine implements TTSEngineInterface {
       throw new Error('Text cannot be empty');
     }
 
+    // Track synthesis state for safe resource release
+    this.isSynthesizing = true;
+    try {
+      return await this.doSynthesize(text, options);
+    } finally {
+      this.isSynthesizing = false;
+      // Resolve any pending waitForSynthesisComplete() calls
+      if (this.synthesisCompleteResolver) {
+        this.synthesisCompleteResolver();
+        this.synthesisCompleteResolver = null;
+      }
+    }
+  }
+
+  /**
+   * Internal synthesis implementation
+   */
+  private async doSynthesize(
+    text: string,
+    options?: SupertonicSynthesisOptions,
+  ): Promise<AudioBuffer | void> {
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
     this.currentUtteranceId = Date.now();
@@ -349,11 +379,150 @@ export class SupertonicEngine implements TTSEngineInterface {
 
     await this.inference.destroy();
     this.styleLoader.clear();
+    this.unicodeProcessor.clear();
 
     this.isInitialized = false;
     this.isLoading = false;
     this.initError = null;
     this.config = null;
+  }
+
+  /**
+   * Wait for any ongoing synthesis to complete or abort
+   */
+  private async waitForSynthesisComplete(
+    timeoutMs: number = 5000,
+  ): Promise<void> {
+    if (!this.isSynthesizing) {
+      return;
+    }
+
+    log.debug('Waiting for synthesis to complete...');
+
+    return new Promise<void>(resolve => {
+      // Set up resolver for when synthesis completes
+      this.synthesisCompleteResolver = resolve;
+
+      // Timeout fallback
+      setTimeout(() => {
+        if (this.synthesisCompleteResolver === resolve) {
+          log.warn('Synthesis wait timeout, proceeding with release');
+          this.synthesisCompleteResolver = null;
+          resolve();
+        }
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Reset engine state to uninitialized
+   */
+  private resetState(): void {
+    this.isInitialized = false;
+    this.isLoading = false;
+    this.initError = null;
+    this.config = null;
+  }
+
+  /**
+   * Release model resources from memory while keeping engine instance reusable.
+   * After calling release(), initialize() must be called before synthesize().
+   *
+   * This method properly releases:
+   * - 4 ONNX InferenceSessions (duration predictor, text encoder, vector estimator, vocoder)
+   * - Voice style embeddings cache
+   * - Unicode processor data
+   *
+   * @returns ReleaseResult with success status and any errors encountered
+   */
+  async release(): Promise<ReleaseResult> {
+    const errors: ReleaseError[] = [];
+
+    // Guard: Already released / not initialized
+    if (!this.isInitialized && !this.isLoading) {
+      log.debug('Engine already released, skipping');
+      return {success: true, partialRelease: false, errors: []};
+    }
+
+    log.info('Releasing engine resources...');
+
+    // Guard: Don't release while loading
+    if (this.isLoading) {
+      log.warn('Cannot release while engine is loading');
+      return {
+        success: false,
+        partialRelease: false,
+        errors: [
+          {
+            component: 'engine',
+            error: new Error('Cannot release while loading'),
+          },
+        ],
+      };
+    }
+
+    // 1. Signal stop and wait for any ongoing synthesis to complete
+    this.stopRequested = true;
+
+    // 2. Stop audio player first
+    try {
+      await neuralAudioPlayer.stop();
+      log.debug('Audio player stopped');
+    } catch (e) {
+      log.warn('Failed to stop audio player:', e);
+      errors.push({component: 'audioPlayer', error: e as Error});
+    }
+
+    // 3. Wait for synthesis to complete (with timeout)
+    await this.waitForSynthesisComplete();
+
+    // 4. Release inference pipeline (4 ONNX sessions)
+    try {
+      const inferenceErrors = await this.inference.release();
+      if (inferenceErrors.length > 0) {
+        for (const err of inferenceErrors) {
+          errors.push({component: 'inference', error: err});
+        }
+      }
+      log.debug('Inference pipeline released');
+    } catch (e) {
+      log.warn('Failed to release inference:', e);
+      errors.push({component: 'inference', error: e as Error});
+    }
+
+    // 5. Clear style cache
+    try {
+      this.styleLoader.clear();
+      log.debug('Style loader cleared');
+    } catch (e) {
+      log.warn('Failed to clear style loader:', e);
+      errors.push({component: 'styleLoader', error: e as Error});
+    }
+
+    // 6. Clear unicode processor
+    try {
+      this.unicodeProcessor.clear();
+      log.debug('Unicode processor cleared');
+    } catch (e) {
+      log.warn('Failed to clear unicode processor:', e);
+      errors.push({component: 'unicodeProcessor', error: e as Error});
+    }
+
+    // 7. Reset state to allow re-initialization
+    this.resetState();
+
+    const success = errors.length === 0;
+    log.info(
+      success
+        ? 'Engine resources released successfully'
+        : `Engine released with ${errors.length} error(s)`,
+    );
+
+    return {
+      success,
+      partialRelease: errors.length > 0,
+      errors,
+    };
   }
 
   /**
