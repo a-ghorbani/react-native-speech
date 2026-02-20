@@ -60,9 +60,8 @@ export class NeuralAudioPlayer {
 
     try {
       await NativeNeuralAudioPlayer.playAudio(base64Audio, config);
-    } catch (error) {
+    } finally {
       this.isCurrentlyPlaying = false;
-      throw error;
     }
   }
 

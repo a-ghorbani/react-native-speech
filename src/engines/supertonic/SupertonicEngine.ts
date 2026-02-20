@@ -62,6 +62,7 @@ export class SupertonicEngine implements TTSEngineInterface {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
@@ -195,6 +196,26 @@ export class SupertonicEngine implements TTSEngineInterface {
   }
 
   /**
+   * Create a stop signal promise that resolves when stop() is called.
+   */
+  private createStopSignal(): Promise<null> {
+    return new Promise<null>(resolve => {
+      this.stopSignalResolver = () => resolve(null);
+    });
+  }
+
+  /**
+   * Race a promise against the stop signal.
+   * Returns null if stop was triggered before the promise resolved.
+   */
+  private raceWithStop<T>(
+    promise: Promise<T>,
+    stopSignal: Promise<null>,
+  ): Promise<T | null> {
+    return Promise.race([promise, stopSignal]);
+  }
+
+  /**
    * Internal synthesis implementation
    */
   private async doSynthesize(
@@ -203,8 +224,12 @@ export class SupertonicEngine implements TTSEngineInterface {
   ): Promise<AudioBuffer | void> {
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
+    this.stopSignalResolver = null;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
+
+    // Create stop signal for racing against long-running operations
+    const stopSignal = this.createStopSignal();
 
     // Get synthesis options
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -256,21 +281,26 @@ export class SupertonicEngine implements TTSEngineInterface {
         progress,
       });
 
-      // Get current chunk's audio
-      let audioBuffer: AudioBuffer;
+      // Get current chunk's audio, racing against stop signal
+      let audioBuffer: AudioBuffer | null;
 
       try {
         if (nextAudioPromise) {
-          audioBuffer = await nextAudioPromise;
+          audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
           nextAudioPromise = null;
         } else {
-          audioBuffer = await this.synthesizeChunk(
-            chunk.text,
-            voiceStyle,
-            inferenceSteps,
-            speed,
+          audioBuffer = await this.raceWithStop(
+            this.synthesizeChunk(chunk.text, voiceStyle, inferenceSteps, speed),
+            stopSignal,
           );
         }
+
+        // Stop signal won the race
+        if (audioBuffer === null || this.stopRequested) {
+          console.log('[SupertonicEngine] Stop requested, aborting synthesis');
+          return undefined;
+        }
+
         console.log(
           `[SupertonicEngine] Chunk synthesized: ${audioBuffer.samples.length} samples`,
         );
@@ -279,14 +309,15 @@ export class SupertonicEngine implements TTSEngineInterface {
         throw synthError;
       }
 
-      if (this.stopRequested) {
+      if (this.stopRequested || audioBuffer.samples.length === 0) {
         console.log('[SupertonicEngine] Stop requested before playback');
         return undefined;
       }
 
       // Start synthesizing next chunk in parallel
+      // (only if not already stopping to avoid wasted work)
       const nextChunkIndex = chunkIndex + 1;
-      if (nextChunkIndex < chunks.length) {
+      if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
         nextAudioPromise = this.synthesizeChunk(
           nextChunk.text,
@@ -309,11 +340,14 @@ export class SupertonicEngine implements TTSEngineInterface {
         }
       }
 
-      // Play current chunk
-      await neuralAudioPlayer.play(audioBuffer, {
-        ducking: options?.ducking,
-        silentMode: options?.silentMode,
-      });
+      // Play current chunk, racing against stop signal
+      await this.raceWithStop(
+        neuralAudioPlayer.play(audioBuffer, {
+          ducking: options?.ducking,
+          silentMode: options?.silentMode,
+        }),
+        stopSignal,
+      );
     }
 
     console.log('[SupertonicEngine] ========== SYNTHESIS COMPLETE ==========');
@@ -331,6 +365,16 @@ export class SupertonicEngine implements TTSEngineInterface {
   ): Promise<AudioBuffer> {
     // Normalize text
     const normalized = this.unicodeProcessor.normalize(text);
+
+    // Check stop before expensive inference
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SUPERTONIC_CONSTANTS.SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Run inference pipeline
     return this.inference.synthesize(
@@ -364,11 +408,19 @@ export class SupertonicEngine implements TTSEngineInterface {
   }
 
   /**
-   * Stop current playback
+   * Stop current playback and abort any ongoing synthesis.
+   * Sets the stop flag and resolves the stop signal immediately,
+   * so any in-flight ONNX inference is abandoned without waiting.
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
-    await neuralAudioPlayer.stop();
+    // Resolve stop signal so Promise.race exits immediately
+    if (this.stopSignalResolver) {
+      this.stopSignalResolver();
+      this.stopSignalResolver = null;
+    }
+    // Fire-and-forget native audio stop
+    neuralAudioPlayer.stop().catch(() => {});
   }
 
   /**

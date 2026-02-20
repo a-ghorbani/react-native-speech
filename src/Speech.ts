@@ -35,6 +35,7 @@ import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
 import {KokoroEngine} from './engines/kokoro';
 import {SupertonicEngine} from './engines/supertonic';
+import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
 
 // Initialize OS engine
 const osEngine = new OSEngine();
@@ -343,21 +344,22 @@ export default class Speech {
   }
 
   /**
-   * Immediately stops any ongoing synthesis
-   * Works for both OS native and neural TTS engines
+   * Immediately stops any ongoing synthesis.
+   * Sets the stop flag synchronously, then fires native stops concurrently.
+   * Works for both OS native and neural TTS engines.
    */
   public static async stop(): Promise<void> {
     const engine = Speech.currentEngine;
 
-    // Stop neural engine if active
+    // Set stop flag synchronously — takes effect in synthesis loop immediately
     if (engine === 'kokoro' && kokoroEngine) {
-      await kokoroEngine.stop();
+      kokoroEngine.stop();
     } else if (engine === 'supertonic' && supertonicEngine) {
-      await supertonicEngine.stop();
+      supertonicEngine.stop();
     }
 
-    // Always call native stop as well (for OS TTS and neural audio player)
-    return TurboSpeech.stop();
+    // Fire native stops (OS TTS stop is always safe to call)
+    await TurboSpeech.stop();
   }
 
   /**
@@ -402,16 +404,38 @@ export default class Speech {
   }
 
   /**
-   * Pauses the current speech
+   * Pauses the current speech.
+   * For neural engines, pauses audio playback (synthesis loop waits naturally).
+   * For OS native engine, pauses the system synthesizer.
    */
-  public static pause(): Promise<boolean> {
+  public static async pause(): Promise<boolean> {
+    const engine = Speech.currentEngine;
+
+    if (
+      (engine === 'kokoro' && kokoroEngine) ||
+      (engine === 'supertonic' && supertonicEngine)
+    ) {
+      return neuralAudioPlayer.pause();
+    }
+
     return TurboSpeech.pause();
   }
 
   /**
-   * Resumes previously paused speech
+   * Resumes previously paused speech.
+   * For neural engines, resumes audio playback.
+   * For OS native engine, resumes the system synthesizer.
    */
-  public static resume(): Promise<boolean> {
+  public static async resume(): Promise<boolean> {
+    const engine = Speech.currentEngine;
+
+    if (
+      (engine === 'kokoro' && kokoroEngine) ||
+      (engine === 'supertonic' && supertonicEngine)
+    ) {
+      return neuralAudioPlayer.resume();
+    }
+
     return TurboSpeech.resume();
   }
 

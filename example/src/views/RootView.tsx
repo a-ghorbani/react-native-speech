@@ -91,6 +91,7 @@ const RootView: React.FC = () => {
       }),
     [textColor, secondaryTextColor, cardBg, cardBgSecondary, inputBg, isDark],
   );
+  console.log('just testing rerender');
 
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
@@ -419,13 +420,24 @@ const RootView: React.FC = () => {
   }, [initializeEngine, selectedEngine, selectedProvider]);
 
   const onStartPress = React.useCallback(async () => {
-    if (selectedEngine === TTSEngine.SUPERTONIC) {
-      await Speech.speak(Introduction, selectedVoice || undefined, {
-        speed,
-        inferenceSteps,
-      });
-    } else {
-      await Speech.speak(Introduction, selectedVoice || undefined);
+    // Set started immediately so Stop is available during synthesis
+    // (neural engines take time to synthesize the first chunk before audio starts)
+    setIsStarted(true);
+    try {
+      if (selectedEngine === TTSEngine.SUPERTONIC) {
+        await Speech.speak(Introduction, selectedVoice || undefined, {
+          speed,
+          inferenceSteps,
+        });
+      } else {
+        await Speech.speak(Introduction, selectedVoice || undefined);
+      }
+    } finally {
+      // Speech finished or was stopped — ensure we reset
+      setIsStarted(false);
+      setIsPaused(false);
+      setHighlights([]);
+      setCurrentChunk(null);
     }
   }, [selectedVoice, selectedEngine, speed, inferenceSteps]);
 

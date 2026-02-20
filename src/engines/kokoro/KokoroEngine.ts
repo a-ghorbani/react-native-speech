@@ -152,6 +152,7 @@ export class KokoroEngine implements TTSEngineInterface {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
@@ -287,6 +288,27 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
+   * Create a stop signal promise that resolves when stop() is called.
+   * Used to race against long-running operations (ONNX inference, playback).
+   */
+  private createStopSignal(): Promise<null> {
+    return new Promise<null>(resolve => {
+      this.stopSignalResolver = () => resolve(null);
+    });
+  }
+
+  /**
+   * Race a promise against the stop signal.
+   * Returns null if stop was triggered before the promise resolved.
+   */
+  private raceWithStop<T>(
+    promise: Promise<T>,
+    stopSignal: Promise<null>,
+  ): Promise<T | null> {
+    return Promise.race([promise, stopSignal]);
+  }
+
+  /**
    * Internal synthesis implementation
    */
   private async doSynthesize(
@@ -295,8 +317,12 @@ export class KokoroEngine implements TTSEngineInterface {
   ): Promise<AudioBuffer | void> {
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
+    this.stopSignalResolver = null;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
+
+    // Create stop signal for racing against long-running operations
+    const stopSignal = this.createStopSignal();
 
     // Get voice ID early (needed for language detection)
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -345,31 +371,33 @@ export class KokoroEngine implements TTSEngineInterface {
       });
 
       // Get current chunk's audio (either from pipeline or synthesize now)
-      let audioBuffer: AudioBuffer;
+      // Race against stop signal so we don't block on ONNX inference
+      let audioBuffer: AudioBuffer | null;
 
       if (nextAudioPromise) {
-        // We already started synthesizing this chunk, wait for it
-        audioBuffer = await nextAudioPromise;
+        audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
         nextAudioPromise = null;
       } else {
-        // First chunk - synthesize it now
-        audioBuffer = await this.synthesizeTextChunk(
-          chunk.text,
-          voiceId,
-          language,
-          options,
+        audioBuffer = await this.raceWithStop(
+          this.synthesizeTextChunk(chunk.text, voiceId, language, options),
+          stopSignal,
         );
       }
 
-      // Check if stop was requested before playing
-      if (this.stopRequested) {
+      // Stop signal won the race, or empty buffer from early-stop check
+      if (
+        audioBuffer === null ||
+        this.stopRequested ||
+        audioBuffer.samples.length === 0
+      ) {
         log.debug('Stop requested, aborting before playback');
         return undefined;
       }
 
       // Start synthesizing next chunk in parallel with playback
+      // (only if not already stopping to avoid wasted work)
       const nextChunkIndex = chunkIndex + 1;
-      if (nextChunkIndex < chunks.length) {
+      if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
         nextAudioPromise = this.synthesizeTextChunk(
           nextChunk.text,
@@ -379,11 +407,14 @@ export class KokoroEngine implements TTSEngineInterface {
         );
       }
 
-      // Play current chunk audio (this waits for playback to complete)
-      await neuralAudioPlayer.play(audioBuffer, {
-        ducking: options?.ducking,
-        silentMode: options?.silentMode,
-      });
+      // Play current chunk audio, racing against stop signal
+      await this.raceWithStop(
+        neuralAudioPlayer.play(audioBuffer, {
+          ducking: options?.ducking,
+          silentMode: options?.silentMode,
+        }),
+        stopSignal,
+      );
     }
 
     log.debug('Synthesis complete');
@@ -403,8 +434,28 @@ export class KokoroEngine implements TTSEngineInterface {
     // Normalize chunk text
     const normalized = this.normalizer.normalize(chunkText);
 
+    // Check stop between pipeline steps
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
+
     // Phonemize (convert text to phonemes)
     const phonemes = await this.phonemizer.phonemize(normalized, language);
+
+    // Check stop after phonemization (can be slow)
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Tokenize phonemes
     const tokens = this.tokenizer.encode(phonemes);
@@ -533,11 +584,19 @@ export class KokoroEngine implements TTSEngineInterface {
   }
 
   /**
-   * Stop current playback and abort any ongoing synthesis
+   * Stop current playback and abort any ongoing synthesis.
+   * Sets the stop flag and resolves the stop signal immediately,
+   * so any in-flight ONNX inference is abandoned without waiting.
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
-    await neuralAudioPlayer.stop();
+    // Resolve stop signal so Promise.race exits immediately
+    if (this.stopSignalResolver) {
+      this.stopSignalResolver();
+      this.stopSignalResolver = null;
+    }
+    // Fire-and-forget native audio stop
+    neuralAudioPlayer.stop().catch(() => {});
   }
 
   /**
