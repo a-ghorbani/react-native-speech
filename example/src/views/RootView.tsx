@@ -30,6 +30,7 @@ import {
   supertonicModelManager,
   type SupertonicVersion,
 } from '../utils/SupertonicModelManager';
+import {pocketModelManager} from '../utils/PocketModelManager';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
@@ -37,7 +38,7 @@ const Introduction =
   "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.";
 
 // Model Manager Tab Type
-type ModelTab = 'kokoro' | 'supertonic';
+type ModelTab = 'kokoro' | 'supertonic' | 'pocket';
 
 const RootView: React.FC = () => {
   const scheme = useColorScheme();
@@ -122,6 +123,7 @@ const RootView: React.FC = () => {
   );
   const [kokoroModels, setKokoroModels] = React.useState<any[]>([]);
   const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
+  const [pocketModel, setPocketModel] = React.useState<any | null>(null);
 
   // Execution provider selection for hardware acceleration
   const [selectedProvider, setSelectedProvider] =
@@ -137,6 +139,10 @@ const RootView: React.FC = () => {
   // Supertonic synthesis options
   const [speed, setSpeed] = React.useState<number>(1.0);
   const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
+
+  // Pocket synthesis options
+  const [lsdSteps, setLsdSteps] = React.useState<number>(4);
+  const [temperature, setTemperature] = React.useState<number>(0.7);
 
   // Release current engine before switching
   const releaseCurrentEngine = React.useCallback(async () => {
@@ -247,6 +253,42 @@ const RootView: React.FC = () => {
           });
           setInitializedEngine(TTSEngine.SUPERTONIC);
           setEngineReady(true);
+        } else if (engine === TTSEngine.POCKET) {
+          await pocketModelManager.scanInstalledModel();
+          const model = pocketModelManager.getInstalledModel();
+
+          if (!model) {
+            setEngineReady(false);
+            Alert.alert(
+              'Pocket Model Required',
+              'Download a model to use Pocket TTS.',
+              [
+                {text: 'Later', style: 'cancel'},
+                {
+                  text: 'Download',
+                  onPress: () => {
+                    setModelManagerTab('pocket');
+                    setShowModelManager(true);
+                  },
+                },
+              ],
+            );
+            return;
+          }
+
+          const config = pocketModelManager.getDownloadedModelConfig();
+          await Speech.initialize({
+            engine: TTSEngine.POCKET,
+            ...config,
+            silentMode: 'obey',
+            ducking: true,
+            maxChunkSize: 300,
+            defaultLsdSteps: lsdSteps,
+            defaultTemperature: temperature,
+            executionProviders: provider,
+          });
+          setInitializedEngine(TTSEngine.POCKET);
+          setEngineReady(true);
         }
       } catch (error) {
         console.error('Failed to initialize engine:', error);
@@ -259,12 +301,13 @@ const RootView: React.FC = () => {
         setIsInitializing(false);
       }
     },
-    [releaseCurrentEngine],
+    [releaseCurrentEngine, lsdSteps, temperature],
   );
 
   React.useEffect(() => {
     initializeEngine(selectedEngine, selectedProvider);
-  }, [selectedEngine, selectedProvider, initializeEngine]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEngine, selectedProvider]);
 
   // Load voices when engine is ready
   const loadVoices = React.useCallback(async () => {
@@ -317,6 +360,9 @@ const RootView: React.FC = () => {
 
     await supertonicModelManager.scanInstalledModel();
     setSupertonicModels(supertonicModelManager.getAllInstalledModels());
+
+    await pocketModelManager.scanInstalledModel();
+    setPocketModel(pocketModelManager.getInstalledModel());
   }, []);
 
   React.useEffect(() => {
@@ -429,6 +475,11 @@ const RootView: React.FC = () => {
           speed,
           inferenceSteps,
         });
+      } else if (selectedEngine === TTSEngine.POCKET) {
+        await Speech.speak(Introduction, selectedVoice || undefined, {
+          lsdSteps,
+          temperature,
+        });
       } else {
         await Speech.speak(Introduction, selectedVoice || undefined);
       }
@@ -439,7 +490,14 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
-  }, [selectedVoice, selectedEngine, speed, inferenceSteps]);
+  }, [
+    selectedVoice,
+    selectedEngine,
+    speed,
+    inferenceSteps,
+    lsdSteps,
+    temperature,
+  ]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -518,8 +576,42 @@ const RootView: React.FC = () => {
     [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
   );
 
+  const downloadPocketModel = React.useCallback(async () => {
+    try {
+      setIsDownloading(true);
+      setDownloadingItem('pocket');
+      setDownloadProgress(0);
+
+      await pocketModelManager.downloadModel(progress => {
+        setDownloadProgress(progress.progress);
+      });
+
+      await loadInstalledModels();
+
+      Alert.alert('Success', 'Pocket TTS model downloaded!');
+
+      // If Pocket is selected, reinitialize
+      if (selectedEngine === TTSEngine.POCKET) {
+        await initializeEngine(TTSEngine.POCKET, selectedProvider);
+      }
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
+      );
+    } finally {
+      setIsDownloading(false);
+      setDownloadingItem(null);
+      setDownloadProgress(0);
+    }
+  }, [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine]);
+
   const deleteModel = React.useCallback(
-    async (type: 'kokoro' | 'supertonic', version: string, variant: string) => {
+    async (
+      type: 'kokoro' | 'supertonic' | 'pocket',
+      version: string,
+      variant: string,
+    ) => {
       Alert.alert('Delete Model', 'Are you sure?', [
         {text: 'Cancel', style: 'cancel'},
         {
@@ -532,10 +624,12 @@ const RootView: React.FC = () => {
                   version,
                   variant as 'q8' | 'fp16' | 'full',
                 );
-              } else {
+              } else if (type === 'supertonic') {
                 await supertonicModelManager.deleteModel(
                   variant as SupertonicVersion,
                 );
+              } else if (type === 'pocket') {
+                await pocketModelManager.deleteModel();
               }
               await loadInstalledModels();
               Alert.alert('Deleted', 'Model removed.');
@@ -623,6 +717,24 @@ const RootView: React.FC = () => {
                       : themedStyles.textSecondary,
                   ]}>
                   Supertonic
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  modelManagerTab === 'pocket' && styles.tabActive,
+                  modelManagerTab === 'pocket' && themedStyles.bgCardSecondary,
+                ]}
+                onPress={() => setModelManagerTab('pocket')}
+                disabled={isDownloading}>
+                <Text
+                  style={[
+                    styles.tabText,
+                    modelManagerTab === 'pocket'
+                      ? themedStyles.textPrimary
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Pocket
                 </Text>
               </TouchableOpacity>
             </View>
@@ -964,6 +1076,131 @@ const RootView: React.FC = () => {
                   })}
                 </View>
               )}
+
+              {/* ====== POCKET TAB ====== */}
+              {modelManagerTab === 'pocket' && (
+                <View>
+                  {/* Installed */}
+                  <Text
+                    style={[styles.sectionLabel, themedStyles.textSecondary]}>
+                    INSTALLED
+                  </Text>
+                  {!pocketModel ? (
+                    <Text
+                      style={[styles.emptyText, themedStyles.textSecondary]}>
+                      No models installed
+                    </Text>
+                  ) : (
+                    <View style={[styles.modelCard, themedStyles.bgCard]}>
+                      <View style={styles.modelCardInfo}>
+                        <Text
+                          style={[
+                            styles.modelCardName,
+                            themedStyles.textPrimary,
+                          ]}>
+                          Pocket TTS (INT8)
+                        </Text>
+                        <Text
+                          style={[
+                            styles.modelCardMeta,
+                            themedStyles.textSecondary,
+                          ]}>
+                          {(pocketModel.size / 1024 / 1024).toFixed(0)} MB
+                          {' • EN • Voice cloning'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => deleteModel('pocket', 'v1', 'v1')}
+                        style={styles.deleteBtn}>
+                        <Text style={styles.deleteBtnText}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Available */}
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      themedStyles.textSecondary,
+                      themedStyles.sectionLabelWithMargin,
+                    ]}>
+                    AVAILABLE DOWNLOADS
+                  </Text>
+                  {(() => {
+                    const isInstalled = !!pocketModel;
+                    const isThisDownloading = downloadingItem === 'pocket';
+
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.downloadCard,
+                          isInstalled
+                            ? themedStyles.downloadCardInstalled
+                            : themedStyles.downloadCardOrange,
+                          isDownloading && !isThisDownloading
+                            ? themedStyles.opacityFaded
+                            : themedStyles.opacityFull,
+                        ]}
+                        onPress={() => downloadPocketModel()}
+                        disabled={isInstalled || isDownloading}>
+                        {isThisDownloading ? (
+                          <View style={styles.downloadingState}>
+                            <ActivityIndicator color="white" size="small" />
+                            <Text style={styles.downloadingText}>
+                              {Math.round(downloadProgress * 100)}%
+                            </Text>
+                            <View style={styles.progressBarContainer}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  {width: `${downloadProgress * 100}%`},
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <>
+                            <View style={styles.downloadCardContent}>
+                              <Text
+                                style={[
+                                  styles.downloadCardTitle,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.textWhite,
+                                ]}>
+                                {isInstalled
+                                  ? 'INT8 Installed'
+                                  : 'INT8 Quantized'}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardMeta,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadMetaWhite,
+                                ]}>
+                                ~200 MB • CPU-optimized
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardLangs,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadLangsWhite,
+                                ]}>
+                                Language: EN • Voice cloning
+                              </Text>
+                            </View>
+                            {!isInstalled && (
+                              <Text style={styles.downloadIcon}>↓</Text>
+                            )}
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1030,9 +1267,13 @@ const RootView: React.FC = () => {
             <TouchableOpacity
               style={styles.manageBtn}
               onPress={() => {
-                setModelManagerTab(
-                  selectedEngine === TTSEngine.KOKORO ? 'kokoro' : 'supertonic',
-                );
+                if (selectedEngine === TTSEngine.KOKORO) {
+                  setModelManagerTab('kokoro');
+                } else if (selectedEngine === TTSEngine.SUPERTONIC) {
+                  setModelManagerTab('supertonic');
+                } else {
+                  setModelManagerTab('pocket');
+                }
                 setShowModelManager(true);
               }}>
               <Text style={styles.manageBtnText}>Manage Models</Text>
@@ -1045,6 +1286,7 @@ const RootView: React.FC = () => {
             {engine: TTSEngine.OS_NATIVE, label: 'System'},
             {engine: TTSEngine.KOKORO, label: 'Kokoro'},
             {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
+            {engine: TTSEngine.POCKET, label: 'Pocket'},
           ].map(item => {
             const isEngineSelected = selectedEngine === item.engine;
             return (
@@ -1246,6 +1488,79 @@ const RootView: React.FC = () => {
                             : themedStyles.textPrimary,
                         ]}>
                         {steps}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Pocket controls */}
+        {engineReady && selectedEngine === TTSEngine.POCKET && (
+          <View style={styles.supertonicControls}>
+            {/* LSD Steps */}
+            <View style={styles.controlGroup}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                LSD Steps: {lsdSteps}
+              </Text>
+              <View style={styles.controlBtns}>
+                {[1, 2, 3, 4, 5, 8, 10].map(steps => {
+                  const isStepsSelected = lsdSteps === steps;
+                  return (
+                    <TouchableOpacity
+                      key={steps}
+                      style={[
+                        styles.controlBtn,
+                        isStepsSelected
+                          ? themedStyles.btnSelectedGreen
+                          : themedStyles.btnUnselected,
+                      ]}
+                      onPress={() => setLsdSteps(steps)}
+                      disabled={isStarted}>
+                      <Text
+                        style={[
+                          styles.controlBtnText,
+                          isStepsSelected
+                            ? themedStyles.textWhite
+                            : themedStyles.textPrimary,
+                        ]}>
+                        {steps}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Temperature */}
+            <View style={styles.controlGroup}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                Temperature: {temperature.toFixed(1)}
+              </Text>
+              <View style={styles.controlBtns}>
+                {[0.3, 0.5, 0.7, 0.9, 1.2].map(temp => {
+                  const isTempSelected = temperature === temp;
+                  return (
+                    <TouchableOpacity
+                      key={temp}
+                      style={[
+                        styles.controlBtn,
+                        isTempSelected
+                          ? themedStyles.btnSelected
+                          : themedStyles.btnUnselected,
+                      ]}
+                      onPress={() => setTemperature(temp)}
+                      disabled={isStarted}>
+                      <Text
+                        style={[
+                          styles.controlBtnText,
+                          isTempSelected
+                            ? themedStyles.textWhite
+                            : themedStyles.textPrimary,
+                        ]}>
+                        {temp}
                       </Text>
                     </TouchableOpacity>
                   );

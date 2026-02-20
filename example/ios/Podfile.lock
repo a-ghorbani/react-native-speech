@@ -9,9 +9,35 @@ PODS:
     - hermes-engine/Pre-built (= 0.81.0)
   - hermes-engine/Pre-built (0.81.0)
   - onnxruntime-c (1.23.0)
-  - onnxruntime-react-native (1.23.2):
+  - onnxruntime-react-native (1.24.2):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
     - onnxruntime-c
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
     - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -2314,7 +2340,7 @@ PODS:
     - React-perflogger (= 0.81.0)
     - React-utils (= 0.81.0)
     - SocketRocket
-  - ReactNativeFs (2.36.1):
+  - ReactNativeFs (2.37.0):
     - boost
     - DoubleConversion
     - fast_float
@@ -2619,7 +2645,7 @@ SPEC CHECKSUMS:
   glog: 5683914934d5b6e4240e497e0f4a3b42d1854183
   hermes-engine: e7491a2038f2618c8cd444ed411a6deb350a3742
   onnxruntime-c: 3174c63a963d9abbc2bf9627e3d622819c0ed5f7
-  onnxruntime-react-native: d5aa0541cfdf9446aa32c7f07b8d88eba4c9623b
+  onnxruntime-react-native: a0ff8dc3720e8a6bfa8897ff15e346bb7f68e48e
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: 0735ab4f6b3ec93a7f98187b5da74d7916e2cf4c
   RCTRequired: 8fcc7801bfc433072287b0f24a662e2816e89d0c
@@ -2684,7 +2710,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: c91900fa724baee992f01c05eeb4c9e01a807f78
   ReactCodegen: a55799cae416c387aeaae3aabc1bc0289ac19cee
   ReactCommon: 116d6ee71679243698620d8cd9a9042541e44aa6
-  ReactNativeFs: 11e0be9d9fdfaccd6b2949eac8feaa9943a88edf
+  ReactNativeFs: 5fc447c96bcf90d038b79695d721628fc7bb0170
   RNSpeech: 9cfcab6e729b6da2631ff4bd4b382d8f4fe98f80
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: 00013dd9cde63a2d98e8002fcc4f5ddb66c10782

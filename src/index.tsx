@@ -5,6 +5,7 @@
  * - OS Native TTS (iOS AVSpeechSynthesizer, Android TextToSpeech)
  * - Kokoro Neural TTS (high quality, multi-language)
  * - Supertonic Neural TTS (ultra-fast, lightweight)
+ * - Pocket Neural TTS (CPU-optimized, English, voice cloning)
  */
 
 // Export Speech API as default
@@ -57,6 +58,17 @@ export type {
   InferenceSteps,
 } from './types';
 
+// Export Pocket types
+export type {
+  PocketVoice,
+  PocketConfig,
+  PocketSynthesisOptions,
+  PocketLanguage,
+  PocketModelPaths,
+  PocketBuiltinVoice,
+  LsdSteps,
+} from './types';
+
 // Export component types
 export type {
   HighlightedTextProps,
@@ -72,3 +84,4 @@ export {engineManager} from './engines/EngineManager';
 export {OSEngine} from './engines/OSEngine';
 export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
+export {PocketEngine} from './engines/pocket';
