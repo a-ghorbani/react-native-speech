@@ -71,6 +71,7 @@ export class PocketEngine implements TTSEngineInterface {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
@@ -206,7 +207,49 @@ export class PocketEngine implements TTSEngineInterface {
   }
 
   /**
-   * Internal synthesis implementation
+   * Create a stop signal promise that resolves to null when stop is triggered.
+   */
+  private createStopSignal(): Promise<null> {
+    return new Promise<null>(resolve => {
+      this.stopSignalResolver = () => resolve(null);
+    });
+  }
+
+  /**
+   * Race a promise against the stop signal.
+   * Returns null if stop was triggered before the promise resolved.
+   */
+  private raceWithStop<T>(
+    promise: Promise<T>,
+    stopSignal: Promise<null>,
+  ): Promise<T | null> {
+    return Promise.race([promise, stopSignal]);
+  }
+
+  /**
+   * Synthesize a single text chunk into audio.
+   */
+  private synthesizeTextChunk(
+    chunkText: string,
+    voiceEmbedding: import('../../types').PocketVoiceEmbedding,
+    lsdSteps: number,
+    temperature: number,
+    eosThreshold: number,
+    maxTokens: number,
+  ): Promise<AudioBuffer> {
+    return this.inference.synthesize(
+      chunkText,
+      voiceEmbedding,
+      lsdSteps,
+      temperature,
+      eosThreshold,
+      maxTokens,
+    );
+  }
+
+  /**
+   * Internal synthesis implementation.
+   * Uses pipelined synthesis: generates the next chunk while the current one plays.
    */
   private async doSynthesize(
     text: string,
@@ -214,8 +257,12 @@ export class PocketEngine implements TTSEngineInterface {
   ): Promise<AudioBuffer | void> {
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
+    this.stopSignalResolver = null;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
+
+    // Create stop signal for racing against long-running operations
+    const stopSignal = this.createStopSignal();
 
     // Get synthesis options
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -238,8 +285,12 @@ export class PocketEngine implements TTSEngineInterface {
 
     log.info(`Split into ${chunks.length} chunks`);
 
-    // Sequential synthesis: Pocket TTS autoregressive generation is expensive
-    // and holds KV cache state, so pipelining is deferred to a future version.
+    // Pipelined synthesis: synthesize next chunk while current one plays.
+    // This eliminates the gap between chunks — especially important for Pocket
+    // since autoregressive generation (~700 ONNX calls/chunk) is much slower
+    // than the single-forward-pass engines.
+    let nextAudioPromise: Promise<AudioBuffer> | null = null;
+
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       if (this.stopRequested) {
         log.info('Stop requested, aborting synthesis');
@@ -264,26 +315,49 @@ export class PocketEngine implements TTSEngineInterface {
         progress,
       });
 
-      // Synthesize chunk
-      let audioBuffer: AudioBuffer;
-      try {
-        audioBuffer = await this.inference.synthesize(
-          chunk.text,
+      // Get current chunk's audio (either from pipeline or synthesize now)
+      // Race against stop signal so we don't block on ONNX inference
+      let audioBuffer: AudioBuffer | null;
+
+      if (nextAudioPromise) {
+        audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
+        nextAudioPromise = null;
+      } else {
+        audioBuffer = await this.raceWithStop(
+          this.synthesizeTextChunk(
+            chunk.text,
+            voiceEmbedding,
+            lsdSteps,
+            temperature,
+            eosThreshold,
+            maxTokens,
+          ),
+          stopSignal,
+        );
+      }
+
+      // Stop signal won the race, or empty buffer
+      if (
+        audioBuffer === null ||
+        this.stopRequested ||
+        audioBuffer.samples.length === 0
+      ) {
+        log.debug('Stop requested, aborting before playback');
+        return undefined;
+      }
+
+      // Start synthesizing next chunk in parallel with playback
+      const nextChunkIndex = chunkIndex + 1;
+      if (!this.stopRequested && nextChunkIndex < chunks.length) {
+        const nextChunk = chunks[nextChunkIndex] as TextChunk;
+        nextAudioPromise = this.synthesizeTextChunk(
+          nextChunk.text,
           voiceEmbedding,
           lsdSteps,
           temperature,
           eosThreshold,
           maxTokens,
         );
-        log.debug(`Chunk synthesized: ${audioBuffer.samples.length} samples`);
-      } catch (synthError) {
-        log.error('Synthesis error:', synthError);
-        throw synthError;
-      }
-
-      if (this.stopRequested) {
-        log.debug('Stop requested before playback');
-        return undefined;
       }
 
       // Apply volume if specified
@@ -300,11 +374,14 @@ export class PocketEngine implements TTSEngineInterface {
         }
       }
 
-      // Play current chunk
-      await neuralAudioPlayer.play(audioBuffer, {
-        ducking: options?.ducking,
-        silentMode: options?.silentMode,
-      });
+      // Play current chunk, racing against stop signal
+      await this.raceWithStop(
+        neuralAudioPlayer.play(audioBuffer, {
+          ducking: options?.ducking,
+          silentMode: options?.silentMode,
+        }),
+        stopSignal,
+      );
     }
 
     log.info('Synthesis complete');
@@ -338,8 +415,14 @@ export class PocketEngine implements TTSEngineInterface {
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
+    // Resolve stop signal so Promise.race exits immediately
+    if (this.stopSignalResolver) {
+      this.stopSignalResolver();
+      this.stopSignalResolver = null;
+    }
     this.inference.requestStop();
-    await neuralAudioPlayer.stop();
+    // Fire-and-forget native audio stop
+    neuralAudioPlayer.stop().catch(() => {});
   }
 
   /**
