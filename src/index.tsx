@@ -6,6 +6,7 @@
  * - Kokoro Neural TTS (high quality, multi-language)
  * - Supertonic Neural TTS (ultra-fast, lightweight)
  * - Pocket Neural TTS (CPU-optimized, English, voice cloning)
+ * - Kitten Neural TTS (lightweight StyleTTS 2, English)
  */
 
 // Export Speech API as default
@@ -69,6 +70,15 @@ export type {
   LsdSteps,
 } from './types';
 
+// Export Kitten types
+export type {
+  KittenVoice,
+  KittenConfig,
+  KittenSynthesisOptions,
+  KittenLanguage,
+  KittenBuiltinVoice,
+} from './types';
+
 // Export component types
 export type {
   HighlightedTextProps,
@@ -85,3 +95,4 @@ export {OSEngine} from './engines/OSEngine';
 export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
 export {PocketEngine} from './engines/pocket';
+export {KittenEngine} from './engines/kitten';

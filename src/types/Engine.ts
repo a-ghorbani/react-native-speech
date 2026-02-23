@@ -36,6 +36,16 @@ export enum TTSEngine {
    * - Requires 4 ONNX model files + SentencePiece tokenizer
    */
   POCKET = 'pocket',
+
+  /**
+   * Use Kitten neural TTS engine (offline, ONNX-based)
+   * - 15M parameter StyleTTS 2-based TTS
+   * - Single ONNX model, 24kHz mono output
+   * - 8 built-in voices, English only
+   * - eSpeak-ng phonemization + character-level IPA tokenization
+   * - Requires 1 ONNX model file + voice embeddings JSON
+   */
+  KITTEN = 'kitten',
 }
 
 export interface EngineStatus {

@@ -6,6 +6,7 @@ export * from './Engine';
 export * from './Kokoro';
 export * from './Supertonic';
 export * from './Pocket';
+export * from './Kitten';
 export * from './OnnxRuntime';
 
 // Re-export native speech types

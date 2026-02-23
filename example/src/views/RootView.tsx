@@ -31,6 +31,7 @@ import {
   type SupertonicVersion,
 } from '../utils/SupertonicModelManager';
 import {pocketModelManager} from '../utils/PocketModelManager';
+import {kittenModelManager} from '../utils/KittenModelManager';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
@@ -38,7 +39,7 @@ const Introduction =
   "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.";
 
 // Model Manager Tab Type
-type ModelTab = 'kokoro' | 'supertonic' | 'pocket';
+type ModelTab = 'kokoro' | 'supertonic' | 'pocket' | 'kitten';
 
 const RootView: React.FC = () => {
   const scheme = useColorScheme();
@@ -124,6 +125,7 @@ const RootView: React.FC = () => {
   const [kokoroModels, setKokoroModels] = React.useState<any[]>([]);
   const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
   const [pocketModel, setPocketModel] = React.useState<any | null>(null);
+  const [kittenModel, setKittenModel] = React.useState<any | null>(null);
 
   // Execution provider selection for hardware acceleration
   const [selectedProvider, setSelectedProvider] =
@@ -289,6 +291,40 @@ const RootView: React.FC = () => {
           });
           setInitializedEngine(TTSEngine.POCKET);
           setEngineReady(true);
+        } else if (engine === TTSEngine.KITTEN) {
+          await kittenModelManager.scanInstalledModel();
+          const model = kittenModelManager.getInstalledModel();
+
+          if (!model) {
+            setEngineReady(false);
+            Alert.alert(
+              'Kitten Model Required',
+              'Download a model to use Kitten TTS.',
+              [
+                {text: 'Later', style: 'cancel'},
+                {
+                  text: 'Download',
+                  onPress: () => {
+                    setModelManagerTab('kitten');
+                    setShowModelManager(true);
+                  },
+                },
+              ],
+            );
+            return;
+          }
+
+          const config = kittenModelManager.getDownloadedModelConfig();
+          await Speech.initialize({
+            engine: TTSEngine.KITTEN,
+            ...config,
+            silentMode: 'obey',
+            ducking: true,
+            maxChunkSize: 400,
+            executionProviders: provider,
+          });
+          setInitializedEngine(TTSEngine.KITTEN);
+          setEngineReady(true);
         }
       } catch (error) {
         console.error('Failed to initialize engine:', error);
@@ -363,6 +399,9 @@ const RootView: React.FC = () => {
 
     await pocketModelManager.scanInstalledModel();
     setPocketModel(pocketModelManager.getInstalledModel());
+
+    await kittenModelManager.scanInstalledModel();
+    setKittenModel(kittenModelManager.getInstalledModel());
   }, []);
 
   React.useEffect(() => {
@@ -606,9 +645,39 @@ const RootView: React.FC = () => {
     }
   }, [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine]);
 
+  const downloadKittenModel = React.useCallback(async () => {
+    try {
+      setIsDownloading(true);
+      setDownloadingItem('kitten');
+      setDownloadProgress(0);
+
+      await kittenModelManager.downloadModel(progress => {
+        setDownloadProgress(progress.progress);
+      });
+
+      await loadInstalledModels();
+
+      Alert.alert('Success', 'Kitten TTS model downloaded!');
+
+      // If Kitten is selected, reinitialize
+      if (selectedEngine === TTSEngine.KITTEN) {
+        await initializeEngine(TTSEngine.KITTEN, selectedProvider);
+      }
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
+      );
+    } finally {
+      setIsDownloading(false);
+      setDownloadingItem(null);
+      setDownloadProgress(0);
+    }
+  }, [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine]);
+
   const deleteModel = React.useCallback(
     async (
-      type: 'kokoro' | 'supertonic' | 'pocket',
+      type: 'kokoro' | 'supertonic' | 'pocket' | 'kitten',
       version: string,
       variant: string,
     ) => {
@@ -630,6 +699,8 @@ const RootView: React.FC = () => {
                 );
               } else if (type === 'pocket') {
                 await pocketModelManager.deleteModel();
+              } else if (type === 'kitten') {
+                await kittenModelManager.deleteModel();
               }
               await loadInstalledModels();
               Alert.alert('Deleted', 'Model removed.');
@@ -735,6 +806,24 @@ const RootView: React.FC = () => {
                       : themedStyles.textSecondary,
                   ]}>
                   Pocket
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  modelManagerTab === 'kitten' && styles.tabActive,
+                  modelManagerTab === 'kitten' && themedStyles.bgCardSecondary,
+                ]}
+                onPress={() => setModelManagerTab('kitten')}
+                disabled={isDownloading}>
+                <Text
+                  style={[
+                    styles.tabText,
+                    modelManagerTab === 'kitten'
+                      ? themedStyles.textPrimary
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Kitten
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1201,6 +1290,129 @@ const RootView: React.FC = () => {
                   })()}
                 </View>
               )}
+
+              {/* ====== KITTEN TAB ====== */}
+              {modelManagerTab === 'kitten' && (
+                <View>
+                  {/* Installed */}
+                  <Text
+                    style={[styles.sectionLabel, themedStyles.textSecondary]}>
+                    INSTALLED
+                  </Text>
+                  {!kittenModel ? (
+                    <Text
+                      style={[styles.emptyText, themedStyles.textSecondary]}>
+                      No models installed
+                    </Text>
+                  ) : (
+                    <View style={[styles.modelCard, themedStyles.bgCard]}>
+                      <View style={styles.modelCardInfo}>
+                        <Text
+                          style={[
+                            styles.modelCardName,
+                            themedStyles.textPrimary,
+                          ]}>
+                          Kitten TTS (FP32)
+                        </Text>
+                        <Text
+                          style={[
+                            styles.modelCardMeta,
+                            themedStyles.textSecondary,
+                          ]}>
+                          {(kittenModel.size / 1024 / 1024).toFixed(0)} MB
+                          {' • EN • StyleTTS 2'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => deleteModel('kitten', 'v1', 'v1')}
+                        style={styles.deleteBtn}>
+                        <Text style={styles.deleteBtnText}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Available */}
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      themedStyles.textSecondary,
+                      themedStyles.sectionLabelWithMargin,
+                    ]}>
+                    AVAILABLE DOWNLOADS
+                  </Text>
+                  {(() => {
+                    const isInstalled = !!kittenModel;
+                    const isThisDownloading = downloadingItem === 'kitten';
+
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.downloadCard,
+                          isInstalled
+                            ? themedStyles.downloadCardInstalled
+                            : themedStyles.downloadCardBlue,
+                          isDownloading && !isThisDownloading
+                            ? themedStyles.opacityFaded
+                            : themedStyles.opacityFull,
+                        ]}
+                        onPress={() => downloadKittenModel()}
+                        disabled={isInstalled || isDownloading}>
+                        {isThisDownloading ? (
+                          <View style={styles.downloadingState}>
+                            <ActivityIndicator color="white" size="small" />
+                            <Text style={styles.downloadingText}>
+                              {Math.round(downloadProgress * 100)}%
+                            </Text>
+                            <View style={styles.progressBarContainer}>
+                              <View
+                                style={[
+                                  styles.progressBarFill,
+                                  {width: `${downloadProgress * 100}%`},
+                                ]}
+                              />
+                            </View>
+                          </View>
+                        ) : (
+                          <>
+                            <View style={styles.downloadCardContent}>
+                              <Text
+                                style={[
+                                  styles.downloadCardTitle,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.textWhite,
+                                ]}>
+                                {isInstalled ? 'FP32 Installed' : 'Nano FP32'}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardMeta,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadMetaWhite,
+                                ]}>
+                                ~58 MB • StyleTTS 2
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.downloadCardLangs,
+                                  isInstalled
+                                    ? themedStyles.downloadTextInstalled
+                                    : themedStyles.downloadLangsWhite,
+                                ]}>
+                                Language: EN • 8 voices
+                              </Text>
+                            </View>
+                            {!isInstalled && (
+                              <Text style={styles.downloadIcon}>↓</Text>
+                            )}
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1271,6 +1483,8 @@ const RootView: React.FC = () => {
                   setModelManagerTab('kokoro');
                 } else if (selectedEngine === TTSEngine.SUPERTONIC) {
                   setModelManagerTab('supertonic');
+                } else if (selectedEngine === TTSEngine.KITTEN) {
+                  setModelManagerTab('kitten');
                 } else {
                   setModelManagerTab('pocket');
                 }
@@ -1287,6 +1501,7 @@ const RootView: React.FC = () => {
             {engine: TTSEngine.KOKORO, label: 'Kokoro'},
             {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
             {engine: TTSEngine.POCKET, label: 'Pocket'},
+            {engine: TTSEngine.KITTEN, label: 'Kitten'},
           ].map(item => {
             const isEngineSelected = selectedEngine === item.engine;
             return (
