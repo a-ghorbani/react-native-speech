@@ -882,10 +882,39 @@ export class PocketInference {
 
       const results = await this.mimiDecoderSession.run(feeds);
 
-      // Extract audio
-      const audioOutput = results[TENSOR_NAMES.DECODER_AUDIO];
+      // Extract audio - try named output, fall back to first non-state output
+      let audioOutput = results[TENSOR_NAMES.DECODER_AUDIO];
+      if (!audioOutput) {
+        // Find first non-state output
+        for (const [name, tensor] of Object.entries(results)) {
+          if (!name.startsWith(STATE_OUTPUT_PREFIX)) {
+            audioOutput = tensor;
+            if (i === 0) {
+              log.debug(
+                `Decoder audio output name: '${name}', dims=[${tensor.dims}]`,
+              );
+            }
+            break;
+          }
+        }
+      }
+
       if (audioOutput) {
-        audioChunks.push(new Float32Array(audioOutput.data as Float32Array));
+        const samples = new Float32Array(audioOutput.data as Float32Array);
+        audioChunks.push(samples);
+        if (i === 0) {
+          const expectedSamples = chunkSize * 1920;
+          log.debug(
+            `Decoder chunk 0: ${chunkSize} frames → ${samples.length} samples ` +
+              `(expected ~${expectedSamples}, ratio=${(samples.length / chunkSize).toFixed(0)} samples/frame)`,
+          );
+        }
+      } else {
+        log.warn(
+          `Decoder chunk ${i}: no audio output. Keys: ${Object.keys(results)
+            .filter(k => !k.startsWith(STATE_OUTPUT_PREFIX))
+            .join(', ')}`,
+        );
       }
 
       // Update decoder state
@@ -898,6 +927,12 @@ export class PocketInference {
 
     // Concatenate audio chunks
     const totalSamples = audioChunks.reduce((sum, c) => sum + c.length, 0);
+    const expectedTotal = numFrames * 1920;
+    log.debug(
+      `Decoder total: ${totalSamples} samples from ${numFrames} frames ` +
+        `(expected ~${expectedTotal}, ratio=${(totalSamples / expectedTotal).toFixed(3)})`,
+    );
+
     const audioSamples = new Float32Array(totalSamples);
     let offset = 0;
     for (const chunk of audioChunks) {

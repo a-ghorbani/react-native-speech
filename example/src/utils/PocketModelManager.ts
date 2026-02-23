@@ -65,7 +65,10 @@ function getModelUrls() {
  * Parse a WAV file's raw bytes and extract mono float32 PCM samples.
  * Assumes 16-bit PCM or handles common WAV formats.
  */
-function parseWavToFloat32(bytes: Uint8Array): Float32Array {
+function parseWavToFloat32(bytes: Uint8Array): {
+  samples: Float32Array;
+  sampleRate: number;
+} {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
   // Read WAV header
@@ -75,6 +78,7 @@ function parseWavToFloat32(bytes: Uint8Array): Float32Array {
   let dataSize = 0;
   let bitsPerSample = 16;
   let numChannels = 1;
+  let sampleRate = 24000;
 
   while (offset < bytes.length - 8) {
     const chunkId = String.fromCharCode(
@@ -87,6 +91,7 @@ function parseWavToFloat32(bytes: Uint8Array): Float32Array {
 
     if (chunkId === 'fmt ') {
       numChannels = view.getUint16(offset + 10, true);
+      sampleRate = view.getUint32(offset + 12, true);
       bitsPerSample = view.getUint16(offset + 22, true);
     } else if (chunkId === 'data') {
       dataOffset = offset + 8;
@@ -124,7 +129,36 @@ function parseWavToFloat32(bytes: Uint8Array): Float32Array {
     throw new Error(`Unsupported bits per sample: ${bitsPerSample}`);
   }
 
-  return audio;
+  return {samples: audio, sampleRate};
+}
+
+/**
+ * Resample audio from sourceSR to targetSR using linear interpolation.
+ */
+function resampleAudio(
+  samples: Float32Array,
+  sourceSR: number,
+  targetSR: number,
+): Float32Array {
+  if (sourceSR === targetSR) {
+    return samples;
+  }
+
+  const ratio = targetSR / sourceSR;
+  const newLength = Math.round(samples.length * ratio);
+  const resampled = new Float32Array(newLength);
+
+  for (let i = 0; i < newLength; i++) {
+    const srcPos = i / ratio;
+    const srcIdx = Math.floor(srcPos);
+    const frac = srcPos - srcIdx;
+
+    const s0 = samples[srcIdx] ?? 0;
+    const s1 = samples[Math.min(srcIdx + 1, samples.length - 1)] ?? 0;
+    resampled[i] = s0 + (s1 - s0) * frac;
+  }
+
+  return resampled;
 }
 
 /**
@@ -352,10 +386,22 @@ export class PocketModelManager {
       // Read WAV file as base64, decode to bytes, parse to float32 PCM
       const wavBase64 = await RNFS.readFile(wavPath, 'base64');
       const wavBytes = base64ToUint8Array(wavBase64);
-      const audioSamples = parseWavToFloat32(wavBytes);
+      const parsed = parseWavToFloat32(wavBytes);
+
+      // Mimi encoder expects 24kHz audio — resample if needed
+      const TARGET_SR = 24000;
+      const audioSamples = resampleAudio(
+        parsed.samples,
+        parsed.sampleRate,
+        TARGET_SR,
+      );
 
       console.log(
-        `[PocketModelManager] Reference audio: ${audioSamples.length} samples (${(audioSamples.length / 24000).toFixed(1)}s)`,
+        `[PocketModelManager] Reference audio: ${parsed.samples.length} samples @ ${parsed.sampleRate}Hz` +
+          (parsed.sampleRate !== TARGET_SR
+            ? ` → resampled to ${audioSamples.length} samples @ ${TARGET_SR}Hz`
+            : '') +
+          ` (${(audioSamples.length / TARGET_SR).toFixed(1)}s)`,
       );
 
       // Load mimi_encoder
