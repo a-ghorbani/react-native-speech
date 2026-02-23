@@ -6,7 +6,7 @@
  *
  * Pocket TTS uses 4 ONNX models + a JS tokenizer:
  * 1. text_conditioner.onnx - converts token IDs to 512-dim embeddings
- * 2. flow_lm_main.onnx - autoregressive language model with KV cache
+ * 2. flow_lm_main.onnx - stateful autoregressive language model
  * 3. flow_lm_flow.onnx - LSD flow matching for latent generation
  * 4. mimi_decoder.onnx - stateful neural audio codec decoder
  * 5. tokenizer.model - SentencePiece tokenizer (pure JS, not ONNX)

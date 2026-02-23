@@ -58,8 +58,6 @@ export interface PocketVoice {
 export interface PocketSynthesisOptions extends SynthesisOptions {
   /** Voice identifier for Pocket TTS */
   voiceId: string;
-  /** Speed control (0.5 - 2.0) */
-  speed?: number;
   /** Number of LSD flow decode steps (default: 4) */
   lsdSteps?: LsdSteps;
   /** Temperature for autoregressive sampling (default: 0.7) */
@@ -76,7 +74,7 @@ export interface PocketSynthesisOptions extends SynthesisOptions {
 export interface PocketModelPaths {
   /** Path to text_conditioner.onnx */
   textConditionerPath: string;
-  /** Path to flow_lm_main.onnx (stateful, KV cache) */
+  /** Path to flow_lm_main.onnx (stateful) */
   flowLmMainPath: string;
   /** Path to flow_lm_flow.onnx */
   flowLmFlowPath: string;

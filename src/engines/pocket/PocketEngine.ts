@@ -4,7 +4,7 @@
  * 100M-parameter CALM-based neural TTS engine using ONNX Runtime.
  * Uses a 4-ONNX-session pipeline with autoregressive generation:
  * 1. Text Conditioner - tokens to embeddings
- * 2. Flow LM Main - autoregressive generation with KV cache
+ * 2. Flow LM Main - stateful autoregressive generation
  * 3. Flow LM Flow - LSD flow matching
  * 4. Mimi Decoder - neural audio codec
  *
@@ -224,9 +224,10 @@ export class PocketEngine implements TTSEngineInterface {
     const eosThreshold = options?.eosThreshold ?? this.defaultEosThreshold;
     const maxTokens = options?.maxTokens ?? this.defaultMaxTokens;
 
-    log.info('========== SYNTHESIS START ==========');
-    log.info(`Text: "${text.substring(0, 50)}..."`);
-    log.info(`Voice: ${voiceId}, LSD steps: ${lsdSteps}, Temp: ${temperature}`);
+    log.info(
+      `Synthesizing: voice=${voiceId}, lsdSteps=${lsdSteps}, temp=${temperature}, ` +
+        `text="${text.substring(0, 50)}..."`,
+    );
 
     // Load voice embedding
     const voiceEmbedding = await this.voiceLoader.getVoiceEmbedding(voiceId);
@@ -306,7 +307,7 @@ export class PocketEngine implements TTSEngineInterface {
       });
     }
 
-    log.info('========== SYNTHESIS COMPLETE ==========');
+    log.info('Synthesis complete');
     return undefined;
   }
 

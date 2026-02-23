@@ -348,11 +348,6 @@ function precomputeFlowBuffers(
   return buffers;
 }
 
-/**
- * Callback for frame-by-frame audio streaming (future use).
- */
-export type OnFrameDecodedCallback = (frame: Float32Array) => void;
-
 export class PocketInference {
   // ONNX sessions (4 required)
   private textConditionerSession: OnnxInferenceSession | null = null;
@@ -484,17 +479,18 @@ export class PocketInference {
    * Full synthesis pipeline for a single text chunk.
    *
    * Multi-pass inference strategy (matching community Python implementation):
-   * 1. Tokenize text via SentencePiece
-   * 2. Text conditioning: tokens → embeddings
-   * 3. Initialize flow_lm_main state (zeros)
-   * 4. Voice conditioning pass: feed voice embedding as text_embeddings
-   * 5. Text conditioning pass: feed text embeddings
-   * 6. Autoregressive generation loop:
+   * 1. Preprocess text (capitalize, ensure trailing punctuation)
+   * 2. Tokenize text via SentencePiece
+   * 3. Text conditioning: tokens → embeddings
+   * 4. Initialize flow_lm_main state (zeros)
+   * 5. Voice conditioning pass: feed voice embedding as text_embeddings
+   * 6. Text conditioning pass: feed text embeddings
+   * 7. Autoregressive generation loop:
    *    a. Flow LM Main: current latent → conditioning + EOS logit
    *    b. Flow LM Flow (LSD steps): Euler ODE integration
    *    c. Check EOS, check stop flag
-   * 7. Initialize mimi_decoder state (zeros)
-   * 8. Mimi Decoder: decode latent chunks → PCM audio
+   * 8. Initialize mimi_decoder state (zeros)
+   * 9. Mimi Decoder: decode latent chunks → PCM audio
    */
   async synthesize(
     text: string,
@@ -503,7 +499,6 @@ export class PocketInference {
     temperature: number,
     eosThreshold: number,
     maxTokens: number,
-    _onFrameDecoded?: OnFrameDecodedCallback,
   ): Promise<AudioBuffer> {
     if (!this.initialized) {
       throw new Error('PocketInference not initialized');
@@ -512,13 +507,28 @@ export class PocketInference {
     this.stopRequested = false;
     const totalStartTime = Date.now();
 
-    // Step 1: Tokenize
-    const tokenIds = this.tokenizer.encode(text);
+    // Step 1: Preprocess text (matching Python reference)
+    let processedText = text.trim();
+    if (processedText.length > 0) {
+      // Capitalize first letter
+      if (processedText[0] !== processedText[0]!.toUpperCase()) {
+        processedText =
+          processedText[0]!.toUpperCase() + processedText.slice(1);
+      }
+      // Ensure trailing punctuation
+      const lastChar = processedText[processedText.length - 1]!;
+      if (/[a-zA-Z0-9]/.test(lastChar)) {
+        processedText += '.';
+      }
+    }
+
+    // Step 2: Tokenize
+    const tokenIds = this.tokenizer.encode(processedText);
     log.debug(
-      `Tokenized "${text.substring(0, 30)}..." → ${tokenIds.length} tokens`,
+      `Tokenized "${processedText.substring(0, 30)}..." → ${tokenIds.length} tokens`,
     );
 
-    // Step 2: Text conditioning
+    // Step 3: Text conditioning
     const condStartTime = Date.now();
     const textEmbeddings = await this.runTextConditioner(tokenIds);
     const textEmbDim = textEmbeddings.length / tokenIds.length; // infer embedding dim
@@ -526,18 +536,18 @@ export class PocketInference {
       `Text conditioning: ${Date.now() - condStartTime}ms, dim=${textEmbDim}`,
     );
 
-    // Step 3: Initialize flow_lm_main state
+    // Step 4: Initialize flow_lm_main state
     this.flowLmMainState = initializeStateTensors(
       this.flowLmMainSession!,
       this.flowLmMainStateNames,
     );
 
-    // Step 4: Voice conditioning pass
+    // Step 5: Voice conditioning pass
     const voiceStartTime = Date.now();
     await this.runVoiceConditioningPass(voiceEmbedding);
     log.debug(`Voice conditioning pass: ${Date.now() - voiceStartTime}ms`);
 
-    // Step 5: Text conditioning pass
+    // Step 6: Text conditioning pass
     const textPassStartTime = Date.now();
     await this.runTextConditioningPass(
       textEmbeddings,
@@ -546,7 +556,7 @@ export class PocketInference {
     );
     log.debug(`Text conditioning pass: ${Date.now() - textPassStartTime}ms`);
 
-    // Step 6: Autoregressive generation
+    // Step 7: Autoregressive generation
     const latents: Float32Array[] = [];
     let step = 0;
     let eosStep: number | null = null;
@@ -624,7 +634,7 @@ export class PocketInference {
       };
     }
 
-    // Step 7-8: Decode latents → audio
+    // Step 8-9: Decode latents → audio
     const decodeStartTime = Date.now();
     const audioSamples = await this.decodeLatents(latents);
     log.debug(`Mimi decode: ${Date.now() - decodeStartTime}ms`);
@@ -670,10 +680,10 @@ export class PocketInference {
 
     const results = await this.textConditionerSession.run(feeds);
 
-    const output = results[TENSOR_NAMES.TEXT_COND_OUTPUT] || results.output;
+    const output = results[TENSOR_NAMES.TEXT_COND_OUTPUT];
     if (!output) {
       throw new Error(
-        `No text conditioner output. Available: ${Object.keys(results).join(', ')}`,
+        `No text conditioner output '${TENSOR_NAMES.TEXT_COND_OUTPUT}'. Available: ${Object.keys(results).join(', ')}`,
       );
     }
 
@@ -682,7 +692,7 @@ export class PocketInference {
 
   /**
    * Voice conditioning pass: feed voice embedding as text_embeddings.
-   * Populates the KV cache with voice context.
+   * Populates transformer state with voice context.
    * Uses empty sequence [1, 0, LATENT_DIM].
    */
   private async runVoiceConditioningPass(
@@ -716,7 +726,7 @@ export class PocketInference {
 
   /**
    * Text conditioning pass: feed text embeddings.
-   * Populates the KV cache with text context.
+   * Populates transformer state with text context.
    * Uses empty sequence [1, 0, LATENT_DIM].
    */
   private async runTextConditioningPass(
@@ -832,10 +842,10 @@ export class PocketInference {
 
     const results = await this.flowLmFlowSession.run(feeds);
 
-    const flowDir = results[TENSOR_NAMES.FLOW_DIR] || results.output;
+    const flowDir = results[TENSOR_NAMES.FLOW_DIR];
     if (!flowDir) {
       throw new Error(
-        `No flow_dir output. Available: ${Object.keys(results).join(', ')}`,
+        `No flow_dir output '${TENSOR_NAMES.FLOW_DIR}'. Available: ${Object.keys(results).join(', ')}`,
       );
     }
 
@@ -882,40 +892,14 @@ export class PocketInference {
 
       const results = await this.mimiDecoderSession.run(feeds);
 
-      // Extract audio - try named output, fall back to first non-state output
-      let audioOutput = results[TENSOR_NAMES.DECODER_AUDIO];
+      const audioOutput = results[TENSOR_NAMES.DECODER_AUDIO];
       if (!audioOutput) {
-        // Find first non-state output
-        for (const [name, tensor] of Object.entries(results)) {
-          if (!name.startsWith(STATE_OUTPUT_PREFIX)) {
-            audioOutput = tensor;
-            if (i === 0) {
-              log.debug(
-                `Decoder audio output name: '${name}', dims=[${tensor.dims}]`,
-              );
-            }
-            break;
-          }
-        }
-      }
-
-      if (audioOutput) {
-        const samples = new Float32Array(audioOutput.data as Float32Array);
-        audioChunks.push(samples);
-        if (i === 0) {
-          const expectedSamples = chunkSize * 1920;
-          log.debug(
-            `Decoder chunk 0: ${chunkSize} frames → ${samples.length} samples ` +
-              `(expected ~${expectedSamples}, ratio=${(samples.length / chunkSize).toFixed(0)} samples/frame)`,
-          );
-        }
-      } else {
-        log.warn(
-          `Decoder chunk ${i}: no audio output. Keys: ${Object.keys(results)
-            .filter(k => !k.startsWith(STATE_OUTPUT_PREFIX))
-            .join(', ')}`,
+        throw new Error(
+          `No decoder audio output '${TENSOR_NAMES.DECODER_AUDIO}'. Available: ${Object.keys(results).join(', ')}`,
         );
       }
+
+      audioChunks.push(new Float32Array(audioOutput.data as Float32Array));
 
       // Update decoder state
       updateStatesFromOutput(
@@ -927,12 +911,6 @@ export class PocketInference {
 
     // Concatenate audio chunks
     const totalSamples = audioChunks.reduce((sum, c) => sum + c.length, 0);
-    const expectedTotal = numFrames * 1920;
-    log.debug(
-      `Decoder total: ${totalSamples} samples from ${numFrames} frames ` +
-        `(expected ~${expectedTotal}, ratio=${(totalSamples / expectedTotal).toFixed(3)})`,
-    );
-
     const audioSamples = new Float32Array(totalSamples);
     let offset = 0;
     for (const chunk of audioChunks) {
@@ -947,10 +925,6 @@ export class PocketInference {
 
   isReady(): boolean {
     return this.initialized;
-  }
-
-  getTokenizer(): SentencePieceTokenizer {
-    return this.tokenizer;
   }
 
   async destroy(): Promise<void> {
