@@ -1,22 +1,25 @@
 /**
- * Kitten TTS Model Manager - Example Implementation
+ * Kitten TTS Model Manager - Multi-Variant Support
  *
- * Manages Kitten TTS model downloads from HuggingFace.
- * Uses manifest-based lazy loading: only the ONNX model + voice manifest
- * are downloaded upfront (~57 MB). Individual voice files (~2 MB each)
- * are fetched on-demand when first used and cached to disk.
+ * Manages multiple Kitten TTS model variants from HuggingFace.
+ * Each variant is fully self-contained: its own ONNX model + voices-manifest.
  *
- * Kitten TTS uses:
- * 1. kitten.onnx - Single StyleTTS 2 model (~56 MB FP32)
- * 2. voices-manifest.json - Lists available voices + remote base URL
- * 3. voices/{name}.json - Downloaded lazily per-voice
+ * Variants:
+ * - micro: ~41MB, smallest/fastest
+ * - nano-int8: ~24MB, quantized nano
+ * - nano-fp32: ~57MB, full-precision nano
+ * - mini: ~78MB, largest/highest quality
  */
 
 import type {KittenConfig} from '@mhpdev/react-native-speech';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
+// Model variant keys
+export type KittenVersion = 'micro' | 'nano-int8' | 'nano-fp32' | 'mini';
+
 export interface KittenModelInfo {
   version: string;
+  variant: KittenVersion;
   size: number;
   isInstalled: boolean;
   path?: string;
@@ -31,174 +34,329 @@ export interface ModelDownloadProgress {
   currentFile?: string;
 }
 
-// HuggingFace model repository
-const HF_REPO =
-  'https://huggingface.co/palshub/kitten-tts-nano-0.8-fp32/resolve/main';
+interface ModelVariantConfig {
+  repo: string;
+  onnxFilename: string;
+  estimatedSize: number;
+  description: string;
+  quantization: string;
+}
 
-// Model files to download
-// Uses manifest-based lazy loading: only ONNX + manifest are downloaded upfront.
-// Individual voice files (~2 MB each) are fetched on-demand when first used.
-const MODEL_FILES = [
+const HF_BASE_URL = 'https://huggingface.co';
+
+const MODEL_VARIANTS: Record<KittenVersion, ModelVariantConfig> = {
+  micro: {
+    repo: 'palshub/kitten-tts-micro-0.8',
+    onnxFilename: 'kitten_tts_micro_v0_8.onnx',
+    estimatedSize: 41 * 1024 * 1024,
+    description: 'Micro 0.8 — smallest, fastest',
+    quantization: 'FP32',
+  },
+  'nano-int8': {
+    repo: 'palshub/kitten-tts-nano-0.8-int8',
+    onnxFilename: 'kitten_tts_nano_v0_8.onnx',
+    estimatedSize: 24 * 1024 * 1024,
+    description: 'Nano 0.8 — quantized INT8',
+    quantization: 'INT8',
+  },
+  'nano-fp32': {
+    repo: 'palshub/kitten-tts-nano-0.8-fp32',
+    onnxFilename: 'kitten_tts_nano_v0_8.onnx',
+    estimatedSize: 57 * 1024 * 1024,
+    description: 'Nano 0.8 — full precision',
+    quantization: 'FP32',
+  },
+  mini: {
+    repo: 'palshub/kitten-tts-mini-0.8',
+    onnxFilename: 'kitten_tts_mini_v0_8.onnx',
+    estimatedSize: 78 * 1024 * 1024,
+    description: 'Mini 0.8 — highest quality',
+    quantization: 'FP32',
+  },
+};
+
+// Files to download per variant
+const VARIANT_FILES = (config: ModelVariantConfig) => [
   {
     name: 'kitten.onnx',
-    url: `${HF_REPO}/kitten_tts_nano_v0_8.onnx`,
-    size: 56 * 1024 * 1024,
+    url: `${HF_BASE_URL}/${config.repo}/resolve/main/${config.onnxFilename}`,
   },
   {
     name: 'voices-manifest.json',
-    url: `${HF_REPO}/voices-manifest.json`,
-    size: 1 * 1024,
+    url: `${HF_BASE_URL}/${config.repo}/resolve/main/voices-manifest.json`,
   },
 ];
 
-const ESTIMATED_TOTAL_SIZE = MODEL_FILES.reduce((sum, f) => sum + f.size, 0);
-
 export class KittenModelManager {
-  private installedModel: KittenModelInfo | null = null;
+  private installedModels: Map<KittenVersion, KittenModelInfo> = new Map();
+  private activeVersion: KittenVersion = 'nano-fp32';
 
   getModelsDirectory(): string {
     return `${RNFS.DocumentDirectoryPath}/kitten/models`;
   }
 
-  getModelDirectory(): string {
-    return `${this.getModelsDirectory()}/v1`;
+  private getVariantDirectory(version: KittenVersion): string {
+    return `${this.getModelsDirectory()}/${version}`;
   }
 
   /**
-   * Download Kitten TTS model files from HuggingFace
+   * Get available model versions with their info
+   */
+  getAvailableVersions(): Array<{
+    version: KittenVersion;
+    description: string;
+    quantization: string;
+    estimatedSize: number;
+    isInstalled: boolean;
+  }> {
+    return (Object.keys(MODEL_VARIANTS) as KittenVersion[]).map(version => {
+      const config = MODEL_VARIANTS[version];
+      return {
+        version,
+        description: config.description,
+        quantization: config.quantization,
+        estimatedSize: config.estimatedSize,
+        isInstalled: this.installedModels.has(version),
+      };
+    });
+  }
+
+  setActiveVersion(version: KittenVersion): void {
+    this.activeVersion = version;
+  }
+
+  getActiveVersion(): KittenVersion {
+    return this.activeVersion;
+  }
+
+  /**
+   * Download a specific Kitten model variant.
+   * Downloads both ONNX model and voices-manifest from the variant's own repo.
    */
   async downloadModel(
     onProgress?: (progress: ModelDownloadProgress) => void,
+    version?: KittenVersion,
   ): Promise<void> {
-    const modelDir = this.getModelDirectory();
+    const modelVersion = version || this.activeVersion;
+    const config = MODEL_VARIANTS[modelVersion];
+    const variantDir = this.getVariantDirectory(modelVersion);
+    const files = VARIANT_FILES(config);
 
-    // Create directories
-    await RNFS.mkdir(modelDir);
+    await RNFS.mkdir(variantDir);
 
     let totalDownloaded = 0;
 
-    for (const file of MODEL_FILES) {
-      const destPath = `${modelDir}/${file.name}`;
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]!;
+        const destPath = `${variantDir}/${file.name}`;
 
-      // Skip if already exists
-      const exists = await RNFS.exists(destPath);
-      if (exists) {
-        const stat = await RNFS.stat(destPath);
-        totalDownloaded += Number(stat.size);
-        onProgress?.({
-          totalBytes: ESTIMATED_TOTAL_SIZE,
-          downloadedBytes: totalDownloaded,
-          progress: totalDownloaded / ESTIMATED_TOTAL_SIZE,
-          currentFile: file.name,
-        });
-        continue;
-      }
-
-      // Download file
-      const result = RNFS.downloadFile({
-        fromUrl: file.url,
-        toFile: destPath,
-        progress: res => {
-          const current = totalDownloaded + res.bytesWritten;
+        // Skip if already exists
+        const exists = await RNFS.exists(destPath);
+        if (exists) {
+          const stat = await RNFS.stat(destPath);
+          totalDownloaded += Number(stat.size);
           onProgress?.({
-            totalBytes: ESTIMATED_TOTAL_SIZE,
-            downloadedBytes: current,
-            progress: current / ESTIMATED_TOTAL_SIZE,
+            totalBytes: config.estimatedSize,
+            downloadedBytes: totalDownloaded,
+            progress: totalDownloaded / config.estimatedSize,
             currentFile: file.name,
           });
-        },
-        progressInterval: 500,
-      });
+          continue;
+        }
 
-      const response = await result.promise;
-      if (response.statusCode !== 200) {
-        throw new Error(
-          `Failed to download ${file.name}: HTTP ${response.statusCode}`,
+        console.log(
+          `[KittenModelManager] Downloading ${file.name} (${modelVersion})...`,
         );
+
+        const result = RNFS.downloadFile({
+          fromUrl: file.url,
+          toFile: destPath,
+          background: false,
+          discretionary: false,
+          cacheable: false,
+          progressInterval: 500,
+          progress: res => {
+            const current = totalDownloaded + res.bytesWritten;
+            onProgress?.({
+              totalBytes: config.estimatedSize,
+              downloadedBytes: current,
+              progress: Math.min(current / config.estimatedSize, 0.99),
+              currentFile: file.name,
+            });
+          },
+        });
+
+        const response = await result.promise;
+        if (response.statusCode !== 200) {
+          throw new Error(
+            `Failed to download ${file.name}: HTTP ${response.statusCode}`,
+          );
+        }
+
+        const stat = await RNFS.stat(destPath);
+        totalDownloaded += Number(stat.size);
+        console.log(`[KittenModelManager] ${file.name} download complete`);
       }
 
-      const stat = await RNFS.stat(destPath);
-      totalDownloaded += Number(stat.size);
-    }
+      // Final progress
+      onProgress?.({
+        totalBytes: config.estimatedSize,
+        downloadedBytes: totalDownloaded,
+        progress: 1.0,
+      });
 
-    // Verify installation
-    const installed = await this.checkModelInstallation();
-    if (!installed) {
-      throw new Error('Model files incomplete after download');
+      // Mark as installed
+      this.installedModels.set(modelVersion, {
+        version: modelVersion,
+        variant: modelVersion,
+        size: totalDownloaded,
+        isInstalled: true,
+        path: variantDir,
+        languages: ['en'],
+        description: config.description,
+      });
+
+      console.log(
+        `[KittenModelManager] Model ${modelVersion} installed successfully`,
+      );
+    } catch (error) {
+      await this.cleanupPartialDownload(variantDir);
+      throw error;
+    }
+  }
+
+  private async cleanupPartialDownload(dir: string): Promise<void> {
+    try {
+      const exists = await RNFS.exists(dir);
+      if (exists) {
+        await RNFS.unlink(dir);
+      }
+    } catch (error) {
+      console.warn(`[KittenModelManager] Failed to cleanup ${dir}:`, error);
     }
   }
 
   /**
-   * Get KittenConfig with paths to downloaded model files
+   * Get KittenConfig for the active (or specified) version.
+   * Each variant has its own ONNX model and voices-manifest.
    */
-  getDownloadedModelConfig(): KittenConfig {
-    const modelDir = this.getModelDirectory();
+  getDownloadedModelConfig(version?: KittenVersion): KittenConfig {
+    const modelVersion = version || this.activeVersion;
+    const variantDir = this.getVariantDirectory(modelVersion);
     return {
-      modelPath: `file://${modelDir}/kitten.onnx`,
-      voicesPath: `file://${modelDir}/voices-manifest.json`,
+      modelPath: `file://${variantDir}/kitten.onnx`,
+      voicesPath: `file://${variantDir}/voices-manifest.json`,
     };
   }
 
   /**
-   * Scan for installed model files
+   * Scan for all installed model variants on startup
    */
   async scanInstalledModel(): Promise<void> {
-    const installed = await this.checkModelInstallation();
-    if (installed) {
-      const modelDir = this.getModelDirectory();
-      let totalSize = 0;
-      for (const file of MODEL_FILES) {
-        try {
-          const stat = await RNFS.stat(`${modelDir}/${file.name}`);
-          totalSize += Number(stat.size);
-        } catch {
-          // File may not exist
-        }
+    const versions = Object.keys(MODEL_VARIANTS) as KittenVersion[];
+    await Promise.all(versions.map(v => this.checkModelInstallation(v)));
+
+    // Only change active version if current selection is not installed
+    if (this.installedModels.has(this.activeVersion)) {
+      return;
+    }
+
+    // Fall back to first installed variant
+    const preferenceOrder: KittenVersion[] = [
+      'nano-fp32',
+      'nano-int8',
+      'micro',
+      'mini',
+    ];
+    for (const v of preferenceOrder) {
+      if (this.installedModels.has(v)) {
+        this.activeVersion = v;
+        return;
       }
-      this.installedModel = {
-        version: 'v0.8-nano',
-        size: totalSize,
+    }
+  }
+
+  /**
+   * Check if a specific variant is installed (both ONNX + manifest present)
+   */
+  async checkModelInstallation(version: KittenVersion): Promise<boolean> {
+    const variantDir = this.getVariantDirectory(version);
+
+    try {
+      const onnxExists = await RNFS.exists(`${variantDir}/kitten.onnx`);
+      const manifestExists = await RNFS.exists(
+        `${variantDir}/voices-manifest.json`,
+      );
+
+      if (!onnxExists || !manifestExists) {
+        this.installedModels.delete(version);
+        return false;
+      }
+
+      const stat = await RNFS.stat(`${variantDir}/kitten.onnx`);
+      const config = MODEL_VARIANTS[version];
+
+      this.installedModels.set(version, {
+        version,
+        variant: version,
+        size: Number(stat.size),
         isInstalled: true,
-        path: modelDir,
+        path: variantDir,
         languages: ['en'],
-        description: 'Kitten TTS Nano 0.8 (FP32, ~56MB)',
-      };
-    } else {
-      this.installedModel = null;
+        description: config.description,
+      });
+
+      return true;
+    } catch {
+      this.installedModels.delete(version);
+      return false;
     }
   }
 
   getInstalledModel(): KittenModelInfo | null {
-    return this.installedModel;
+    return this.installedModels.get(this.activeVersion) || null;
+  }
+
+  getAllInstalledModels(): KittenModelInfo[] {
+    return Array.from(this.installedModels.values());
   }
 
   /**
-   * Delete all Kitten model files
+   * Delete a specific model variant (ONNX + manifest + cached voices).
    */
-  async deleteModel(): Promise<void> {
-    const modelsDir = this.getModelsDirectory();
-    const exists = await RNFS.exists(modelsDir);
-    if (exists) {
-      await RNFS.unlink(modelsDir);
+  async deleteModel(version?: KittenVersion): Promise<void> {
+    const modelVersion = version || this.activeVersion;
+    const variantDir = this.getVariantDirectory(modelVersion);
+
+    try {
+      const exists = await RNFS.exists(variantDir);
+      if (exists) {
+        await RNFS.unlink(variantDir);
+      }
+    } catch (error) {
+      console.warn(`[KittenModelManager] Failed to delete model:`, error);
     }
-    this.installedModel = null;
-  }
 
-  /**
-   * Check if all required model files are present
-   */
-  async checkModelInstallation(): Promise<boolean> {
-    const modelDir = this.getModelDirectory();
+    this.installedModels.delete(modelVersion);
 
-    for (const file of MODEL_FILES) {
-      const filePath = `${modelDir}/${file.name}`;
-      const exists = await RNFS.exists(filePath);
-      if (!exists) {
-        return false;
+    // If active version was deleted, switch to another installed one
+    if (modelVersion === this.activeVersion) {
+      const remaining = Array.from(this.installedModels.keys());
+      if (remaining.length > 0) {
+        this.activeVersion = remaining[0]!;
       }
     }
+  }
 
-    return true;
+  async isModelInstalled(version?: KittenVersion): Promise<boolean> {
+    const modelVersion = version || this.activeVersion;
+    return this.installedModels.has(modelVersion);
+  }
+
+  getEstimatedModelSize(version?: KittenVersion): number {
+    const modelVersion = version || this.activeVersion;
+    return MODEL_VARIANTS[modelVersion].estimatedSize;
   }
 }
 

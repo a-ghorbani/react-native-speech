@@ -31,7 +31,10 @@ import {
   type SupertonicVersion,
 } from '../utils/SupertonicModelManager';
 import {pocketModelManager} from '../utils/PocketModelManager';
-import {kittenModelManager} from '../utils/KittenModelManager';
+import {
+  kittenModelManager,
+  type KittenVersion,
+} from '../utils/KittenModelManager';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
@@ -125,7 +128,7 @@ const RootView: React.FC = () => {
   const [kokoroModels, setKokoroModels] = React.useState<any[]>([]);
   const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
   const [pocketModel, setPocketModel] = React.useState<any | null>(null);
-  const [kittenModel, setKittenModel] = React.useState<any | null>(null);
+  const [kittenModels, setKittenModels] = React.useState<any[]>([]);
 
   // Execution provider selection for hardware acceleration
   const [selectedProvider, setSelectedProvider] =
@@ -320,7 +323,7 @@ const RootView: React.FC = () => {
             ...config,
             silentMode: 'obey',
             ducking: true,
-            maxChunkSize: 400,
+            maxChunkSize: 100,
             executionProviders: provider,
           });
           setInitializedEngine(TTSEngine.KITTEN);
@@ -401,7 +404,7 @@ const RootView: React.FC = () => {
     setPocketModel(pocketModelManager.getInstalledModel());
 
     await kittenModelManager.scanInstalledModel();
-    setKittenModel(kittenModelManager.getInstalledModel());
+    setKittenModels(kittenModelManager.getAllInstalledModels());
   }, []);
 
   React.useEffect(() => {
@@ -645,35 +648,39 @@ const RootView: React.FC = () => {
     }
   }, [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine]);
 
-  const downloadKittenModel = React.useCallback(async () => {
-    try {
-      setIsDownloading(true);
-      setDownloadingItem('kitten');
-      setDownloadProgress(0);
+  const downloadKittenModel = React.useCallback(
+    async (version: KittenVersion) => {
+      try {
+        setIsDownloading(true);
+        setDownloadingItem(`kitten-${version}`);
+        setDownloadProgress(0);
 
-      await kittenModelManager.downloadModel(progress => {
-        setDownloadProgress(progress.progress);
-      });
+        await kittenModelManager.downloadModel(progress => {
+          setDownloadProgress(progress.progress);
+        }, version);
 
-      await loadInstalledModels();
+        kittenModelManager.setActiveVersion(version);
+        await loadInstalledModels();
 
-      Alert.alert('Success', 'Kitten TTS model downloaded!');
+        Alert.alert('Success', `Kitten TTS ${version} downloaded!`);
 
-      // If Kitten is selected, reinitialize
-      if (selectedEngine === TTSEngine.KITTEN) {
-        await initializeEngine(TTSEngine.KITTEN, selectedProvider);
+        // If Kitten is selected, reinitialize
+        if (selectedEngine === TTSEngine.KITTEN) {
+          await initializeEngine(TTSEngine.KITTEN, selectedProvider);
+        }
+      } catch (err) {
+        Alert.alert(
+          'Error',
+          `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
+        );
+      } finally {
+        setIsDownloading(false);
+        setDownloadingItem(null);
+        setDownloadProgress(0);
       }
-    } catch (err) {
-      Alert.alert(
-        'Error',
-        `Download failed: ${err instanceof Error ? err.message : 'Unknown'}`,
-      );
-    } finally {
-      setIsDownloading(false);
-      setDownloadingItem(null);
-      setDownloadProgress(0);
-    }
-  }, [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine]);
+    },
+    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
+  );
 
   const deleteModel = React.useCallback(
     async (
@@ -700,7 +707,7 @@ const RootView: React.FC = () => {
               } else if (type === 'pocket') {
                 await pocketModelManager.deleteModel();
               } else if (type === 'kitten') {
-                await kittenModelManager.deleteModel();
+                await kittenModelManager.deleteModel(variant as KittenVersion);
               }
               await loadInstalledModels();
               Alert.alert('Deleted', 'Model removed.');
@@ -1299,36 +1306,83 @@ const RootView: React.FC = () => {
                     style={[styles.sectionLabel, themedStyles.textSecondary]}>
                     INSTALLED
                   </Text>
-                  {!kittenModel ? (
+                  {kittenModels.length === 0 ? (
                     <Text
                       style={[styles.emptyText, themedStyles.textSecondary]}>
                       No models installed
                     </Text>
                   ) : (
-                    <View style={[styles.modelCard, themedStyles.bgCard]}>
-                      <View style={styles.modelCardInfo}>
-                        <Text
+                    kittenModels.map((model, idx) => {
+                      const isActive =
+                        kittenModelManager.getActiveVersion() === model.variant;
+                      return (
+                        <View
+                          key={idx}
                           style={[
-                            styles.modelCardName,
-                            themedStyles.textPrimary,
+                            styles.modelCard,
+                            themedStyles.bgCard,
+                            isActive && styles.modelCardActive,
                           ]}>
-                          Kitten TTS (FP32)
-                        </Text>
-                        <Text
-                          style={[
-                            styles.modelCardMeta,
-                            themedStyles.textSecondary,
-                          ]}>
-                          {(kittenModel.size / 1024 / 1024).toFixed(0)} MB
-                          {' • EN • StyleTTS 2'}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => deleteModel('kitten', 'v1', 'v1')}
-                        style={styles.deleteBtn}>
-                        <Text style={styles.deleteBtnText}>Delete</Text>
-                      </TouchableOpacity>
-                    </View>
+                          <View style={styles.modelCardInfo}>
+                            <View style={styles.modelCardNameRow}>
+                              <Text
+                                style={[
+                                  styles.modelCardName,
+                                  themedStyles.textPrimary,
+                                ]}>
+                                Kitten {model.variant}
+                              </Text>
+                              {isActive && (
+                                <View style={styles.activeBadge}>
+                                  <Text style={styles.activeBadgeText}>
+                                    ACTIVE
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text
+                              style={[
+                                styles.modelCardMeta,
+                                themedStyles.textSecondary,
+                              ]}>
+                              {(model.size / 1024 / 1024).toFixed(0)} MB
+                              {' • EN • StyleTTS 2'}
+                            </Text>
+                          </View>
+                          <View style={styles.modelCardActions}>
+                            {!isActive && kittenModels.length > 1 && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  kittenModelManager.setActiveVersion(
+                                    model.variant,
+                                  );
+                                  loadInstalledModels();
+                                  if (selectedEngine === TTSEngine.KITTEN) {
+                                    initializeEngine(
+                                      TTSEngine.KITTEN,
+                                      selectedProvider,
+                                    );
+                                  }
+                                }}
+                                style={styles.useBtn}>
+                                <Text style={styles.useBtnText}>Use</Text>
+                              </TouchableOpacity>
+                            )}
+                            <TouchableOpacity
+                              onPress={() =>
+                                deleteModel(
+                                  'kitten',
+                                  model.version,
+                                  model.variant,
+                                )
+                              }
+                              style={styles.deleteBtn}>
+                              <Text style={styles.deleteBtnText}>Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })
                   )}
 
                   {/* Available */}
@@ -1340,12 +1394,16 @@ const RootView: React.FC = () => {
                     ]}>
                     AVAILABLE DOWNLOADS
                   </Text>
-                  {(() => {
-                    const isInstalled = !!kittenModel;
-                    const isThisDownloading = downloadingItem === 'kitten';
+                  {kittenModelManager.getAvailableVersions().map(item => {
+                    const isInstalled = kittenModels.some(
+                      m => m.variant === item.version,
+                    );
+                    const isThisDownloading =
+                      downloadingItem === `kitten-${item.version}`;
 
                     return (
                       <TouchableOpacity
+                        key={item.version}
                         style={[
                           styles.downloadCard,
                           isInstalled
@@ -1355,7 +1413,7 @@ const RootView: React.FC = () => {
                             ? themedStyles.opacityFaded
                             : themedStyles.opacityFull,
                         ]}
-                        onPress={() => downloadKittenModel()}
+                        onPress={() => downloadKittenModel(item.version)}
                         disabled={isInstalled || isDownloading}>
                         {isThisDownloading ? (
                           <View style={styles.downloadingState}>
@@ -1382,7 +1440,9 @@ const RootView: React.FC = () => {
                                     ? themedStyles.downloadTextInstalled
                                     : themedStyles.textWhite,
                                 ]}>
-                                {isInstalled ? 'FP32 Installed' : 'Nano FP32'}
+                                {isInstalled
+                                  ? `${item.version} Installed`
+                                  : item.version}
                               </Text>
                               <Text
                                 style={[
@@ -1391,7 +1451,8 @@ const RootView: React.FC = () => {
                                     ? themedStyles.downloadTextInstalled
                                     : themedStyles.downloadMetaWhite,
                                 ]}>
-                                ~58 MB • StyleTTS 2
+                                {Math.round(item.estimatedSize / 1024 / 1024)}{' '}
+                                MB • {item.description}
                               </Text>
                               <Text
                                 style={[
@@ -1400,7 +1461,7 @@ const RootView: React.FC = () => {
                                     ? themedStyles.downloadTextInstalled
                                     : themedStyles.downloadLangsWhite,
                                 ]}>
-                                Language: EN • 8 voices
+                                EN • 8 voices • {item.quantization}
                               </Text>
                             </View>
                             {!isInstalled && (
@@ -1410,7 +1471,7 @@ const RootView: React.FC = () => {
                         )}
                       </TouchableOpacity>
                     );
-                  })()}
+                  })}
                 </View>
               )}
             </ScrollView>
