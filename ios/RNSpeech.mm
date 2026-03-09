@@ -1,4 +1,5 @@
 #import "RNSpeech.h"
+#import "RNSpeechTrace.h"
 #import "EspeakWrapper.h"
 #import <React/RCTLog.h>
 
@@ -54,6 +55,9 @@ RCT_EXPORT_MODULE();
     _isAudioDucking = NO;
     _currentAudioUtteranceId = 0;
     _audioQueue = dispatch_queue_create("com.speech.neuralaudioplayer", DISPATCH_QUEUE_SERIAL);
+
+    // Initialize trace instrumentation (no-op if RN_SPEECH_TRACE is not defined)
+    RNSpeechTraceInit();
 
     // Setup audio session interruption handling
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -456,6 +460,8 @@ RCT_EXPORT_MODULE();
   NSString *silentMode = config.silentMode() ?: @"obey";
 
   dispatch_async(_audioQueue, ^{
+    RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playAudio",
+        [NSString stringWithFormat:@"sampleRate=%f channels=%ld", sampleRate, (long)channels]);
     @try {
       // Stop any current playback
       [self cleanupAudio];
@@ -537,6 +543,7 @@ RCT_EXPORT_MODULE();
           dispatch_async(strongSelf->_audioQueue, ^{
             strongSelf->_isAudioPlaying = NO;
             [strongSelf deactivateAudioSession];
+            RNSpeechTraceEnd(traceHandle, "playAudio");
             [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
             // Resolve promise when playback is complete
             resolve(nil);
@@ -548,6 +555,7 @@ RCT_EXPORT_MODULE();
       [self->_playerNode play];
     }
     @catch (NSException *exception) {
+      RNSpeechTraceEnd(traceHandle, "playAudio");
       reject(@"audio_error", exception.reason, nil);
     }
   });
@@ -601,11 +609,14 @@ RCT_EXPORT_MODULE();
           resolve:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("phonemize",
+        [NSString stringWithFormat:@"lang=%s", language.UTF8String]);
     @try {
       // Ensure espeak-ng-data is available
       NSString *dataPath = [EspeakWrapper ensureDataPath];
 
       if (!dataPath) {
+        RNSpeechTraceEnd(traceHandle, "phonemize");
         reject(@"PHONEMIZE_ERROR",
                @"espeak-ng-data not found. Make sure the data files are bundled with the app.",
                nil);
@@ -619,6 +630,7 @@ RCT_EXPORT_MODULE();
                                                dataPath:dataPath
                                                   error:&error];
 
+      RNSpeechTraceEnd(traceHandle, "phonemize");
       if (error) {
         reject(@"PHONEMIZE_ERROR", error.localizedDescription, error);
       } else {
@@ -626,6 +638,7 @@ RCT_EXPORT_MODULE();
       }
     }
     @catch (NSException *exception) {
+      RNSpeechTraceEnd(traceHandle, "phonemize");
       reject(@"PHONEMIZE_ERROR",
              [NSString stringWithFormat:@"Phonemization failed: %@", exception.reason],
              nil);

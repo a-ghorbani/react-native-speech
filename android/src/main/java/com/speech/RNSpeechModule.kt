@@ -2,6 +2,7 @@ package com.mhpdev.speech
 
 import java.util.UUID
 import java.util.Locale
+import java.util.concurrent.Executors
 import android.os.Build
 import android.os.Bundle
 import android.content.Intent
@@ -22,7 +23,6 @@ import com.facebook.react.bridge.ReadableMap
 import android.speech.tts.UtteranceProgressListener
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
-import java.util.concurrent.Executors
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -687,6 +687,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     val ducking = if (config.hasKey("ducking")) config.getBoolean("ducking") else false
 
     audioExecutor.execute {
+      SpeechTrace.beginSection("TTS:playAudio")
       try {
         synchronized(audioLock) {
           // Stop any current playback
@@ -747,6 +748,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               synchronized(audioLock) {
                 isAudioPlayingState = false
                 deactivateAudioDuckingSession()
+                SpeechTrace.endSection()
                 emitOnFinish(getAudioEventData())
                 promise.resolve(null)
               }
@@ -767,6 +769,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           track.play()
         }
       } catch (e: Exception) {
+        SpeechTrace.endSection()
         cleanupAudio()
         promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
       }
@@ -833,6 +836,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   override fun phonemize(text: String, language: String, promise: Promise) {
+    SpeechTrace.beginSection("TTS:phonemize")
     try {
       // Ensure espeak-ng-data is extracted
       val dataPath = EspeakNative.ensureDataPath(reactApplicationContext)
@@ -840,14 +844,17 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       // Call native phonemizer
       val phonemes = EspeakNative.phonemize(text, language, dataPath)
 
+      SpeechTrace.endSection()
       promise.resolve(phonemes)
     } catch (e: UnsatisfiedLinkError) {
+      SpeechTrace.endSection()
       promise.reject(
         "PHONEMIZE_ERROR",
         "espeak-ng native library not available. Make sure the library is properly built and bundled.",
         e
       )
     } catch (e: Exception) {
+      SpeechTrace.endSection()
       promise.reject(
         "PHONEMIZE_ERROR",
         "Failed to phonemize text: ${e.message}",

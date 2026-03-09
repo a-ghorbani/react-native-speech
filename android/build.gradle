@@ -34,6 +34,10 @@ android {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
 
+    def traceEnabled = project.hasProperty('RN_SPEECH_TRACE') ?
+        project.property('RN_SPEECH_TRACE').toString().toBoolean() : false
+    buildConfigField "boolean", "RN_SPEECH_TRACE", traceEnabled.toString()
+
     externalNativeBuild {
       cmake {
         cppFlags "-std=c++17 -fexceptions -frtti"

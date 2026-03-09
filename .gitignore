@@ -95,3 +95,6 @@ ios/espeak-ng-data/
 
 # espeak-ng-data is copied from submodule at build time (see android/build.gradle)
 android/src/main/assets/espeak-ng-data/
+
+# Benchmark traces and reports
+benchmarks/

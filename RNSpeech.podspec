@@ -135,7 +135,9 @@ Pod::Spec.new do |s|
       '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/include"',
       '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/libespeak-ng"',
       '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/ucd-tools/src/include"'
-    ].join(' ')
+    ].join(' '),
+    'GCC_PREPROCESSOR_DEFINITIONS' =>
+      ENV['RN_SPEECH_TRACE'] == '1' ? '$(inherited) RN_SPEECH_TRACE=1' : '$(inherited)'
   }
 
   # Bundle espeak-ng-data as resource
