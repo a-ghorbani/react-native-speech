@@ -181,10 +181,10 @@ fi
 
 echo ""
 echo "Run the benchmark in the app now."
-echo "Press Ctrl+C when the benchmark completes."
+echo "Will auto-stop when SUITE_COMPLETE is detected (or press Ctrl+C)."
 echo ""
 
-# Wait for user interrupt
+# Wait for benchmark completion or user interrupt
 COLLECTING=true
 trap 'COLLECTING=false' INT TERM
 
@@ -196,6 +196,13 @@ while $COLLECTING; do
       echo "Perfetto recording finished (duration limit reached)."
       break
     fi
+  fi
+
+  # Auto-stop when benchmark suite completes
+  if [ -s "$LOGCAT_FILE" ] && grep -q "SUITE_COMPLETE" "$LOGCAT_FILE" 2>/dev/null; then
+    echo ""
+    echo "SUITE_COMPLETE detected — stopping collection."
+    break
   fi
 
   sleep 1
@@ -371,5 +378,119 @@ if $HAS_PERFETTO && [ -f "$LOCAL_TRACE" ]; then
   else
     echo "  Install trace_processor_shell first:"
     echo "  curl -LO https://get.perfetto.dev/trace_processor && chmod +x trace_processor"
+  fi
+fi
+
+# Convert raw report to canonical benchmark format
+if [ "$MARKER_COUNT" != "0" ]; then
+  echo ""
+  echo "Converting to canonical benchmark format..."
+
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+  BENCHMARKS_DIR="${PROJECT_DIR}/benchmarks"
+  CANONICAL_DIR="${BENCHMARKS_DIR}/latest"
+  mkdir -p "$CANONICAL_DIR"
+
+  # Detect device model
+  DEVICE_MODEL=$(adb shell getprop ro.product.model 2>/dev/null | tr -d '\r' || echo "unknown")
+  DEVICE_SLUG=$(echo "$DEVICE_MODEL" | tr ' /' '-' | tr -cd 'a-zA-Z0-9_-')
+
+  COMMIT_SHA=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+  BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+  python3 - "$OUTPUT" "$CANONICAL_DIR/android-${DEVICE_SLUG}.json" \
+    "$DEVICE_MODEL" "$COMMIT_SHA" "$BRANCH" << 'PYEOF'
+import json, sys
+
+raw_path, out_path, device, commit_sha, branch = sys.argv[1:6]
+
+with open(raw_path) as f:
+    raw = json.load(f)
+
+markers = raw.get("benchmarkMarkers", [])
+
+suite_complete = None
+run_ends = []
+suite_start = None
+
+for m in markers:
+    ev = m.get("event", "")
+    if ev == "SUITE_COMPLETE":
+        suite_complete = m
+    elif ev == "RUN_END":
+        run_ends.append(m)
+    elif ev == "SUITE_START":
+        suite_start = m
+
+if not suite_complete:
+    print("No SUITE_COMPLETE marker found. Skipping canonical output.", file=sys.stderr)
+    sys.exit(0)
+
+config = {}
+if suite_start:
+    config = {
+        "iterations": suite_start.get("iterations", 0),
+        "warmupIterations": suite_start.get("warmupIterations", 0),
+        "testPhrase": "(captured)",
+        "provider": suite_start.get("provider", "auto"),
+    }
+
+engines = []
+for summary in suite_complete.get("summaries", []):
+    eng_name = summary["engine"]
+    variant = summary.get("variant", "default")
+
+    iters = []
+    for r in run_ends:
+        if r.get("engine") == eng_name and r.get("variant", "default") == variant:
+            iters.append({
+                "iteration": r.get("iteration", 0),
+                "isWarmup": r.get("isWarmup", False),
+                "initMs": r.get("initMs", 0),
+                "ttfaMs": r.get("ttfaMs", 0),
+                "totalSpeakMs": r.get("totalSpeakMs", 0),
+                "releaseMs": r.get("releaseMs", 0),
+                "peakInitMemoryMB": r.get("peakInitMemoryMB"),
+                "peakSpeakMemoryMB": r.get("peakSpeakMemoryMB"),
+                "memoryBaseline": r.get("memoryBaseline"),
+                "memoryPostInit": r.get("memoryPostInit"),
+                "memoryPostSpeak": r.get("memoryPostSpeak"),
+                "memoryPostRelease": r.get("memoryPostRelease"),
+            })
+
+    engines.append({
+        "engine": eng_name,
+        "variant": variant,
+        "stats": summary.get("stats", {}),
+        "peakInitMemoryMB": summary.get("stats", {}).get("peakInitMemoryMB"),
+        "peakSpeakMemoryMB": summary.get("stats", {}).get("peakSpeakMemoryMB"),
+        "iterations": iters,
+    })
+
+canonical = {
+    "version": 1,
+    "platform": "android",
+    "device": device,
+    "collectedAt": raw.get("collectedAt", ""),
+    "commitSha": commit_sha,
+    "branch": branch,
+    "config": config,
+    "engines": engines,
+}
+
+with open(out_path, "w") as f:
+    json.dump(canonical, f, indent=2)
+print(f"Canonical result: {out_path}")
+PYEOF
+
+  # Compare against baseline if it exists
+  BASELINE_FILE="${BENCHMARKS_DIR}/baseline/android-${DEVICE_SLUG}.json"
+  LATEST_FILE="${CANONICAL_DIR}/android-${DEVICE_SLUG}.json"
+  COMPARE_SCRIPT="${SCRIPT_DIR}/benchmark-compare.py"
+
+  if [ -f "$BASELINE_FILE" ] && [ -f "$LATEST_FILE" ] && [ -f "$COMPARE_SCRIPT" ]; then
+    echo ""
+    python3 "$COMPARE_SCRIPT" --baseline "$BASELINE_FILE" --current "$LATEST_FILE" || true
   fi
 fi

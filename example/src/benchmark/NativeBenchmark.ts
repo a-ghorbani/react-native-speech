@@ -9,6 +9,8 @@ interface BenchmarkModule {
   }>;
   beginTraceInterval(name: string): void;
   endTraceInterval(name: string): void;
+  logMarker(message: string): void;
+  clearMarkers(): void;
   startMemoryPolling(intervalMs: number): void;
   stopMemoryPolling(): Promise<{
     peakNativeHeapMB: number;

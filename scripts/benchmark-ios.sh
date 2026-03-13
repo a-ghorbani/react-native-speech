@@ -90,11 +90,19 @@ LOGSTREAM_FILE=$(mktemp)
 EXPORT_FILE=$(mktemp)
 MEMORY_FILE=$(mktemp)
 
+# Initialized later, but need defaults before cleanup trap (set -u)
+LOGSTREAM_PID=""
+NOTIFY_PID=""
+XCTRACE_PID=""
+NOTIFY_LOG=""
+DEVICE_MARKERS_FILE=""
+
 cleanup() {
-  kill "$LOGSTREAM_PID" 2>/dev/null || true
+  [ -n "$LOGSTREAM_PID" ] && kill "$LOGSTREAM_PID" 2>/dev/null || true
+  [ -n "$NOTIFY_PID" ] && kill "$NOTIFY_PID" 2>/dev/null || true
   # Don't kill xctrace here — it's stopped gracefully in the main flow.
   # Killing it during cleanup can corrupt the trace bundle.
-  rm -f "$LOGSTREAM_FILE" "$EXPORT_FILE" "$MEMORY_FILE"
+  rm -f "$LOGSTREAM_FILE" "$EXPORT_FILE" "$MEMORY_FILE" "${NOTIFY_LOG:-}" "${DEVICE_MARKERS_FILE:-}"
   if [ -e "$TRACE_FILE" ]; then
     SAVED_TRACE="${BENCHMARKS_DIR}/benchmark-${TIMESTAMP}.trace"
     echo ""
@@ -205,12 +213,45 @@ echo "Duration:  ${DURATION}s max"
 echo "Output:    $OUTPUT"
 echo ""
 
-# Start log stream capture for [BENCH] markers
-# Try both eventMessage and composedMessage predicates, with debug level
-log stream \
-  --predicate 'composedMessage CONTAINS "[BENCH]" OR eventMessage CONTAINS "[BENCH]"' \
-  --level debug --style compact > "$LOGSTREAM_FILE" 2>/dev/null &
-LOGSTREAM_PID=$!
+# Start marker collection.
+# - Simulator/local: use /usr/bin/log stream to capture [BENCH] markers in real time.
+# - Physical device: markers are written to the app's Documents/benchmark-markers.json
+#   by the native RNBenchmark module. We pull the file after recording via devicectl.
+#   Auto-stop uses Darwin notification observation via devicectl.
+BUNDLE_ID="com.mhpdev.rn.speech"
+DARWIN_NOTIFICATION="com.mhpdev.rn.speech.benchmarkComplete"
+
+if $IS_REMOTE; then
+  echo "Physical device: markers collected via app file (devicectl copy)."
+  echo "Auto-stop via Darwin notification observation."
+
+  # Start a long-running observer with --log-output.
+  # Key insight: stdout and --json-output are buffered until exit,
+  # but --log-output is flushed in real-time. We grep it in the poll loop.
+  NOTIFY_LOG=$(mktemp -t notify-log.XXXXXX.txt)
+  xcrun devicectl device notification observe \
+    --device "$DEVICE_UUID" \
+    --name "$DARWIN_NOTIFICATION" \
+    --session-timeout "$DURATION" \
+    --log-output "$NOTIFY_LOG" \
+    </dev/null >/dev/null 2>/dev/null &
+  NOTIFY_PID=$!
+  sleep 2
+  if kill -0 "$NOTIFY_PID" 2>/dev/null; then
+    echo "Darwin notification observer started (PID: $NOTIFY_PID)"
+  else
+    echo "WARNING: Darwin notification observer failed to start."
+    echo "Auto-stop will NOT work — you'll need to Ctrl+C manually."
+    NOTIFY_PID=""
+  fi
+else
+  # Simulator/local: use log stream for [BENCH] markers
+  /usr/bin/log stream \
+    --predicate 'composedMessage CONTAINS "[BENCH]" OR eventMessage CONTAINS "[BENCH]"' \
+    --level debug --style compact \
+    > "$LOGSTREAM_FILE" 2>/dev/null &
+  LOGSTREAM_PID=$!
+fi
 
 # Start xctrace recording
 XCTRACE_PID=""
@@ -291,7 +332,7 @@ fi
 
 echo ""
 echo "Run the benchmark in the app now."
-echo "Press Ctrl+C when the benchmark completes."
+echo "Will auto-stop when SUITE_COMPLETE is detected (or press Ctrl+C)."
 echo ""
 
 # Poll memory/CPU externally alongside xctrace
@@ -303,6 +344,24 @@ while $COLLECTING; do
   if [ -n "$XCTRACE_PID" ] && ! kill -0 "$XCTRACE_PID" 2>/dev/null; then
     echo "xctrace recording finished (duration limit reached)."
     break
+  fi
+
+  # Auto-stop when benchmark suite completes
+  if $IS_REMOTE; then
+    # Physical device: check --log-output from the background observer.
+    # --log-output is flushed in real-time (unlike stdout/--json-output).
+    if [ -s "$NOTIFY_LOG" ] && grep -q "Observed" "$NOTIFY_LOG" 2>/dev/null; then
+      echo ""
+      echo "SUITE_COMPLETE detected (Darwin notification) — stopping collection."
+      break
+    fi
+  else
+    # Simulator/local: check log stream for SUITE_COMPLETE
+    if [ -s "$LOGSTREAM_FILE" ] && grep -q "SUITE_COMPLETE" "$LOGSTREAM_FILE" 2>/dev/null; then
+      echo ""
+      echo "SUITE_COMPLETE detected — stopping collection."
+      break
+    fi
   fi
 
   # External memory/CPU polling via ps + footprint
@@ -466,6 +525,34 @@ except Exception as e:
   fi
 fi
 
+# For physical devices, pull benchmark markers from the app container
+DEVICE_MARKERS_FILE=""
+if $IS_REMOTE && [ -n "$DEVICE_UUID" ]; then
+  echo "Pulling benchmark markers from device..."
+  DEVICE_MARKERS_FILE=$(mktemp -t benchmark-markers.XXXXXX.json)
+
+  COPY_OUTPUT=$(xcrun devicectl device copy from \
+      --device "$DEVICE_UUID" \
+      --domain-type appDataContainer \
+      --domain-identifier "$BUNDLE_ID" \
+      --source "Documents/benchmark-markers.json" \
+      --destination "$DEVICE_MARKERS_FILE" \
+      2>&1) || true
+
+  if [ -s "$DEVICE_MARKERS_FILE" ]; then
+    DEVICE_MARKER_COUNT=$(python3 -c "import json; print(len(json.load(open('$DEVICE_MARKERS_FILE'))))" 2>/dev/null || echo "0")
+    echo "Pulled $DEVICE_MARKER_COUNT markers from device."
+  else
+    DEVICE_MARKERS_FILE=""
+    echo "WARNING: Could not pull markers from device."
+    echo "Make sure the app has been rebuilt with the latest RNBenchmark module."
+    if [ -n "$COPY_OUTPUT" ]; then
+      echo "devicectl output: $COPY_OUTPUT"
+    fi
+  fi
+
+fi
+
 echo "Generating merged report..."
 
 # Build JSON report
@@ -497,22 +584,30 @@ echo "Generating merged report..."
   echo ""
   echo "  ],"
 
-  # [BENCH] markers from log stream
-  echo "  \"benchmarkMarkers\": ["
-  FIRST=true
-  while IFS= read -r line; do
-    JSON=$(echo "$line" | sed 's/.*\[BENCH\] //')
-    if echo "$JSON" | grep -q '^{'; then
-      if [ "$FIRST" = true ]; then
-        FIRST=false
-      else
-        echo ","
+  # [BENCH] markers: from device file (physical) or log stream (simulator)
+  if [ -n "$DEVICE_MARKERS_FILE" ] && [ -s "$DEVICE_MARKERS_FILE" ]; then
+    # Device markers are already a JSON array — embed directly
+    echo -n "  \"benchmarkMarkers\": "
+    cat "$DEVICE_MARKERS_FILE"
+    echo ""
+  else
+    # Parse from log stream output
+    echo "  \"benchmarkMarkers\": ["
+    FIRST=true
+    while IFS= read -r line; do
+      JSON=$(echo "$line" | sed 's/.*\[BENCH\] //')
+      if echo "$JSON" | grep -q '^{'; then
+        if [ "$FIRST" = true ]; then
+          FIRST=false
+        else
+          echo ","
+        fi
+        echo -n "    $JSON"
       fi
-      echo -n "    $JSON"
-    fi
-  done < "$LOGSTREAM_FILE"
-  echo ""
-  echo "  ]"
+    done < "$LOGSTREAM_FILE"
+    echo ""
+    echo "  ]"
+  fi
 
   echo "}"
 } > "$OUTPUT"
@@ -522,7 +617,17 @@ echo "=== Report Complete ==="
 echo "JSON report: $OUTPUT"
 
 # Summary
-MARKER_COUNT=$(grep -c "INIT_END\|SPEAK_END\|RELEASE_END" "$LOGSTREAM_FILE" 2>/dev/null || echo "0")
+if [ -n "$DEVICE_MARKERS_FILE" ] && [ -s "$DEVICE_MARKERS_FILE" ]; then
+  MARKER_COUNT=$(python3 -c "
+import json
+markers = json.load(open('$DEVICE_MARKERS_FILE'))
+count = sum(1 for m in markers if isinstance(m, dict) and m.get('event') in ('INIT_END','SPEAK_END','RELEASE_END'))
+print(count)
+" 2>/dev/null || echo "0")
+else
+  MARKER_COUNT=$(grep -c "INIT_END\|SPEAK_END\|RELEASE_END" "$LOGSTREAM_FILE" 2>/dev/null)
+  MARKER_COUNT=${MARKER_COUNT:-0}
+fi
 SNAPSHOT_COUNT=0
 if [ -s "$MEMORY_FILE" ]; then
   SNAPSHOT_COUNT=$(wc -l < "$MEMORY_FILE" | tr -d ' ')
@@ -533,10 +638,17 @@ echo "Memory/CPU polls:  $SNAPSHOT_COUNT"
 if [ "$MARKER_COUNT" = "0" ]; then
   echo ""
   echo "NOTE: No [BENCH] markers captured."
-  echo "In debug mode, React Native console.log goes through Metro, not os_log."
-  echo "The in-app benchmark UI still shows all results. For [BENCH] marker"
-  echo "collection, build the app in Release mode or use the Metro terminal output."
+  if $IS_REMOTE; then
+    echo "Make sure the app has been rebuilt with the latest RNBenchmark module"
+    echo "that includes file-based marker collection."
+  else
+    echo "In debug mode, React Native console.log goes through Metro, not os_log."
+    echo "Build the app in Release mode or use the Metro terminal output."
+  fi
 fi
+
+# Clean up device markers temp dir
+# DEVICE_MARKERS_FILE is a mktemp file, cleaned up by rm -f in cleanup trap
 
 SAVED_TRACE="${BENCHMARKS_DIR}/benchmark-${TIMESTAMP}.trace"
 if $HAS_XCTRACE && [ -e "$SAVED_TRACE" ]; then
@@ -550,4 +662,124 @@ elif $HAS_XCTRACE && [ -e "$TRACE_FILE" ]; then
   TRACE_SIZE=$(du -sh "$TRACE_FILE" 2>/dev/null | cut -f1)
   echo ""
   echo "Trace file: $TRACE_FILE ($TRACE_SIZE)"
+fi
+
+# Convert raw report to canonical benchmark format
+if [ "$MARKER_COUNT" != "0" ]; then
+  echo ""
+  echo "Converting to canonical benchmark format..."
+
+  CANONICAL_DIR="${BENCHMARKS_DIR}/latest"
+  mkdir -p "$CANONICAL_DIR"
+
+  # Detect device model
+  DEVICE_MODEL="unknown"
+  if [ -n "$DEVICE_NAME" ]; then
+    DEVICE_MODEL="$DEVICE_NAME"
+  elif [ -n "$DEVICE_UUID" ]; then
+    DEVICE_MODEL=$(xcrun simctl list devices | grep "$DEVICE_UUID" | sed 's/ (.*//' | xargs 2>/dev/null || echo "Simulator")
+  else
+    DEVICE_MODEL=$(sysctl -n hw.model 2>/dev/null || echo "Mac")
+  fi
+
+  # Sanitize device name for filename
+  DEVICE_SLUG=$(echo "$DEVICE_MODEL" | tr ' /' '-' | tr -cd 'a-zA-Z0-9_-')
+
+  COMMIT_SHA=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || echo "unknown")
+  BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+  python3 - "$OUTPUT" "$CANONICAL_DIR/ios-${DEVICE_SLUG}.json" \
+    "$DEVICE_MODEL" "$COMMIT_SHA" "$BRANCH" << 'PYEOF'
+import json, sys
+
+raw_path, out_path, device, commit_sha, branch = sys.argv[1:6]
+
+with open(raw_path) as f:
+    raw = json.load(f)
+
+markers = raw.get("benchmarkMarkers", [])
+
+suite_complete = None
+run_ends = []
+suite_start = None
+
+for m in markers:
+    ev = m.get("event", "")
+    if ev == "SUITE_COMPLETE":
+        suite_complete = m
+    elif ev == "RUN_END":
+        run_ends.append(m)
+    elif ev == "SUITE_START":
+        suite_start = m
+
+if not suite_complete:
+    print("No SUITE_COMPLETE marker found. Skipping canonical output.", file=sys.stderr)
+    sys.exit(0)
+
+config = {}
+if suite_start:
+    config = {
+        "iterations": suite_start.get("iterations", 0),
+        "warmupIterations": suite_start.get("warmupIterations", 0),
+        "testPhrase": "(captured)",
+        "provider": suite_start.get("provider", "auto"),
+    }
+
+engines = []
+for summary in suite_complete.get("summaries", []):
+    eng_name = summary["engine"]
+    variant = summary.get("variant", "default")
+
+    iters = []
+    for r in run_ends:
+        if r.get("engine") == eng_name and r.get("variant", "default") == variant:
+            iters.append({
+                "iteration": r.get("iteration", 0),
+                "isWarmup": r.get("isWarmup", False),
+                "initMs": r.get("initMs", 0),
+                "ttfaMs": r.get("ttfaMs", 0),
+                "totalSpeakMs": r.get("totalSpeakMs", 0),
+                "releaseMs": r.get("releaseMs", 0),
+                "peakInitMemoryMB": r.get("peakInitMemoryMB"),
+                "peakSpeakMemoryMB": r.get("peakSpeakMemoryMB"),
+                "memoryBaseline": r.get("memoryBaseline"),
+                "memoryPostInit": r.get("memoryPostInit"),
+                "memoryPostSpeak": r.get("memoryPostSpeak"),
+                "memoryPostRelease": r.get("memoryPostRelease"),
+            })
+
+    engines.append({
+        "engine": eng_name,
+        "variant": variant,
+        "stats": summary.get("stats", {}),
+        "peakInitMemoryMB": summary.get("stats", {}).get("peakInitMemoryMB"),
+        "peakSpeakMemoryMB": summary.get("stats", {}).get("peakSpeakMemoryMB"),
+        "iterations": iters,
+    })
+
+canonical = {
+    "version": 1,
+    "platform": "ios",
+    "device": device,
+    "collectedAt": raw.get("collectedAt", ""),
+    "commitSha": commit_sha,
+    "branch": branch,
+    "config": config,
+    "engines": engines,
+}
+
+with open(out_path, "w") as f:
+    json.dump(canonical, f, indent=2)
+print(f"Canonical result: {out_path}")
+PYEOF
+
+  # Compare against baseline if it exists
+  BASELINE_FILE="${BENCHMARKS_DIR}/baseline/ios-${DEVICE_SLUG}.json"
+  LATEST_FILE="${CANONICAL_DIR}/ios-${DEVICE_SLUG}.json"
+  COMPARE_SCRIPT="${SCRIPT_DIR}/benchmark-compare.py"
+
+  if [ -f "$BASELINE_FILE" ] && [ -f "$LATEST_FILE" ] && [ -f "$COMPARE_SCRIPT" ]; then
+    echo ""
+    python3 "$COMPARE_SCRIPT" --baseline "$BASELINE_FILE" --current "$LATEST_FILE" || true
+  fi
 fi

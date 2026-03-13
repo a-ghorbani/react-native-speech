@@ -1,17 +1,20 @@
 /**
  * Structured benchmark logger.
- * Emits machine-parseable [BENCH] JSON lines via console.log.
+ * Emits machine-parseable [BENCH] JSON lines via native os_log/Log.i,
+ * so they are always captured by log stream / logcat regardless of
+ * debug/release build mode.
  *
  * These markers can be captured externally via:
  * - Android: `adb logcat | grep "\[BENCH\]"`
- * - iOS: `log stream --predicate 'eventMessage CONTAINS "[BENCH]"'`
+ * - iOS: `log stream --device <uuid> --predicate 'eventMessage CONTAINS "[BENCH]"'`
  */
 
-const BENCH_PREFIX = '[BENCH]';
+import Benchmark from './NativeBenchmark';
 
 export function emitBenchmark(event: string, data: Record<string, any>): void {
   const line = JSON.stringify({event, timestamp: Date.now(), ...data});
-  console.log(`${BENCH_PREFIX} ${line}`);
+  // Emit through native os_log/Log.i (always captured by log stream/logcat)
+  Benchmark.logMarker(line);
 }
 
 export function generateRunId(): string {

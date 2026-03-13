@@ -125,6 +125,9 @@ export async function runBenchmark(
   const totalRuns = warmupCount + config.iterations;
   const allResults: Map<string, BenchmarkResult[]> = new Map();
 
+  // Clear any markers from previous runs (used for file-based collection on iOS devices)
+  Benchmark.clearMarkers();
+
   emitBenchmark('SUITE_START', {
     runId,
     platform: Platform.OS,

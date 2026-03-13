@@ -66,6 +66,18 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  fun logMarker(message: String) {
+    // Emit via android.util.Log directly so logcat captures it regardless
+    // of debug/release mode (console.log may be stripped in release).
+    android.util.Log.i("RNBenchmark", "[BENCH] $message")
+  }
+
+  @ReactMethod
+  fun clearMarkers() {
+    // No-op on Android — markers are captured via logcat, not file-based.
+  }
+
+  @ReactMethod
   fun startMemoryPolling(intervalMs: Double) {
     if (isMemoryPolling) return
 

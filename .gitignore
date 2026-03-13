@@ -97,4 +97,6 @@ ios/espeak-ng-data/
 android/src/main/assets/espeak-ng-data/
 
 # Benchmark traces and reports
-benchmarks/
+benchmarks/latest/
+benchmarks/benchmark-*
+
