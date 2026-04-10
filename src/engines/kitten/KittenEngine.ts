@@ -149,7 +149,7 @@ export class KittenEngine implements TTSEngineInterface {
   constructor() {
     this.tokenizer = new IPATokenizer();
     this.voiceLoader = new VoiceLoader();
-    this.phonemizer = createPhonemizer('js');
+    this.phonemizer = createPhonemizer('js-ipa');
     this.normalizer = new TextNormalizer();
   }
 
