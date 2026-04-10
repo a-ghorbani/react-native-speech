@@ -216,13 +216,16 @@ describe('JsPhonemizer IPA mode (Kitten)', () => {
     phonemizer = new JsPhonemizer({
       misakiMapping: false,
       stripStress: false,
+      relocateStress: true,
       kokoroPostProcess: false,
     });
   });
 
-  test('keeps stress marks', async () => {
-    const result = await phonemizer.phonemize('hello', 'en-us');
-    expect(result).toContain('ˈ');
+  test('relocates stress before vowel', async () => {
+    // Mock returns ˈbɝd for "bird", relocation should produce bˈɝd
+    const result = await phonemizer.phonemize('bird', 'en-us');
+    expect(result).toContain('bˈɝd');
+    expect(result).not.toMatch(/^ˈb/); // not at word start
   });
 
   test('does not map diphthongs to Misaki shorthands', async () => {
@@ -243,10 +246,17 @@ describe('JsPhonemizer IPA mode (Kitten)', () => {
     expect(result).toContain('l');
   });
 
+  test('destresses function words', async () => {
+    // "hello world" mock: həˈɫoʊ ˈwɝɫd → after dark L + relocation: həˈloʊ wˈɝld
+    // But "how are you" mock has "are" (ˈɑɹ) which should be destressed
+    const result = await phonemizer.phonemize('how are you', 'en-us');
+    // "are" should be destressed: ɑɹ without stress mark
+    expect(result).toContain('ɑɹ');
+    expect(result).not.toContain('ˈɑɹ');
+    expect(result).not.toContain('ɑˈɹ');
+  });
+
   test('does not apply Kokoro post-processing', async () => {
-    // postProcessPhonemes converts r→ɹ, but IPA mode skips it
-    // Our mock returns ˈɹɛd for "red" (already ɹ), so test with a different approach:
-    // verify the output is trimmed (IPA mode) not postProcessed
     const result = await phonemizer.phonemize('cat', 'en-us');
     expect(result.length).toBeGreaterThan(0);
   });

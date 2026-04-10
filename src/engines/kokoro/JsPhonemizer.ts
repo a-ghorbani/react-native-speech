@@ -95,6 +95,76 @@ export function ipaToMisaki(ipa: string, language: string): string {
   return result;
 }
 
+// IPA vowel characters for stress relocation
+const IPA_VOWELS = new Set('aeiouæɑɒɔəɛɜɝɞɪʊʌɚɨøɵœɶɤɯʏɐ'.split(''));
+
+/**
+ * Relocate stress marks from word-initial position to before the first vowel.
+ * hans00/phonemize outputs ˈbɪlt (stress at word start) but espeak-ng and
+ * IPA convention place it before the vowel nucleus: bˈɪlt.
+ */
+function relocateStress(ipa: string): string {
+  return ipa
+    .split(' ')
+    .map(word => {
+      if (word.length > 1 && (word[0] === 'ˈ' || word[0] === 'ˌ')) {
+        const stressMark = word[0]!;
+        const rest = word.slice(1);
+        for (let i = 0; i < rest.length; i++) {
+          if (IPA_VOWELS.has(rest[i]!)) {
+            if (i === 0) return word; // already before vowel
+            return rest.slice(0, i) + stressMark + rest.slice(i);
+          }
+        }
+      }
+      return word;
+    })
+    .join(' ');
+}
+
+/**
+ * Function words that should be unstressed in connected speech.
+ * After stress relocation, these would have stress before the vowel (e.g., ðˈɪs).
+ * Strip stress entirely for natural prosody.
+ */
+const FUNCTION_WORD_PHONEMES = new Set([
+  'ðə',
+  'ðɪs',
+  'ðæt',
+  'ɪz',
+  'ɑɹ',
+  'wɑz',
+  'wɝ',
+  'ænd',
+  'ɔɹ',
+  'bət',
+  'fɔɹ',
+  'wɪð',
+  'ɪn',
+  'ɑn',
+  'æt',
+  'tu',
+  'əv',
+  'æn',
+  'ɪt',
+  'hæz',
+  'hæd',
+  'hæv',
+  'kæn',
+  'wɪl',
+  'fɹɑm',
+]);
+
+function destressFunctionWords(ipa: string): string {
+  return ipa
+    .split(' ')
+    .map(word => {
+      const stripped = word.replace(/[ˈˌ]/g, '');
+      return FUNCTION_WORD_PHONEMES.has(stripped) ? stripped : word;
+    })
+    .join(' ');
+}
+
 /**
  * Configuration for JsPhonemizer behavior.
  */
@@ -110,10 +180,19 @@ export interface JsPhonemizeOptions {
    * Strip stress marks from output.
    * hans00/phonemize places stress at word boundaries (ˈbɪlt) instead of before
    * the vowel nucleus (bˈɪlt). For Kokoro, wrong stress sounds worse than no stress.
-   * For Kitten, stress marks are in the vocab and may still be useful.
+   * Mutually exclusive with relocateStress.
    * Default: true
    */
   stripStress?: boolean;
+
+  /**
+   * Relocate stress marks from word-start to before the vowel nucleus.
+   * Converts ˈbɪlt → bˈɪlt to match espeak-ng convention.
+   * Also destresses function words (the, is, and, etc.).
+   * Use for engines trained on espeak-ng IPA (e.g., Kitten).
+   * Default: false
+   */
+  relocateStress?: boolean;
 
   /**
    * Apply Kokoro-specific post-processing (r→ɹ normalization, "kokoro" fix, etc.)
@@ -140,6 +219,7 @@ export class JsPhonemizer implements IPhonemizer {
     this.options = {
       misakiMapping: options?.misakiMapping ?? true,
       stripStress: options?.stripStress ?? true,
+      relocateStress: options?.relocateStress ?? false,
       kokoroPostProcess: options?.kokoroPostProcess ?? true,
     };
   }
@@ -157,13 +237,19 @@ export class JsPhonemizer implements IPhonemizer {
       for (const chunk of chunks) {
         if (!chunk.isPunctuation && chunk.text.trim()) {
           let ipa = lib.toIPA(chunk.text, {
-            stripStress: this.options.stripStress,
+            stripStress:
+              this.options.stripStress && !this.options.relocateStress,
           });
 
           // Hyphen cleanup — always applied
           ipa = ipa.replace(/- /g, '');
           // Dark L → regular L — always applied (espeak-ng doesn't distinguish either)
           ipa = ipa.replace(/ɫ/g, 'l');
+
+          if (this.options.relocateStress) {
+            ipa = relocateStress(ipa);
+            ipa = destressFunctionWords(ipa);
+          }
 
           if (this.options.misakiMapping) {
             ipa = ipaToMisaki(ipa, language);

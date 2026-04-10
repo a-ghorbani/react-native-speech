@@ -214,6 +214,7 @@ export function createPhonemizer(type: PhonemizerType): IPhonemizer {
       return new JsPhonemizer({
         misakiMapping: false,
         stripStress: false,
+        relocateStress: true,
         kokoroPostProcess: false,
       });
     }
