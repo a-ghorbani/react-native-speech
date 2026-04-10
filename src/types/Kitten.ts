@@ -2,9 +2,9 @@
  * Kitten TTS specific types
  *
  * Kitten TTS is a 15M-parameter StyleTTS 2-based neural TTS engine.
- * Uses a single ONNX model with eSpeak-ng phonemization:
+ * Uses a single ONNX model with phonemization:
  * 1. Text normalization
- * 2. eSpeak-ng G2P (grapheme to phoneme)
+ * 2. G2P phonemization (JS GPL-free default, or native espeak-ng)
  * 3. Character-level IPA tokenization
  * 4. Single ONNX forward pass → audio waveform
  *

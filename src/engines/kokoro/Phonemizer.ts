@@ -193,7 +193,7 @@ export class NativePhonemizer implements IPhonemizer {
 /**
  * Phonemizer type options
  */
-export type PhonemizerType = 'native' | 'none';
+export type PhonemizerType = 'js' | 'native' | 'none';
 
 /**
  * Factory function to create the appropriate phonemizer
@@ -205,6 +205,10 @@ export function createPhonemizer(type: PhonemizerType): IPhonemizer {
   log.debug(`Creating phonemizer: type=${type}`);
 
   switch (type) {
+    case 'js': {
+      const {JsPhonemizer} = require('./JsPhonemizer');
+      return new JsPhonemizer();
+    }
     case 'native':
       return new NativePhonemizer();
     case 'none':

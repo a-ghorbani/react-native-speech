@@ -89,7 +89,7 @@ const BenchmarkView: React.FC = () => {
               model.version,
               model.variant as any,
             ),
-            phonemizerType: 'native',
+            phonemizerType: 'js',
             maxChunkSize: 100,
           }),
           defaultVoice: '', // auto-detect after init

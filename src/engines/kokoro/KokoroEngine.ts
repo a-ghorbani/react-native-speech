@@ -165,7 +165,7 @@ export class KokoroEngine implements TTSEngineInterface {
     this.voiceLoader = new VoiceLoader();
     this.normalizer = new TextNormalizer();
     // Phonemizer will be initialized in initialize() based on config
-    this.phonemizer = createPhonemizer('native'); // Default to no phonemization for backward compatibility
+    this.phonemizer = createPhonemizer('js'); // Default to GPL-free JS phonemizer
   }
 
   /**
@@ -215,7 +215,7 @@ export class KokoroEngine implements TTSEngineInterface {
       );
 
       // Initialize phonemizer based on config
-      const phonemizerType = config.phonemizerType || 'none';
+      const phonemizerType = config.phonemizerType || 'js';
       this.phonemizer = createPhonemizer(phonemizerType);
 
       // Load tokenizer (support both tokenizer.json and vocab+merges format)

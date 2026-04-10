@@ -216,7 +216,7 @@ const RootView: React.FC = () => {
           await Speech.initialize({
             engine: TTSEngine.KOKORO,
             ...config,
-            phonemizerType: 'native',
+            phonemizerType: 'js',
             silentMode: 'obey',
             ducking: true,
             maxChunkSize: 100,

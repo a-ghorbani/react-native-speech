@@ -2,7 +2,7 @@
  * Kitten TTS Engine
  *
  * Neural TTS engine using a single ONNX model (StyleTTS 2 distilled).
- * Pipeline: Text → eSpeak Phonemizer → IPA Tokenizer → ONNX → Audio (24kHz)
+ * Pipeline: Text → Phonemizer (JS or native) → IPA Tokenizer → ONNX → Audio (24kHz)
  *
  * Features:
  * - Single ONNX model (simpler than multi-model engines)
@@ -33,7 +33,7 @@ import {
   KITTEN_SPEED_PRIORS,
 } from './constants';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
-import {splitOnPunctuation, rejoinChunks} from '../kokoro/Phonemizer';
+import {createPhonemizer, type IPhonemizer} from '../kokoro/Phonemizer';
 import {TextNormalizer, type TextChunk} from '../kokoro/TextNormalizer';
 import {createComponentLogger} from '../../utils/logger';
 
@@ -126,6 +126,7 @@ export class KittenEngine implements TTSEngineInterface {
   private session: any = null;
   private tokenizer: IPATokenizer;
   private voiceLoader: VoiceLoader;
+  private phonemizer: IPhonemizer;
   private normalizer: TextNormalizer;
 
   private config: KittenConfig | null = null;
@@ -148,6 +149,7 @@ export class KittenEngine implements TTSEngineInterface {
   constructor() {
     this.tokenizer = new IPATokenizer();
     this.voiceLoader = new VoiceLoader();
+    this.phonemizer = createPhonemizer('js');
     this.normalizer = new TextNormalizer();
   }
 
@@ -399,8 +401,8 @@ export class KittenEngine implements TTSEngineInterface {
         return emptyBuffer();
       }
 
-      // 2. Phonemize via espeak-ng (no Kokoro-specific post-processing)
-      const phonemes = await this.phonemize(normalized);
+      // 2. Phonemize (defaults to GPL-free JS phonemizer)
+      const phonemes = await this.phonemizeText(normalized);
       log.debug(
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
@@ -430,40 +432,10 @@ export class KittenEngine implements TTSEngineInterface {
   }
 
   /**
-   * Phonemize text via espeak-ng.
-   * Reuses Kokoro's punctuation splitting/rejoining utilities but
-   * skips Kokoro-specific post-processing.
+   * Phonemize text using the configured phonemizer (defaults to GPL-free JS).
    */
-  private async phonemize(text: string): Promise<string> {
-    try {
-      const chunks = splitOnPunctuation(text);
-      const TurboSpeech = require('../../NativeSpeech').default;
-
-      for (const chunk of chunks) {
-        if (!chunk.isPunctuation && chunk.text.trim()) {
-          const rawPhoneme = await TurboSpeech.phonemize(
-            chunk.text,
-            ESPEAK_LANGUAGE,
-          );
-          (
-            chunk as {isPunctuation: boolean; text: string; phoneme?: string}
-          ).phoneme = rawPhoneme;
-        }
-      }
-
-      const rejoined = rejoinChunks(
-        chunks as {isPunctuation: boolean; text: string; phoneme?: string}[],
-      );
-
-      return rejoined.trim();
-    } catch (error) {
-      log.error(
-        `Phonemization failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      throw new Error(
-        `Phonemization failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  private async phonemizeText(text: string): Promise<string> {
+    return this.phonemizer.phonemize(text, ESPEAK_LANGUAGE);
   }
 
   /**

@@ -125,6 +125,9 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)/)"
     ]
   },
   "commitlint": {
@@ -188,5 +191,8 @@
     "languages": "kotlin-objc",
     "type": "turbo-module",
     "version": "0.54.1"
+  },
+  "dependencies": {
+    "phonemize": "^1.1.0"
   }
 }
