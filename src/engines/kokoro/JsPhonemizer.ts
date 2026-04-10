@@ -1,14 +1,15 @@
 /**
  * JsPhonemizer - GPL-free phonemizer using hans00/phonemize (MIT)
  *
- * Wraps the pure-JS phonemize library and maps its standard IPA output
- * to Misaki's phoneme set (which Kokoro was trained on).
+ * Configurable for different TTS engines:
+ * - Kokoro (Misaki mode): maps IPA → Misaki phoneme set, strips stress
+ * - Kitten/others (IPA mode): outputs standard IPA with stress marks
  *
- * Key differences between hans00/phonemize IPA and Misaki phonemes:
- * - Diphthongs: standard IPA (eɪ, aɪ, oʊ, aʊ, ɔɪ) → Misaki shorthands (A, I, O, W, Y)
- * - R-colored vowels: ɝ → ɜɹ
- * - Dark L: ɫ → l (Kokoro doesn't distinguish)
- * - Affricates: tʃ → ʧ, dʒ → ʤ
+ * IPA → Misaki mapping (when enabled):
+ * - Diphthongs: eɪ→A, aɪ→I, oʊ→O, aʊ→W, ɔɪ→Y, əʊ→Q (GB)
+ * - R-colored vowels: ɝ→ɜɹ, ɚ→əɹ
+ * - Dark L: ɫ→l
+ * - Affricates: tʃ→ʧ, dʒ→ʤ
  */
 
 import {
@@ -19,7 +20,7 @@ import {
 } from './Phonemizer';
 import {createComponentLogger} from '../../utils/logger';
 
-const log = createComponentLogger('Kokoro', 'JsPhonemizer');
+const log = createComponentLogger('TTS', 'JsPhonemizer');
 
 // Lazy-loaded phonemize reference
 let phonemizeLib: {
@@ -65,11 +66,6 @@ export function ipaToMisaki(ipa: string, language: string): string {
 
   let result = ipa;
 
-  // --- Hyphen cleanup ---
-  // hans00/phonemize outputs trailing hyphens for compound words (e.g., "high-" in "high-performance")
-  // Remove them so Kokoro doesn't see breaks in compound words
-  result = result.replace(/- /g, '');
-
   // --- Diphthongs (must come before single-vowel mappings) ---
   result = result.replace(/eɪ/g, 'A'); // "take" eɪ → A
   result = result.replace(/aɪ/g, 'I'); // "bike" aɪ → I
@@ -83,17 +79,12 @@ export function ipaToMisaki(ipa: string, language: string): string {
   }
 
   // --- R-colored vowels ---
-  // ɝ (stressed r-colored) → ɜɹ
-  result = result.replace(/ɝ/g, 'ɜɹ');
-  // ɚ (unstressed r-colored schwa) → əɹ
-  result = result.replace(/ɚ/g, 'əɹ');
+  result = result.replace(/ɝ/g, 'ɜɹ'); // stressed r-colored → ɜɹ
+  result = result.replace(/ɚ/g, 'əɹ'); // unstressed r-colored → əɹ
 
   // --- Consonant mappings ---
-  // Dark L → regular L (Kokoro doesn't distinguish)
-  result = result.replace(/ɫ/g, 'l');
-
-  // Affricates: hans00 may output tʃ/dʒ; Misaki uses ʧ/ʤ
-  result = result.replace(/tʃ/g, 'ʧ');
+  result = result.replace(/ɫ/g, 'l'); // Dark L → regular L
+  result = result.replace(/tʃ/g, 'ʧ'); // Affricates
   result = result.replace(/dʒ/g, 'ʤ');
 
   // Glottal stop: ʔ → t (Misaki convention for US)
@@ -105,16 +96,54 @@ export function ipaToMisaki(ipa: string, language: string): string {
 }
 
 /**
- * Pure JS phonemizer using hans00/phonemize (MIT license).
+ * Configuration for JsPhonemizer behavior.
+ */
+export interface JsPhonemizeOptions {
+  /**
+   * Map IPA output to Misaki phoneme set (diphthong shorthands, affricates, etc.)
+   * Enable for Kokoro, disable for engines trained on standard IPA (e.g., Kitten).
+   * Default: true
+   */
+  misakiMapping?: boolean;
+
+  /**
+   * Strip stress marks from output.
+   * hans00/phonemize places stress at word boundaries (ˈbɪlt) instead of before
+   * the vowel nucleus (bˈɪlt). For Kokoro, wrong stress sounds worse than no stress.
+   * For Kitten, stress marks are in the vocab and may still be useful.
+   * Default: true
+   */
+  stripStress?: boolean;
+
+  /**
+   * Apply Kokoro-specific post-processing (r→ɹ normalization, "kokoro" fix, etc.)
+   * Disable for engines that don't need Kokoro-specific corrections.
+   * Default: true
+   */
+  kokoroPostProcess?: boolean;
+}
+
+/**
+ * GPL-free JS phonemizer using hans00/phonemize (MIT license).
  * No native dependencies, no GPL code, cross-platform (iOS + Android).
  *
- * Follows the same pipeline as NativePhonemizer:
+ * Pipeline:
  * 1. Split on punctuation
- * 2. Phonemize non-punctuation chunks
- * 3. Rejoin
- * 4. Post-process for Kokoro compatibility
+ * 2. Phonemize non-punctuation chunks via hans00/phonemize
+ * 3. Apply IPA cleanup (hyphen joining, dark L) and optionally Misaki mapping
+ * 4. Rejoin and optionally apply Kokoro post-processing
  */
 export class JsPhonemizer implements IPhonemizer {
+  private readonly options: Required<JsPhonemizeOptions>;
+
+  constructor(options?: JsPhonemizeOptions) {
+    this.options = {
+      misakiMapping: options?.misakiMapping ?? true,
+      stripStress: options?.stripStress ?? true,
+      kokoroPostProcess: options?.kokoroPostProcess ?? true,
+    };
+  }
+
   async phonemize(text: string, language: string): Promise<string> {
     try {
       log.debug(
@@ -123,34 +152,42 @@ export class JsPhonemizer implements IPhonemizer {
 
       const lib = getPhonemizeLib();
 
-      // Split text on punctuation to preserve punctuation marks
       const chunks = splitOnPunctuation(text);
-      log.debug(`Split into ${chunks.length} chunks`);
 
-      // Phonemize each non-punctuation chunk
       for (const chunk of chunks) {
         if (!chunk.isPunctuation && chunk.text.trim()) {
-          // Strip stress entirely — hans00/phonemize places stress marks at
-          // word boundaries (ˈbɪlt) instead of before the vowel nucleus (bˈɪlt)
-          // as Kokoro expects. Wrong stress sounds worse than no stress.
-          const rawIpa = lib.toIPA(chunk.text, {stripStress: true});
-          const misakiPhonemes = ipaToMisaki(rawIpa, language);
+          let ipa = lib.toIPA(chunk.text, {
+            stripStress: this.options.stripStress,
+          });
+
+          // Hyphen cleanup — always applied
+          ipa = ipa.replace(/- /g, '');
+          // Dark L → regular L — always applied (espeak-ng doesn't distinguish either)
+          ipa = ipa.replace(/ɫ/g, 'l');
+
+          if (this.options.misakiMapping) {
+            ipa = ipaToMisaki(ipa, language);
+          }
+
           (
             chunk as {isPunctuation: boolean; text: string; phoneme?: string}
-          ).phoneme = misakiPhonemes;
+          ).phoneme = ipa;
         }
       }
 
-      // Rejoin chunks (punctuation passes through unchanged)
       const rejoined = rejoinChunks(
         chunks as {isPunctuation: boolean; text: string; phoneme?: string}[],
       );
 
-      // Post-process for Kokoro TTS compatibility
-      const processed = postProcessPhonemes(rejoined, language);
+      if (this.options.kokoroPostProcess) {
+        const processed = postProcessPhonemes(rejoined, language);
+        log.debug(`Phonemization complete: ${processed.length} chars`);
+        return processed;
+      }
 
-      log.debug(`Phonemization complete: ${processed.length} chars`);
-      return processed;
+      const result = rejoined.trim();
+      log.debug(`Phonemization complete: ${result.length} chars`);
+      return result;
     } catch (error) {
       log.error(
         `JS phonemization failed: ${error instanceof Error ? error.message : String(error)}`,
