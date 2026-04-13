@@ -863,6 +863,33 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun dictOpen(path: String, promise: Promise) {
+    try {
+      val ok = NativeDict.open(path)
+      if (!ok) {
+        promise.reject("DICT_OPEN_ERROR", "Failed to open dict at $path")
+        return
+      }
+      promise.resolve(true)
+    } catch (e: UnsatisfiedLinkError) {
+      promise.reject(
+        "DICT_OPEN_ERROR",
+        "native_dict library not available. Make sure the library is properly built.",
+        e,
+      )
+    } catch (e: Exception) {
+      promise.reject("DICT_OPEN_ERROR", "Failed to open dict: ${e.message}", e)
+    }
+  }
+
+  override fun dictLookup(word: String): String? {
+    return try {
+      NativeDict.lookup(word)
+    } catch (e: Throwable) {
+      null
+    }
+  }
+
   override fun invalidate() {
     super.invalidate()
     if (::synthesizer.isInitialized) {

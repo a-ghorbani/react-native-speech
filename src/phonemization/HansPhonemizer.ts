@@ -3,7 +3,7 @@
  *
  * Layers (per word):
  *   1. REDUCED_FORMS — context-reduced overrides for function words
- *   2. Pre-generated IPA dictionary lookup
+ *   2. Pre-generated IPA dictionary lookup (DictSource)
  *   3. Hyphen-split compound handling (per-part REDUCED_FORMS + dict)
  *   4. Possessive fallback ("X's" → dict[X] + "ɪz")
  *   5. hans00/phonemize G2P fallback for OOV, with stress relocation
@@ -16,6 +16,7 @@ import {
   rejoinChunks,
 } from '../engines/kokoro/Phonemizer';
 import {createComponentLogger} from '../utils/logger';
+import type {DictSource} from './DictSource';
 
 const log = createComponentLogger('TTS', 'HansPhonemizer');
 
@@ -152,9 +153,15 @@ function relocateStress(ipa: string): string {
     .join(' ');
 }
 
+/**
+ * Per-word phonemizer. `primaryHit` is the cached dict lookup for `clean`,
+ * pre-computed by the caller so we never hit the dict twice for the same
+ * word (precheck + lookup).
+ */
 function phonemizeWord(
   word: string,
-  dict: Record<string, string>,
+  dict: DictSource,
+  primaryHit: string | null,
   hans00: Hans00 | null,
 ): string {
   const clean = word.toLowerCase().replace(/[^a-z']/g, '');
@@ -163,8 +170,8 @@ function phonemizeWord(
   const reduced = REDUCED_FORMS[clean];
   if (reduced) return reduced;
 
-  // 2. Dict lookup
-  let ipa: string | null = clean ? (dict[clean] ?? null) : null;
+  // 2. Dict lookup (already done by caller)
+  let ipa: string | null = primaryHit;
 
   // 3. Hyphen-split compounds
   if (!ipa && word.includes('-')) {
@@ -174,7 +181,7 @@ function phonemizeWord(
       if (!c) return null;
       const pReduced = REDUCED_FORMS[c];
       if (pReduced) return pReduced;
-      return dict[c] ?? null;
+      return dict.lookup(c);
     });
     if (partIpas.every(p => p !== null)) {
       return partIpas.join('');
@@ -184,7 +191,7 @@ function phonemizeWord(
   // 4. Possessive handling
   if (!ipa && clean.endsWith("'s")) {
     const base = clean.slice(0, -2);
-    const baseIpa = dict[base];
+    const baseIpa = dict.lookup(base);
     if (baseIpa) ipa = baseIpa + 'ɪz';
   }
 
@@ -210,13 +217,13 @@ function phonemizeWord(
 // --- Public ---
 
 export interface HansPhonemizerOptions {
-  dict: Record<string, string>;
+  dict: DictSource;
   /** Optional post-processing (e.g. Kokoro IPA normalization) */
   postProcess?: (phonemes: string, language: string) => string;
 }
 
 export class HansPhonemizer implements IPhonemizer {
-  private readonly dict: Record<string, string>;
+  private readonly dict: DictSource;
   private readonly postProcess?: (p: string, lang: string) => string;
 
   constructor(options: HansPhonemizerOptions) {
@@ -246,18 +253,28 @@ export class HansPhonemizer implements IPhonemizer {
           const ipaWords: string[] = [];
           for (const w of words) {
             const clean = w.toLowerCase().replace(/[^a-z']/g, '');
+
+            // Single dict probe per word; reused by both precheck and
+            // phonemizeWord. Across the typical ~100 µs/word path this
+            // halves dict.lookup() calls (which matter for native dict).
+            const primaryHit: string | null = clean ? dict.lookup(clean) : null;
+
             const needsHans =
               !REDUCED_FORMS[clean] &&
-              !(clean && dict[clean]) &&
+              !primaryHit &&
               !(
                 w.includes('-') &&
                 w.split('-').every(p => {
                   const c = p.toLowerCase().replace(/[^a-z']/g, '');
-                  return !c || REDUCED_FORMS[c] || dict[c];
+                  return !c || REDUCED_FORMS[c] || dict.lookup(c) !== null;
                 })
               ) &&
-              !(clean.endsWith("'s") && dict[clean.slice(0, -2)]);
-            ipaWords.push(phonemizeWord(w, dict, needsHans ? getHans() : null));
+              !(
+                clean.endsWith("'s") && dict.lookup(clean.slice(0, -2)) !== null
+              );
+            ipaWords.push(
+              phonemizeWord(w, dict, primaryHit, needsHans ? getHans() : null),
+            );
           }
           chunk.phoneme = ipaWords.join(' ');
         }

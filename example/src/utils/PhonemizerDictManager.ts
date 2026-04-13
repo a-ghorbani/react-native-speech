@@ -10,11 +10,11 @@
 
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
-// TODO: publish the TSV to a stable location and update these URLs.
-// Dict source: react-native-speech/third-party/phonemizer-dicts/en-us.tsv
+// Dict source: react-native-speech/third-party/phonemizer-dicts/en-us.bin
+// (built from en-us.tsv via `npm run build:dict`; EPD1 mmap'd format).
 const DICT_URLS: Record<string, string> = {
   'en-us':
-    'https://huggingface.co/datasets/palshub/phonemizer-dicts/resolve/main/en-us.tsv',
+    'https://huggingface.co/datasets/palshub/phonemizer-dicts/resolve/main/en-us.bin',
 };
 
 export type PhonemizerLanguage = keyof typeof DICT_URLS;
@@ -32,7 +32,7 @@ export class PhonemizerDictManager {
   }
 
   getDictPath(language: PhonemizerLanguage = 'en-us'): string {
-    return `file://${this.getDictsDirectory()}/${language}.tsv`;
+    return `file://${this.getDictsDirectory()}/${language}.bin`;
   }
 
   async isInstalled(language: PhonemizerLanguage = 'en-us'): Promise<boolean> {
@@ -52,7 +52,7 @@ export class PhonemizerDictManager {
     if (!url) throw new Error(`No dict URL for language: ${language}`);
 
     const dictsDir = this.getDictsDirectory();
-    const path = `${dictsDir}/${language}.tsv`;
+    const path = `${dictsDir}/${language}.bin`;
 
     if (await RNFS.exists(path)) {
       return `file://${path}`;

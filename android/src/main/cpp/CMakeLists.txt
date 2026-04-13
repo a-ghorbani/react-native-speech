@@ -56,3 +56,17 @@ target_link_libraries(espeak-wrapper
     espeak-ng
     ${log-lib}
 )
+
+# --- native_dict (mmap'd phonemizer dict) ---
+add_library(native_dict SHARED
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cpp/native_dict.cpp
+    native_dict_jni.cpp
+)
+
+target_include_directories(native_dict PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cpp
+)
+
+target_link_libraries(native_dict
+    ${log-lib}
+)

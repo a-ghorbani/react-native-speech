@@ -13,9 +13,9 @@ Pod::Spec.new do |s|
   s.platforms    = { :ios => min_ios_version_supported }
   s.source       = { :git => "https://github.com/mhpdev-com/react-native-speech.git", :tag => "#{s.version}" }
 
-  # Our module sources
-  s.source_files = "ios/**/*.{h,m,mm,cpp}"
-  s.public_header_files = "ios/EspeakWrapper.h"
+  # Our module sources (iOS Obj-C++ + shared C++ core in cpp/)
+  s.source_files = ["ios/**/*.{h,m,mm,cpp}", "cpp/**/*.{h,cpp}"]
+  s.public_header_files = ["ios/EspeakWrapper.h", "ios/NativeDictWrapper.h"]
   s.exclude_files = "ios/generated/**/*"
 
   # Use script_phase to build espeak-ng as a static library before compilation
@@ -134,7 +134,8 @@ Pod::Spec.new do |s|
     'HEADER_SEARCH_PATHS' => [
       '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/include"',
       '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/libespeak-ng"',
-      '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/ucd-tools/src/include"'
+      '"$(PODS_TARGET_SRCROOT)/third-party/espeak-ng/src/ucd-tools/src/include"',
+      '"$(PODS_TARGET_SRCROOT)/cpp"'
     ].join(' '),
     'GCC_PREPROCESSOR_DEFINITIONS' =>
       ENV['RN_SPEECH_TRACE'] == '1' ? '$(inherited) RN_SPEECH_TRACE=1' : '$(inherited)'

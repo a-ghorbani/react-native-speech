@@ -38,7 +38,7 @@ import {
   NoOpPhonemizer,
   type IPhonemizer,
 } from '../kokoro/Phonemizer';
-import {TextPreprocessor, chunkText, loadDict} from '../../phonemization';
+import {TextPreprocessor, chunkText, loadNativeDict} from '../../phonemization';
 import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Kitten', 'Engine');
@@ -196,13 +196,14 @@ export class KittenEngine implements TTSEngineInterface {
 
       log.debug('Initializing Kitten TTS engine');
 
-      // Load IPA dictionary and build JS phonemizer.
+      // Load IPA dictionary and build JS phonemizer (raw IPA mode).
       if (!config.dictPath) {
         throw new Error(
-          'Kitten engine requires `dictPath` in config (path to the IPA dictionary TSV).',
+          'Kitten requires `dictPath` in config ' +
+            '(path to the IPA dictionary .bin file, EPD1 format).',
         );
       }
-      const dict = await loadDict(config.dictPath);
+      const dict = await loadNativeDict(config.dictPath);
       this.phonemizer = createPhonemizer('js-ipa', {dict});
 
       // Load tokenizer (external vocab or built-in symbols)

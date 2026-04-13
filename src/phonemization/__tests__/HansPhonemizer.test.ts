@@ -14,6 +14,16 @@
  */
 
 import {HansPhonemizer} from '../HansPhonemizer';
+import type {DictSource} from '../DictSource';
+
+// Tiny in-memory DictSource for tests — mirrors JsDictSource without the
+// dependency, so this file stays self-contained.
+function makeSource(map: Record<string, string>): DictSource {
+  return {
+    lookup: (w: string) => map[w] ?? null,
+    size: () => Object.keys(map).length,
+  };
+}
 
 jest.mock('../../utils/logger', () => ({
   createComponentLogger: () => ({
@@ -59,7 +69,7 @@ describe('HansPhonemizer', () => {
   let phon: HansPhonemizer;
 
   beforeEach(() => {
-    phon = new HansPhonemizer({dict: DICT});
+    phon = new HansPhonemizer({dict: makeSource(DICT)});
     hans00Mock.toIPA.mockClear();
   });
 
@@ -123,12 +133,12 @@ describe('HansPhonemizer', () => {
 
   test('applies postProcess when provided', async () => {
     const pp = new HansPhonemizer({
-      dict: DICT,
+      dict: makeSource(DICT),
       postProcess: (p, _lang) => p.replace(/cat/g, 'CAT'),
     });
     // Fake post: applies on the rejoined string, so inject a literal "cat".
     const tweak = new HansPhonemizer({
-      dict: {...DICT, cat: 'cat'},
+      dict: makeSource({...DICT, cat: 'cat'}),
       postProcess: (p, _lang) => p.replace(/cat/g, 'CAT'),
     });
     const out1 = await pp.phonemize('cat', 'en-us');

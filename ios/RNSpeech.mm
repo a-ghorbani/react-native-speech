@@ -1,6 +1,7 @@
 #import "RNSpeech.h"
 #import "RNSpeechTrace.h"
 #import "EspeakWrapper.h"
+#import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
 
 using namespace JS::NativeSpeech;
@@ -644,6 +645,26 @@ RCT_EXPORT_MODULE();
              nil);
     }
   });
+}
+
+- (void)dictOpen:(NSString *)path
+         resolve:(RCTPromiseResolveBlock)resolve
+          reject:(RCTPromiseRejectBlock)reject {
+  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    NSError *error = nil;
+    BOOL ok = [NativeDictWrapper openDict:path error:&error];
+    if (!ok) {
+      reject(@"DICT_OPEN_ERROR",
+             error.localizedDescription ?: @"Failed to open dict",
+             error);
+      return;
+    }
+    resolve(@(YES));
+  });
+}
+
+- (NSString *)dictLookup:(NSString *)word {
+  return [NativeDictWrapper lookupWord:word];
 }
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:

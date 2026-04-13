@@ -30,7 +30,7 @@ import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
-import {loadDict} from '../../phonemization';
+import {loadNativeDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {createComponentLogger} from '../../utils/logger';
 import {KOKORO_CONSTANTS} from './constants';
@@ -221,10 +221,10 @@ export class KokoroEngine implements TTSEngineInterface {
         if (!config.dictPath) {
           throw new Error(
             "Kokoro phonemizerType 'js' requires `dictPath` in config " +
-              '(path to the IPA dictionary TSV).',
+              '(path to the IPA dictionary .bin file, EPD1 format).',
           );
         }
-        const dict = await loadDict(config.dictPath);
+        const dict = await loadNativeDict(config.dictPath);
         this.phonemizer = createPhonemizer('js', {dict});
       } else {
         this.phonemizer = createPhonemizer(phonemizerType);

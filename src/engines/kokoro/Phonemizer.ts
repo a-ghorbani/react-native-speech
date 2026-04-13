@@ -7,6 +7,7 @@
  */
 
 import {createComponentLogger} from '../../utils/logger';
+import type {DictSource} from '../../phonemization/DictSource';
 
 const log = createComponentLogger('Kokoro', 'Phonemizer');
 
@@ -196,8 +197,8 @@ export class NativePhonemizer implements IPhonemizer {
 export type PhonemizerType = 'js' | 'js-ipa' | 'native' | 'none';
 
 export interface CreatePhonemizerOptions {
-  /** Pre-loaded dictionary; required for 'js' and 'js-ipa' */
-  dict?: Record<string, string>;
+  /** Pre-loaded dictionary source; required for 'js' and 'js-ipa' */
+  dict?: DictSource;
   /** Optional language hint for future multi-language support */
   language?: string;
 }
@@ -214,17 +215,19 @@ export function createPhonemizer(
   type: PhonemizerType,
   opts?: CreatePhonemizerOptions,
 ): IPhonemizer {
-  log.debug(`Creating phonemizer: type=${type}`);
-
   switch (type) {
     case 'js': {
       if (!opts?.dict) {
         throw new Error(
           "createPhonemizer('js') requires a dictionary. " +
-            'Provide `dict` via loadDict(dictPath) or set `dictPath` on the engine config.',
+            'Provide `dict` via loadNativeDict(dictPath) (or loadDict() for tests) ' +
+            'or set `dictPath` on the engine config.',
         );
       }
       const {HansPhonemizer} = require('../../phonemization/HansPhonemizer');
+      log.info(
+        `Phonemizer: HansPhonemizer (js, Kokoro post-process, dict=${opts.dict.size?.() ?? '?'} entries)`,
+      );
       return new HansPhonemizer({
         dict: opts.dict,
         postProcess: postProcessPhonemes,
@@ -234,15 +237,21 @@ export function createPhonemizer(
       if (!opts?.dict) {
         throw new Error(
           "createPhonemizer('js-ipa') requires a dictionary. " +
-            'Provide `dict` via loadDict(dictPath) or set `dictPath` on the engine config.',
+            'Provide `dict` via loadNativeDict(dictPath) (or loadDict() for tests) ' +
+            'or set `dictPath` on the engine config.',
         );
       }
       const {HansPhonemizer} = require('../../phonemization/HansPhonemizer');
+      log.info(
+        `Phonemizer: HansPhonemizer (js-ipa, raw IPA, dict=${opts.dict.size?.() ?? '?'} entries)`,
+      );
       return new HansPhonemizer({dict: opts.dict});
     }
     case 'native':
+      log.info('Phonemizer: NativePhonemizer (espeak-ng via Turbo Module)');
       return new NativePhonemizer();
     case 'none':
+      log.info('Phonemizer: NoOpPhonemizer (pass-through)');
       return new NoOpPhonemizer();
     default:
       log.warn(

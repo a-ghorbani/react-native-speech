@@ -162,6 +162,18 @@ export interface Spec extends TurboModule {
    */
   phonemize: (text: string, language: string) => Promise<string>;
 
+  /**
+   * Open a phonemizer dict file (mmap'd native dict, EPD1 format).
+   * Replaces any previously open dict. Returns true on success.
+   */
+  dictOpen: (path: string) => Promise<boolean>;
+  /**
+   * Look up a word in the currently-open dict.
+   * Returns null on miss or if no dict open.
+   * Synchronous: hot path, called many times per phonemize() call.
+   */
+  dictLookup: (word: string) => string | null;
+
   //Listeners
   readonly onError: EventEmitter<EventProps>;
   readonly onStart: EventEmitter<EventProps>;
