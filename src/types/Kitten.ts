@@ -61,6 +61,11 @@ export interface KittenConfig {
    */
   tokenizerPath?: string;
   /**
+   * Path to the IPA dictionary TSV file (word<TAB>ipa per line).
+   * Required for the GPL-free JS phonemizer. Accepts file:// and https:// URLs.
+   */
+  dictPath?: string;
+  /**
    * Maximum chunk size in characters for text splitting (default: 400)
    * Smaller values = faster first audio & more progress events
    * Larger values = fewer inference calls

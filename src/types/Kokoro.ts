@@ -77,6 +77,12 @@ export interface KokoroConfig {
   /** Phonemizer type: 'js' uses pure-JS GPL-free phonemizer (recommended), 'native' uses espeak-ng (GPL), 'none' disables phonemization */
   phonemizerType?: 'js' | 'native' | 'none';
   /**
+   * Path to the IPA dictionary TSV file (word<TAB>ipa per line).
+   * Required when `phonemizerType` is 'js' (or unset, which defaults to 'js').
+   * Accepts file:// and https:// URLs.
+   */
+  dictPath?: string;
+  /**
    * Maximum chunk size in characters for text splitting (default: 400)
    * Smaller values = faster first audio & more progress events, but more inference calls
    * Larger values = fewer inference calls, but longer wait before first audio

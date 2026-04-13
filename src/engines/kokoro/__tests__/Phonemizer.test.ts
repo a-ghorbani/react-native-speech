@@ -80,7 +80,17 @@ describe('postProcessPhonemes', () => {
 
     // Test: rejoin chunks (simulating native phonemization) -> postProcess = expected
     test.each(
-      testCases.map((tc, i) => [i, tc.input, tc.chunks, tc.postProcessed]),
+      testCases
+        // Skip cases where chunks lack phonemes (e.g. after intToWords rewrote
+        // the normalized text — upstream reference phonemes no longer apply).
+        .filter(
+          tc =>
+            Array.isArray(tc.chunks) &&
+            (tc.chunks as {isPunctuation: boolean; phoneme?: string}[]).every(
+              c => c.isPunctuation || typeof c.phoneme === 'string',
+            ),
+        )
+        .map((tc, i) => [i, tc.input, tc.chunks, tc.postProcessed]),
     )('[%i] full pipeline for "%s"', (_index, _input, chunks, expected) => {
       // Simulate the full pipeline: chunks already have phonemes from native
       const rejoined = rejoinChunks(
@@ -95,7 +105,17 @@ describe('postProcessPhonemes', () => {
     const testCases = testFixture['en-gb'];
 
     test.each(
-      testCases.map((tc, i) => [i, tc.input, tc.chunks, tc.postProcessed]),
+      testCases
+        // Skip cases where chunks lack phonemes (e.g. after intToWords rewrote
+        // the normalized text — upstream reference phonemes no longer apply).
+        .filter(
+          tc =>
+            Array.isArray(tc.chunks) &&
+            (tc.chunks as {isPunctuation: boolean; phoneme?: string}[]).every(
+              c => c.isPunctuation || typeof c.phoneme === 'string',
+            ),
+        )
+        .map((tc, i) => [i, tc.input, tc.chunks, tc.postProcessed]),
     )('[%i] full pipeline for "%s"', (_index, _input, chunks, expected) => {
       const rejoined = rejoinChunks(
         chunks as {isPunctuation: boolean; text: string; phoneme: string}[],

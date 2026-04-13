@@ -195,28 +195,50 @@ export class NativePhonemizer implements IPhonemizer {
  */
 export type PhonemizerType = 'js' | 'js-ipa' | 'native' | 'none';
 
+export interface CreatePhonemizerOptions {
+  /** Pre-loaded dictionary; required for 'js' and 'js-ipa' */
+  dict?: Record<string, string>;
+  /** Optional language hint for future multi-language support */
+  language?: string;
+}
+
 /**
- * Factory function to create the appropriate phonemizer
+ * Factory function to create the appropriate phonemizer.
  *
- * @param type - Phonemizer type: 'native' for espeak-ng, 'none' for pass-through
- * @returns Configured phonemizer instance
+ * - 'js': HansPhonemizer with Kokoro post-processing (requires `opts.dict`)
+ * - 'js-ipa': HansPhonemizer without post-processing, raw IPA (requires `opts.dict`)
+ * - 'native': espeak-ng via Turbo Module (GPL)
+ * - 'none': pass-through
  */
-export function createPhonemizer(type: PhonemizerType): IPhonemizer {
+export function createPhonemizer(
+  type: PhonemizerType,
+  opts?: CreatePhonemizerOptions,
+): IPhonemizer {
   log.debug(`Creating phonemizer: type=${type}`);
 
   switch (type) {
     case 'js': {
-      const {JsPhonemizer} = require('./JsPhonemizer');
-      return new JsPhonemizer();
+      if (!opts?.dict) {
+        throw new Error(
+          "createPhonemizer('js') requires a dictionary. " +
+            'Provide `dict` via loadDict(dictPath) or set `dictPath` on the engine config.',
+        );
+      }
+      const {HansPhonemizer} = require('../../phonemization/HansPhonemizer');
+      return new HansPhonemizer({
+        dict: opts.dict,
+        postProcess: postProcessPhonemes,
+      });
     }
     case 'js-ipa': {
-      const {JsPhonemizer} = require('./JsPhonemizer');
-      return new JsPhonemizer({
-        misakiMapping: false,
-        stripStress: false,
-        relocateStress: true,
-        kokoroPostProcess: false,
-      });
+      if (!opts?.dict) {
+        throw new Error(
+          "createPhonemizer('js-ipa') requires a dictionary. " +
+            'Provide `dict` via loadDict(dictPath) or set `dictPath` on the engine config.',
+        );
+      }
+      const {HansPhonemizer} = require('../../phonemization/HansPhonemizer');
+      return new HansPhonemizer({dict: opts.dict});
     }
     case 'native':
       return new NativePhonemizer();

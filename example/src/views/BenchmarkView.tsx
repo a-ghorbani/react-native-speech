@@ -15,6 +15,7 @@ import {kokoroModelManager} from '../utils/ModelManager';
 import {supertonicModelManager} from '../utils/SupertonicModelManager';
 import {pocketModelManager} from '../utils/PocketModelManager';
 import {kittenModelManager} from '../utils/KittenModelManager';
+import {phonemizerDictManager} from '../utils/PhonemizerDictManager';
 import {
   runBenchmark,
   type BenchmarkConfig,
@@ -74,6 +75,9 @@ const BenchmarkView: React.FC = () => {
     setIsScanning(true);
     const engines: InstalledEngine[] = [];
 
+    // Phonemizer dict is shared by Kokoro + Kitten; download once up-front.
+    const dictPath = await phonemizerDictManager.ensureDict('en-us');
+
     try {
       // Kokoro
       await kokoroModelManager.scanInstalledModels();
@@ -89,6 +93,7 @@ const BenchmarkView: React.FC = () => {
               model.version,
               model.variant as any,
             ),
+            dictPath,
             phonemizerType: 'js',
             maxChunkSize: 100,
           }),
@@ -154,6 +159,7 @@ const BenchmarkView: React.FC = () => {
             ...kittenModelManager.getDownloadedModelConfig(
               model.variant as any,
             ),
+            dictPath,
             maxChunkSize: 100,
           }),
           defaultVoice: '', // auto-detect after init

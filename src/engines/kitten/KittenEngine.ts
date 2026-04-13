@@ -33,8 +33,12 @@ import {
   KITTEN_SPEED_PRIORS,
 } from './constants';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
-import {createPhonemizer, type IPhonemizer} from '../kokoro/Phonemizer';
-import {TextNormalizer, type TextChunk} from '../kokoro/TextNormalizer';
+import {
+  createPhonemizer,
+  NoOpPhonemizer,
+  type IPhonemizer,
+} from '../kokoro/Phonemizer';
+import {TextPreprocessor, chunkText, loadDict} from '../../phonemization';
 import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Kitten', 'Engine');
@@ -127,7 +131,7 @@ export class KittenEngine implements TTSEngineInterface {
   private tokenizer: IPATokenizer;
   private voiceLoader: VoiceLoader;
   private phonemizer: IPhonemizer;
-  private normalizer: TextNormalizer;
+  private preprocessor: TextPreprocessor;
 
   private config: KittenConfig | null = null;
   private isInitialized = false;
@@ -149,8 +153,9 @@ export class KittenEngine implements TTSEngineInterface {
   constructor() {
     this.tokenizer = new IPATokenizer();
     this.voiceLoader = new VoiceLoader();
-    this.phonemizer = createPhonemizer('js-ipa');
-    this.normalizer = new TextNormalizer();
+    // Real phonemizer is created in initialize() once the dict is loaded.
+    this.phonemizer = new NoOpPhonemizer();
+    this.preprocessor = new TextPreprocessor({removePunctuation: false});
   }
 
   /**
@@ -190,6 +195,15 @@ export class KittenEngine implements TTSEngineInterface {
       this.config = config;
 
       log.debug('Initializing Kitten TTS engine');
+
+      // Load IPA dictionary and build JS phonemizer.
+      if (!config.dictPath) {
+        throw new Error(
+          'Kitten engine requires `dictPath` in config (path to the IPA dictionary TSV).',
+        );
+      }
+      const dict = await loadDict(config.dictPath);
+      this.phonemizer = createPhonemizer('js-ipa', {dict});
 
       // Load tokenizer (external vocab or built-in symbols)
       if (config.tokenizerPath) {
@@ -292,12 +306,23 @@ export class KittenEngine implements TTSEngineInterface {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
-    // Chunk text by sentences
+    // Preprocess once, then chunk. Upstream kittentts applies TextPreprocessor
+    // at the top level and chunkText on the normalized result, so we match that.
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const chunks = this.normalizer.chunkBySentencesWithMetadata(
-      text,
-      maxChunkSize,
-    );
+    const normalized = this.preprocessor.process(text);
+    const chunkStrings = chunkText(normalized, maxChunkSize);
+
+    // Build approximate text ranges so ChunkProgressEvent can still report
+    // positions. Ranges are relative to the normalized (preprocessed) text,
+    // not the original input — exact offsets are not meaningful here because
+    // preprocessing rewrites the text.
+    let cursor = 0;
+    const chunks = chunkStrings.map(chunkStr => {
+      const start = cursor;
+      const end = cursor + chunkStr.length;
+      cursor = end;
+      return {text: chunkStr, startIndex: start, endIndex: end};
+    });
 
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
@@ -310,7 +335,7 @@ export class KittenEngine implements TTSEngineInterface {
         return undefined;
       }
 
-      const chunk = chunks[chunkIndex] as TextChunk;
+      const chunk = chunks[chunkIndex]!;
       const progress = Math.round((chunkIndex / chunks.length) * 100);
 
       log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
@@ -356,7 +381,7 @@ export class KittenEngine implements TTSEngineInterface {
       // Start synthesizing next chunk in parallel
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
-        const nextChunk = chunks[nextChunkIndex] as TextChunk;
+        const nextChunk = chunks[nextChunkIndex]!;
         nextAudioPromise = this.synthesizeTextChunk(
           nextChunk.text,
           voiceId,
@@ -382,7 +407,7 @@ export class KittenEngine implements TTSEngineInterface {
    * Synthesize a text chunk: normalize → phonemize → tokenize → infer → trim
    */
   private async synthesizeTextChunk(
-    chunkText: string,
+    chunkStr: string,
     voiceId: string,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer> {
@@ -394,15 +419,13 @@ export class KittenEngine implements TTSEngineInterface {
     });
 
     try {
-      // 1. Normalize text
-      const normalized = this.normalizer.normalize(chunkText);
-      log.debug(`Normalized: "${normalized.substring(0, 80)}..."`);
+      // Text is already preprocessed by doSynthesize; go straight to phonemize.
       if (this.stopRequested) {
         return emptyBuffer();
       }
 
-      // 2. Phonemize (defaults to GPL-free JS phonemizer)
-      const phonemes = await this.phonemizeText(normalized);
+      // 1. Phonemize (GPL-free JS phonemizer, IPA mode)
+      const phonemes = await this.phonemizeText(chunkStr);
       log.debug(
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
@@ -410,17 +433,17 @@ export class KittenEngine implements TTSEngineInterface {
         return emptyBuffer();
       }
 
-      // 3. Tokenize IPA phonemes
+      // 2. Tokenize IPA phonemes
       const tokens = this.tokenizer.encode(phonemes);
       log.debug(
         `Tokenized: ${tokens.length} tokens, first 10: [${tokens.slice(0, 10).join(',')}]`,
       );
 
-      // 4. Run ONNX inference with length-dependent voice style
+      // 3. Run ONNX inference with length-dependent voice style
       return await this.synthesizeChunk(
         tokens,
         voiceId,
-        chunkText.length,
+        chunkStr.length,
         options,
       );
     } catch (error) {

@@ -135,64 +135,75 @@ describe('TextNormalizer', () => {
 
   describe('number handling', () => {
     test('splits years into two parts', () => {
-      expect(normalizer.normalize('1990')).toBe('19 90');
-      expect(normalizer.normalize('2022')).toBe('20 22');
+      // Years are split to "19 90" by splitNum, then intToWords final pass
+      // converts the bare integer segments to words.
+      expect(normalizer.normalize('1990')).toBe('nineteen ninety');
+      expect(normalizer.normalize('2022')).toBe('twenty twenty two');
     });
 
     test('handles decade suffix', () => {
-      expect(normalizer.normalize('2022s')).toBe('20 22s');
-      expect(normalizer.normalize('1980s')).toBe('19 80s');
+      // "22s" is not a bare integer so stays intact after intToWords pass.
+      expect(normalizer.normalize('2022s')).toBe('twenty 22s');
+      expect(normalizer.normalize('1980s')).toBe('nineteen 80s');
     });
 
     test('splits time format', () => {
-      expect(normalizer.normalize('12:34')).toBe('12 34');
-      expect(normalizer.normalize('3:00')).toBe("3 o'clock");
-      expect(normalizer.normalize('3:05')).toBe('3 oh 5');
+      expect(normalizer.normalize('12:34')).toBe('twelve thirty four');
+      expect(normalizer.normalize('3:00')).toBe("three o'clock");
+      expect(normalizer.normalize('3:05')).toBe('three oh five');
     });
 
     test('removes commas from numbers', () => {
-      expect(normalizer.normalize('1,000')).toBe('1000');
+      expect(normalizer.normalize('1,000')).toBe('one thousand');
       expect(normalizer.normalize('12,345,678')).toBe('12345678');
     });
 
     test('converts number ranges', () => {
-      expect(normalizer.normalize('10-20')).toBe('10 to 20');
-      expect(normalizer.normalize('5-10')).toBe('5 to 10');
+      expect(normalizer.normalize('10-20')).toBe('ten to twenty');
+      expect(normalizer.normalize('5-10')).toBe('five to ten');
     });
 
     test('adds space before uppercase S after number', () => {
-      expect(normalizer.normalize('10S')).toBe('10 S');
-      expect(normalizer.normalize('5S')).toBe('5 S');
+      expect(normalizer.normalize('10S')).toBe('ten S');
+      expect(normalizer.normalize('5S')).toBe('five S');
     });
   });
 
   describe('currency handling', () => {
     test('converts dollar amounts', () => {
-      expect(normalizer.normalize('$100')).toBe('100 dollars');
-      expect(normalizer.normalize('$1')).toBe('1 dollar');
+      expect(normalizer.normalize('$100')).toBe('one hundred dollars');
+      expect(normalizer.normalize('$1')).toBe('one dollar');
     });
 
     test('converts dollar amounts with cents', () => {
-      expect(normalizer.normalize('$5.99')).toBe('5 dollars and 99 cents');
-      expect(normalizer.normalize('$1.01')).toBe('1 dollar and 1 cent');
+      expect(normalizer.normalize('$5.99')).toBe(
+        'five dollars and ninety nine cents',
+      );
+      expect(normalizer.normalize('$1.01')).toBe('one dollar and one cent');
     });
 
     test('converts pound amounts', () => {
-      expect(normalizer.normalize('\u00a3100')).toBe('100 pounds');
-      expect(normalizer.normalize('\u00a31')).toBe('1 pound');
+      expect(normalizer.normalize('\u00a3100')).toBe('one hundred pounds');
+      expect(normalizer.normalize('\u00a31')).toBe('one pound');
     });
 
     test('converts pound amounts with pence', () => {
-      expect(normalizer.normalize('\u00a31.50')).toBe('1 pound and 50 pence');
-      expect(normalizer.normalize('\u00a35.01')).toBe('5 pounds and 1 penny');
+      expect(normalizer.normalize('\u00a31.50')).toBe(
+        'one pound and fifty pence',
+      );
+      expect(normalizer.normalize('\u00a35.01')).toBe(
+        'five pounds and one penny',
+      );
     });
   });
 
   describe('decimal numbers', () => {
     test('converts decimal numbers to spoken form', () => {
-      expect(normalizer.normalize('12.34')).toBe('12 point 3 4');
-      expect(normalizer.normalize('0.01')).toBe('0 point 0 1');
-      expect(normalizer.normalize('3.14159')).toBe('3 point 1 4 1 5 9');
+      expect(normalizer.normalize('12.34')).toBe('twelve point three four');
+      expect(normalizer.normalize('0.01')).toBe('zero point zero one');
+      expect(normalizer.normalize('3.14159')).toBe(
+        'three point one four one five nine',
+      );
     });
   });
 

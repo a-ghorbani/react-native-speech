@@ -5,7 +5,11 @@
       "input": "iOS's",
       "normalized": "iOS's",
       "chunks": [
-        {"text": "iOS's", "isPunctuation": false, "phoneme": "ˈaɪ ˌoʊˈɛsɪz"}
+        {
+          "text": "iOS's",
+          "isPunctuation": false,
+          "phoneme": "ˈaɪ ˌoʊˈɛsɪz"
+        }
       ],
       "postProcessed": "ˈaɪ ˌoʊˈɛsɪz"
     },
@@ -13,7 +17,11 @@
       "input": "'Hello'",
       "normalized": "'Hello'",
       "chunks": [
-        {"text": "'Hello'", "isPunctuation": false, "phoneme": "həlˈoʊ"}
+        {
+          "text": "'Hello'",
+          "isPunctuation": false,
+          "phoneme": "həlˈoʊ"
+        }
       ],
       "postProcessed": "həlˈoʊ"
     },
@@ -21,7 +29,11 @@
       "input": "'Test' and 'Example'",
       "normalized": "'Test' and 'Example'",
       "chunks": [
-        {"text": "'Test' and 'Example'", "isPunctuation": false, "phoneme": "tˈɛst ænd ɛɡzˈæmpəl"}
+        {
+          "text": "'Test' and 'Example'",
+          "isPunctuation": false,
+          "phoneme": "tˈɛst ænd ɛɡzˈæmpəl"
+        }
       ],
       "postProcessed": "tˈɛst ænd ɛɡzˈæmpəl"
     },
@@ -29,9 +41,21 @@
       "input": "«Bonjour»",
       "normalized": "\"Bonjour\"",
       "chunks": [
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""},
-        {"text": "Bonjour", "isPunctuation": false, "phoneme": "bɔːnʒˈʊɹ"},
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""}
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        },
+        {
+          "text": "Bonjour",
+          "isPunctuation": false,
+          "phoneme": "bɔːnʒˈʊɹ"
+        },
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        }
       ],
       "postProcessed": "\"bɔːnʒˈʊɹ\""
     },
@@ -39,13 +63,41 @@
       "input": "«Test «nested» quotes»",
       "normalized": "\"Test \"nested\" quotes\"",
       "chunks": [
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""},
-        {"text": "Test", "isPunctuation": false, "phoneme": "tˈɛst"},
-        {"text": " \"", "isPunctuation": true, "phoneme": " \""},
-        {"text": "nested", "isPunctuation": false, "phoneme": "nˈɛstᵻd"},
-        {"text": "\" ", "isPunctuation": true, "phoneme": "\" "},
-        {"text": "quotes", "isPunctuation": false, "phoneme": "kwˈoʊts"},
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""}
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        },
+        {
+          "text": "Test",
+          "isPunctuation": false,
+          "phoneme": "tˈɛst"
+        },
+        {
+          "text": " \"",
+          "isPunctuation": true,
+          "phoneme": " \""
+        },
+        {
+          "text": "nested",
+          "isPunctuation": false,
+          "phoneme": "nˈɛstᵻd"
+        },
+        {
+          "text": "\" ",
+          "isPunctuation": true,
+          "phoneme": "\" "
+        },
+        {
+          "text": "quotes",
+          "isPunctuation": false,
+          "phoneme": "kwˈoʊts"
+        },
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        }
       ],
       "postProcessed": "\"tˈɛst \"nˈɛstᵻd\" kwˈoʊts\""
     },
@@ -53,9 +105,21 @@
       "input": "(Hello)",
       "normalized": "«Hello»",
       "chunks": [
-        {"text": "«", "isPunctuation": true, "phoneme": "«"},
-        {"text": "Hello", "isPunctuation": false, "phoneme": "həlˈoʊ"},
-        {"text": "»", "isPunctuation": true, "phoneme": "»"}
+        {
+          "text": "«",
+          "isPunctuation": true,
+          "phoneme": "«"
+        },
+        {
+          "text": "Hello",
+          "isPunctuation": false,
+          "phoneme": "həlˈoʊ"
+        },
+        {
+          "text": "»",
+          "isPunctuation": true,
+          "phoneme": "»"
+        }
       ],
       "postProcessed": "«həlˈoʊ»"
     },
@@ -63,11 +127,31 @@
       "input": "(Nested (Parentheses))",
       "normalized": "«Nested «Parentheses»»",
       "chunks": [
-        {"text": "«", "isPunctuation": true, "phoneme": "«"},
-        {"text": "Nested", "isPunctuation": false, "phoneme": "nˈɛstᵻd"},
-        {"text": " «", "isPunctuation": true, "phoneme": " «"},
-        {"text": "Parentheses", "isPunctuation": false, "phoneme": "pɚɹˈɛnθəsˌiːz"},
-        {"text": "»»", "isPunctuation": true, "phoneme": "»»"}
+        {
+          "text": "«",
+          "isPunctuation": true,
+          "phoneme": "«"
+        },
+        {
+          "text": "Nested",
+          "isPunctuation": false,
+          "phoneme": "nˈɛstᵻd"
+        },
+        {
+          "text": " «",
+          "isPunctuation": true,
+          "phoneme": " «"
+        },
+        {
+          "text": "Parentheses",
+          "isPunctuation": false,
+          "phoneme": "pɚɹˈɛnθəsˌiːz"
+        },
+        {
+          "text": "»»",
+          "isPunctuation": true,
+          "phoneme": "»»"
+        }
       ],
       "postProcessed": "«nˈɛstᵻd «pɚɹˈɛnθəsˌiːz»»"
     },
@@ -75,7 +159,11 @@
       "input": "Hello World",
       "normalized": "Hello World",
       "chunks": [
-        {"text": "Hello World", "isPunctuation": false, "phoneme": "həlˈoʊ wˈɜːld"}
+        {
+          "text": "Hello World",
+          "isPunctuation": false,
+          "phoneme": "həlˈoʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈoʊ wˈɜːld"
     },
@@ -83,7 +171,11 @@
       "input": "Hello   World",
       "normalized": "Hello World",
       "chunks": [
-        {"text": "Hello World", "isPunctuation": false, "phoneme": "həlˈoʊ wˈɜːld"}
+        {
+          "text": "Hello World",
+          "isPunctuation": false,
+          "phoneme": "həlˈoʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈoʊ wˈɜːld"
     },
@@ -91,7 +183,11 @@
       "input": "Hello\n   \nWorld",
       "normalized": "Hello\n\nWorld",
       "chunks": [
-        {"text": "Hello\n\nWorld", "isPunctuation": false, "phoneme": "həlˈoʊ wˈɜːld"}
+        {
+          "text": "Hello\n\nWorld",
+          "isPunctuation": false,
+          "phoneme": "həlˈoʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈoʊ wˈɜːld"
     },
@@ -99,7 +195,11 @@
       "input": "Dr. Smith",
       "normalized": "Doctor Smith",
       "chunks": [
-        {"text": "Doctor Smith", "isPunctuation": false, "phoneme": "dˈɑːktɚ smˈɪθ"}
+        {
+          "text": "Doctor Smith",
+          "isPunctuation": false,
+          "phoneme": "dˈɑːktɚ smˈɪθ"
+        }
       ],
       "postProcessed": "dˈɑːktɚ smˈɪθ"
     },
@@ -107,7 +207,11 @@
       "input": "DR. Brown",
       "normalized": "Doctor Brown",
       "chunks": [
-        {"text": "Doctor Brown", "isPunctuation": false, "phoneme": "dˈɑːktɚ bɹˈaʊn"}
+        {
+          "text": "Doctor Brown",
+          "isPunctuation": false,
+          "phoneme": "dˈɑːktɚ bɹˈaʊn"
+        }
       ],
       "postProcessed": "dˈɑːktɚ bɹˈaʊn"
     },
@@ -115,7 +219,11 @@
       "input": "Mr. Smith",
       "normalized": "Mister Smith",
       "chunks": [
-        {"text": "Mister Smith", "isPunctuation": false, "phoneme": "mˈɪstɚ smˈɪθ"}
+        {
+          "text": "Mister Smith",
+          "isPunctuation": false,
+          "phoneme": "mˈɪstɚ smˈɪθ"
+        }
       ],
       "postProcessed": "mˈɪstɚ smˈɪθ"
     },
@@ -123,7 +231,11 @@
       "input": "MR. Anderson",
       "normalized": "Mister Anderson",
       "chunks": [
-        {"text": "Mister Anderson", "isPunctuation": false, "phoneme": "mˈɪstɚɹ ˈændɚsən"}
+        {
+          "text": "Mister Anderson",
+          "isPunctuation": false,
+          "phoneme": "mˈɪstɚɹ ˈændɚsən"
+        }
       ],
       "postProcessed": "mˈɪstɚɹ ˈændɚsən"
     },
@@ -131,7 +243,11 @@
       "input": "Ms. Taylor",
       "normalized": "Miss Taylor",
       "chunks": [
-        {"text": "Miss Taylor", "isPunctuation": false, "phoneme": "mˈɪs tˈeɪlɚ"}
+        {
+          "text": "Miss Taylor",
+          "isPunctuation": false,
+          "phoneme": "mˈɪs tˈeɪlɚ"
+        }
       ],
       "postProcessed": "mˈɪs tˈeɪlɚ"
     },
@@ -139,7 +255,11 @@
       "input": "MS. Carter",
       "normalized": "Miss Carter",
       "chunks": [
-        {"text": "Miss Carter", "isPunctuation": false, "phoneme": "mˈɪs kˈɑːɹɾɚ"}
+        {
+          "text": "Miss Carter",
+          "isPunctuation": false,
+          "phoneme": "mˈɪs kˈɑːɹɾɚ"
+        }
       ],
       "postProcessed": "mˈɪs kˈɑːɹɾɚ"
     },
@@ -147,7 +267,11 @@
       "input": "Mrs. Johnson",
       "normalized": "Mrs Johnson",
       "chunks": [
-        {"text": "Mrs Johnson", "isPunctuation": false, "phoneme": "mˈɪsɪz dʒˈɑːnsən"}
+        {
+          "text": "Mrs Johnson",
+          "isPunctuation": false,
+          "phoneme": "mˈɪsɪz dʒˈɑːnsən"
+        }
       ],
       "postProcessed": "mˈɪsɪz dʒˈɑːnsən"
     },
@@ -155,7 +279,11 @@
       "input": "MRS. Wilson",
       "normalized": "Mrs Wilson",
       "chunks": [
-        {"text": "Mrs Wilson", "isPunctuation": false, "phoneme": "mˈɪsɪz wˈɪlsən"}
+        {
+          "text": "Mrs Wilson",
+          "isPunctuation": false,
+          "phoneme": "mˈɪsɪz wˈɪlsən"
+        }
       ],
       "postProcessed": "mˈɪsɪz wˈɪlsən"
     },
@@ -163,11 +291,31 @@
       "input": "Apples, oranges, etc.",
       "normalized": "Apples, oranges, etc",
       "chunks": [
-        {"text": "Apples", "isPunctuation": false, "phoneme": "ˈæpəlz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "oranges", "isPunctuation": false, "phoneme": "ˈɔɹɪndʒᵻz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "etc", "isPunctuation": false, "phoneme": "ɛtsˈɛtɹə"}
+        {
+          "text": "Apples",
+          "isPunctuation": false,
+          "phoneme": "ˈæpəlz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "oranges",
+          "isPunctuation": false,
+          "phoneme": "ˈɔɹɪndʒᵻz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "etc",
+          "isPunctuation": false,
+          "phoneme": "ɛtsˈɛtɹə"
+        }
       ],
       "postProcessed": "ˈæpəlz, ˈɔɹɪndʒᵻz, ɛtsˈɛtɹə"
     },
@@ -175,12 +323,36 @@
       "input": "Apples, etc. Pears.",
       "normalized": "Apples, etc. Pears.",
       "chunks": [
-        {"text": "Apples", "isPunctuation": false, "phoneme": "ˈæpəlz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "etc", "isPunctuation": false, "phoneme": "ɛtsˈɛtɹə"},
-        {"text": ". ", "isPunctuation": true, "phoneme": ". "},
-        {"text": "Pears", "isPunctuation": false, "phoneme": "pˈɛɹz"},
-        {"text": ".", "isPunctuation": true, "phoneme": "."}
+        {
+          "text": "Apples",
+          "isPunctuation": false,
+          "phoneme": "ˈæpəlz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "etc",
+          "isPunctuation": false,
+          "phoneme": "ɛtsˈɛtɹə"
+        },
+        {
+          "text": ". ",
+          "isPunctuation": true,
+          "phoneme": ". "
+        },
+        {
+          "text": "Pears",
+          "isPunctuation": false,
+          "phoneme": "pˈɛɹz"
+        },
+        {
+          "text": ".",
+          "isPunctuation": true,
+          "phoneme": "."
+        }
       ],
       "postProcessed": "ˈæpəlz, ɛtsˈɛtɹə. pˈɛɹz."
     },
@@ -188,7 +360,11 @@
       "input": "Yeah",
       "normalized": "Ye'a",
       "chunks": [
-        {"text": "Ye'a", "isPunctuation": false, "phoneme": "jˈɛə"}
+        {
+          "text": "Ye'a",
+          "isPunctuation": false,
+          "phoneme": "jˈɛə"
+        }
       ],
       "postProcessed": "jˈɛə"
     },
@@ -196,39 +372,55 @@
       "input": "yeah",
       "normalized": "ye'a",
       "chunks": [
-        {"text": "ye'a", "isPunctuation": false, "phoneme": "jˈɛə"}
+        {
+          "text": "ye'a",
+          "isPunctuation": false,
+          "phoneme": "jˈɛə"
+        }
       ],
       "postProcessed": "jˈɛə"
     },
     {
       "input": "1990",
-      "normalized": "19 90",
+      "normalized": "nineteen ninety",
       "chunks": [
-        {"text": "19 90", "isPunctuation": false, "phoneme": "nˈaɪntiːn nˈaɪnti"}
+        {
+          "text": "nineteen ninety",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "nˈaɪntiːn nˈaɪndi"
     },
     {
       "input": "12:34",
-      "normalized": "12 34",
+      "normalized": "twelve thirty four",
       "chunks": [
-        {"text": "12 34", "isPunctuation": false, "phoneme": "twˈɛlv θˈɜːɾi fˈɔːɹ"}
+        {
+          "text": "twelve thirty four",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "twˈɛlv θˈɜːɾi fˈoːɹ"
     },
     {
       "input": "2022s",
-      "normalized": "20 22s",
+      "normalized": "twenty 22s",
       "chunks": [
-        {"text": "20 22s", "isPunctuation": false, "phoneme": "twˈɛnti twˈɛnti tˈuː z"}
+        {
+          "text": "twenty 22s",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "twˈɛnti twˈɛnti tˈuːz"
     },
     {
       "input": "1,000",
-      "normalized": "1000",
+      "normalized": "one thousand",
       "chunks": [
-        {"text": "1000", "isPunctuation": false, "phoneme": "wˈʌn θˈaʊzənd"}
+        {
+          "text": "one thousand",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈʌn θˈaʊzənd"
     },
@@ -236,71 +428,99 @@
       "input": "12,345,678",
       "normalized": "12345678",
       "chunks": [
-        {"text": "12345678", "isPunctuation": false, "phoneme": "twˈɛlv mˈɪliən θɹˈiːhˈʌndɹɪd fˈɔːɹɾi fˈaɪv θˈaʊzənd sˈɪkshˈʌndɹɪd sˈɛvəntiʲ ˈeɪt"}
+        {
+          "text": "12345678",
+          "isPunctuation": false,
+          "phoneme": "twˈɛlv mˈɪliən θɹˈiːhˈʌndɹɪd fˈɔːɹɾi fˈaɪv θˈaʊzənd sˈɪkshˈʌndɹɪd sˈɛvəntiʲ ˈeɪt"
+        }
       ],
       "postProcessed": "twˈɛlv mˈɪliən θɹˈiː hˈʌndɹɪd fˈoːɹɾi fˈaɪv θˈaʊzənd sˈɪks hˈʌndɹɪd sˈɛvənti ˈeɪt"
     },
     {
       "input": "$100",
-      "normalized": "100 dollars",
+      "normalized": "one hundred dollars",
       "chunks": [
-        {"text": "100 dollars", "isPunctuation": false, "phoneme": "wˈʌnhˈʌndɹɪd dˈɑːlɚz"}
+        {
+          "text": "one hundred dollars",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈʌn hˈʌndɹɪd dˈɑːlɚz"
     },
     {
       "input": "£1.50",
-      "normalized": "1 pound and 50 pence",
+      "normalized": "one pound and fifty pence",
       "chunks": [
-        {"text": "1 pound and 50 pence", "isPunctuation": false, "phoneme": "wˈʌn pˈaʊnd ænd fˈɪfti pˈɛns"}
+        {
+          "text": "one pound and fifty pence",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈʌn pˈaʊnd ænd fˈɪfti pˈɛns"
     },
     {
       "input": "12.34",
-      "normalized": "12 point 3 4",
+      "normalized": "twelve point three four",
       "chunks": [
-        {"text": "12 point 3 4", "isPunctuation": false, "phoneme": "twˈɛlv pˈɔɪnt θɹˈiː fˈɔːɹ"}
+        {
+          "text": "twelve point three four",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "twˈɛlv pˈɔɪnt θɹˈiː fˈoːɹ"
     },
     {
       "input": "0.01",
-      "normalized": "0 point 0 1",
+      "normalized": "zero point zero one",
       "chunks": [
-        {"text": "0 point 0 1", "isPunctuation": false, "phoneme": "zˈiəɹoʊ pˈɔɪnt zˈiəɹoʊ wˈʌn"}
+        {
+          "text": "zero point zero one",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "zˈiəɹoʊ pˈɔɪnt zˈiəɹoʊ wˈʌn"
     },
     {
       "input": "10-20",
-      "normalized": "10 to 20",
+      "normalized": "ten to twenty",
       "chunks": [
-        {"text": "10 to 20", "isPunctuation": false, "phoneme": "tˈɛn tə twˈɛnti"}
+        {
+          "text": "ten to twenty",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "tˈɛn tə twˈɛnti"
     },
     {
       "input": "5-10",
-      "normalized": "5 to 10",
+      "normalized": "five to ten",
       "chunks": [
-        {"text": "5 to 10", "isPunctuation": false, "phoneme": "fˈaɪv tə tˈɛn"}
+        {
+          "text": "five to ten",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "fˈaɪv tə tˈɛn"
     },
     {
       "input": "10S",
-      "normalized": "10 S",
+      "normalized": "ten S",
       "chunks": [
-        {"text": "10 S", "isPunctuation": false, "phoneme": "tˈɛn ˈɛs"}
+        {
+          "text": "ten S",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "tˈɛn ˈɛs"
     },
     {
       "input": "5S",
-      "normalized": "5 S",
+      "normalized": "five S",
       "chunks": [
-        {"text": "5 S", "isPunctuation": false, "phoneme": "fˈaɪv ˈɛs"}
+        {
+          "text": "five S",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "fˈaɪv ˈɛs"
     },
@@ -308,7 +528,11 @@
       "input": "Cat's tail",
       "normalized": "Cat's tail",
       "chunks": [
-        {"text": "Cat's tail", "isPunctuation": false, "phoneme": "kˈæts tˈeɪl"}
+        {
+          "text": "Cat's tail",
+          "isPunctuation": false,
+          "phoneme": "kˈæts tˈeɪl"
+        }
       ],
       "postProcessed": "kˈæts tˈeɪl"
     },
@@ -316,7 +540,11 @@
       "input": "X's mark",
       "normalized": "X's mark",
       "chunks": [
-        {"text": "X's mark", "isPunctuation": false, "phoneme": "ˈɛksᵻz mˈɑːɹk"}
+        {
+          "text": "X's mark",
+          "isPunctuation": false,
+          "phoneme": "ˈɛksᵻz mˈɑːɹk"
+        }
       ],
       "postProcessed": "ˈɛksᵻz mˈɑːɹk"
     },
@@ -324,8 +552,16 @@
       "input": "U.S.A.",
       "normalized": "U-S-A.",
       "chunks": [
-        {"text": "U-S-A", "isPunctuation": false, "phoneme": "jˈuːˈɛsˈeɪ"},
-        {"text": ".", "isPunctuation": true, "phoneme": "."}
+        {
+          "text": "U-S-A",
+          "isPunctuation": false,
+          "phoneme": "jˈuːˈɛsˈeɪ"
+        },
+        {
+          "text": ".",
+          "isPunctuation": true,
+          "phoneme": "."
+        }
       ],
       "postProcessed": "jˈuːˈɛsˈeɪ."
     },
@@ -333,30 +569,97 @@
       "input": "A.B.C",
       "normalized": "A-B-C",
       "chunks": [
-        {"text": "A-B-C", "isPunctuation": false, "phoneme": "ˈeɪbˈiːsˈiː"}
+        {
+          "text": "A-B-C",
+          "isPunctuation": false,
+          "phoneme": "ˈeɪbˈiːsˈiː"
+        }
       ],
       "postProcessed": "ˈeɪbˈiːsˈiː"
     },
     {
       "input": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
-      "normalized": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture «default from React Native 0 point 7 6». It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
+      "normalized": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture «default from React Native zero point seven six». It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
       "chunks": [
-        {"text": "This high-performance text-to-speech library is built for bare React Native and Expo", "isPunctuation": false, "phoneme": "ðɪs hˈaɪpɚfˈɔːɹməns tˈɛksttəspˈiːtʃ lˈaɪbɹɛɹiʲ ɪz bˈɪlt fɔːɹ bˈɛɹ ɹɪʲˈækt nˈeɪɾɪv ænd ˈɛkspoʊ"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "compatible with Android and iOS's new architecture", "isPunctuation": false, "phoneme": "kəmpˈæɾᵻbəl wɪð ˈændɹɔɪd ænd ˈaɪ ˌoʊˈɛsɪz nˈuː ˈɑːɹkɪtˌɛktʃɚ"},
-        {"text": " «", "isPunctuation": true, "phoneme": " «"},
-        {"text": "default from React Native 0 point 7 6", "isPunctuation": false, "phoneme": "dᵻfˈɔlt fɹʌm ɹɪʲˈækt nˈeɪɾɪv zˈiəɹoʊ pˈɔɪnt sˈɛvən sˈɪks"},
-        {"text": "». ", "isPunctuation": true, "phoneme": "». "},
-        {"text": "It enables seamless speech management with start", "isPunctuation": false, "phoneme": "ɪɾ ɛnˈeɪbəlz sˈiːmləs spˈiːtʃ mˈænɪdʒmənt wɪð stˈɑːɹt"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "pause", "isPunctuation": false, "phoneme": "pˈɔːz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "resume", "isPunctuation": false, "phoneme": "ɹᵻzˈuːm"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "and stop controls", "isPunctuation": false, "phoneme": "ænd stˈɑːp kəntɹˈoʊlz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "and provides events for detailed synthesis management", "isPunctuation": false, "phoneme": "ænd pɹəvˈaɪdz ᵻvˈɛnts fɔːɹ diːtˈeɪld sˈɪnθəsˌɪs mˈænɪdʒmənt"},
-        {"text": ".", "isPunctuation": true, "phoneme": "."}
+        {
+          "text": "This high-performance text-to-speech library is built for bare React Native and Expo",
+          "isPunctuation": false,
+          "phoneme": "ðɪs hˈaɪpɚfˈɔːɹməns tˈɛksttəspˈiːtʃ lˈaɪbɹɛɹiʲ ɪz bˈɪlt fɔːɹ bˈɛɹ ɹɪʲˈækt nˈeɪɾɪv ænd ˈɛkspoʊ"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "compatible with Android and iOS's new architecture",
+          "isPunctuation": false,
+          "phoneme": "kəmpˈæɾᵻbəl wɪð ˈændɹɔɪd ænd ˈaɪ ˌoʊˈɛsɪz nˈuː ˈɑːɹkɪtˌɛktʃɚ"
+        },
+        {
+          "text": " «",
+          "isPunctuation": true,
+          "phoneme": " «"
+        },
+        {
+          "text": "default from React Native zero point seven six",
+          "isPunctuation": false
+        },
+        {
+          "text": "». ",
+          "isPunctuation": true,
+          "phoneme": "». "
+        },
+        {
+          "text": "It enables seamless speech management with start",
+          "isPunctuation": false,
+          "phoneme": "ɪɾ ɛnˈeɪbəlz sˈiːmləs spˈiːtʃ mˈænɪdʒmənt wɪð stˈɑːɹt"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "pause",
+          "isPunctuation": false,
+          "phoneme": "pˈɔːz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "resume",
+          "isPunctuation": false,
+          "phoneme": "ɹᵻzˈuːm"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "and stop controls",
+          "isPunctuation": false,
+          "phoneme": "ænd stˈɑːp kəntɹˈoʊlz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "and provides events for detailed synthesis management",
+          "isPunctuation": false,
+          "phoneme": "ænd pɹəvˈaɪdz ᵻvˈɛnts fɔːɹ diːtˈeɪld sˈɪnθəsˌɪs mˈænɪdʒmənt"
+        },
+        {
+          "text": ".",
+          "isPunctuation": true,
+          "phoneme": "."
+        }
       ],
       "postProcessed": "ðɪs hˈaɪpɚfˈoːɹməns tˈɛksttəspˈiːtʃ lˈaɪbɹɛɹi ɪz bˈɪlt fɔːɹ bˈɛɹ ɹɪˈækt nˈeɪɾɪv ænd ˈɛkspoʊ, kəmpˈæɾᵻbəl wɪð ˈændɹɔɪd ænd ˈaɪ ˌoʊˈɛsɪz nˈuː ˈɑːɹkɪtˌɛktʃɚ «dᵻfˈɔlt fɹʌm ɹɪˈækt nˈeɪɾɪv zˈiəɹoʊ pˈɔɪnt sˈɛvən sˈɪks». ɪɾ ɛnˈeɪbəlz sˈiːmləs spˈiːtʃ mˈænɪdʒmənt wɪð stˈɑːɹt, pˈɔːz, ɹᵻzˈuːm, ænd stˈɑːp kəntɹˈoʊlz, ænd pɹəvˈaɪdz ᵻvˈɛnts fɔːɹ diːtˈeɪld sˈɪnθəsˌɪs mˈænɪdʒmənt."
     }
@@ -366,7 +669,11 @@
       "input": "'Hello'",
       "normalized": "'Hello'",
       "chunks": [
-        {"text": "'Hello'", "isPunctuation": false, "phoneme": "həlˈəʊ"}
+        {
+          "text": "'Hello'",
+          "isPunctuation": false,
+          "phoneme": "həlˈəʊ"
+        }
       ],
       "postProcessed": "həlˈəʊ"
     },
@@ -374,7 +681,11 @@
       "input": "'Test' and 'Example'",
       "normalized": "'Test' and 'Example'",
       "chunks": [
-        {"text": "'Test' and 'Example'", "isPunctuation": false, "phoneme": "tˈɛst and ɛɡzˈampəl"}
+        {
+          "text": "'Test' and 'Example'",
+          "isPunctuation": false,
+          "phoneme": "tˈɛst and ɛɡzˈampəl"
+        }
       ],
       "postProcessed": "tˈɛst and ɛɡzˈampəl"
     },
@@ -382,9 +693,21 @@
       "input": "«Bonjour»",
       "normalized": "\"Bonjour\"",
       "chunks": [
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""},
-        {"text": "Bonjour", "isPunctuation": false, "phoneme": "bɔːnʒˈʊə"},
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""}
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        },
+        {
+          "text": "Bonjour",
+          "isPunctuation": false,
+          "phoneme": "bɔːnʒˈʊə"
+        },
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        }
       ],
       "postProcessed": "\"bɔːnʒˈʊə\""
     },
@@ -392,13 +715,41 @@
       "input": "«Test «nested» quotes»",
       "normalized": "\"Test \"nested\" quotes\"",
       "chunks": [
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""},
-        {"text": "Test", "isPunctuation": false, "phoneme": "tˈɛst"},
-        {"text": " \"", "isPunctuation": true, "phoneme": " \""},
-        {"text": "nested", "isPunctuation": false, "phoneme": "nˈɛstɪd"},
-        {"text": "\" ", "isPunctuation": true, "phoneme": "\" "},
-        {"text": "quotes", "isPunctuation": false, "phoneme": "kwˈəʊts"},
-        {"text": "\"", "isPunctuation": true, "phoneme": "\""}
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        },
+        {
+          "text": "Test",
+          "isPunctuation": false,
+          "phoneme": "tˈɛst"
+        },
+        {
+          "text": " \"",
+          "isPunctuation": true,
+          "phoneme": " \""
+        },
+        {
+          "text": "nested",
+          "isPunctuation": false,
+          "phoneme": "nˈɛstɪd"
+        },
+        {
+          "text": "\" ",
+          "isPunctuation": true,
+          "phoneme": "\" "
+        },
+        {
+          "text": "quotes",
+          "isPunctuation": false,
+          "phoneme": "kwˈəʊts"
+        },
+        {
+          "text": "\"",
+          "isPunctuation": true,
+          "phoneme": "\""
+        }
       ],
       "postProcessed": "\"tˈɛst \"nˈɛstɪd\" kwˈəʊts\""
     },
@@ -406,9 +757,21 @@
       "input": "(Hello)",
       "normalized": "«Hello»",
       "chunks": [
-        {"text": "«", "isPunctuation": true, "phoneme": "«"},
-        {"text": "Hello", "isPunctuation": false, "phoneme": "həlˈəʊ"},
-        {"text": "»", "isPunctuation": true, "phoneme": "»"}
+        {
+          "text": "«",
+          "isPunctuation": true,
+          "phoneme": "«"
+        },
+        {
+          "text": "Hello",
+          "isPunctuation": false,
+          "phoneme": "həlˈəʊ"
+        },
+        {
+          "text": "»",
+          "isPunctuation": true,
+          "phoneme": "»"
+        }
       ],
       "postProcessed": "«həlˈəʊ»"
     },
@@ -416,11 +779,31 @@
       "input": "(Nested (Parentheses))",
       "normalized": "«Nested «Parentheses»»",
       "chunks": [
-        {"text": "«", "isPunctuation": true, "phoneme": "«"},
-        {"text": "Nested", "isPunctuation": false, "phoneme": "nˈɛstɪd"},
-        {"text": " «", "isPunctuation": true, "phoneme": " «"},
-        {"text": "Parentheses", "isPunctuation": false, "phoneme": "pəɹˈɛnθəsˌiːz"},
-        {"text": "»»", "isPunctuation": true, "phoneme": "»»"}
+        {
+          "text": "«",
+          "isPunctuation": true,
+          "phoneme": "«"
+        },
+        {
+          "text": "Nested",
+          "isPunctuation": false,
+          "phoneme": "nˈɛstɪd"
+        },
+        {
+          "text": " «",
+          "isPunctuation": true,
+          "phoneme": " «"
+        },
+        {
+          "text": "Parentheses",
+          "isPunctuation": false,
+          "phoneme": "pəɹˈɛnθəsˌiːz"
+        },
+        {
+          "text": "»»",
+          "isPunctuation": true,
+          "phoneme": "»»"
+        }
       ],
       "postProcessed": "«nˈɛstɪd «pəɹˈɛnθəsˌiːz»»"
     },
@@ -428,7 +811,11 @@
       "input": "Hello World",
       "normalized": "Hello World",
       "chunks": [
-        {"text": "Hello World", "isPunctuation": false, "phoneme": "həlˈəʊ wˈɜːld"}
+        {
+          "text": "Hello World",
+          "isPunctuation": false,
+          "phoneme": "həlˈəʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈəʊ wˈɜːld"
     },
@@ -436,7 +823,11 @@
       "input": "Hello   World",
       "normalized": "Hello World",
       "chunks": [
-        {"text": "Hello World", "isPunctuation": false, "phoneme": "həlˈəʊ wˈɜːld"}
+        {
+          "text": "Hello World",
+          "isPunctuation": false,
+          "phoneme": "həlˈəʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈəʊ wˈɜːld"
     },
@@ -444,7 +835,11 @@
       "input": "Hello\n   \nWorld",
       "normalized": "Hello\n\nWorld",
       "chunks": [
-        {"text": "Hello\n\nWorld", "isPunctuation": false, "phoneme": "həlˈəʊ wˈɜːld"}
+        {
+          "text": "Hello\n\nWorld",
+          "isPunctuation": false,
+          "phoneme": "həlˈəʊ wˈɜːld"
+        }
       ],
       "postProcessed": "həlˈəʊ wˈɜːld"
     },
@@ -452,7 +847,11 @@
       "input": "Dr. Smith",
       "normalized": "Doctor Smith",
       "chunks": [
-        {"text": "Doctor Smith", "isPunctuation": false, "phoneme": "dˈɒktə smˈɪθ"}
+        {
+          "text": "Doctor Smith",
+          "isPunctuation": false,
+          "phoneme": "dˈɒktə smˈɪθ"
+        }
       ],
       "postProcessed": "dˈɒktə smˈɪθ"
     },
@@ -460,7 +859,11 @@
       "input": "DR. Brown",
       "normalized": "Doctor Brown",
       "chunks": [
-        {"text": "Doctor Brown", "isPunctuation": false, "phoneme": "dˈɒktə bɹˈaʊn"}
+        {
+          "text": "Doctor Brown",
+          "isPunctuation": false,
+          "phoneme": "dˈɒktə bɹˈaʊn"
+        }
       ],
       "postProcessed": "dˈɒktə bɹˈaʊn"
     },
@@ -468,7 +871,11 @@
       "input": "Mr. Smith",
       "normalized": "Mister Smith",
       "chunks": [
-        {"text": "Mister Smith", "isPunctuation": false, "phoneme": "mˈɪstə smˈɪθ"}
+        {
+          "text": "Mister Smith",
+          "isPunctuation": false,
+          "phoneme": "mˈɪstə smˈɪθ"
+        }
       ],
       "postProcessed": "mˈɪstə smˈɪθ"
     },
@@ -476,7 +883,11 @@
       "input": "MR. Anderson",
       "normalized": "Mister Anderson",
       "chunks": [
-        {"text": "Mister Anderson", "isPunctuation": false, "phoneme": "mˈɪstəɹ ˈandəsən"}
+        {
+          "text": "Mister Anderson",
+          "isPunctuation": false,
+          "phoneme": "mˈɪstəɹ ˈandəsən"
+        }
       ],
       "postProcessed": "mˈɪstəɹ ˈandəsən"
     },
@@ -484,7 +895,11 @@
       "input": "Ms. Taylor",
       "normalized": "Miss Taylor",
       "chunks": [
-        {"text": "Miss Taylor", "isPunctuation": false, "phoneme": "mˈɪs tˈeɪlə"}
+        {
+          "text": "Miss Taylor",
+          "isPunctuation": false,
+          "phoneme": "mˈɪs tˈeɪlə"
+        }
       ],
       "postProcessed": "mˈɪs tˈeɪlə"
     },
@@ -492,7 +907,11 @@
       "input": "MS. Carter",
       "normalized": "Miss Carter",
       "chunks": [
-        {"text": "Miss Carter", "isPunctuation": false, "phoneme": "mˈɪs kˈɑːtə"}
+        {
+          "text": "Miss Carter",
+          "isPunctuation": false,
+          "phoneme": "mˈɪs kˈɑːtə"
+        }
       ],
       "postProcessed": "mˈɪs kˈɑːtə"
     },
@@ -500,7 +919,11 @@
       "input": "Mrs. Johnson",
       "normalized": "Mrs Johnson",
       "chunks": [
-        {"text": "Mrs Johnson", "isPunctuation": false, "phoneme": "mˈɪsɪz dʒˈɒnsən"}
+        {
+          "text": "Mrs Johnson",
+          "isPunctuation": false,
+          "phoneme": "mˈɪsɪz dʒˈɒnsən"
+        }
       ],
       "postProcessed": "mˈɪsɪz dʒˈɒnsən"
     },
@@ -508,11 +931,31 @@
       "input": "Apples, oranges, etc.",
       "normalized": "Apples, oranges, etc",
       "chunks": [
-        {"text": "Apples", "isPunctuation": false, "phoneme": "ˈapəlz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "oranges", "isPunctuation": false, "phoneme": "ˈɒɹɪndʒɪz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "etc", "isPunctuation": false, "phoneme": "ɛtsˈɛtɹə"}
+        {
+          "text": "Apples",
+          "isPunctuation": false,
+          "phoneme": "ˈapəlz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "oranges",
+          "isPunctuation": false,
+          "phoneme": "ˈɒɹɪndʒɪz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "etc",
+          "isPunctuation": false,
+          "phoneme": "ɛtsˈɛtɹə"
+        }
       ],
       "postProcessed": "ˈapəlz, ˈɒɹɪndʒɪz, ɛtsˈɛtɹə"
     },
@@ -520,36 +963,69 @@
       "input": "Apples, etc. Pears.",
       "normalized": "Apples, etc. Pears.",
       "chunks": [
-        {"text": "Apples", "isPunctuation": false, "phoneme": "ˈapəlz"},
-        {"text": ", ", "isPunctuation": true, "phoneme": ", "},
-        {"text": "etc", "isPunctuation": false, "phoneme": "ɛtsˈɛtɹə"},
-        {"text": ". ", "isPunctuation": true, "phoneme": ". "},
-        {"text": "Pears", "isPunctuation": false, "phoneme": "pˈeəz"},
-        {"text": ".", "isPunctuation": true, "phoneme": "."}
+        {
+          "text": "Apples",
+          "isPunctuation": false,
+          "phoneme": "ˈapəlz"
+        },
+        {
+          "text": ", ",
+          "isPunctuation": true,
+          "phoneme": ", "
+        },
+        {
+          "text": "etc",
+          "isPunctuation": false,
+          "phoneme": "ɛtsˈɛtɹə"
+        },
+        {
+          "text": ". ",
+          "isPunctuation": true,
+          "phoneme": ". "
+        },
+        {
+          "text": "Pears",
+          "isPunctuation": false,
+          "phoneme": "pˈeəz"
+        },
+        {
+          "text": ".",
+          "isPunctuation": true,
+          "phoneme": "."
+        }
       ],
       "postProcessed": "ˈapəlz, ɛtsˈɛtɹə. pˈeəz."
     },
     {
       "input": "1990",
-      "normalized": "19 90",
+      "normalized": "nineteen ninety",
       "chunks": [
-        {"text": "19 90", "isPunctuation": false, "phoneme": "nˈaɪntiːn nˈaɪnti"}
+        {
+          "text": "nineteen ninety",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "nˈaɪntiːn nˈaɪnti"
     },
     {
       "input": "12:34",
-      "normalized": "12 34",
+      "normalized": "twelve thirty four",
       "chunks": [
-        {"text": "12 34", "isPunctuation": false, "phoneme": "twˈɛlv θˈɜːti fˈɔː"}
+        {
+          "text": "twelve thirty four",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "twˈɛlv θˈɜːti fˈɔː"
     },
     {
       "input": "1,000",
-      "normalized": "1000",
+      "normalized": "one thousand",
       "chunks": [
-        {"text": "1000", "isPunctuation": false, "phoneme": "wˈɒn θˈaʊzənd"}
+        {
+          "text": "one thousand",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈɒn θˈaʊzənd"
     },
@@ -557,39 +1033,55 @@
       "input": "12,345,678",
       "normalized": "12345678",
       "chunks": [
-        {"text": "12345678", "isPunctuation": false, "phoneme": "twˈɛlv mˈɪliən θɹˈiːhˈʌndɹɪdən fˈɔːti fˈaɪv θˈaʊzənd sˈɪkshˈʌndɹɪdən sˈɛvəntiʲ ˈeɪt"}
+        {
+          "text": "12345678",
+          "isPunctuation": false,
+          "phoneme": "twˈɛlv mˈɪliən θɹˈiːhˈʌndɹɪdən fˈɔːti fˈaɪv θˈaʊzənd sˈɪkshˈʌndɹɪdən sˈɛvəntiʲ ˈeɪt"
+        }
       ],
       "postProcessed": "twˈɛlv mˈɪliən θɹˈiː hˈʌndɹɪdən fˈɔːti fˈaɪv θˈaʊzənd sˈɪks hˈʌndɹɪdən sˈɛvənti ˈeɪt"
     },
     {
       "input": "$100",
-      "normalized": "100 dollars",
+      "normalized": "one hundred dollars",
       "chunks": [
-        {"text": "100 dollars", "isPunctuation": false, "phoneme": "wˈɒnhˈʌndɹɪd dˈɒləz"}
+        {
+          "text": "one hundred dollars",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈɒn hˈʌndɹɪd dˈɒləz"
     },
     {
       "input": "£1.50",
-      "normalized": "1 pound and 50 pence",
+      "normalized": "one pound and fifty pence",
       "chunks": [
-        {"text": "1 pound and 50 pence", "isPunctuation": false, "phoneme": "wˈɒn pˈaʊnd and fˈɪfti pˈɛns"}
+        {
+          "text": "one pound and fifty pence",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "wˈɒn pˈaʊnd and fˈɪfti pˈɛns"
     },
     {
       "input": "12.34",
-      "normalized": "12 point 3 4",
+      "normalized": "twelve point three four",
       "chunks": [
-        {"text": "12 point 3 4", "isPunctuation": false, "phoneme": "twˈɛlv pˈɔɪnt θɹˈiː fˈɔː"}
+        {
+          "text": "twelve point three four",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "twˈɛlv pˈɔɪnt θɹˈiː fˈɔː"
     },
     {
       "input": "0.01",
-      "normalized": "0 point 0 1",
+      "normalized": "zero point zero one",
       "chunks": [
-        {"text": "0 point 0 1", "isPunctuation": false, "phoneme": "zˈiəɹəʊ pˈɔɪnt zˈiəɹəʊ wˈɒn"}
+        {
+          "text": "zero point zero one",
+          "isPunctuation": false
+        }
       ],
       "postProcessed": "zˈiəɹəʊ pˈɔɪnt zˈiəɹəʊ wˈɒn"
     },
@@ -597,7 +1089,11 @@
       "input": "Cat's tail",
       "normalized": "Cat's tail",
       "chunks": [
-        {"text": "Cat's tail", "isPunctuation": false, "phoneme": "kˈats tˈeɪl"}
+        {
+          "text": "Cat's tail",
+          "isPunctuation": false,
+          "phoneme": "kˈats tˈeɪl"
+        }
       ],
       "postProcessed": "kˈats tˈeɪl"
     },
@@ -605,7 +1101,11 @@
       "input": "X's mark",
       "normalized": "X's mark",
       "chunks": [
-        {"text": "X's mark", "isPunctuation": false, "phoneme": "ˈɛksɪz mˈɑːk"}
+        {
+          "text": "X's mark",
+          "isPunctuation": false,
+          "phoneme": "ˈɛksɪz mˈɑːk"
+        }
       ],
       "postProcessed": "ˈɛksɪz mˈɑːk"
     }

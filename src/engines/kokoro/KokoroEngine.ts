@@ -29,7 +29,8 @@ import type {
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
-import {createPhonemizer, type IPhonemizer} from './Phonemizer';
+import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
+import {loadDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {createComponentLogger} from '../../utils/logger';
 import {KOKORO_CONSTANTS} from './constants';
@@ -164,8 +165,8 @@ export class KokoroEngine implements TTSEngineInterface {
     this.tokenizer = new BPETokenizer();
     this.voiceLoader = new VoiceLoader();
     this.normalizer = new TextNormalizer();
-    // Phonemizer will be initialized in initialize() based on config
-    this.phonemizer = createPhonemizer('js'); // Default to GPL-free JS phonemizer
+    // Real phonemizer is created in initialize() once config/dict are known.
+    this.phonemizer = new NoOpPhonemizer();
   }
 
   /**
@@ -216,7 +217,18 @@ export class KokoroEngine implements TTSEngineInterface {
 
       // Initialize phonemizer based on config
       const phonemizerType = config.phonemizerType || 'js';
-      this.phonemizer = createPhonemizer(phonemizerType);
+      if (phonemizerType === 'js') {
+        if (!config.dictPath) {
+          throw new Error(
+            "Kokoro phonemizerType 'js' requires `dictPath` in config " +
+              '(path to the IPA dictionary TSV).',
+          );
+        }
+        const dict = await loadDict(config.dictPath);
+        this.phonemizer = createPhonemizer('js', {dict});
+      } else {
+        this.phonemizer = createPhonemizer(phonemizerType);
+      }
 
       // Load tokenizer (support both tokenizer.json and vocab+merges format)
       if (this.config.tokenizerPath) {

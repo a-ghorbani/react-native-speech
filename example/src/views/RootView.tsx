@@ -31,6 +31,7 @@ import {
   type SupertonicVersion,
 } from '../utils/SupertonicModelManager';
 import {pocketModelManager} from '../utils/PocketModelManager';
+import {phonemizerDictManager} from '../utils/PhonemizerDictManager';
 import {
   kittenModelManager,
   type KittenVersion,
@@ -212,10 +213,12 @@ const RootView: React.FC = () => {
             model.version,
             model.variant,
           );
+          const dictPath = await phonemizerDictManager.ensureDict('en-us');
 
           await Speech.initialize({
             engine: TTSEngine.KOKORO,
             ...config,
+            dictPath,
             phonemizerType: 'js',
             silentMode: 'obey',
             ducking: true,
@@ -318,9 +321,11 @@ const RootView: React.FC = () => {
           }
 
           const config = kittenModelManager.getDownloadedModelConfig();
+          const dictPath = await phonemizerDictManager.ensureDict('en-us');
           await Speech.initialize({
             engine: TTSEngine.KITTEN,
             ...config,
+            dictPath,
             silentMode: 'obey',
             ducking: true,
             maxChunkSize: 100,

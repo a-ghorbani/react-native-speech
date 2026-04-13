@@ -96,6 +96,67 @@ export class TextNormalizer {
   }
 
   /**
+   * Convert a non-negative integer (<= 999_999) to English words.
+   * Used as a final-pass fallback after kokoro.js-style number handling.
+   */
+  private intToWords(n: number): string {
+    if (n < 0 || n > 999999 || !Number.isInteger(n)) return String(n);
+    if (n === 0) return 'zero';
+    const ones = [
+      '',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+      'thirteen',
+      'fourteen',
+      'fifteen',
+      'sixteen',
+      'seventeen',
+      'eighteen',
+      'nineteen',
+    ];
+    const tens = [
+      '',
+      '',
+      'twenty',
+      'thirty',
+      'forty',
+      'fifty',
+      'sixty',
+      'seventy',
+      'eighty',
+      'ninety',
+    ];
+    let result = '';
+    if (n >= 1000) {
+      result += this.intToWords(Math.floor(n / 1000)) + ' thousand';
+      n %= 1000;
+      if (n > 0) result += ' ';
+    }
+    if (n >= 100) {
+      result += ones[Math.floor(n / 100)] + ' hundred';
+      n %= 100;
+      if (n > 0) result += ' ';
+    }
+    if (n >= 20) {
+      result += tens[Math.floor(n / 10)];
+      if (n % 10) result += ' ' + ones[n % 10];
+    } else if (n > 0) {
+      result += ones[n];
+    }
+    return result;
+  }
+
+  /**
    * Normalize text for TTS
    * Applies all preprocessing transformations from kokoro.js
    */
@@ -180,7 +241,13 @@ export class TextNormalizer {
     );
     result = result.replace(/(?<=[A-Z])\.(?=[A-Z])/gi, '-');
 
-    // 9. Strip leading and trailing whitespace
+    // 9. Convert any remaining bare integers to words
+    result = result.replace(/\b\d+\b/g, m => {
+      const n = parseInt(m, 10);
+      return n >= 0 && n <= 999999 ? this.intToWords(n) : m;
+    });
+
+    // 10. Strip leading and trailing whitespace
     return result.trim();
   }
 
