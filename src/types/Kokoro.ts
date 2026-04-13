@@ -74,8 +74,8 @@ export interface KokoroConfig {
   vocabPath?: string;
   /** Path to BPE merges file (legacy format) */
   mergesPath?: string;
-  /** Phonemizer type: 'js' uses pure-JS GPL-free phonemizer (recommended), 'native' uses espeak-ng (GPL), 'none' disables phonemization */
-  phonemizerType?: 'js' | 'native' | 'none';
+  /** Phonemizer type: 'js' uses pure-JS GPL-free phonemizer (recommended), 'js-ipa' returns raw IPA without Kokoro post-processing, 'none' disables phonemization */
+  phonemizerType?: 'js' | 'js-ipa' | 'none';
   /**
    * Path to the IPA dictionary TSV file (word<TAB>ipa per line).
    * Required when `phonemizerType` is 'js' (or unset, which defaults to 'js').

@@ -14,7 +14,6 @@
     "ios",
     "cpp",
     "third-party",
-    "scripts/prepare-espeak-data.sh",
     "*.podspec",
     "react-native.config.js",
     "!ios/build",
@@ -23,8 +22,6 @@
     "!android/gradlew",
     "!android/gradlew.bat",
     "!android/local.properties",
-    "!third-party/espeak-ng/build-*",
-    "!third-party/espeak-ng/.git",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
@@ -43,7 +40,6 @@
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
     "release": "release-it --only-version",
-    "setup-espeak": "git submodule update --init --recursive",
     "build:dict": "node scripts/build-dict.mjs"
   },
   "keywords": [

@@ -155,14 +155,6 @@ export interface Spec extends TurboModule {
   isAudioPlaying: () => Promise<boolean>;
 
   /**
-   * Convert text to phonemes using espeak-ng
-   * @param text - The input text
-   * @param language - Language code ('en-us', 'en-gb', etc.)
-   * @returns IPA phoneme string
-   */
-  phonemize: (text: string, language: string) => Promise<string>;
-
-  /**
    * Open a phonemizer dict file (mmap'd native dict, EPD1 format).
    * Replaces any previously open dict. Returns true on success.
    */

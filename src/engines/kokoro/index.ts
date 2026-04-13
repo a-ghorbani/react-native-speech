@@ -9,7 +9,6 @@ export {TextNormalizer, type TextChunk} from './TextNormalizer';
 export {
   createPhonemizer,
   NoOpPhonemizer,
-  NativePhonemizer,
   type IPhonemizer,
   type PhonemizerType,
 } from './Phonemizer';

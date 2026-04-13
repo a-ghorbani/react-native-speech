@@ -134,67 +134,9 @@ export class NoOpPhonemizer implements IPhonemizer {
 }
 
 /**
- * Native phonemizer using espeak-ng
- * Uses Turbo Module for native G2P conversion
- *
- * Features:
- * - Direct phonemization via espeak-ng
- * - Loop-based clause handling (concatenates all clauses)
- * - Post-processing for Kokoro TTS compatibility
- * - Thread-safe native implementation
- *
- * Note: Text normalization should be done BEFORE calling phonemize()
- * (e.g., in KokoroEngine using TextNormalizer)
- */
-export class NativePhonemizer implements IPhonemizer {
-  async phonemize(text: string, language: string): Promise<string> {
-    try {
-      log.debug(
-        `Native phonemization: lang=${language}, text="${text.substring(0, 50)}..."`,
-      );
-
-      // Split text on punctuation to preserve punctuation marks
-      // espeak-ng strips punctuation, so we need to handle it separately
-      const chunks = splitOnPunctuation(text);
-      log.debug(`Split into ${chunks.length} chunks`);
-
-      // Phonemize each non-punctuation chunk via espeak-ng
-      const TurboSpeech = require('../../NativeSpeech').default;
-      for (const chunk of chunks) {
-        if (!chunk.isPunctuation && chunk.text.trim()) {
-          const rawPhoneme = await TurboSpeech.phonemize(chunk.text, language);
-          (
-            chunk as {isPunctuation: boolean; text: string; phoneme?: string}
-          ).phoneme = rawPhoneme;
-        }
-      }
-
-      // Rejoin chunks (punctuation passes through unchanged)
-      const rejoined = rejoinChunks(
-        chunks as {isPunctuation: boolean; text: string; phoneme?: string}[],
-      );
-
-      // Post-process for Kokoro TTS compatibility
-      const processed = postProcessPhonemes(rejoined, language);
-
-      log.debug(`Phonemization complete: ${processed.length} chars`);
-      return processed;
-    } catch (error) {
-      log.error(
-        `Native phonemization failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      if (error instanceof Error) {
-        throw new Error(`Native phonemization failed: ${error.message}`);
-      }
-      throw error;
-    }
-  }
-}
-
-/**
  * Phonemizer type options
  */
-export type PhonemizerType = 'js' | 'js-ipa' | 'native' | 'none';
+export type PhonemizerType = 'js' | 'js-ipa' | 'none';
 
 export interface CreatePhonemizerOptions {
   /** Pre-loaded dictionary source; required for 'js' and 'js-ipa' */
@@ -208,7 +150,6 @@ export interface CreatePhonemizerOptions {
  *
  * - 'js': HansPhonemizer with Kokoro post-processing (requires `opts.dict`)
  * - 'js-ipa': HansPhonemizer without post-processing, raw IPA (requires `opts.dict`)
- * - 'native': espeak-ng via Turbo Module (GPL)
  * - 'none': pass-through
  */
 export function createPhonemizer(
@@ -247,9 +188,6 @@ export function createPhonemizer(
       );
       return new HansPhonemizer({dict: opts.dict});
     }
-    case 'native':
-      log.info('Phonemizer: NativePhonemizer (espeak-ng via Turbo Module)');
-      return new NativePhonemizer();
     case 'none':
       log.info('Phonemizer: NoOpPhonemizer (pass-through)');
       return new NoOpPhonemizer();

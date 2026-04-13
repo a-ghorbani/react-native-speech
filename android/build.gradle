@@ -97,24 +97,3 @@ dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 }
-
-// Copy espeak-ng-data from submodule to assets during build
-// This ensures single source of truth and no duplication in the repo
-task copyEspeakData(type: Copy) {
-  def espeakSource = file("${projectDir}/../third-party/espeak-ng/espeak-ng-data")
-  def espeakDest = file("${projectDir}/src/main/assets/espeak-ng-data")
-
-  from espeakSource
-  into espeakDest
-
-  // Only copy if source exists
-  onlyIf { espeakSource.exists() }
-}
-
-// Ensure espeak data is copied before processing assets
-tasks.matching { it.name.startsWith('merge') && it.name.endsWith('Assets') }.configureEach {
-  dependsOn copyEspeakData
-}
-
-// Also hook into preBuild for safety
-preBuild.dependsOn copyEspeakData

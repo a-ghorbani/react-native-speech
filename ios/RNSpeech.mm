@@ -1,6 +1,5 @@
 #import "RNSpeech.h"
 #import "RNSpeechTrace.h"
-#import "EspeakWrapper.h"
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
 
@@ -602,48 +601,6 @@ RCT_EXPORT_MODULE();
                 reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     resolve(@(self->_isAudioPlaying));
-  });
-}
-
-- (void)phonemize:(NSString *)text
-         language:(NSString *)language
-          resolve:(RCTPromiseResolveBlock)resolve
-           reject:(RCTPromiseRejectBlock)reject {
-  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-    RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("phonemize",
-        [NSString stringWithFormat:@"lang=%s", language.UTF8String]);
-    @try {
-      // Ensure espeak-ng-data is available
-      NSString *dataPath = [EspeakWrapper ensureDataPath];
-
-      if (!dataPath) {
-        RNSpeechTraceEnd(traceHandle, "phonemize");
-        reject(@"PHONEMIZE_ERROR",
-               @"espeak-ng-data not found. Make sure the data files are bundled with the app.",
-               nil);
-        return;
-      }
-
-      // Phonemize the text
-      NSError *error = nil;
-      NSString *phonemes = [EspeakWrapper phonemizeText:text
-                                               language:language
-                                               dataPath:dataPath
-                                                  error:&error];
-
-      RNSpeechTraceEnd(traceHandle, "phonemize");
-      if (error) {
-        reject(@"PHONEMIZE_ERROR", error.localizedDescription, error);
-      } else {
-        resolve(phonemes);
-      }
-    }
-    @catch (NSException *exception) {
-      RNSpeechTraceEnd(traceHandle, "phonemize");
-      reject(@"PHONEMIZE_ERROR",
-             [NSString stringWithFormat:@"Phonemization failed: %@", exception.reason],
-             nil);
-    }
   });
 }
 

@@ -835,34 +835,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  override fun phonemize(text: String, language: String, promise: Promise) {
-    SpeechTrace.beginSection("TTS:phonemize")
-    try {
-      // Ensure espeak-ng-data is extracted
-      val dataPath = EspeakNative.ensureDataPath(reactApplicationContext)
-
-      // Call native phonemizer
-      val phonemes = EspeakNative.phonemize(text, language, dataPath)
-
-      SpeechTrace.endSection()
-      promise.resolve(phonemes)
-    } catch (e: UnsatisfiedLinkError) {
-      SpeechTrace.endSection()
-      promise.reject(
-        "PHONEMIZE_ERROR",
-        "espeak-ng native library not available. Make sure the library is properly built and bundled.",
-        e
-      )
-    } catch (e: Exception) {
-      SpeechTrace.endSection()
-      promise.reject(
-        "PHONEMIZE_ERROR",
-        "Failed to phonemize text: ${e.message}",
-        e
-      )
-    }
-  }
-
   override fun dictOpen(path: String, promise: Promise) {
     try {
       val ok = NativeDict.open(path)

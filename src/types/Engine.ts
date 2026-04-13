@@ -42,7 +42,7 @@ export enum TTSEngine {
    * - 15M parameter StyleTTS 2-based TTS
    * - Single ONNX model, 24kHz mono output
    * - 8 built-in voices, English only
-   * - eSpeak-ng phonemization + character-level IPA tokenization
+   * - GPL-free dictionary-based phonemization + character-level IPA tokenization
    * - Requires 1 ONNX model file + voice embeddings JSON
    */
   KITTEN = 'kitten',

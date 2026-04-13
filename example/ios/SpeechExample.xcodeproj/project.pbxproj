@@ -12,7 +12,6 @@
 		3FED1FE484B86CC24BA86AA4 /* RNBenchmark.mm in Sources */ = {isa = PBXBuildFile; fileRef = 7FA1F980990B12493066CA16 /* RNBenchmark.mm */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
-		A83F386A2EEABB220057B4E3 /* EspeakWrapperTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A83F38672EEABB220057B4E3 /* EspeakWrapperTests.m */; };
 		A83F386B2EEABB220057B4E3 /* SpeechExampleTests.m in Sources */ = {isa = PBXBuildFile; fileRef = A83F38682EEABB220057B4E3 /* SpeechExampleTests.m */; };
 		A83F386D2EEABB7C0057B4E3 /* libRNSpeech.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A83F386C2EEABB7C0057B4E3 /* libRNSpeech.a */; settings = {ATTRIBUTES = (Required, ); }; };
 		BB1C8250CDB4AA0966D95999 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
@@ -41,7 +40,6 @@
 		7FA1F980990B12493066CA16 /* RNBenchmark.mm */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.cpp.objcpp; name = RNBenchmark.mm; path = SpeechExample/RNBenchmark.mm; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = SpeechExample/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A83F385A2EEABB010057B4E3 /* SpeechExampleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpeechExampleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A83F38672EEABB220057B4E3 /* EspeakWrapperTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = EspeakWrapperTests.m; sourceTree = "<group>"; };
 		A83F38682EEABB220057B4E3 /* SpeechExampleTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SpeechExampleTests.m; sourceTree = "<group>"; };
 		A83F386C2EEABB7C0057B4E3 /* libRNSpeech.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libRNSpeech.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0013F462E6CADA400258BD1 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -127,7 +125,6 @@
 		A83F38692EEABB220057B4E3 /* SpeechExampleTests */ = {
 			isa = PBXGroup;
 			children = (
-				A83F38672EEABB220057B4E3 /* EspeakWrapperTests.m */,
 				A83F38682EEABB220057B4E3 /* SpeechExampleTests.m */,
 			);
 			path = SpeechExampleTests;
@@ -329,7 +326,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A83F386A2EEABB220057B4E3 /* EspeakWrapperTests.m in Sources */,
 				A83F386B2EEABB220057B4E3 /* SpeechExampleTests.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
