@@ -107,6 +107,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
     this.isLoading = true;
     this.initError = null;
+    const initStart = Date.now();
 
     try {
       if (!config) {
@@ -141,7 +142,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       await this.loadVoices(config.voicesPath);
 
       this.isInitialized = true;
-      log.info('Initialization complete');
+      log.info(`engine_init_ms=${Date.now() - initStart}`);
     } catch (error) {
       // Clean up any partial initialization to allow retry
       await this.destroy();

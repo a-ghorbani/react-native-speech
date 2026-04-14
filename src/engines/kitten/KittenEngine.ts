@@ -195,6 +195,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
     this.isLoading = true;
     this.initError = null;
+    const initStart = Date.now();
 
     try {
       if (!config) {
@@ -237,7 +238,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       this.isInitialized = true;
       this.isLoading = false;
-      log.info('Kitten engine initialized');
+      log.info(`engine_init_ms=${Date.now() - initStart}`);
     } catch (error) {
       this.isLoading = false;
       this.initError = error instanceof Error ? error.message : 'Unknown error';

@@ -210,6 +210,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
     this.isLoading = true;
     this.initError = null;
+    const initStart = Date.now();
 
     try {
       // Config with model paths is required
@@ -256,6 +257,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
       this.isInitialized = true;
       this.isLoading = false;
+      log.info(`engine_init_ms=${Date.now() - initStart}`);
     } catch (error) {
       this.isLoading = false;
       this.initError = error instanceof Error ? error.message : 'Unknown error';
