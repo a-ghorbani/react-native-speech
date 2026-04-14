@@ -140,6 +140,20 @@ See [CONTRIBUTING.md](./docs/CONTRIBUTING.md).
 
 Forked from [`@mhpdev/react-native-speech`](https://github.com/mhpdev-com/react-native-speech) by [Mhpdev](https://github.com/mhpdev-com). The 1.x line provided the OS-native TTS foundation and the `HighlightedText` component; 2.0 extended the library into a multi-engine neural platform under a new package name.
 
+Built on top of:
+
+- [`phonemize`](https://github.com/hans00/phonemize) by [hans00](https://github.com/hans00) — the MIT G2P library that powers the default phonemizer.
+- [`onnxruntime-react-native`](https://github.com/microsoft/onnxruntime) — Microsoft's ONNX Runtime bindings for RN, which every neural engine uses for inference.
+- [`@dr.pogodin/react-native-fs`](https://github.com/birdofpreyru/react-native-fs) — file I/O for model and dict loading.
+
+Neural model credits (weights are not bundled):
+
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache-2.0).
+- [Supertonic](https://github.com/supertone-inc/supertonic) by [Supertone](https://supertone.ai) (code MIT, weights OpenRAIL).
+- [KittenML kitten-tts](https://huggingface.co/KittenML) (Apache-2.0).
+
+Full license details in [LICENSES.md](./docs/LICENSES.md).
+
 ## License
 
 MIT. See [LICENSE](./LICENSE). For model and third-party data licenses, see [LICENSES.md](./docs/LICENSES.md).
