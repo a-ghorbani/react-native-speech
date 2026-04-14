@@ -73,4 +73,29 @@ describe('chunkTextWithPositions', () => {
     expect(round('', 400)).toEqual([]);
     expect(round('   ', 400)).toEqual([]);
   });
+
+  it('does not split on decimals, currency, or mid-word punctuation', () => {
+    expect(round('Pi is 3.14 approximately.', 400)).toEqual([
+      {text: 'Pi is 3.14 approximately.', start: 0, end: 25},
+    ]);
+    expect(round('It costs $1.50 total.', 400)).toEqual([
+      {text: 'It costs $1.50 total.', start: 0, end: 21},
+    ]);
+    expect(round('Version 2.0.0 is out.', 400)).toEqual([
+      {text: 'Version 2.0.0 is out.', start: 0, end: 21},
+    ]);
+  });
+
+  it('splits only when punctuation is followed by whitespace + uppercase', () => {
+    const t = 'First. Second. Third.';
+    const r = round(t, 400);
+    expect(r.map(c => c.text)).toEqual(['First.', 'Second.', 'Third.']);
+  });
+
+  it('does not split abbreviations followed by lowercase', () => {
+    // "etc. and" — lowercase after, should NOT split
+    expect(round('Apples, oranges, etc. and bananas.', 400)).toEqual([
+      {text: 'Apples, oranges, etc. and bananas.', start: 0, end: 34},
+    ]);
+  });
 });

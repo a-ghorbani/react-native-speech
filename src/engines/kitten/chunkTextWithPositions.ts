@@ -13,13 +13,21 @@ export function chunkTextWithPositions(
   maxLen: number,
 ): Array<{text: string; startIndex: number; endIndex: number}> {
   const out: Array<{text: string; startIndex: number; endIndex: number}> = [];
-  const boundary = /[.!?]+/g;
+  // Only treat .!? as a sentence boundary when followed by whitespace + an
+  // uppercase letter (new sentence) or end-of-string. Avoids splitting on
+  // decimals like "0.76", currency like "$1.50", and abbreviations like
+  // "Mr. Smith" (when lowercase) — matches TextNormalizer's smart pattern.
+  // The boundary pattern consumes trailing whitespace so we advance the
+  // cursor past it; but we end the CHUNK at the punctuation itself so
+  // highlight ranges don't extend into the inter-sentence space.
+  const boundary = /([.!?]+)(?:\s+(?=[A-Z])|$)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = boundary.exec(text)) !== null) {
-    const end = match.index + match[0].length;
-    pushSentence(text, cursor, end, maxLen, out);
-    cursor = end;
+    const chunkEnd = match.index + match[1]!.length;
+    const advanceTo = match.index + match[0].length;
+    pushSentence(text, cursor, chunkEnd, maxLen, out);
+    cursor = advanceTo;
   }
   if (cursor < text.length) {
     pushSentence(text, cursor, text.length, maxLen, out);
