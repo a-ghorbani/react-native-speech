@@ -4,14 +4,14 @@
   </a>
 </p>
 
-A high-performance text-to-speech library built for bare React Native and Expo, compatible with Android and iOS. It enables seamless speech management and provides events for detailed synthesis management.
+A React Native text-to-speech library for iOS and Android. Supports the OS-native TTS as well as on-device neural engines (Kokoro, Supertonic, Kitten).
 
 <div align="center">
-  <a href="./docs/USAGE.md">Documentation</a> · <a href="./example/">Example</a>
+  <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
 </div>
 <br/>
 
-> **Only New Architecture**: This library is only compatible with the new architecture. If you're using React Native 0.76 or higher, it is already enabled. However, if your React Native version is between 0.68 and 0.75, you need to enable it first. [Click here if you need help enabling the new architecture](https://github.com/reactwg/react-native-new-architecture/blob/main/docs/enable-apps.md)
+> **New Architecture only.** Requires React Native's New Architecture. RN 0.76+ enables it by default. For 0.68–0.75 see the [enable-apps guide](https://github.com/reactwg/react-native-new-architecture/blob/main/docs/enable-apps.md).
 
 ## Preview
 
@@ -21,175 +21,124 @@ A high-performance text-to-speech library built for bare React Native and Expo, 
 
 ## Features
 
-- 🚀 &nbsp;**High Performance** - Built on Turbo Modules for a fast, native-like experience on Android & iOS
-
-- 🎛️ &nbsp;**Full Control** - Complete set of methods for comprehensive speech synthesis management
-
-- 🪄 &nbsp;**Consistent Playback** - Offers `pause` and `resume` support for iOS and Android. Since this functionality isn’t natively available on Android, the library provides a custom implementation (API 26+) designed to emulate the iOS experience
-
-- 🔊 &nbsp;**Optional Audio Ducking** - Automatically lowers other app audio to ensure clear, uninterrupted speech
-
-- 📡 &nbsp;**Rich Events** - Comprehensive event system for precise synthesis lifecycle monitoring
-
-- 💅 &nbsp;**Visual Feedback** - Customizable [HighlightedText](./docs/USAGE.md#highlightedtext) component for real-time speech visualization
-
-- ✅ &nbsp;**Type Safety** - Fully written in TypeScript with complete type definitions
-
-### Multi-Engine Support (v2.0+)
-
-- 🎯 &nbsp;**Neural TTS** - High-quality neural voices running entirely on-device
-  - **Kokoro** - Premium quality, multi-language support (EN, ZH, KO, JA)
-  - **Supertonic** - Ultra-fast (167× real-time), lightweight (66M params)
-- 🔒 &nbsp;**Privacy-First** - Neural synthesis with no cloud dependencies
-- 🌐 &nbsp;**Multi-Language** - Support for English, Chinese, Korean, Japanese
-- 🎨 &nbsp;**Voice Blending** - Mix multiple voices for unique characteristics (Kokoro)
-- ⚡ &nbsp;**Ultra-Fast** - Supertonic delivers 167× faster than real-time performance
-- 🔄 &nbsp;**Unified API** - Simple, consistent API across all engines
-
-> **New in v2.0:** Neural TTS engine support with Kokoro and Supertonic!
+- **Four engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality, multi-language), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven).
+- **License-neutral runner**: the library is MIT and ships no model or dictionary data. Consumer apps supply both at runtime. See [LICENSES.md](./docs/LICENSES.md).
+- **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
+- **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.
+- **Turbo-module native layer**: native audio playback, progress events, and chunk progress for neural engines.
+- **GPL-free phonemization**: default is [`phonemize`](https://github.com/hans00/phonemize) (MIT). Optionally supply a mmap'd EPD1 dict via the `NativeDict` API for higher accuracy — see [PHONEMIZATION.md](./docs/PHONEMIZATION.md).
+- **`HighlightedText` component**: highlight spoken text as it synthesizes.
+- **TypeScript**: full type definitions; per-engine config is a discriminated union on the `engine` field.
 
 ## Installation
 
-### Bare React Native
-
-Install the package using either npm or Yarn:
-
 ```sh
 npm install @pocketpalai/react-native-speech
-```
-
-Or with Yarn:
-
-```sh
+# or
 yarn add @pocketpalai/react-native-speech
 ```
 
-For iOS, navigate to the ios directory and install the pods:
+iOS:
 
 ```sh
 cd ios && pod install
 ```
 
-### Expo
+Expo (bare only — not supported in Expo Go):
 
-For Expo projects, follow these steps:
+```sh
+npx expo install @pocketpalai/react-native-speech
+npx expo prebuild
+```
 
-1. Install the package:
+### Neural engines (optional)
 
-   ```sh
-   npx expo install @pocketpalai/react-native-speech
-   ```
-
-2. Since it is not supported on Expo Go, run:
-
-   ```sh
-   npx expo prebuild
-   ```
-
-### Neural TTS Engines (Optional)
-
-To use neural TTS engines (Kokoro or Supertonic), install the ONNX Runtime peer dependency:
+The neural engines need `onnxruntime-react-native` (optional peer):
 
 ```sh
 npm install onnxruntime-react-native
 ```
 
-> **Note:** `onnxruntime-react-native` is an **optional peer dependency**. It's only required if you want to use neural TTS engines (Kokoro or Supertonic). The OS native TTS works without it.
+OS-native TTS works without it.
 
-## Usage
+## Quickstart
 
-To learn how to use the library, check out the [usage section](./docs/USAGE.md).
-
-## Quick Start
-
-```tsx
-import React from 'react';
-import Speech from '@pocketpalai/react-native-speech';
-import {SafeAreaView, StyleSheet, Text, TouchableOpacity} from 'react-native';
-
-const App: React.FC = () => {
-  const onSpeakPress = () => {
-    Speech.speak('Hello World!');
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={onSpeakPress}>
-        <Text style={styles.buttonText}>Speak</Text>
-      </TouchableOpacity>
-    </SafeAreaView>
-  );
-};
-
-export default App;
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  button: {
-    padding: 12.5,
-    borderRadius: 5,
-    backgroundColor: 'skyblue',
-  },
-  buttonText: {
-    fontSize: 22,
-    fontWeight: '600',
-  },
-});
-```
-
-### Neural TTS Quick Start (v2.0 Unified API)
-
-```tsx
+```ts
 import Speech, {TTSEngine} from '@pocketpalai/react-native-speech';
 
-// Initialize with Kokoro (high quality)
-await Speech.initialize({
-  engine: TTSEngine.KOKORO,
-  modelPath: 'file://path/to/model.onnx',
-  vocabPath: 'file://path/to/vocab.json',
-  mergesPath: 'file://path/to/merges.txt',
-  voicesPath: 'file://path/to/voices.bin',
-});
-
-// Or initialize with Supertonic (ultra-fast)
-await Speech.initialize({
-  engine: TTSEngine.SUPERTONIC,
-  modelPath: 'file://path/to/model.onnx',
-  voicesPath: 'file://path/to/voices.bin',
-});
-
-// Speak with neural voice (same API for all engines!)
-await Speech.speak(
-  'Hello! This is high-quality neural speech.',
-  'af_bella', // Voice ID
-  { speed: 1.0, volume: 1.0 }
-);
+await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+await Speech.speak('Hello world');
 ```
 
-**To switch engines, just change the config - no code changes needed!**
+## Neural engine quickstarts
 
-To become more familiar with the usage of the library, check out the [example project](./example/).
+The consumer app is responsible for downloading models and passing file paths. See [`example/src/utils/`](./example/src/utils/) for reference model managers.
+
+```ts
+// Kokoro
+await Speech.initialize({
+  engine: TTSEngine.KOKORO,
+  modelPath: 'file:///.../kokoro.onnx',
+  voicesPath: 'file:///.../voices.bin',
+  tokenizerPath: 'file:///.../tokenizer.json',
+});
+await Speech.speak('Hello from Kokoro.', 'af_bella');
+
+// Supertonic (4 ONNX files)
+await Speech.initialize({
+  engine: TTSEngine.SUPERTONIC,
+  durationPredictorPath: 'file:///.../duration_predictor.onnx',
+  textEncoderPath: 'file:///.../text_encoder.onnx',
+  vectorEstimatorPath: 'file:///.../vector_estimator.onnx',
+  vocoderPath: 'file:///.../vocoder.onnx',
+  unicodeIndexerPath: 'file:///.../unicode_indexer.json',
+  voicesPath: 'file:///.../voices/',
+});
+await Speech.speak('Hello from Supertonic.', 'F1');
+
+// Kitten
+await Speech.initialize({
+  engine: TTSEngine.KITTEN,
+  modelPath: 'file:///.../kitten.onnx',
+  voicesPath: 'file:///.../voices.json',
+  dictPath: 'file:///.../en-us.bin', // optional EPD1 dict
+});
+await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
+```
+
+Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
+
+## Architecture (short)
+
+1. `Speech` is the public facade. `Speech.initialize(config)` dispatches on `config.engine` and constructs the matching engine.
+2. Each engine implements `TTSEngineInterface<TConfig>`. Neural engines run ONNX sessions under `onnxruntime-react-native` and stream PCM to the native audio player.
+3. Native code handles playback, progress events, and OS-level audio focus / session interruptions.
+
+See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the full picture, including memory and device requirements.
+
+## Model & dictionary downloads
+
+The library ships no model or dictionary assets. Consumer apps fetch them from their own origin (typically Hugging Face) and pass local paths into `initialize()`. See [LICENSES.md](./docs/LICENSES.md) for upstream sources and license notes per engine.
+
+## Known limitations
+
+- First run per engine has a 200–2000 ms cold-start (model load + compilation).
+- Neural engines recommend a 3 GB+ RAM device. Low-memory devices should prefer the Kitten nano/micro variants or fall back to `OS_NATIVE`.
+- OS TTS interruption handling is limited to what the platform provides — no library-level custom ducking beyond what iOS/Android expose.
+- Hermes is supported, but has no `TextDecoder` or WASM — relevant only if you extend the library's text pipeline.
 
 ## Testing
 
-To mock the package's methods and components using the default mock configuration provided, follow these steps:
+Mock the module in tests by creating `__mocks__/@pocketpalai/react-native-speech.ts`:
 
-- Create a file named `@pocketpalai/react-native-speech.ts` inside your `__mocks__` directory.
-
-- Copy the following code into that file:
-
-  ```js
-  module.exports = require('@pocketpalai/react-native-speech/jest');
-  ```
+```js
+module.exports = require('@pocketpalai/react-native-speech/jest');
+```
 
 ## Contributing
 
-See the [contributing guide](./docs/CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
+See [CONTRIBUTING.md](./docs/CONTRIBUTING.md).
 
 ## License
 
-MIT
+MIT. See [LICENSE](./LICENSE). For model and third-party data licenses, see [LICENSES.md](./docs/LICENSES.md).

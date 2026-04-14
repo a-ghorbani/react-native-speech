@@ -558,3 +558,139 @@ To learn more about how to use the component, [check out here](../example/src/vi
 ## Example Application
 
 Check out the [example project](../example/).
+
+---
+
+## Neural Engines
+
+v2.0 adds three on-device neural engines that share the same public API (`Speech.speak`, `Speech.stop`, progress events, etc.). Pick an engine at `initialize()` time; switch engines by calling `initialize()` again with a different `engine` discriminant.
+
+The library ships no model or dictionary data. Consumer apps must download assets and pass local paths. See `example/src/utils/` for reference model managers and [LICENSES.md](./LICENSES.md) for upstream sources.
+
+Install the optional peer:
+
+```sh
+npm install onnxruntime-react-native
+```
+
+All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders` (`'auto' | 'cpu' | 'gpu' | 'ane'`, or an explicit array). Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
+
+### Kokoro
+
+Kokoro-82M, multi-language (EN, ZH, KO, JA), Apache-2.0.
+
+Required config fields:
+
+- `modelPath` — Kokoro ONNX model.
+- `voicesPath` — packed voices binary.
+- Either `tokenizerPath` (HuggingFace tokenizer JSON), or `vocabPath` + `mergesPath` (legacy BPE pair).
+
+Optional:
+
+- `phonemizerType`: `'js'` (default, MIT hans00), `'js-ipa'` (raw IPA), `'none'` (pass-through).
+- `dictPath`: EPD1-format IPA dictionary when using `'js'` / `'js-ipa'`.
+- `maxChunkSize`, `executionProviders`.
+
+```ts
+import Speech, {TTSEngine} from '@pocketpalai/react-native-speech';
+
+await Speech.initialize({
+  engine: TTSEngine.KOKORO,
+  modelPath: 'file:///.../kokoro.onnx',
+  voicesPath: 'file:///.../voices.bin',
+  tokenizerPath: 'file:///.../tokenizer.json',
+  dictPath: 'file:///.../en-us.bin',
+  maxChunkSize: 200,
+});
+
+await Speech.speak('Hello from Kokoro.', 'af_bella', {speed: 1.0, volume: 1.0});
+```
+
+Voice blending: pass multiple voice IDs (see `src/engines/kokoro/VoiceLoader.ts`).
+
+### Supertonic
+
+Fast English / multilingual pipeline composed of four ONNX models.
+
+Required config fields (all local ONNX paths plus unicode indexer):
+
+- `durationPredictorPath`
+- `textEncoderPath`
+- `vectorEstimatorPath`
+- `vocoderPath`
+- `unicodeIndexerPath`
+- `voicesPath` — directory or manifest JSON.
+
+Optional:
+
+- `defaultInferenceSteps` — diffusion steps (default 5).
+- `maxChunkSize`, `executionProviders`.
+
+```ts
+await Speech.initialize({
+  engine: TTSEngine.SUPERTONIC,
+  durationPredictorPath: 'file:///.../duration_predictor.onnx',
+  textEncoderPath: 'file:///.../text_encoder.onnx',
+  vectorEstimatorPath: 'file:///.../vector_estimator.onnx',
+  vocoderPath: 'file:///.../vocoder.onnx',
+  unicodeIndexerPath: 'file:///.../unicode_indexer.json',
+  voicesPath: 'file:///.../voices/',
+});
+
+await Speech.speak('Hello from Supertonic.', 'F1');
+```
+
+Chunking: Supertonic is fast enough that larger chunks (400–800 chars) typically win. Set `maxChunkSize` lower only for a streaming-like first-audio latency.
+
+### Kitten
+
+Compact IPA-driven model. Variants: `micro`, `nano-int8`, `nano-fp32`, `mini`.
+
+Required config fields:
+
+- `modelPath`
+- `voicesPath` — voices JSON (pre-converted from NPZ) or manifest.
+
+Optional:
+
+- `tokenizerPath` — overrides built-in IPA symbol table.
+- `dictPath` — EPD1 dict for JS phonemizer.
+- `maxChunkSize`, `executionProviders`.
+
+```ts
+await Speech.initialize({
+  engine: TTSEngine.KITTEN,
+  modelPath: 'file:///.../kitten_tts_nano_v0_8.onnx',
+  voicesPath: 'file:///.../voices.json',
+  dictPath: 'file:///.../en-us.bin',
+});
+
+await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
+```
+
+### Chunk progress
+
+Neural engines emit `chunkProgress` events as each chunk starts synthesizing:
+
+```ts
+Speech.addChunkProgressListener(event => {
+  // event.chunkIndex / event.totalChunks / event.chunkText / event.textRange
+});
+```
+
+`textRange.start` / `textRange.end` map the chunk back into the original input string; this is what the `HighlightedText` component uses to move its highlight.
+
+### Audio interruptions
+
+All engines forward OS-level audio interruptions (iOS `AVAudioSession`, Android `AudioFocus`) as a JS event:
+
+```ts
+Speech.addAudioInterruptionListener(event => {
+  // event.type, event.hint, event.reason
+});
+```
+
+### Release / cleanup
+
+Neural engines hold ONNX sessions and voice buffers that can run to 200+ MB. Call `Speech.release()` when you're done to free the sessions. Re-initialize before the next call. See [ARCHITECTURE.md](./ARCHITECTURE.md) for memory characteristics per engine.
+

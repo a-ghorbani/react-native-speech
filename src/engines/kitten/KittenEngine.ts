@@ -239,6 +239,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       this.isInitialized = true;
       this.isLoading = false;
       log.info(`engine_init_ms=${Date.now() - initStart}`);
+      log.info(
+        'Kitten uses KittenML kitten-tts-nano (verify license); check upstream repo.',
+      );
     } catch (error) {
       this.isLoading = false;
       this.initError = error instanceof Error ? error.message : 'Unknown error';

@@ -143,6 +143,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
       this.isInitialized = true;
       log.info(`engine_init_ms=${Date.now() - initStart}`);
+      log.info(
+        'Supertonic model license varies by release; verify at upstream repo.',
+      );
     } catch (error) {
       // Clean up any partial initialization to allow retry
       await this.destroy();

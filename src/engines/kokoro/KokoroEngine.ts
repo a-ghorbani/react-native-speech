@@ -258,6 +258,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       this.isInitialized = true;
       this.isLoading = false;
       log.info(`engine_init_ms=${Date.now() - initStart}`);
+      log.info(
+        'Kokoro uses Kokoro-82M (Apache-2.0); verify upstream license for your use case.',
+      );
     } catch (error) {
       this.isLoading = false;
       this.initError = error instanceof Error ? error.message : 'Unknown error';
