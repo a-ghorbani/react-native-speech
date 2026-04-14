@@ -1,10 +1,6 @@
-<p align="center">
-  <a href="https://github.com/a-ghorbani/react-native-speech" target="_blank">
-    <img src="./docs/banner.png" alt="React Native Full Responsive Banner" style="max-width:100%;height:auto;" />
-  </a>
-</p>
+# @pocketpalai/react-native-speech
 
-A React Native text-to-speech library for iOS and Android. Supports the OS-native TTS as well as on-device neural engines (Kokoro, Supertonic, Kitten).
+On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS (iOS `AVSpeechSynthesizer` / Android `TextToSpeech`) and three neural engines — Kokoro, Supertonic, Kitten — behind a single API, with native audio playback, progress events, and audio-focus handling.
 
 <div align="center">
   <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
@@ -26,8 +22,8 @@ A React Native text-to-speech library for iOS and Android. Supports the OS-nativ
 - **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
 - **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.
 - **Turbo-module native layer**: native audio playback, progress events, and chunk progress for neural engines.
-- **GPL-free phonemization**: default is [`phonemize`](https://github.com/hans00/phonemize) (MIT). Optionally supply a mmap'd EPD1 dict via the `NativeDict` API for higher accuracy — see [PHONEMIZATION.md](./docs/PHONEMIZATION.md).
-- **`HighlightedText` component**: highlight spoken text as it synthesizes.
+- **Permissive phonemization**: default is [`phonemize`](https://github.com/hans00/phonemize) (MIT). Optionally supply a mmap'd EPD1 dict via the `NativeDict` API for higher accuracy — see [PHONEMIZATION.md](./docs/PHONEMIZATION.md).
+- **[`HighlightedText`](./docs/USAGE.md#highlightedtext) component**: highlight spoken text as it synthesizes.
 - **TypeScript**: full type definitions; per-engine config is a discriminated union on the `engine` field.
 
 ## Installation
@@ -67,6 +63,7 @@ OS-native TTS works without it.
 import Speech, {TTSEngine} from '@pocketpalai/react-native-speech';
 
 await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+// voiceId is optional for OS_NATIVE — omitted uses the platform default voice.
 await Speech.speak('Hello world');
 ```
 
