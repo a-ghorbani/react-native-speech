@@ -84,3 +84,16 @@ android/generated
 
 # React Native Nitro Modules
 nitrogen/
+
+# Benchmark traces and reports
+benchmarks/latest/
+benchmarks/baseline/
+benchmarks/benchmark-*
+benchmark-trace-table.csv
+
+# npm (project uses yarn)
+package-lock.json
+
+# Agent/IDE specs
+.agents/
+

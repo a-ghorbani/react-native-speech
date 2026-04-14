@@ -1,0 +1,112 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "React Native Speech Benchmark Result",
+  "description": "Canonical format for storing and comparing TTS engine benchmark results.",
+  "type": "object",
+  "required": ["version", "platform", "device", "collectedAt", "commitSha", "config", "engines"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for forward compatibility."
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["ios", "android"]
+    },
+    "device": {
+      "type": "string",
+      "description": "Device model identifier (e.g. 'iPhone15,2', 'Pixel 7')."
+    },
+    "collectedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of when the benchmark was run."
+    },
+    "commitSha": {
+      "type": "string",
+      "description": "Git commit SHA at the time of the benchmark."
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch name."
+    },
+    "config": {
+      "type": "object",
+      "required": ["iterations", "warmupIterations", "testPhrase", "provider"],
+      "properties": {
+        "iterations": { "type": "integer" },
+        "warmupIterations": { "type": "integer" },
+        "testPhrase": { "type": "string" },
+        "provider": { "type": "string" }
+      }
+    },
+    "engines": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["engine", "variant", "stats"],
+        "properties": {
+          "engine": { "type": "string" },
+          "variant": { "type": "string" },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "initMs": { "$ref": "#/$defs/percentileStats" },
+              "ttfaMs": { "$ref": "#/$defs/percentileStats" },
+              "totalSpeakMs": { "$ref": "#/$defs/percentileStats" },
+              "releaseMs": { "$ref": "#/$defs/percentileStats" },
+              "modelMemoryMB": { "$ref": "#/$defs/percentileStats" },
+              "inferMemoryMB": { "$ref": "#/$defs/percentileStats" }
+            }
+          },
+          "peakInitMemoryMB": { "type": "number" },
+          "peakSpeakMemoryMB": { "type": "number" },
+          "iterations": {
+            "type": "array",
+            "description": "Raw per-iteration data for reanalysis.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "iteration": { "type": "integer" },
+                "isWarmup": { "type": "boolean" },
+                "initMs": { "type": "number" },
+                "ttfaMs": { "type": "number" },
+                "totalSpeakMs": { "type": "number" },
+                "releaseMs": { "type": "number" },
+                "peakInitMemoryMB": { "type": "number" },
+                "peakSpeakMemoryMB": { "type": "number" },
+                "memoryBaseline": { "$ref": "#/$defs/memorySnapshot" },
+                "memoryPostInit": { "$ref": "#/$defs/memorySnapshot" },
+                "memoryPostSpeak": { "$ref": "#/$defs/memorySnapshot" },
+                "memoryPostRelease": { "$ref": "#/$defs/memorySnapshot" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "percentileStats": {
+      "type": "object",
+      "required": ["min", "max", "mean", "median", "p90"],
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "mean": { "type": "number" },
+        "median": { "type": "number" },
+        "p90": { "type": "number" }
+      }
+    },
+    "memorySnapshot": {
+      "type": "object",
+      "properties": {
+        "nativeHeapMB": { "type": "number" },
+        "jsHeapUsedMB": { "type": "number" },
+        "totalMemoryMB": { "type": "number" },
+        "availableMemoryMB": { "type": "number" }
+      }
+    }
+  }
+}

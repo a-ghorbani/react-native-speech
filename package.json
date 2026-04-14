@@ -1,6 +1,6 @@
 {
-  "name": "@mhpdev/react-native-speech",
-  "version": "1.3.0",
+  "name": "@pocketpalai/react-native-speech",
+  "version": "2.0.0",
   "description": "A high-performance React Native library for text-to-speech on iOS and Android",
   "source": "./src/index.tsx",
   "main": "./lib/module/index.js",
@@ -24,16 +24,23 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
+    "!**/.clangd",
     "!**/.*"
   ],
   "scripts": {
     "example": "yarn workspace react-native-speech-example",
     "test": "jest",
+    "test:kokoro": "jest --testPathPattern='kokoro/__tests__'",
+    "test:watch": "jest --watch",
+    "test:ios": "./scripts/test-ios.sh",
+    "test:android": "./scripts/test-android.sh",
+    "test:native": "yarn test:ios && yarn test:android",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
     "prepare": "bob build",
-    "release": "release-it --only-version"
+    "release": "release-it --only-version",
+    "build:dict": "node scripts/build-dict.mjs"
   },
   "keywords": [
     "react-native",
@@ -46,6 +53,11 @@
     "tts",
     "voice",
     "speech",
+    "neural-tts",
+    "kokoro",
+    "onnx",
+    "ai-voice",
+    "offline-tts",
     "highlighted",
     "highlight-text",
     "highlighter",
@@ -53,14 +65,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mhpdev-com/react-native-speech.git"
+    "url": "git+https://github.com/a-ghorbani/react-native-speech.git"
   },
-  "author": "Mhpdev <hi@mhpdev.com> (https://github.com/mhpdev-com)",
+  "author": "a-ghorbani",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mhpdev-com/react-native-speech/issues"
+    "url": "https://github.com/a-ghorbani/react-native-speech/issues"
   },
-  "homepage": "https://github.com/mhpdev-com/react-native-speech#readme",
+  "homepage": "https://github.com/a-ghorbani/react-native-speech#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -91,8 +103,15 @@
     "typescript": "^5.8.3"
   },
   "peerDependencies": {
+    "@dr.pogodin/react-native-fs": "^2.36.1",
+    "onnxruntime-react-native": "^1.23.0",
     "react": "*",
     "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "onnxruntime-react-native": {
+      "optional": true
+    }
   },
   "workspaces": [
     "example"
@@ -103,6 +122,9 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
       "<rootDir>/lib/"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)/)"
     ]
   },
   "commitlint": {
@@ -159,12 +181,15 @@
     "type": "modules",
     "jsSrcsDir": "src",
     "android": {
-      "javaPackageName": "com.mhpdev.speech"
+      "javaPackageName": "com.pocketpalai.speech"
     }
   },
   "create-react-native-library": {
     "languages": "kotlin-objc",
     "type": "turbo-module",
     "version": "0.54.1"
+  },
+  "dependencies": {
+    "phonemize": "^1.1.0"
   }
 }

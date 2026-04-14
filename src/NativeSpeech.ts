@@ -89,6 +89,46 @@ interface ConstantsProps {
   maxInputLength?: number;
 }
 
+export interface AudioInterruptionProps {
+  /**
+   * The interruption phase.
+   * - `began`: audio was paused due to an external interruption (incoming call, other media, audio focus loss).
+   * - `ended`: the interruption has ended.
+   */
+  type: 'began' | 'ended';
+  /**
+   * On `ended`, indicates whether the system suggests the app should resume playback.
+   * Always `true` on Android when focus is regained after a transient loss.
+   * On iOS, mirrors `AVAudioSessionInterruptionOptionShouldResume`.
+   */
+  shouldResume?: boolean;
+}
+
+export interface AudioPlayerConfig {
+  /**
+   * Sample rate in Hz (e.g., 24000)
+   */
+  sampleRate: number;
+  /**
+   * Number of channels (1 = mono, 2 = stereo)
+   */
+  channels: number;
+  /**
+   * If `true`, audio from other apps will be temporarily lowered (ducked) while speech is active.
+   * @default false
+   */
+  ducking?: boolean;
+  /**
+   * Determines how speech audio interacts with the device's silent (ringer) switch.
+   * @platform iOS
+   *
+   * - `obey`: (Default) Does not change the app's audio session. Speech follows the system default.
+   * - `respect`: Speech will be silenced by the ringer switch. Use for non-critical audio.
+   * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
+   */
+  silentMode?: 'obey' | 'respect' | 'ignore';
+}
+
 export interface Spec extends TurboModule {
   getConstants: () => ConstantsProps;
   //Methods
@@ -102,8 +142,45 @@ export interface Spec extends TurboModule {
   initialize: (options: VoiceOptions) => void;
   openVoiceDataInstaller: () => Promise<void>;
   setEngine: (engineName: string) => Promise<void>;
-  getAvailableVoices: (language: string) => Promise<VoiceProps[]>;
+  getAvailableVoices: (language?: string) => Promise<VoiceProps[]>;
   speakWithOptions: (text: string, options: VoiceOptions) => Promise<void>;
+
+  // Neural Audio Player Methods
+  /**
+   * Play PCM audio data (for neural TTS engines)
+   * @param audioData - Base64-encoded Int16 PCM audio data
+   * @param config - Audio configuration
+   */
+  playAudio: (audioData: string, config: AudioPlayerConfig) => Promise<void>;
+  /**
+   * Stop neural audio playback
+   */
+  stopAudio: () => Promise<void>;
+  /**
+   * Pause neural audio playback
+   */
+  pauseAudio: () => Promise<boolean>;
+  /**
+   * Resume neural audio playback
+   */
+  resumeAudio: () => Promise<boolean>;
+  /**
+   * Check if neural audio is playing
+   */
+  isAudioPlaying: () => Promise<boolean>;
+
+  /**
+   * Open a phonemizer dict file (mmap'd native dict, EPD1 format).
+   * Replaces any previously open dict. Returns true on success.
+   */
+  dictOpen: (path: string) => Promise<boolean>;
+  /**
+   * Look up a word in the currently-open dict.
+   * Returns null on miss or if no dict open.
+   * Synchronous: hot path, called many times per phonemize() call.
+   */
+  dictLookup: (word: string) => string | null;
+
   //Listeners
   readonly onError: EventEmitter<EventProps>;
   readonly onStart: EventEmitter<EventProps>;
@@ -112,6 +189,7 @@ export interface Spec extends TurboModule {
   readonly onResume: EventEmitter<EventProps>;
   readonly onStopped: EventEmitter<EventProps>;
   readonly onProgress: EventEmitter<ProgressEventProps>;
+  readonly onAudioInterruption: EventEmitter<AudioInterruptionProps>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNSpeech');

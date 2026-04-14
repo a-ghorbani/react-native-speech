@@ -1,4 +1,4 @@
-package com.mhpdev.speech
+package com.pocketpalai.speech
 
 data class SpeechQueueItem(
   val text: String,

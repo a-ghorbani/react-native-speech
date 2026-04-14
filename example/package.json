@@ -10,6 +10,8 @@
     "build:ios": "react-native build-ios --mode Debug"
   },
   "dependencies": {
+    "@dr.pogodin/react-native-fs": "^2.36.1",
+    "onnxruntime-react-native": "^1.23.2",
     "react": "19.1.0",
     "react-native": "0.81.0",
     "react-native-full-responsive": "^2.4.1",

@@ -1,4 +1,4 @@
-package com.mhpdev.speech
+package com.pocketpalai.speech
 
 import com.facebook.react.BaseReactPackage
 import com.facebook.react.bridge.NativeModule

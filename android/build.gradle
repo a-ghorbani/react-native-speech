@@ -26,13 +26,35 @@ def getExtOrIntegerDefault(name) {
 }
 
 android {
-  namespace "com.mhpdev.speech"
+  namespace "com.pocketpalai.speech"
 
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
 
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+
+    def traceEnabled = project.hasProperty('RN_SPEECH_TRACE') ?
+        project.property('RN_SPEECH_TRACE').toString().toBoolean() : false
+    buildConfigField "boolean", "RN_SPEECH_TRACE", traceEnabled.toString()
+
+    externalNativeBuild {
+      cmake {
+        cppFlags "-std=c++17 -fexceptions -frtti"
+        arguments "-DANDROID_STL=c++_shared"
+      }
+    }
+
+    ndk {
+      abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "src/main/cpp/CMakeLists.txt"
+      version "3.22.1"
+    }
   }
 
   buildFeatures {
