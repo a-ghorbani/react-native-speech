@@ -11,9 +11,17 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Preview
 
-|                                                                                                          <center>Android</center>                                                                                                           |                                                                                                          <center>iOS</center>                                                                                                           |
-| :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-| <video src="https://github.com/user-attachments/assets/0601b827-a87a-4eb0-be28-273aa2ec5942" controls width="100%" height="500"></video> [Android Preview](https://github.com/user-attachments/assets/0601b827-a87a-4eb0-be28-273aa2ec5942) | <video src="https://github.com/user-attachments/assets/1579639e-049b-42f4-9795-bc56956541bd" width="100%" height="500" controls></video> [iOS Preview](https://github.com/user-attachments/assets/1579639e-049b-42f4-9795-bc56956541bd) |
+### Kokoro
+
+| <center>Android</center> | <center>iOS</center> |
+| :---: | :---: |
+| <video src="REPLACE_ME_KOKORO_ANDROID" controls width="100%" height="500"></video> | <video src="REPLACE_ME_KOKORO_IOS" controls width="100%" height="500"></video> |
+
+### Kitten
+
+| <center>Android</center> | <center>iOS</center> |
+| :---: | :---: |
+| <video src="REPLACE_ME_KITTEN_ANDROID" controls width="100%" height="500"></video> | <video src="REPLACE_ME_KITTEN_IOS" controls width="100%" height="500"></video> |
 
 ## Features
 
