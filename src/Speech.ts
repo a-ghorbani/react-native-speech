@@ -5,7 +5,6 @@
  * - OS Native (iOS AVSpeechSynthesizer, Android TextToSpeech)
  * - Kokoro (Neural TTS - high quality, multi-language)
  * - Supertonic (Neural TTS - ultra-fast, lightweight)
- * - Pocket (Neural TTS - CPU-optimized, English, voice cloning)
  * - Kitten (Neural TTS - lightweight StyleTTS 2, English)
  *
  * @example
@@ -28,8 +27,6 @@ import type {
   KokoroVoice,
   SupertonicConfig,
   SupertonicVoice,
-  PocketConfig,
-  PocketVoice,
   KittenConfig,
   KittenVoice,
   SynthesisOptions,
@@ -41,7 +38,6 @@ import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
 import {KokoroEngine} from './engines/kokoro';
 import {SupertonicEngine} from './engines/supertonic';
-import {PocketEngine} from './engines/pocket';
 import {KittenEngine} from './engines/kitten';
 import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
 
@@ -52,7 +48,6 @@ engineManager.registerEngine(osEngine);
 // Neural engines will be lazy-loaded
 let kokoroEngine: KokoroEngine | null = null;
 let supertonicEngine: SupertonicEngine | null = null;
-let pocketEngine: PocketEngine | null = null;
 let kittenEngine: KittenEngine | null = null;
 
 // Store pending chunk progress callback (set before engine is initialized)
@@ -145,25 +140,6 @@ export default class Speech {
       if (pendingChunkProgressCallback) {
         supertonicEngine.setChunkProgressCallback(pendingChunkProgressCallback);
       }
-    } else if (engine === 'pocket') {
-      if (!pocketEngine) {
-        pocketEngine = new PocketEngine();
-        engineManager.registerEngine(pocketEngine);
-        await engineManager.initializeEngine(
-          engine,
-          engineConfig as PocketConfig,
-        );
-      } else {
-        await engineManager.reinitializeEngine(
-          engine,
-          engineConfig as PocketConfig,
-        );
-      }
-      engineManager.setDefaultEngine(engine);
-
-      if (pendingChunkProgressCallback) {
-        pocketEngine.setChunkProgressCallback(pendingChunkProgressCallback);
-      }
     } else if (engine === 'kitten') {
       if (!kittenEngine) {
         kittenEngine = new KittenEngine();
@@ -245,12 +221,10 @@ export default class Speech {
    */
   public static async getVoicesWithMetadata(
     language?: string,
-  ): Promise<
-    KokoroVoice[] | SupertonicVoice[] | PocketVoice[] | KittenVoice[]
-  > {
+  ): Promise<KokoroVoice[] | SupertonicVoice[] | KittenVoice[]> {
     const engine = Speech.currentEngine;
     console.log(
-      `[Speech.getVoicesWithMetadata] currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, pocketEngine: ${!!pocketEngine}, kittenEngine: ${!!kittenEngine}`,
+      `[Speech.getVoicesWithMetadata] currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, kittenEngine: ${!!kittenEngine}`,
     );
 
     if (engine === 'kokoro') {
@@ -263,11 +237,6 @@ export default class Speech {
         throw new Error('Supertonic engine not initialized');
       }
       return supertonicEngine.getVoicesWithMetadata(language);
-    } else if (engine === 'pocket') {
-      if (!pocketEngine) {
-        throw new Error('Pocket engine not initialized');
-      }
-      return pocketEngine.getVoicesWithMetadata(language);
     } else if (engine === 'kitten') {
       if (!kittenEngine) {
         throw new Error('Kitten engine not initialized');
@@ -275,7 +244,7 @@ export default class Speech {
       return kittenEngine.getVoicesWithMetadata();
     } else {
       throw new Error(
-        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Pocket, Kitten)',
+        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten)',
       );
     }
   }
@@ -338,9 +307,6 @@ export default class Speech {
     }
     if (supertonicEngine) {
       supertonicEngine.setChunkProgressCallback(callback);
-    }
-    if (pocketEngine) {
-      pocketEngine.setChunkProgressCallback(callback);
     }
     if (kittenEngine) {
       kittenEngine.setChunkProgressCallback(callback);
@@ -422,8 +388,6 @@ export default class Speech {
       kokoroEngine.stop();
     } else if (engine === 'supertonic' && supertonicEngine) {
       supertonicEngine.stop();
-    } else if (engine === 'pocket' && pocketEngine) {
-      pocketEngine.stop();
     } else if (engine === 'kitten' && kittenEngine) {
       kittenEngine.stop();
     }
@@ -467,8 +431,6 @@ export default class Speech {
       return kokoroEngine.release();
     } else if (engine === 'supertonic' && supertonicEngine) {
       return supertonicEngine.release();
-    } else if (engine === 'pocket' && pocketEngine) {
-      return pocketEngine.release();
     } else if (engine === 'kitten' && kittenEngine) {
       return kittenEngine.release();
     }
@@ -488,7 +450,6 @@ export default class Speech {
     if (
       (engine === 'kokoro' && kokoroEngine) ||
       (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'pocket' && pocketEngine) ||
       (engine === 'kitten' && kittenEngine)
     ) {
       return neuralAudioPlayer.pause();
@@ -508,7 +469,6 @@ export default class Speech {
     if (
       (engine === 'kokoro' && kokoroEngine) ||
       (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'pocket' && pocketEngine) ||
       (engine === 'kitten' && kittenEngine)
     ) {
       return neuralAudioPlayer.resume();
@@ -551,8 +511,6 @@ export type {
   KokoroConfig,
   SupertonicVoice,
   SupertonicConfig,
-  PocketVoice,
-  PocketConfig,
   KittenVoice,
   KittenConfig,
   SynthesisOptions,

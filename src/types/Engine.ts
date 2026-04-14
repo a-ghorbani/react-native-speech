@@ -28,16 +28,6 @@ export enum TTSEngine {
   SUPERTONIC = 'supertonic',
 
   /**
-   * Use Pocket neural TTS engine (offline, ONNX-based)
-   * - 100M parameter CALM-based TTS by Kyutai Labs
-   * - CPU-optimized, 24kHz mono output
-   * - 8 built-in voices, English only
-   * - Autoregressive generation with KV cache
-   * - Requires 4 ONNX model files + SentencePiece tokenizer
-   */
-  POCKET = 'pocket',
-
-  /**
    * Use Kitten neural TTS engine (offline, ONNX-based)
    * - 15M parameter StyleTTS 2-based TTS
    * - Single ONNX model, 24kHz mono output
@@ -86,20 +76,6 @@ export interface SynthesisOptions {
    * @platform neural-engines
    */
   inferenceSteps?: number;
-  /**
-   * Number of LSD flow decode steps for Pocket TTS.
-   * Higher values = better quality but slower synthesis.
-   * - Pocket: 1-10 steps (default: 4)
-   * @platform neural-engines
-   */
-  lsdSteps?: number;
-  /**
-   * Temperature for autoregressive sampling in Pocket TTS.
-   * Higher values = more variation, lower = more deterministic.
-   * - Pocket: 0.1-1.5 (default: 0.7)
-   * @platform neural-engines
-   */
-  temperature?: number;
   /**
    * If `true`, audio from other apps will be temporarily lowered (ducked) while speech is active.
    * This is for critical announcements (e.g., navigation) and takes priority over `silentMode` on iOS.

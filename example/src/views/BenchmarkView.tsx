@@ -13,7 +13,6 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {TTSEngine} from '@mhpdev/react-native-speech';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {supertonicModelManager} from '../utils/SupertonicModelManager';
-import {pocketModelManager} from '../utils/PocketModelManager';
 import {kittenModelManager} from '../utils/KittenModelManager';
 import {phonemizerDictManager} from '../utils/PhonemizerDictManager';
 import {
@@ -118,26 +117,6 @@ const BenchmarkView: React.FC = () => {
               model.version as any,
             ),
             maxChunkSize: 200,
-          }),
-          defaultVoice: '', // auto-detect after init
-        });
-      }
-    } catch {
-      /* not installed */
-    }
-
-    try {
-      // Pocket
-      await pocketModelManager.scanInstalledModel();
-      const pocketModel = pocketModelManager.getInstalledModel();
-      if (pocketModel) {
-        engines.push({
-          engine: TTSEngine.POCKET,
-          label: 'Pocket',
-          variant: 'default',
-          getInitConfig: () => ({
-            ...pocketModelManager.getDownloadedModelConfig(),
-            maxChunkSize: 300,
           }),
           defaultVoice: '', // auto-detect after init
         });

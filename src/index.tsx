@@ -5,7 +5,6 @@
  * - OS Native TTS (iOS AVSpeechSynthesizer, Android TextToSpeech)
  * - Kokoro Neural TTS (high quality, multi-language)
  * - Supertonic Neural TTS (ultra-fast, lightweight)
- * - Pocket Neural TTS (CPU-optimized, English, voice cloning)
  * - Kitten Neural TTS (lightweight StyleTTS 2, English)
  */
 
@@ -59,17 +58,6 @@ export type {
   InferenceSteps,
 } from './types';
 
-// Export Pocket types
-export type {
-  PocketVoice,
-  PocketConfig,
-  PocketSynthesisOptions,
-  PocketLanguage,
-  PocketModelPaths,
-  PocketBuiltinVoice,
-  LsdSteps,
-} from './types';
-
 // Export Kitten types
 export type {
   KittenVoice,
@@ -94,5 +82,4 @@ export {engineManager} from './engines/EngineManager';
 export {OSEngine} from './engines/OSEngine';
 export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
-export {PocketEngine} from './engines/pocket';
 export {KittenEngine} from './engines/kitten';
