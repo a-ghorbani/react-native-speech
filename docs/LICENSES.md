@@ -24,19 +24,15 @@ Models are NOT bundled. Each engine loads models from paths provided by
 the consumer app. Upstream model licenses differ — review before
 integrating:
 
-| Engine | Upstream source | License | Commercial use |
-|--------|-----------------|---------|----------------|
-| Kokoro | https://huggingface.co/hexgrad/Kokoro-82M | Apache-2.0 | Yes |
-| Supertonic (v1) | https://huggingface.co/Supertone/supertonic | verify at upstream repo | verify |
-| Supertonic (v2) | https://huggingface.co/Supertone/supertonic-2 | verify at upstream repo | verify |
-| Kitten (micro / nano / mini) | https://huggingface.co/palshub/kitten-tts-micro-0.8, .../kitten-tts-nano-0.8-int8, .../kitten-tts-nano-0.8-fp32, .../kitten-tts-mini-0.8 | verify at upstream repo | verify |
+| Engine | Upstream source | Code license | Model weights license | Notes |
+|--------|-----------------|--------------|-----------------------|-------|
+| Kokoro | https://huggingface.co/hexgrad/Kokoro-82M | Apache-2.0 | Apache-2.0 | Fully permissive, commercial use allowed. |
+| Supertonic | https://huggingface.co/Supertone/supertonic (v1), https://huggingface.co/Supertone/supertonic-2 (v2) | MIT ([repo](https://github.com/supertone-inc/supertonic)) | [OpenRAIL](https://huggingface.co/blog/open_rail) | Reference code is MIT; the model weights are under an OpenRAIL-style responsible-AI license (use-based restrictions, no absolute commercial ban). Review the model card before shipping. |
+| Kitten | https://huggingface.co/KittenML (upstream); example app uses `palshub/*` mirrors | Apache-2.0 | Apache-2.0 | Fully permissive, commercial use allowed. |
 
-Sources: Supertonic and Kitten upstream URLs taken from
-`example/src/utils/SupertonicModelManager.ts` and
-`example/src/utils/KittenModelManager.ts` respectively (the `repo` fields
-under `MODEL_VARIANTS`). The Kitten variants mirror the upstream
-`KittenML/kitten-tts` family; the `palshub/*` repos are the redistribution
-used by the example app.
+Example-app download URLs (`example/src/utils/SupertonicModelManager.ts`,
+`example/src/utils/KittenModelManager.ts`) point at those upstream repos or
+author-owned mirrors; the library itself bundles no weights.
 
 Consumer apps are responsible for complying with each upstream model's
 terms of use. MIT-licensed library code does not inherit the model's

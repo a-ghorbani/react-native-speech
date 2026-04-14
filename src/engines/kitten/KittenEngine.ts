@@ -240,7 +240,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       this.isLoading = false;
       log.info(`engine_init_ms=${Date.now() - initStart}`);
       log.info(
-        'Kitten uses KittenML kitten-tts-nano (verify license); check upstream repo.',
+        'Kitten uses KittenML kitten-tts (Apache-2.0, commercial use allowed).',
       );
     } catch (error) {
       this.isLoading = false;

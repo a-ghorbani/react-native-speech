@@ -144,7 +144,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       this.isInitialized = true;
       log.info(`engine_init_ms=${Date.now() - initStart}`);
       log.info(
-        'Supertonic model license varies by release; verify at upstream repo.',
+        'Supertonic: code MIT; model weights OpenRAIL (use-based restrictions). ' +
+          'Review https://huggingface.co/Supertone/supertonic model card.',
       );
     } catch (error) {
       // Clean up any partial initialization to allow retry
