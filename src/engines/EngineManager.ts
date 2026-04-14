@@ -5,6 +5,9 @@
  */
 
 import type {TTSEngine, TTSEngineInterface, EngineStatus} from '../types';
+import {createComponentLogger} from '../utils/logger';
+
+const log = createComponentLogger('EngineManager', 'Manager');
 
 class TTSEngineManager {
   private engines: Map<TTSEngine, TTSEngineInterface> = new Map();
@@ -136,7 +139,7 @@ class TTSEngineManager {
   async destroyAll(): Promise<void> {
     const promises = Array.from(this.engines.values()).map(engine =>
       engine.destroy().catch(err => {
-        console.warn(`Failed to destroy engine ${engine.name}:`, err);
+        log.warn(`Failed to destroy engine ${engine.name}:`, err);
       }),
     );
 

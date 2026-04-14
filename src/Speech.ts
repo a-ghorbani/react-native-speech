@@ -40,6 +40,9 @@ import {KokoroEngine} from './engines/kokoro';
 import {SupertonicEngine} from './engines/supertonic';
 import {KittenEngine} from './engines/kitten';
 import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
+import {createComponentLogger} from './utils/logger';
+
+const log = createComponentLogger('Speech', 'Api');
 
 // Initialize OS engine
 const osEngine = new OSEngine();
@@ -86,12 +89,10 @@ export default class Speech {
   }): Promise<void> {
     const {engine, ...engineConfig} = config;
 
-    console.log(`[Speech.initialize] Initializing engine: ${engine}`);
+    log.info(`Initializing engine: ${engine}`);
     // Store current engine
     Speech.currentEngine = engine;
-    console.log(
-      `[Speech.initialize] currentEngine set to: ${Speech.currentEngine}`,
-    );
+    log.debug(`currentEngine set to: ${Speech.currentEngine}`);
 
     // Initialize the specific engine
     if (engine === 'kokoro') {
@@ -223,8 +224,8 @@ export default class Speech {
     language?: string,
   ): Promise<KokoroVoice[] | SupertonicVoice[] | KittenVoice[]> {
     const engine = Speech.currentEngine;
-    console.log(
-      `[Speech.getVoicesWithMetadata] currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, kittenEngine: ${!!kittenEngine}`,
+    log.debug(
+      `getVoicesWithMetadata currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, kittenEngine: ${!!kittenEngine}`,
     );
 
     if (engine === 'kokoro') {
@@ -424,8 +425,7 @@ export default class Speech {
   public static async release(): Promise<ReleaseResult> {
     const engine = Speech.currentEngine;
 
-    // Log the release operation - using console since Speech is a static API layer
-    console.debug(`[Speech.release] Releasing engine: ${engine}`);
+    log.info(`Releasing engine: ${engine}`);
 
     if (engine === 'kokoro' && kokoroEngine) {
       return kokoroEngine.release();

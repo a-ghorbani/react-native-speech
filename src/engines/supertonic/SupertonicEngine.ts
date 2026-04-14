@@ -119,7 +119,7 @@ export class SupertonicEngine implements TTSEngineInterface {
         this.defaultInferenceSteps = config.defaultInferenceSteps;
       }
 
-      console.log('[SupertonicEngine] Initializing with config:', {
+      log.info('Initializing with config:', {
         durationPredictorPath: config.durationPredictorPath,
         textEncoderPath: config.textEncoderPath,
         vectorEstimatorPath: config.vectorEstimatorPath,
@@ -141,12 +141,12 @@ export class SupertonicEngine implements TTSEngineInterface {
       await this.loadVoices(config.voicesPath);
 
       this.isInitialized = true;
-      console.log('[SupertonicEngine] Initialization complete');
+      log.info('Initialization complete');
     } catch (error) {
       // Clean up any partial initialization to allow retry
       await this.destroy();
       this.initError = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[SupertonicEngine] Initialization failed:', error);
+      log.error('Initialization failed:', error);
       throw error;
     } finally {
       this.isLoading = false;
@@ -237,10 +237,8 @@ export class SupertonicEngine implements TTSEngineInterface {
       options?.inferenceSteps || this.defaultInferenceSteps;
     const speed = options?.speed ?? 1.0;
 
-    console.log('[SupertonicEngine] ========== SYNTHESIS START ==========');
-    console.log(`[SupertonicEngine] Text: "${text.substring(0, 50)}..."`);
-    console.log(
-      `[SupertonicEngine] Voice: ${voiceId}, Steps: ${inferenceSteps}, Speed: ${speed}`,
+    log.debug(
+      `Synthesis start: text="${text.substring(0, 50)}...", voice=${voiceId}, steps=${inferenceSteps}, speed=${speed}`,
     );
 
     // Load voice style
@@ -250,23 +248,21 @@ export class SupertonicEngine implements TTSEngineInterface {
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
     const chunks = TextChunker.chunkBySentences(text, maxChunkSize);
 
-    console.log(`[SupertonicEngine] Split into ${chunks.length} chunks`);
+    log.debug(`Split into ${chunks.length} chunks`);
 
     // Pipelined synthesis: synthesize next chunk while current one plays
     let nextAudioPromise: Promise<AudioBuffer> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       if (this.stopRequested) {
-        console.log('[SupertonicEngine] Stop requested, aborting synthesis');
+        log.debug('Stop requested, aborting synthesis');
         return undefined;
       }
 
       const chunk = chunks[chunkIndex] as TextChunk;
       const progress = Math.round((chunkIndex / chunks.length) * 100);
 
-      console.log(
-        `[SupertonicEngine] Processing chunk ${chunkIndex + 1}/${chunks.length}`,
-      );
+      log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
 
       // Emit chunk progress event
       this.emitChunkProgress({
@@ -297,20 +293,18 @@ export class SupertonicEngine implements TTSEngineInterface {
 
         // Stop signal won the race
         if (audioBuffer === null || this.stopRequested) {
-          console.log('[SupertonicEngine] Stop requested, aborting synthesis');
+          log.debug('Stop requested, aborting synthesis');
           return undefined;
         }
 
-        console.log(
-          `[SupertonicEngine] Chunk synthesized: ${audioBuffer.samples.length} samples`,
-        );
+        log.debug(`Chunk synthesized: ${audioBuffer.samples.length} samples`);
       } catch (synthError) {
-        console.error('[SupertonicEngine] Synthesis error:', synthError);
+        log.error('Synthesis error:', synthError);
         throw synthError;
       }
 
       if (this.stopRequested || audioBuffer.samples.length === 0) {
-        console.log('[SupertonicEngine] Stop requested before playback');
+        log.debug('Stop requested before playback');
         return undefined;
       }
 
@@ -350,7 +344,7 @@ export class SupertonicEngine implements TTSEngineInterface {
       );
     }
 
-    console.log('[SupertonicEngine] ========== SYNTHESIS COMPLETE ==========');
+    log.debug('Synthesis complete');
     return undefined;
   }
 
@@ -593,13 +587,13 @@ export class SupertonicEngine implements TTSEngineInterface {
    */
   private async loadVoices(voicesPath: string): Promise<void> {
     try {
-      console.log('[SupertonicEngine] Loading voices from:', voicesPath);
+      log.info('Loading voices from:', voicesPath);
 
       if (voicesPath.includes('manifest') && voicesPath.endsWith('.json')) {
         // Manifest mode - lazy loading
         const manifest = await loadAssetAsJSON<VoiceManifest>(voicesPath);
         await this.styleLoader.loadFromManifest(manifest, voicesPath);
-        console.log('[SupertonicEngine] Loaded voice manifest');
+        log.info('Loaded voice manifest');
       } else if (voicesPath.endsWith('.json')) {
         // Single voice file or voice list - could be manifest or single voice
         const data = await loadAssetAsJSON<VoiceManifest | RawVoiceStyleData>(
@@ -627,10 +621,7 @@ export class SupertonicEngine implements TTSEngineInterface {
         );
       }
 
-      console.log(
-        '[SupertonicEngine] Voices loaded:',
-        this.styleLoader.getVoiceIds().length,
-      );
+      log.info('Voices loaded:', this.styleLoader.getVoiceIds().length);
     } catch (error) {
       throw new Error(
         `Failed to load voices: ${error instanceof Error ? error.message : 'Unknown error'}`,

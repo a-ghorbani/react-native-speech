@@ -7,7 +7,10 @@
  */
 
 import {loadAssetAsJSON} from '../../utils/AssetLoader';
+import {createComponentLogger} from '../../utils/logger';
 import {SUPERTONIC_CONSTANTS, type SupportedLanguage} from './constants';
+
+const log = createComponentLogger('Supertonic', 'UnicodeProcessor');
 
 const {PAD_TOKEN_ID, UNK_TOKEN_ID, AVAILABLE_LANGS} = SUPERTONIC_CONSTANTS;
 
@@ -235,10 +238,7 @@ export class UnicodeProcessor {
    * @param unicodeIndexerPath - Path to unicode_indexer.json file
    */
   async initialize(unicodeIndexerPath: string): Promise<void> {
-    console.log(
-      '[UnicodeProcessor] Loading unicode indexer from:',
-      unicodeIndexerPath,
-    );
+    log.info('Loading unicode indexer from:', unicodeIndexerPath);
     const indexerData = await loadAssetAsJSON(unicodeIndexerPath);
     this.indexer = indexerData as number[];
     this.isInitialized = true;
@@ -253,8 +253,8 @@ export class UnicodeProcessor {
       greaterThanIdx !== undefined &&
       greaterThanIdx >= 0;
 
-    console.log(
-      `[UnicodeProcessor] Loaded indexer with ${this.indexer.length} entries, language tags: ${this.supportsLanguageTags ? 'supported' : 'not supported'}`,
+    log.info(
+      `Loaded indexer with ${this.indexer.length} entries, language tags: ${this.supportsLanguageTags ? 'supported' : 'not supported'}`,
     );
   }
 

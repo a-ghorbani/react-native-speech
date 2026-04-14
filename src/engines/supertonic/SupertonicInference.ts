@@ -27,6 +27,9 @@ import {
   UnicodeProcessor,
 } from './UnicodeProcessor';
 import {SUPERTONIC_CONSTANTS} from './constants';
+import {createComponentLogger} from '../../utils/logger';
+
+const log = createComponentLogger('Supertonic', 'Inference');
 
 // Lazy import ONNX Runtime - initialized by ensureONNXRuntime()
 let InferenceSession: OnnxInferenceSessionConstructor;
@@ -213,8 +216,8 @@ export class SupertonicInference {
       config.executionProviders,
     );
 
-    console.log(
-      '[SupertonicInference] Loading models with execution providers:',
+    log.info(
+      'Loading models with execution providers:',
       JSON.stringify(executionProviders),
     );
 
@@ -242,13 +245,13 @@ export class SupertonicInference {
       this.vocoderSession = vocoderSession;
 
       const loadTime = Date.now() - startTime;
-      console.log(`[SupertonicInference] All models loaded in ${loadTime}ms`);
+      log.info(`All models loaded in ${loadTime}ms`);
 
       this.isInitialized = true;
     } catch (error) {
       // Try CPU fallback
-      console.warn(
-        '[SupertonicInference] Failed to load with acceleration, trying CPU fallback:',
+      log.warn(
+        'Failed to load with acceleration, trying CPU fallback:',
         error instanceof Error ? error.message : 'Unknown error',
       );
 
@@ -272,7 +275,7 @@ export class SupertonicInference {
         this.vectorEstimatorSession = vectorSession;
         this.vocoderSession = vocoderSession;
 
-        console.log('[SupertonicInference] Models loaded with CPU fallback');
+        log.info('Models loaded with CPU fallback');
         this.isInitialized = true;
       } catch (fallbackError) {
         throw new Error(
@@ -321,9 +324,7 @@ export class SupertonicInference {
     const textMask = createTextMask(textIds.length);
     const seqLen = textIds.length;
 
-    console.log(
-      `[SupertonicInference] Text: "${text.substring(0, 30)}...", length=${seqLen}`,
-    );
+    log.debug(`Text: "${text.substring(0, 30)}...", length=${seqLen}`);
 
     // Step 2: Run duration predictor - returns SCALAR duration in seconds
     const durationStartTime = Date.now();
@@ -340,8 +341,8 @@ export class SupertonicInference {
     const wavLength = durationSeconds * this.sampleRate;
     const latentLen = Math.ceil(wavLength / CHUNK_SIZE);
 
-    console.log(
-      `[SupertonicInference] Duration prediction: ${durationTime}ms, durationSeconds=${durationSeconds.toFixed(2)}s, latentLen=${latentLen}`,
+    log.debug(
+      `Duration prediction: ${durationTime}ms, durationSeconds=${durationSeconds.toFixed(2)}s, latentLen=${latentLen}`,
     );
 
     // Step 3: Run text encoder - output shape [1, emb_dim, seq_len]
@@ -353,9 +354,7 @@ export class SupertonicInference {
       seqLen,
     );
     const encoderTime = Date.now() - encoderStartTime;
-    console.log(
-      `[SupertonicInference] Text encoding: ${encoderTime}ms, embDim=${embDim}`,
-    );
+    log.debug(`Text encoding: ${encoderTime}ms, embDim=${embDim}`);
 
     // Step 4: Run vector estimator (diffusion)
     // Note: text_emb is passed directly without expansion - model handles cross-attention
@@ -370,21 +369,19 @@ export class SupertonicInference {
       inferenceSteps,
     );
     const diffusionTime = Date.now() - diffusionStartTime;
-    console.log(
-      `[SupertonicInference] Diffusion (${inferenceSteps} steps): ${diffusionTime}ms`,
-    );
+    log.debug(`Diffusion (${inferenceSteps} steps): ${diffusionTime}ms`);
 
     // Step 5: Run vocoder
     const vocoderStartTime = Date.now();
     let audioSamples = await this.vocode(latent, latentLen);
     const vocoderTime = Date.now() - vocoderStartTime;
-    console.log(`[SupertonicInference] Vocoding: ${vocoderTime}ms`);
+    log.debug(`Vocoding: ${vocoderTime}ms`);
 
     // Trim audio to predicted duration (vocoder may produce slightly more)
     const expectedSamples = Math.ceil(durationSeconds * this.sampleRate);
     if (audioSamples.length > expectedSamples) {
-      console.log(
-        `[SupertonicInference] Trimming audio from ${audioSamples.length} to ${expectedSamples} samples`,
+      log.debug(
+        `Trimming audio from ${audioSamples.length} to ${expectedSamples} samples`,
       );
       audioSamples = audioSamples.slice(0, expectedSamples);
     }
@@ -393,8 +390,8 @@ export class SupertonicInference {
     const audioDuration = audioSamples.length / this.sampleRate;
     const rtf = totalTime / (audioDuration * 1000);
 
-    console.log(
-      `[SupertonicInference] Total: ${totalTime}ms, audio=${audioDuration.toFixed(2)}s, RTF=${rtf.toFixed(2)}`,
+    log.debug(
+      `Total: ${totalTime}ms, audio=${audioDuration.toFixed(2)}s, RTF=${rtf.toFixed(2)}`,
     );
 
     return {
@@ -443,8 +440,8 @@ export class SupertonicInference {
   ): Promise<number> {
     const seqLen = textIds.length;
 
-    console.log(
-      `[SupertonicInference] predictDuration: seqLen=${seqLen}, styleDp.length=${styleDp.length}`,
+    log.debug(
+      `predictDuration: seqLen=${seqLen}, styleDp.length=${styleDp.length}`,
     );
 
     // Create input tensors with correct shapes per official reference
@@ -459,8 +456,8 @@ export class SupertonicInference {
       styleDp.length === 128 ? [1, 8, 16] : [1, styleDp.length];
     const styleDpTensor = new Tensor('float32', styleDp, styleDpShape);
 
-    console.log(
-      `[SupertonicInference] Tensor shapes: textIds=[1,${seqLen}], textMask=[1,1,${seqLen}], styleDp=${JSON.stringify(styleDpShape)}`,
+    log.debug(
+      `Tensor shapes: textIds=[1,${seqLen}], textMask=[1,1,${seqLen}], styleDp=${JSON.stringify(styleDpShape)}`,
     );
 
     const feeds: Record<string, any> = {
@@ -475,9 +472,7 @@ export class SupertonicInference {
       }
       const results = await this.durationPredictorSession.run(feeds);
 
-      console.log(
-        `[SupertonicInference] Duration output keys: ${Object.keys(results).join(', ')}`,
-      );
+      log.debug(`Duration output keys: ${Object.keys(results).join(', ')}`);
 
       // Get duration output - model outputs 'duration' (singular)
       // This is a SCALAR representing total audio duration in seconds
@@ -497,13 +492,13 @@ export class SupertonicInference {
       const durationFactor = this.speedToDurationFactor(speed);
       const durationSeconds = (durOutput.data[0] as number) * durationFactor;
 
-      console.log(
-        `[SupertonicInference] Raw duration output shape: [${durOutput.dims}], value: ${durOutput.data[0]}, factor: ${durationFactor.toFixed(3)}, adjusted: ${durationSeconds.toFixed(3)}s`,
+      log.debug(
+        `Raw duration output shape: [${durOutput.dims}], value: ${durOutput.data[0]}, factor: ${durationFactor.toFixed(3)}, adjusted: ${durationSeconds.toFixed(3)}s`,
       );
 
       return Math.max(0.1, durationSeconds); // Minimum 0.1 seconds
     } catch (error) {
-      console.error('[SupertonicInference] predictDuration error:', error);
+      log.error('predictDuration error:', error);
       throw error;
     }
   }
@@ -537,8 +532,8 @@ export class SupertonicInference {
       styleTtl.length === 12800 ? [1, 50, 256] : [1, styleTtl.length];
     const styleTtlTensor = new Tensor('float32', styleTtl, styleTtlShape);
 
-    console.log(
-      `[SupertonicInference] encodeText: textIds=[1,${seqLen}], textMask=[1,1,${seqLen}], styleTtl=${JSON.stringify(styleTtlShape)}`,
+    log.debug(
+      `encodeText: textIds=[1,${seqLen}], textMask=[1,1,${seqLen}], styleTtl=${JSON.stringify(styleTtlShape)}`,
     );
 
     const feeds = {
@@ -553,9 +548,7 @@ export class SupertonicInference {
       }
       const results = await this.textEncoderSession.run(feeds);
 
-      console.log(
-        `[SupertonicInference] Text encoder output keys: ${Object.keys(results).join(', ')}`,
-      );
+      log.debug(`Text encoder output keys: ${Object.keys(results).join(', ')}`);
 
       const textEmb =
         results.text_emb_onnx || results.text_emb || results.output;
@@ -567,16 +560,14 @@ export class SupertonicInference {
 
       // Output shape is [1, emb_dim, seq_len]
       const embDim = textEmb.dims[1] as number;
-      console.log(
-        `[SupertonicInference] Text embedding shape: [${textEmb.dims}], embDim=${embDim}`,
-      );
+      log.debug(`Text embedding shape: [${textEmb.dims}], embDim=${embDim}`);
 
       return {
         textEmbedding: new Float32Array(textEmb.data as Float32Array),
         embDim,
       };
     } catch (error) {
-      console.error('[SupertonicInference] encodeText error:', error);
+      log.error('encodeText error:', error);
       throw error;
     }
   }
@@ -606,8 +597,8 @@ export class SupertonicInference {
     styleTtl: Float32Array,
     numSteps: number,
   ): Promise<Float32Array> {
-    console.log(
-      `[SupertonicInference] estimateVector: seqLen=${seqLen}, embDim=${embDim}, latentLen=${latentLen}, numSteps=${numSteps}`,
+    log.debug(
+      `estimateVector: seqLen=${seqLen}, embDim=${embDim}, latentLen=${latentLen}, numSteps=${numSteps}`,
     );
 
     // Create latent mask [latent_len] of 1s
@@ -663,8 +654,8 @@ export class SupertonicInference {
       };
 
       if (step === 0) {
-        console.log(
-          `[SupertonicInference] Diffusion step ${step}: latent=[1,${this.latentDim},${latentLen}], textEmb=[1,${embDim},${seqLen}], textMask=[1,1,${seqLen}], latentMask=[1,1,${latentLen}]`,
+        log.debug(
+          `Diffusion step ${step}: latent=[1,${this.latentDim},${latentLen}], textEmb=[1,${embDim},${seqLen}], textMask=[1,1,${seqLen}], latentMask=[1,1,${latentLen}]`,
         );
       }
 
@@ -687,10 +678,7 @@ export class SupertonicInference {
 
         latent = new Float32Array(xt.data as Float32Array);
       } catch (error) {
-        console.error(
-          `[SupertonicInference] estimateVector step ${step} error:`,
-          error,
-        );
+        log.error(`estimateVector step ${step} error:`, error);
         throw error;
       }
     }
@@ -715,9 +703,7 @@ export class SupertonicInference {
       latentLen,
     ]);
 
-    console.log(
-      `[SupertonicInference] vocode: latent shape=[1,${this.latentDim},${latentLen}]`,
-    );
+    log.debug(`vocode: latent shape=[1,${this.latentDim},${latentLen}]`);
 
     const feeds = {
       latent: latentTensor,
@@ -729,9 +715,7 @@ export class SupertonicInference {
       }
       const results = await this.vocoderSession.run(feeds);
 
-      console.log(
-        `[SupertonicInference] Vocoder output keys: ${Object.keys(results).join(', ')}`,
-      );
+      log.debug(`Vocoder output keys: ${Object.keys(results).join(', ')}`);
 
       const wav =
         results.wav_tts ||
@@ -745,11 +729,11 @@ export class SupertonicInference {
         );
       }
 
-      console.log(`[SupertonicInference] Audio output shape: [${wav.dims}]`);
+      log.debug(`Audio output shape: [${wav.dims}]`);
 
       return new Float32Array(wav.data as Float32Array);
     } catch (error) {
-      console.error('[SupertonicInference] vocode error:', error);
+      log.error('vocode error:', error);
       throw error;
     }
   }
@@ -804,10 +788,7 @@ export class SupertonicInference {
             return null;
           } catch (error) {
             const sessionName = sessionNames[index];
-            console.warn(
-              `[SupertonicInference] ${sessionName} session release failed:`,
-              error,
-            );
+            log.warn(`${sessionName} session release failed:`, error);
             return new Error(
               `${sessionName}: ${error instanceof Error ? error.message : String(error)}`,
             );

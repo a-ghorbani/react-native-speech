@@ -9,6 +9,9 @@
 
 import type {SupertonicVoice, SupertonicVoiceStyle} from '../../types';
 import {loadAssetAsJSON} from '../../utils/AssetLoader';
+import {createComponentLogger} from '../../utils/logger';
+
+const log = createComponentLogger('Supertonic', 'StyleLoader');
 
 /**
  * Official voice names and descriptions from Supertonic demo
@@ -145,8 +148,8 @@ function toFloat32Array(data: any): Float32Array {
     if (Array.isArray(tensorLike.data)) {
       // Flatten the nested data array (can be 3D like [[[...]]])
       const flattened = flattenDeep(tensorLike.data);
-      console.log(
-        `[toFloat32Array] Tensor format with nested data, flattened length: ${flattened.length}`,
+      log.debug(
+        `toFloat32Array: tensor format with nested data, flattened length: ${flattened.length}`,
       );
       return new Float32Array(flattened);
     }
@@ -157,17 +160,17 @@ function toFloat32Array(data: any): Float32Array {
     // Check if first element is also an array (nested)
     if (Array.isArray(data[0])) {
       const flattened = flattenDeep(data);
-      console.log(
-        `[toFloat32Array] Nested array flattened, length: ${flattened.length}`,
+      log.debug(
+        `toFloat32Array: nested array flattened, length: ${flattened.length}`,
       );
       return new Float32Array(flattened);
     }
     // Flat array of numbers
-    console.log(`[toFloat32Array] Flat array, length: ${data.length}`);
+    log.debug(`toFloat32Array: flat array, length: ${data.length}`);
     return new Float32Array(data as number[]);
   }
 
-  console.log(`[toFloat32Array] Unknown format, returning empty array`);
+  log.warn(`toFloat32Array: unknown format, returning empty array`);
   return new Float32Array(0);
 }
 
@@ -207,9 +210,7 @@ export class StyleLoader {
     }
 
     this.isInitialized = true;
-    console.log(
-      `[StyleLoader] Loaded manifest with ${manifest.voices.length} voices`,
-    );
+    log.info(`Loaded manifest with ${manifest.voices.length} voices`);
   }
 
   /**
@@ -245,11 +246,11 @@ export class StyleLoader {
     }
 
     // Debug: log what we received
-    console.log(
-      `[StyleLoader] Raw style_dp type: ${typeof data.style_dp}, keys: ${typeof data.style_dp === 'object' ? Object.keys(data.style_dp).join(',') : 'N/A'}`,
+    log.debug(
+      `Raw style_dp type: ${typeof data.style_dp}, keys: ${typeof data.style_dp === 'object' ? Object.keys(data.style_dp as object).join(',') : 'N/A'}`,
     );
-    console.log(
-      `[StyleLoader] Raw style_ttl type: ${typeof data.style_ttl}, keys: ${typeof data.style_ttl === 'object' ? Object.keys(data.style_ttl).join(',') : 'N/A'}`,
+    log.debug(
+      `Raw style_ttl type: ${typeof data.style_ttl}, keys: ${typeof data.style_ttl === 'object' ? Object.keys(data.style_ttl as object).join(',') : 'N/A'}`,
     );
 
     const styleDp = toFloat32Array(data.style_dp);
@@ -269,8 +270,8 @@ export class StyleLoader {
       );
     }
 
-    console.log(
-      `[StyleLoader] Converted styleDp length: ${styleDp.length}, styleTtl length: ${styleTtl.length}`,
+    log.debug(
+      `Converted styleDp length: ${styleDp.length}, styleTtl length: ${styleTtl.length}`,
     );
 
     const style: SupertonicVoiceStyle = {
@@ -286,8 +287,8 @@ export class StyleLoader {
       this.voiceMetadata.set(voiceId, this.createVoiceMetadata(voiceId));
     }
 
-    console.log(
-      `[StyleLoader] Loaded voice ${voiceId}: styleDp=${style.styleDp.length}, styleTtl=${style.styleTtl.length}`,
+    log.info(
+      `Loaded voice ${voiceId}: styleDp=${style.styleDp.length}, styleTtl=${style.styleTtl.length}`,
     );
   }
 
@@ -353,7 +354,7 @@ export class StyleLoader {
       voicePath = `${this.voicesBasePath}/${voiceId}.json`;
     }
 
-    console.log(`[StyleLoader] Loading voice from: ${voicePath}`);
+    log.info(`Loading voice from: ${voicePath}`);
 
     try {
       const data = await loadAssetAsJSON<RawVoiceStyleData>(voicePath);
@@ -433,7 +434,7 @@ export class StyleLoader {
     for (const voiceId of voiceIds) {
       await this.preloadVoice(voiceId);
     }
-    console.log(`[StyleLoader] Preloaded ${voiceIds.length} voices`);
+    log.info(`Preloaded ${voiceIds.length} voices`);
   }
 
   /**
