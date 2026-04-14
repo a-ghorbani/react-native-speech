@@ -11,17 +11,9 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Preview
 
-### Kokoro
-
-| <center>Android</center> | <center>iOS</center> |
+| <center>Kokoro · iOS</center> | <center>Kitten · Android</center> |
 | :---: | :---: |
-| <video src="REPLACE_ME_KOKORO_ANDROID" controls width="100%" height="500"></video> | <video src="REPLACE_ME_KOKORO_IOS" controls width="100%" height="500"></video> |
-
-### Kitten
-
-| <center>Android</center> | <center>iOS</center> |
-| :---: | :---: |
-| <video src="REPLACE_ME_KITTEN_ANDROID" controls width="100%" height="500"></video> | <video src="REPLACE_ME_KITTEN_IOS" controls width="100%" height="500"></video> |
+| <video src="REPLACE_ME_KOKORO_IOS" controls width="100%" height="500"></video> | <video src="REPLACE_ME_KITTEN_ANDROID" controls width="100%" height="500"></video> |
 
 ## Features
 
