@@ -42,7 +42,8 @@ import {
   NoOpPhonemizer,
   type IPhonemizer,
 } from '../kokoro/Phonemizer';
-import {TextPreprocessor, chunkText, loadNativeDict} from '../../phonemization';
+import {TextPreprocessor, loadNativeDict} from '../../phonemization';
+import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Kitten', 'Engine');
@@ -319,23 +320,20 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
-    // Preprocess once, then chunk. Upstream kittentts applies TextPreprocessor
-    // at the top level and chunkText on the normalized result, so we match that.
+    // Chunk the ORIGINAL text first (so textRange indices match what the
+    // consumer passed to speak and stay aligned with HighlightedText), then
+    // preprocess each chunk before phonemization. Preprocessor operations
+    // (contraction expansion, number/unit expansion, etc.) are per-token and
+    // sentence-independent, so per-chunk preprocessing is equivalent to
+    // preprocessing the whole string — without the position drift that
+    // whole-text normalization introduces.
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const normalized = this.preprocessor.process(text);
-    const chunkStrings = chunkText(normalized, maxChunkSize);
-
-    // Build approximate text ranges so ChunkProgressEvent can still report
-    // positions. Ranges are relative to the normalized (preprocessed) text,
-    // not the original input — exact offsets are not meaningful here because
-    // preprocessing rewrites the text.
-    let cursor = 0;
-    const chunks = chunkStrings.map(chunkStr => {
-      const start = cursor;
-      const end = cursor + chunkStr.length;
-      cursor = end;
-      return {text: chunkStr, startIndex: start, endIndex: end};
-    });
+    const sentenceChunks = chunkTextWithPositions(text, maxChunkSize);
+    const chunks = sentenceChunks.map(c => ({
+      text: this.preprocessor.process(c.text),
+      startIndex: c.startIndex,
+      endIndex: c.endIndex,
+    }));
 
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
