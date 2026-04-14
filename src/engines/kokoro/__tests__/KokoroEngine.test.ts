@@ -2,8 +2,8 @@
  * Kokoro Engine Tests
  */
 
-import {BPETokenizer} from '../engines/kokoro/BPETokenizer';
-import {VoiceLoader} from '../engines/kokoro/VoiceLoader';
+import {BPETokenizer} from '../BPETokenizer';
+import {VoiceLoader} from '../VoiceLoader';
 
 describe('BPETokenizer', () => {
   let tokenizer: BPETokenizer;
