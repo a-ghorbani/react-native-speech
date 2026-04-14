@@ -5,6 +5,8 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.content.Intent
 import android.content.Context
 import android.speech.tts.Voice
@@ -42,6 +44,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   companion object {
     const val NAME = "RNSpeech"
+    private const val MAX_INIT_RETRIES = 3
+    private const val INIT_TIMEOUT_MS = 5000L
 
     private val defaultOptions: Map<String, Any> = mapOf(
       "rate" to 0.5f,
@@ -51,7 +55,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       "language" to Locale.getDefault().toLanguageTag()
     )
   }
+  private val initLock = Any()
   private val queueLock = Any()
+  private val mainHandler = Handler(Looper.getMainLooper())
   private val maxInputLength = TextToSpeech.getMaxSpeechInputLength()
   private val isSupportedPausing = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
 
@@ -60,8 +66,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private var selectedEngine: String? = null
   private var cachedEngines: List<TextToSpeech.EngineInfo>? = null
 
-  private var isInitialized = false
-  private var isInitializing = false
+  @Volatile private var isInitialized = false
+  @Volatile private var isInitializing = false
+  private var initRetryCount = 0
+  private var initTimeoutRunnable: Runnable? = null
   private val pendingOperations = mutableListOf<Pair<() -> Unit, Promise>>()
 
   private var globalOptions: MutableMap<String, Any> = defaultOptions.toMutableMap()
@@ -187,8 +195,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   private fun processPendingOperations() {
-    val operations = ArrayList(pendingOperations)
-    pendingOperations.clear()
+    val operations = synchronized(initLock) {
+      val list = ArrayList(pendingOperations)
+      pendingOperations.clear()
+      list
+    }
     for ((operation, promise) in operations) {
       try {
         operation()
@@ -199,8 +210,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   private fun rejectPendingOperations() {
-    val operations = ArrayList(pendingOperations)
-    pendingOperations.clear()
+    val operations = synchronized(initLock) {
+      val list = ArrayList(pendingOperations)
+      pendingOperations.clear()
+      list
+    }
     for ((_, promise) in operations) {
       promise.reject("speech_error", "Failed to initialize TTS engine")
     }
@@ -242,15 +256,59 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun scheduleInitTimeout() {
+    initTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+    val runnable = Runnable {
+      if (!isInitialized) {
+        onInitFailure()
+      }
+    }
+    initTimeoutRunnable = runnable
+    mainHandler.postDelayed(runnable, INIT_TIMEOUT_MS)
+  }
+
+  private fun clearInitTimeout() {
+    initTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+    initTimeoutRunnable = null
+  }
+
+  private fun onInitFailure() {
+    synchronized(initLock) {
+      isInitializing = false
+      isInitialized = false
+      if (::synthesizer.isInitialized) {
+        try {
+          synthesizer.shutdown()
+        } catch (_: Exception) {}
+      }
+      initRetryCount++
+      if (initRetryCount <= MAX_INIT_RETRIES) {
+        val delay = 1000L * (1 shl (initRetryCount - 1))
+        mainHandler.postDelayed({ initializeTTS() }, delay)
+      } else {
+        initRetryCount = 0
+        rejectPendingOperations()
+      }
+    }
+  }
+
   private fun initializeTTS() {
-    if (isInitializing) return
-    isInitializing = true
+    synchronized(initLock) {
+      if (isInitializing || isInitialized) return
+      isInitializing = true
+    }
+    scheduleInitTimeout()
 
     synthesizer = TextToSpeech(reactApplicationContext, { status ->
-      isInitialized = status == TextToSpeech.SUCCESS
-      isInitializing = false
+      clearInitTimeout()
+      val ok = status == TextToSpeech.SUCCESS
+      synchronized(initLock) {
+        isInitialized = ok
+        isInitializing = false
+        if (ok) initRetryCount = 0
+      }
 
-      if (isInitialized) {
+      if (ok) {
         cachedEngines = synthesizer.engines
         synthesizer.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
           override fun onStart(utteranceId: String) {
@@ -322,27 +380,32 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         applyGlobalOptions()
         processPendingOperations()
       } else {
-        rejectPendingOperations()
+        onInitFailure()
       }
     }, selectedEngine)
   }
 
   private fun ensureInitialized(promise: Promise, operation: () -> Unit) {
-    when {
-      isInitialized -> {
-        try {
-          operation()
-        } catch (e: Exception) {
-          promise.reject("speech_error", e.message ?: "Unknown error")
+    val action: Int = synchronized(initLock) {
+      when {
+        isInitialized -> 0
+        isInitializing -> {
+          pendingOperations.add(Pair(operation, promise))
+          1
+        }
+        else -> {
+          pendingOperations.add(Pair(operation, promise))
+          2
         }
       }
-      isInitializing -> {
-        pendingOperations.add(Pair(operation, promise))
+    }
+    when (action) {
+      0 -> try {
+        operation()
+      } catch (e: Exception) {
+        promise.reject("speech_error", e.message ?: "Unknown error")
       }
-      else -> {
-        pendingOperations.add(Pair(operation, promise))
-        initializeTTS()
-      }
+      2 -> initializeTTS()
     }
   }
 
