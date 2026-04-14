@@ -11,9 +11,9 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Preview
 
-|                                                                                                          <center>Android</center>                                                                                                           |                                                                                                          <center>iOS</center>                                                                                                           |
-| :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-| <video src="https://github.com/user-attachments/assets/0601b827-a87a-4eb0-be28-273aa2ec5942" controls width="100%" height="500"></video> [Android Preview](https://github.com/user-attachments/assets/0601b827-a87a-4eb0-be28-273aa2ec5942) | <video src="https://github.com/user-attachments/assets/1579639e-049b-42f4-9795-bc56956541bd" width="100%" height="500" controls></video> [iOS Preview](https://github.com/user-attachments/assets/1579639e-049b-42f4-9795-bc56956541bd) |
+| <center>Kokoro · iOS</center> | <center>Kitten · Android</center> |
+| :---: | :---: |
+| <video src="https://github.com/user-attachments/assets/1d055e24-8c44-41a8-a607-2ff239397684" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/02395df1-fbe8-411f-a44e-35c95ce09e9e" controls width="100%" height="500"></video> |
 
 ## Features
 
