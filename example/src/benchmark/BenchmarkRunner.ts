@@ -205,13 +205,15 @@ export async function runBenchmark(
       const initStart = performance.now();
 
       const initConfig = engineConfig.getInitConfig();
+      // Benchmark loop iterates engines dynamically; cast to the union once
+      // the engine discriminant is bound at the outer scope.
       await Speech.initialize({
         engine: engineConfig.engine as TTSEngine,
         ...initConfig,
         silentMode: 'obey',
         ducking: false,
         executionProviders: config.provider,
-      });
+      } as Parameters<typeof Speech.initialize>[0]);
 
       const initMs = performance.now() - initStart;
 

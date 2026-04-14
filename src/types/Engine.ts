@@ -116,12 +116,17 @@ export interface ReleaseResult {
   errors: ReleaseError[];
 }
 
-export interface TTSEngineInterface {
+export interface TTSEngineInterface<TConfig = void> {
   /** Unique engine identifier */
   readonly name: TTSEngine;
 
-  /** Initialize the engine */
-  initialize(config?: any): Promise<void>;
+  /**
+   * Initialize the engine.
+   *
+   * `TConfig` is the per-engine configuration object (e.g. `KokoroConfig`).
+   * Engines that take no config use `void`.
+   */
+  initialize(config?: TConfig): Promise<void>;
 
   /** Check if engine is ready to use */
   isReady(): Promise<boolean>;

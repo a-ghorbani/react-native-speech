@@ -23,6 +23,10 @@ import type {
   ReleaseError,
   ExecutionProvider,
   ExecutionProviderPreset,
+  OnnxInferenceSession,
+  OnnxInferenceSessionConstructor,
+  OnnxTensor,
+  OnnxTensorConstructor,
 } from '../../types';
 import type {KittenConfig, KittenSynthesisOptions} from '../../types/Kitten';
 import {IPATokenizer} from './IPATokenizer';
@@ -47,9 +51,13 @@ const {SAMPLE_RATE, DEFAULT_MAX_CHUNK_SIZE, TRIM_SAMPLES, PHONEMIZER_LANGUAGE} =
   KITTEN_CONSTANTS;
 
 // Lazy-loaded ONNX Runtime
-let OnnxRuntime: {InferenceSession: any; Tensor: any} | null = null;
+interface OnnxRuntimeBindings {
+  InferenceSession: OnnxInferenceSessionConstructor;
+  Tensor: OnnxTensorConstructor;
+}
+let OnnxRuntime: OnnxRuntimeBindings | null = null;
 
-function getOnnxRuntime(): {InferenceSession: any; Tensor: any} {
+function getOnnxRuntime(): OnnxRuntimeBindings {
   if (!OnnxRuntime) {
     try {
       const onnx = require('onnxruntime-react-native');
@@ -76,7 +84,7 @@ function getOnnxRuntime(): {InferenceSession: any; Tensor: any} {
  */
 function resolveExecutionProviders(
   config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): any[] {
+): ExecutionProvider[] {
   if (!config) {
     config = 'auto';
   }
@@ -124,10 +132,10 @@ function resolveExecutionProviders(
   return config;
 }
 
-export class KittenEngine implements TTSEngineInterface {
+export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   readonly name: TTSEngine = 'kitten' as TTSEngine;
 
-  private session: any = null;
+  private session: OnnxInferenceSession | null = null;
   private tokenizer: IPATokenizer;
   private voiceLoader: VoiceLoader;
   private phonemizer: IPhonemizer;
@@ -515,7 +523,10 @@ export class KittenEngine implements TTSEngineInterface {
     // Run inference
     const inferenceStartTime = Date.now();
     log.debug('Starting ONNX inference...');
-    let results: any;
+    if (!this.session) {
+      throw new Error('Kitten session not initialized');
+    }
+    let results: Record<string, OnnxTensor>;
     try {
       results = await this.session.run(feeds);
     } catch (inferError) {

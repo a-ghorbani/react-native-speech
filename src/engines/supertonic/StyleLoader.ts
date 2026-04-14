@@ -109,9 +109,9 @@ export interface RawVoiceStyleData {
 /**
  * Recursively flatten a nested array of any depth to a flat number array
  */
-function flattenDeep(arr: any): number[] {
+function flattenDeep(arr: unknown): number[] {
   const result: number[] = [];
-  const stack = [arr];
+  const stack: unknown[] = [arr];
 
   while (stack.length > 0) {
     const current = stack.pop();
@@ -135,7 +135,7 @@ function flattenDeep(arr: any): number[] {
  * - Nested array: [[...], [...]] (any depth)
  * - Flat array: [...]
  */
-function toFloat32Array(data: any): Float32Array {
+function toFloat32Array(data: unknown): Float32Array {
   // Check for tensor format (HuggingFace style with nested data array)
   // Keys can be: data, dims, type (or dtype)
   if (
@@ -144,7 +144,7 @@ function toFloat32Array(data: any): Float32Array {
     !Array.isArray(data) &&
     'data' in data
   ) {
-    const tensorLike = data as any;
+    const tensorLike = data as {data: unknown};
     if (Array.isArray(tensorLike.data)) {
       // Flatten the nested data array (can be 3D like [[[...]]])
       const flattened = flattenDeep(tensorLike.data);

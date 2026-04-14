@@ -45,7 +45,7 @@ const log = createComponentLogger('Supertonic', 'Engine');
 
 const {DEFAULT_MAX_CHUNK_SIZE, DEFAULT_INFERENCE_STEPS} = SUPERTONIC_CONSTANTS;
 
-export class SupertonicEngine implements TTSEngineInterface {
+export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
   readonly name: TTSEngine = 'supertonic' as TTSEngine;
 
   private inference: SupertonicInference;

@@ -25,6 +25,9 @@ import type {
   ExecutionProviderPreset,
   ReleaseResult,
   ReleaseError,
+  OnnxInferenceSession,
+  OnnxInferenceSessionConstructor,
+  OnnxTensorConstructor,
 } from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
@@ -37,14 +40,18 @@ import {KOKORO_CONSTANTS} from './constants';
 
 const log = createComponentLogger('Kokoro', 'Engine');
 
-// Lazy-loaded ONNX Runtime references (typed as any for dynamic import)
-let OnnxRuntime: {InferenceSession: any; Tensor: any} | null = null;
+// Lazy-loaded ONNX Runtime references (loaded via dynamic require)
+interface OnnxRuntimeBindings {
+  InferenceSession: OnnxInferenceSessionConstructor;
+  Tensor: OnnxTensorConstructor;
+}
+let OnnxRuntime: OnnxRuntimeBindings | null = null;
 
 /**
  * Ensure ONNX Runtime is available and return it
  * @throws Error with installation instructions if not installed
  */
-function getOnnxRuntime(): {InferenceSession: any; Tensor: any} {
+function getOnnxRuntime(): OnnxRuntimeBindings {
   if (!OnnxRuntime) {
     try {
       const onnx = require('onnxruntime-react-native');
@@ -77,7 +84,7 @@ const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
  */
 function resolveExecutionProviders(
   config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): any[] {
+): ExecutionProvider[] {
   // If not specified, use 'auto' preset
   if (!config) {
     config = 'auto';
@@ -135,10 +142,10 @@ function resolveExecutionProviders(
   return config;
 }
 
-export class KokoroEngine implements TTSEngineInterface {
+export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   readonly name: TTSEngine = 'kokoro' as TTSEngine;
 
-  private session: any = null; // InferenceSession type
+  private session: OnnxInferenceSession | null = null;
   private tokenizer: BPETokenizer;
   private voiceLoader: VoiceLoader;
   private phonemizer: IPhonemizer;
@@ -537,6 +544,9 @@ export class KokoroEngine implements TTSEngineInterface {
       speed: speedTensor,
     };
 
+    if (!this.session) {
+      throw new Error('Kokoro session not initialized');
+    }
     const inferenceStartTime = Date.now();
     const results = await this.session.run(feeds);
     const inferenceTime = Date.now() - inferenceStartTime;

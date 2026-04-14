@@ -68,7 +68,7 @@ function ensureONNXRuntime(): void {
  */
 function resolveExecutionProviders(
   config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): any[] {
+): ExecutionProvider[] {
   if (!config) {
     config = 'auto';
   }
@@ -460,7 +460,7 @@ export class SupertonicInference {
       `Tensor shapes: textIds=[1,${seqLen}], textMask=[1,1,${seqLen}], styleDp=${JSON.stringify(styleDpShape)}`,
     );
 
-    const feeds: Record<string, any> = {
+    const feeds = {
       text_ids: textIdsTensor,
       style_dp: styleDpTensor,
       text_mask: textMaskTensor,
@@ -782,9 +782,9 @@ export class SupertonicInference {
     // Release all sessions in parallel, collecting errors
     const results = await Promise.all(
       sessions.map(async (session, index) => {
-        if (session && typeof (session as any).release === 'function') {
+        if (session && typeof session.release === 'function') {
           try {
-            await (session as any).release();
+            await session.release();
             return null;
           } catch (error) {
             const sessionName = sessionNames[index];

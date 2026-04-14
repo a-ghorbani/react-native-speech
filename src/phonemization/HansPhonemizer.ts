@@ -31,6 +31,8 @@ let hans00Lib: Hans00 | null = null;
 function getHans00(): Hans00 {
   if (!hans00Lib) {
     try {
+      // Dynamic require keeps `phonemize` optional at bundle time for apps
+      // that only use OS native TTS (no neural engines / no phonemizer).
       hans00Lib = require('phonemize');
     } catch (e) {
       const isBytecodeError =

@@ -21,8 +21,8 @@
 
 import TurboSpeech from './NativeSpeech';
 import type {VoiceProps, VoiceOptions, EngineProps} from './NativeSpeech';
+import {TTSEngine} from './types';
 import type {
-  TTSEngine,
   KokoroConfig,
   KokoroVoice,
   SupertonicConfig,
@@ -56,6 +56,29 @@ let kittenEngine: KittenEngine | null = null;
 // Store pending chunk progress callback (set before engine is initialized)
 let pendingChunkProgressCallback: ChunkProgressCallback | null = null;
 
+/**
+ * Default synthesis-option fields that can also be provided at init time
+ * (applied on the native side for audio-session configuration).
+ * These mirror the subset of `SynthesisOptions` relevant at initialization.
+ */
+export interface SpeechInitAudioDefaults {
+  /** iOS silent-switch behavior — see `SynthesisOptions.silentMode` */
+  silentMode?: 'obey' | 'respect' | 'ignore';
+  /** Duck other audio while speaking — see `SynthesisOptions.ducking` */
+  ducking?: boolean;
+}
+
+/**
+ * Discriminated union of engine init configs.
+ * `engine` is the discriminant; the remaining fields are engine-specific.
+ */
+export type SpeechInitConfig =
+  | ({engine: TTSEngine.OS_NATIVE} & SpeechInitAudioDefaults)
+  | ({engine: TTSEngine.KOKORO} & KokoroConfig & SpeechInitAudioDefaults)
+  | ({engine: TTSEngine.SUPERTONIC} & SupertonicConfig &
+      SpeechInitAudioDefaults)
+  | ({engine: TTSEngine.KITTEN} & KittenConfig & SpeechInitAudioDefaults);
+
 export default class Speech {
   /**
    * The maximum number of characters allowed in a single call to the speak methods.
@@ -83,10 +106,7 @@ export default class Speech {
    *   engine: 'os-native'
    * });
    */
-  public static async initialize(config: {
-    engine: TTSEngine;
-    [key: string]: any;
-  }): Promise<void> {
+  public static async initialize(config: SpeechInitConfig): Promise<void> {
     const {engine, ...engineConfig} = config;
 
     log.info(`Initializing engine: ${engine}`);

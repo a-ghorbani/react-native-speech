@@ -9,22 +9,25 @@ import {createComponentLogger} from '../utils/logger';
 
 const log = createComponentLogger('EngineManager', 'Manager');
 
+// Stored engines are of unknown config; callers provide the config type per-call.
+type AnyEngine = TTSEngineInterface<unknown>;
+
 class TTSEngineManager {
-  private engines: Map<TTSEngine, TTSEngineInterface> = new Map();
+  private engines: Map<TTSEngine, AnyEngine> = new Map();
   private defaultEngine: TTSEngine = 'os-native' as TTSEngine;
   private initialized: Set<TTSEngine> = new Set();
 
   /**
    * Register a TTS engine
    */
-  registerEngine(engine: TTSEngineInterface): void {
-    this.engines.set(engine.name, engine);
+  registerEngine<TConfig>(engine: TTSEngineInterface<TConfig>): void {
+    this.engines.set(engine.name, engine as AnyEngine);
   }
 
   /**
    * Get an engine by name
    */
-  getEngine(name: TTSEngine): TTSEngineInterface {
+  getEngine(name: TTSEngine): AnyEngine {
     const engine = this.engines.get(name);
     if (!engine) {
       throw new Error(`Engine '${name}' not registered`);
@@ -66,7 +69,10 @@ class TTSEngineManager {
   /**
    * Initialize an engine (lazy initialization)
    */
-  async initializeEngine(name: TTSEngine, config?: any): Promise<void> {
+  async initializeEngine<TConfig>(
+    name: TTSEngine,
+    config?: TConfig,
+  ): Promise<void> {
     if (this.initialized.has(name)) {
       return; // Already initialized
     }
@@ -87,7 +93,10 @@ class TTSEngineManager {
    * Force re-initialization of an engine with new config
    * Destroys existing engine state and re-initializes
    */
-  async reinitializeEngine(name: TTSEngine, config?: any): Promise<void> {
+  async reinitializeEngine<TConfig>(
+    name: TTSEngine,
+    config?: TConfig,
+  ): Promise<void> {
     const engine = this.getEngine(name);
 
     // Destroy existing state

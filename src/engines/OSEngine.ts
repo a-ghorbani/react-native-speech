@@ -14,7 +14,7 @@ import type {
   ReleaseResult,
 } from '../types';
 
-export class OSEngine implements TTSEngineInterface {
+export class OSEngine implements TTSEngineInterface<void> {
   readonly name: TTSEngine = 'os-native' as TTSEngine;
 
   /**
