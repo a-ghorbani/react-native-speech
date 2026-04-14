@@ -64,6 +64,18 @@ RCT_EXPORT_MODULE();
                                              selector:@selector(handleAudioInterruption:)
                                                  name:AVAudioSessionInterruptionNotification
                                                object:nil];
+
+    // Best-effort default audio session category so interruption notifications
+    // fire reliably. Ducking / silentMode overrides call setCategory explicitly
+    // with their own options and take precedence.
+    NSError *categoryError = nil;
+    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback
+                                            mode:AVAudioSessionModeSpokenAudio
+                                         options:0
+                                           error:&categoryError];
+    if (categoryError) {
+      NSLog(@"[Speech] Failed to set default audio session category: %@", categoryError.localizedDescription);
+    }
   }
   return self;
 }
@@ -80,13 +92,23 @@ RCT_EXPORT_MODULE();
     if (_isAudioPlaying) {
       [self pauseAudioInternal];
     }
+    // Pause OS TTS as well (idempotent if not speaking).
+    if (self.synthesizer.isSpeaking && !self.synthesizer.isPaused) {
+      [self.synthesizer pauseSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+    }
+    [self emitOnAudioInterruption:@{@"type": @"began"}];
   } else if (interruptionType.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded) {
     NSNumber *interruptionOption = notification.userInfo[AVAudioSessionInterruptionOptionKey];
-    if (interruptionOption.unsignedIntegerValue == AVAudioSessionInterruptionOptionShouldResume) {
+    BOOL shouldResume = interruptionOption.unsignedIntegerValue == AVAudioSessionInterruptionOptionShouldResume;
+    if (shouldResume) {
       if (_isAudioPaused) {
         [self resumeAudioInternal];
       }
+      if (self.synthesizer.isPaused) {
+        [self.synthesizer continueSpeaking];
+      }
     }
+    [self emitOnAudioInterruption:@{@"type": @"ended", @"shouldResume": @(shouldResume)}];
   }
 }
 

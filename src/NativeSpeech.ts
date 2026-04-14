@@ -89,6 +89,21 @@ interface ConstantsProps {
   maxInputLength?: number;
 }
 
+export interface AudioInterruptionProps {
+  /**
+   * The interruption phase.
+   * - `began`: audio was paused due to an external interruption (incoming call, other media, audio focus loss).
+   * - `ended`: the interruption has ended.
+   */
+  type: 'began' | 'ended';
+  /**
+   * On `ended`, indicates whether the system suggests the app should resume playback.
+   * Always `true` on Android when focus is regained after a transient loss.
+   * On iOS, mirrors `AVAudioSessionInterruptionOptionShouldResume`.
+   */
+  shouldResume?: boolean;
+}
+
 export interface AudioPlayerConfig {
   /**
    * Sample rate in Hz (e.g., 24000)
@@ -174,6 +189,7 @@ export interface Spec extends TurboModule {
   readonly onResume: EventEmitter<EventProps>;
   readonly onStopped: EventEmitter<EventProps>;
   readonly onProgress: EventEmitter<ProgressEventProps>;
+  readonly onAudioInterruption: EventEmitter<AudioInterruptionProps>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('RNSpeech');

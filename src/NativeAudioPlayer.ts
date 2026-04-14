@@ -3,6 +3,7 @@ import TurboSpeech from './NativeSpeech';
 export type {AudioPlayerConfig} from './NativeSpeech';
 export type {EventProps as AudioPlayerEventProps} from './NativeSpeech';
 export type {ProgressEventProps as AudioPlayerProgressEventProps} from './NativeSpeech';
+export type {AudioInterruptionProps} from './NativeSpeech';
 
 // Wrapper for neural audio player methods from RNSpeech
 export const NativeNeuralAudioPlayer = {
@@ -20,6 +21,7 @@ export const NativeNeuralAudioPlayer = {
   onPause: TurboSpeech.onPause,
   onResume: TurboSpeech.onResume,
   onStopped: TurboSpeech.onStopped,
+  onAudioInterruption: TurboSpeech.onAudioInterruption,
 };
 
 export default NativeNeuralAudioPlayer;

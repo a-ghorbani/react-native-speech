@@ -89,8 +89,59 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private var audioFocusListenerNeural: AudioManager.OnAudioFocusChangeListener? = null
   private var audioFocusRequestNeural: AudioFocusRequest? = null
 
+  private val neuralFocusManager: AudioFocusManager by lazy {
+    AudioFocusManager(reactApplicationContext).apply {
+      listener = { event ->
+        when (event) {
+          is FocusEvent.LostTransient -> {
+            // Pause neural playback on transient loss; leave state so JS can resume.
+            synchronized(audioLock) {
+              if (isAudioPlayingState && !isAudioPausedState) {
+                try {
+                  audioTrack?.pause()
+                  isAudioPausedState = true
+                  emitOnPause(getAudioEventData())
+                } catch (_: Exception) {
+                  // Ignore - best-effort pause.
+                }
+              }
+            }
+            emitOnAudioInterruption(
+              Arguments.createMap().apply {
+                putString("type", "began")
+              }
+            )
+          }
+          is FocusEvent.Lost -> {
+            // Permanent loss - stop and abandon.
+            synchronized(audioLock) {
+              cleanupAudio()
+            }
+            neuralFocusManager.abandonFocus()
+            emitOnAudioInterruption(
+              Arguments.createMap().apply {
+                putString("type", "began")
+              }
+            )
+          }
+          is FocusEvent.Gained -> {
+            // Don't auto-resume; let JS decide based on the event.
+            emitOnAudioInterruption(
+              Arguments.createMap().apply {
+                putString("type", "ended")
+                putBoolean("shouldResume", true)
+              }
+            )
+          }
+        }
+      }
+    }
+  }
+
   init {
     initializeTTS()
+    // Touch the lazy manager so the listener is installed up front.
+    neuralFocusManager
   }
 
   private fun activateDuckingSession() {
@@ -737,6 +788,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           isAudioDuckingState = ducking
           activateAudioDuckingSession()
 
+          // Acquire audio focus so we get interruption callbacks.
+          neuralFocusManager.requestFocus()
+
           // Write data to track
           track.write(decodedBytes, 0, decodedBytes.size)
 
@@ -748,6 +802,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               synchronized(audioLock) {
                 isAudioPlayingState = false
                 deactivateAudioDuckingSession()
+                neuralFocusManager.abandonFocus()
                 SpeechTrace.endSection()
                 emitOnFinish(getAudioEventData())
                 promise.resolve(null)
@@ -781,6 +836,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       try {
         cleanupAudio()
         deactivateAudioDuckingSession()
+        neuralFocusManager.abandonFocus()
         emitOnStopped(getAudioEventData())
         promise.resolve(null)
       } catch (e: Exception) {
@@ -874,6 +930,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     // Cleanup neural audio player
     cleanupAudio()
     deactivateAudioDuckingSession()
+    neuralFocusManager.abandonFocus()
     audioExecutor.shutdown()
   }
 }
