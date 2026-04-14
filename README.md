@@ -136,6 +136,10 @@ module.exports = require('@pocketpalai/react-native-speech/jest');
 
 See [CONTRIBUTING.md](./docs/CONTRIBUTING.md).
 
+## Credits
+
+Forked from [`@mhpdev/react-native-speech`](https://github.com/mhpdev-com/react-native-speech) by [Mhpdev](https://github.com/mhpdev-com). The 1.x line provided the OS-native TTS foundation and the `HighlightedText` component; 2.0 extended the library into a multi-engine neural platform under a new package name.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE). For model and third-party data licenses, see [LICENSES.md](./docs/LICENSES.md).
