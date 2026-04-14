@@ -98,4 +98,40 @@ describe('chunkTextWithPositions', () => {
       {text: 'Apples, oranges, etc. and bananas.', start: 0, end: 34},
     ]);
   });
+
+  it('treats ellipsis as a single boundary, not three', () => {
+    const r = round('Hi... wait. Go on.', 400);
+    // "..." followed by " w" (lowercase) → no split. "." after "wait" + " G" → split.
+    expect(r.map(c => c.text)).toEqual(['Hi... wait.', 'Go on.']);
+  });
+
+  it('handles mixed punctuation like "?!"', () => {
+    const r = round('Really?! Yes! Done.', 400);
+    expect(r.map(c => c.text)).toEqual(['Really?!', 'Yes!', 'Done.']);
+  });
+
+  it('handles multiple whitespace between sentences', () => {
+    const t = 'First.\n\n  Second.';
+    const r = round(t, 400);
+    expect(r).toHaveLength(2);
+    expect(t.slice(r[0]!.start, r[0]!.end)).toBe('First.');
+    expect(t.slice(r[1]!.start, r[1]!.end)).toBe('Second.');
+  });
+
+  it('strips leading whitespace from the first chunk', () => {
+    const r = round('   Hello world.', 400);
+    expect(r).toEqual([{text: 'Hello world.', start: 3, end: 15}]);
+  });
+
+  it('exclamation at end closes the chunk', () => {
+    expect(round('Done!', 400)).toEqual([{text: 'Done!', start: 0, end: 5}]);
+  });
+
+  it('chunk end never exceeds text length', () => {
+    // Regression guard: the boundary regex can consume trailing whitespace
+    // past end-of-string via `$`; make sure we never emit end > text.length.
+    const t = 'Done.';
+    const [chunk] = round(t, 400);
+    expect(chunk!.end).toBeLessThanOrEqual(t.length);
+  });
 });
