@@ -43,7 +43,7 @@ import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Kitten', 'Engine');
 
-const {SAMPLE_RATE, DEFAULT_MAX_CHUNK_SIZE, TRIM_SAMPLES, ESPEAK_LANGUAGE} =
+const {SAMPLE_RATE, DEFAULT_MAX_CHUNK_SIZE, TRIM_SAMPLES, PHONEMIZER_LANGUAGE} =
   KITTEN_CONSTANTS;
 
 // Lazy-loaded ONNX Runtime
@@ -459,7 +459,7 @@ export class KittenEngine implements TTSEngineInterface {
    * Phonemize text using the configured phonemizer (defaults to GPL-free JS).
    */
   private async phonemizeText(text: string): Promise<string> {
-    return this.phonemizer.phonemize(text, ESPEAK_LANGUAGE);
+    return this.phonemizer.phonemize(text, PHONEMIZER_LANGUAGE);
   }
 
   /**

@@ -82,10 +82,11 @@ export function postProcessPhonemes(
     // Fix kokoro pronunciation (Japanese word)
     .replace(/kəkˈoːɹoʊ/g, 'kˈoʊkəɹoʊ')
     .replace(/kəkˈɔːɹəʊ/g, 'kˈəʊkəɹəʊ')
-    // Normalize phoneme symbols for Kokoro
-    // ʲ (palatalization) - remove entirely (espeak version difference)
-    // kokoro.js converts ʲ→j but their espeak doesn't output ʲ in these positions
-    // Our espeak outputs ʲ in places like "libraryʲ", "ɹɪʲækt" where it shouldn't be
+    // Normalize phoneme symbols for Kokoro.
+    // Strip ʲ (palatalization): reference kokoro.js converts ʲ→j, but the
+    // dict+hans00 phonemizer emits ʲ in positions (e.g. "libraryʲ") where
+    // the reference model was never trained on it. Safer to drop than to
+    // convert to 'j' and risk mispronunciation.
     .replace(/ʲ/g, '')
     .replace(/r/g, 'ɹ') // Normalize r-sounds
     .replace(/x/g, 'k') // Normalize velar fricative

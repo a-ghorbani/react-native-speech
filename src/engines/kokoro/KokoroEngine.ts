@@ -932,7 +932,8 @@ export class KokoroEngine implements TTSEngineInterface {
    * e.g., 'af_bella' -> 'en-us' (American English)
    *       'bf_emma' -> 'en-gb' (British English)
    *
-   * Returns espeak-ng language codes for phonemization.
+   * Returns BCP-47-ish language codes used by the phonemizer (kept
+   * compatible with the original Kokoro pipeline's labels).
    */
   private getLanguageFromVoice(voiceId: string): string {
     const langCode = voiceId.charAt(0).toLowerCase();

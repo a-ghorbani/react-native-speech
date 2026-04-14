@@ -32,8 +32,8 @@ export const KITTEN_CONSTANTS = {
   TRIM_SAMPLES: 5000,
 
   // Phonemization
-  /** eSpeak-ng language code for phonemization */
-  ESPEAK_LANGUAGE: 'en-us',
+  /** Language code for the dict+hans00 phonemizer */
+  PHONEMIZER_LANGUAGE: 'en-us',
 
   // Supported languages
   AVAILABLE_LANGS: ['en-us'] as const,

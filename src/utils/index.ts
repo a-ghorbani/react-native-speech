@@ -7,3 +7,4 @@
 export * from './logger';
 export * from './AssetLoader';
 export * from './TextChunker';
+export * from './utf8';

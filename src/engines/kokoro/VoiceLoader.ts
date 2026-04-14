@@ -10,6 +10,7 @@
 
 import type {KokoroVoice} from '../../types';
 import {createComponentLogger} from '../../utils/logger';
+import {decodeUtf8} from '../../utils/utf8';
 import {VOICE_EMBEDDING_CONSTANTS} from './constants';
 
 const log = createComponentLogger('Kokoro', 'VoiceLoader');
@@ -48,7 +49,8 @@ export class VoiceLoader {
 
         // Read voice ID
         const idBytes = new Uint8Array(data, offset, idLength);
-        const voiceId = new TextDecoder().decode(idBytes);
+        // Hermes has no TextDecoder; use manual UTF-8 decode.
+        const voiceId = decodeUtf8(idBytes);
         offset += idLength;
 
         // Read embedding dimension
