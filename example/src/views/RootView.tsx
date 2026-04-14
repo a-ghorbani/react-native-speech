@@ -286,7 +286,11 @@ const RootView: React.FC = () => {
             dictPath,
             silentMode: 'obey',
             ducking: true,
-            maxChunkSize: 100,
+            // Kitten chunks per-sentence (unlike Kokoro's packed chunking).
+            // Keep this high so natural sentences stay intact and we never
+            // word-break mid-sentence; only exceptionally long sentences
+            // (>500 chars) will fall back to whitespace splitting.
+            maxChunkSize: 500,
             executionProviders: provider,
           });
           setInitializedEngine(TTSEngine.KITTEN);

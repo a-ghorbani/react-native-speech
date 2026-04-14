@@ -139,7 +139,7 @@ const BenchmarkView: React.FC = () => {
               model.variant as any,
             ),
             dictPath,
-            maxChunkSize: 100,
+            maxChunkSize: 500,
           }),
           defaultVoice: '', // auto-detect after init
         });
