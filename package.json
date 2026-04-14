@@ -13,7 +13,6 @@
     "android",
     "ios",
     "cpp",
-    "third-party",
     "*.podspec",
     "react-native.config.js",
     "!ios/build",
@@ -25,6 +24,7 @@
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
+    "!**/.clangd",
     "!**/.*"
   ],
   "scripts": {

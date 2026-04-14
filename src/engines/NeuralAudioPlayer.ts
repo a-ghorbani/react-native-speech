@@ -5,8 +5,8 @@
  * Provides a unified interface for playing synthesized audio
  */
 
-import NativeNeuralAudioPlayer from '../NeuralAudioPlayer';
-import type {AudioPlayerConfig} from '../NeuralAudioPlayer';
+import NativeNeuralAudioPlayer from '../NativeAudioPlayer';
+import type {AudioPlayerConfig} from '../NativeAudioPlayer';
 import type {AudioBuffer} from '../types';
 import {float32ToBase64Int16} from '../utils/AudioConverter';
 
