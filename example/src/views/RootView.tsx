@@ -22,7 +22,7 @@ import Speech, {
   type ChunkProgressEvent,
   type ExecutionProviderPreset,
   TTSEngine,
-} from '@mhpdev/react-native-speech';
+} from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {kokoroModelManager} from '../utils/ModelManager';

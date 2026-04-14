@@ -2307,46 +2307,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@mhpdev/react-native-speech@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "@mhpdev/react-native-speech@workspace:."
-  dependencies:
-    "@commitlint/config-conventional": ^19.6.0
-    "@eslint/compat": ^1.2.7
-    "@eslint/eslintrc": ^3.3.0
-    "@eslint/js": ^9.22.0
-    "@evilmartians/lefthook": ^1.5.0
-    "@react-native-community/cli": 15.0.0-alpha.2
-    "@react-native/babel-preset": 0.81.0
-    "@react-native/eslint-config": ^0.78.0
-    "@release-it/conventional-changelog": ^9.0.2
-    "@types/jest": ^29.5.5
-    "@types/react": ^19.1.0
-    commitlint: ^19.6.1
-    del-cli: ^5.1.0
-    eslint: ^9.22.0
-    eslint-config-prettier: ^10.1.1
-    eslint-plugin-prettier: ^5.2.3
-    jest: ^29.7.0
-    phonemize: ^1.1.0
-    prettier: ^3.0.3
-    react: 19.1.0
-    react-native: 0.81.0
-    react-native-builder-bob: ^0.40.13
-    release-it: ^17.10.0
-    turbo: ^1.10.7
-    typescript: ^5.8.3
-  peerDependencies:
-    "@dr.pogodin/react-native-fs": ^2.36.1
-    onnxruntime-react-native: ^1.23.0
-    react: "*"
-    react-native: "*"
-  peerDependenciesMeta:
-    onnxruntime-react-native:
-      optional: true
-  languageName: unknown
-  linkType: soft
-
 "@nicolo-ribaudo/eslint-scope-5-internals@npm:5.1.1-v1":
   version: 5.1.1-v1
   resolution: "@nicolo-ribaudo/eslint-scope-5-internals@npm:5.1.1-v1"
@@ -2577,6 +2537,46 @@ __metadata:
   checksum: 8a88e8b59858ee7e37b3249d85f491821a878070f736127a1baff55e293c9d6e5db67c8945084970d0f2de5af9351ece28714c7dc1b2888998524999b800c144
   languageName: node
   linkType: hard
+
+"@pocketpalai/react-native-speech@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "@pocketpalai/react-native-speech@workspace:."
+  dependencies:
+    "@commitlint/config-conventional": ^19.6.0
+    "@eslint/compat": ^1.2.7
+    "@eslint/eslintrc": ^3.3.0
+    "@eslint/js": ^9.22.0
+    "@evilmartians/lefthook": ^1.5.0
+    "@react-native-community/cli": 15.0.0-alpha.2
+    "@react-native/babel-preset": 0.81.0
+    "@react-native/eslint-config": ^0.78.0
+    "@release-it/conventional-changelog": ^9.0.2
+    "@types/jest": ^29.5.5
+    "@types/react": ^19.1.0
+    commitlint: ^19.6.1
+    del-cli: ^5.1.0
+    eslint: ^9.22.0
+    eslint-config-prettier: ^10.1.1
+    eslint-plugin-prettier: ^5.2.3
+    jest: ^29.7.0
+    phonemize: ^1.1.0
+    prettier: ^3.0.3
+    react: 19.1.0
+    react-native: 0.81.0
+    react-native-builder-bob: ^0.40.13
+    release-it: ^17.10.0
+    turbo: ^1.10.7
+    typescript: ^5.8.3
+  peerDependencies:
+    "@dr.pogodin/react-native-fs": ^2.36.1
+    onnxruntime-react-native: ^1.23.0
+    react: "*"
+    react-native: "*"
+  peerDependenciesMeta:
+    onnxruntime-react-native:
+      optional: true
+  languageName: unknown
+  linkType: soft
 
 "@react-native-community/cli-clean@npm:15.0.0-alpha.2":
   version: 15.0.0-alpha.2

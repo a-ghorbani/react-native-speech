@@ -2,7 +2,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@mhpdev/react-native-speech": ["./src/index"]
+      "@pocketpalai/react-native-speech": ["./src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

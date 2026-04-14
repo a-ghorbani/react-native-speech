@@ -7,7 +7,7 @@
  * 3. Vector Estimator - iterative diffusion to generate mel-spectrogram
  * 4. Vocoder - converts mel-spectrogram to audio waveform
  *
- * Based on: https://github.com/mhpdev/supertonic
+ * Based on: https://huggingface.co/Supertone/supertonic
  */
 
 import {Platform} from 'react-native';

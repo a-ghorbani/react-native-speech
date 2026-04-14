@@ -43,13 +43,13 @@
 Install the package using either npm or Yarn:
 
 ```sh
-npm install @mhpdev/react-native-speech
+npm install @pocketpalai/react-native-speech
 ```
 
 Or with Yarn:
 
 ```sh
-yarn add @mhpdev/react-native-speech
+yarn add @pocketpalai/react-native-speech
 ```
 
 ### Expo
@@ -59,7 +59,7 @@ For Expo projects, follow these steps:
 1. Install the package:
 
    ```sh
-   npx expo install @mhpdev/react-native-speech
+   npx expo install @pocketpalai/react-native-speech
    ```
 
 2. Since it is not supported on Expo Go, run:
@@ -75,7 +75,7 @@ For Expo projects, follow these steps:
 For text-to-speech, the library exports the `Speech` class, which provides methods for speech synthesis and event handling:
 
 ```tsx
-import Speech from '@mhpdev/react-native-speech';
+import Speech from '@pocketpalai/react-native-speech';
 ```
 
 ---
@@ -464,7 +464,7 @@ The `HighlightedText` component allows you to display text with customizable hig
 ### Importing the Component
 
 ```tsx
-import {HighlightedText} from '@mhpdev/react-native-speech';
+import {HighlightedText} from '@pocketpalai/react-native-speech';
 ```
 
 ### Properties
@@ -500,7 +500,7 @@ import {
   HighlightedText,
   type HighlightedSegmentProps,
   type HighlightedSegmentArgs,
-} from '@mhpdev/react-native-speech';
+} from '@pocketpalai/react-native-speech';
 import {Alert, SafeAreaView, StyleSheet} from 'react-native';
 
 const TEXT = 'This is a sample text where some parts are highlighted.';

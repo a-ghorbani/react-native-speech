@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://mhpdev.com" target="_blank">
+  <a href="https://github.com/a-ghorbani/react-native-speech" target="_blank">
     <img src="./docs/banner.png" alt="React Native Full Responsive Banner" style="max-width:100%;height:auto;" />
   </a>
 </p>
@@ -55,13 +55,13 @@ A high-performance text-to-speech library built for bare React Native and Expo, 
 Install the package using either npm or Yarn:
 
 ```sh
-npm install @mhpdev/react-native-speech
+npm install @pocketpalai/react-native-speech
 ```
 
 Or with Yarn:
 
 ```sh
-yarn add @mhpdev/react-native-speech
+yarn add @pocketpalai/react-native-speech
 ```
 
 For iOS, navigate to the ios directory and install the pods:
@@ -77,7 +77,7 @@ For Expo projects, follow these steps:
 1. Install the package:
 
    ```sh
-   npx expo install @mhpdev/react-native-speech
+   npx expo install @pocketpalai/react-native-speech
    ```
 
 2. Since it is not supported on Expo Go, run:
@@ -104,7 +104,7 @@ To learn how to use the library, check out the [usage section](./docs/USAGE.md).
 
 ```tsx
 import React from 'react';
-import Speech from '@mhpdev/react-native-speech';
+import Speech from '@pocketpalai/react-native-speech';
 import {SafeAreaView, StyleSheet, Text, TouchableOpacity} from 'react-native';
 
 const App: React.FC = () => {
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
 ### Neural TTS Quick Start (v2.0 Unified API)
 
 ```tsx
-import Speech, {TTSEngine} from '@mhpdev/react-native-speech';
+import Speech, {TTSEngine} from '@pocketpalai/react-native-speech';
 
 // Initialize with Kokoro (high quality)
 await Speech.initialize({
@@ -178,12 +178,12 @@ To become more familiar with the usage of the library, check out the [example pr
 
 To mock the package's methods and components using the default mock configuration provided, follow these steps:
 
-- Create a file named `@mhpdev/react-native-speech.ts` inside your `__mocks__` directory.
+- Create a file named `@pocketpalai/react-native-speech.ts` inside your `__mocks__` directory.
 
 - Copy the following code into that file:
 
   ```js
-  module.exports = require('@mhpdev/react-native-speech/jest');
+  module.exports = require('@pocketpalai/react-native-speech/jest');
   ```
 
 ## Contributing

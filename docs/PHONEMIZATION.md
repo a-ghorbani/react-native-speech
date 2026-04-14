@@ -68,7 +68,7 @@ via `node scripts/build-dict.mjs`.
 ### createPhonemizer factory
 
 ```ts
-import {createPhonemizer} from '@mhpdev/react-native-speech';
+import {createPhonemizer} from '@pocketpalai/react-native-speech';
 
 const phonemizer = createPhonemizer('js', {dict});
 const phonemes = await phonemizer.phonemize('hello world', 'en-us');
@@ -87,7 +87,7 @@ import {
   createPhonemizer,
   TextNormalizer,
   loadNativeDict,
-} from '@mhpdev/react-native-speech';
+} from '@pocketpalai/react-native-speech';
 
 const dict = await loadNativeDict(dictPath);
 const phonemizer = createPhonemizer('js', {dict});

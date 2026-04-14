@@ -26,7 +26,7 @@ def getExtOrIntegerDefault(name) {
 }
 
 android {
-  namespace "com.mhpdev.speech"
+  namespace "com.pocketpalai.speech"
 
   compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
 

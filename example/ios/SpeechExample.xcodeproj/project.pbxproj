@@ -364,7 +364,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mhpdev.rn.speech;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pocketpalai.rn.speech;
 				PRODUCT_NAME = SpeechExample;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -395,7 +395,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.mhpdev.rn.speech;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pocketpalai.rn.speech;
 				PRODUCT_NAME = SpeechExample;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 5.0;

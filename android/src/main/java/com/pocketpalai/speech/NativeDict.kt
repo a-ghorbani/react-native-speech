@@ -1,4 +1,4 @@
-package com.mhpdev.speech
+package com.pocketpalai.speech
 
 /**
  * NativeDict — Kotlin wrapper around the mmap'd EPD1 phonemizer dict

@@ -1,5 +1,5 @@
 {
-  "name": "@mhpdev/react-native-speech",
+  "name": "@pocketpalai/react-native-speech",
   "version": "1.3.0",
   "description": "A high-performance React Native library for text-to-speech on iOS and Android",
   "source": "./src/index.tsx",
@@ -65,14 +65,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mhpdev-com/react-native-speech.git"
+    "url": "git+https://github.com/a-ghorbani/react-native-speech.git"
   },
-  "author": "Mhpdev <hi@mhpdev.com> (https://github.com/mhpdev-com)",
+  "author": "a-ghorbani",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mhpdev-com/react-native-speech/issues"
+    "url": "https://github.com/a-ghorbani/react-native-speech/issues"
   },
-  "homepage": "https://github.com/mhpdev-com/react-native-speech#readme",
+  "homepage": "https://github.com/a-ghorbani/react-native-speech#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },
@@ -181,7 +181,7 @@
     "type": "modules",
     "jsSrcsDir": "src",
     "android": {
-      "javaPackageName": "com.mhpdev.speech"
+      "javaPackageName": "com.pocketpalai.speech"
     }
   },
   "create-react-native-library": {

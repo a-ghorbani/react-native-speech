@@ -13,7 +13,7 @@
  */
 
 import {Platform} from 'react-native';
-import type {KokoroConfig} from '@mhpdev/react-native-speech';
+import type {KokoroConfig} from '@pocketpalai/react-native-speech';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
 // Model variant types

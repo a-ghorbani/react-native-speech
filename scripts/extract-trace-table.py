@@ -228,7 +228,7 @@ def extract_poi_events(xml_path: str) -> list[POIInterval]:
             # Only include our TTS POI events
             if category != "PointsOfInterest":
                 continue
-            if subsystem != "com.mhpdev.speech":
+            if subsystem != "com.pocketpalai.speech":
                 continue
 
             key = (name, identifier)

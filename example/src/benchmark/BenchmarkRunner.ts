@@ -13,7 +13,7 @@
  */
 
 import {Platform} from 'react-native';
-import Speech, {type TTSEngine} from '@mhpdev/react-native-speech';
+import Speech, {type TTSEngine} from '@pocketpalai/react-native-speech';
 import Benchmark from './NativeBenchmark';
 import {emitBenchmark, generateRunId} from './BenchmarkLogger';
 import type {

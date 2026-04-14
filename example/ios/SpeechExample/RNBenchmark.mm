@@ -6,7 +6,7 @@
 #import <os/proc.h>
 #import <notify.h>
 
-static NSString *const kBenchmarkDoneNotification = @"com.mhpdev.rn.speech.benchmarkComplete";
+static NSString *const kBenchmarkDoneNotification = @"com.pocketpalai.rn.speech.benchmarkComplete";
 static NSString *const kMarkersFilename = @"benchmark-markers.json";
 
 @interface RNBenchmark : NSObject <RCTBridgeModule>
@@ -32,8 +32,8 @@ RCT_EXPORT_MODULE();
 - (instancetype)init {
   self = [super init];
   if (self) {
-    _benchLog = os_log_create("com.mhpdev.speech", "TTS");
-    _benchPoiLog = os_log_create("com.mhpdev.speech", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+    _benchLog = os_log_create("com.pocketpalai.speech", "TTS");
+    _benchPoiLog = os_log_create("com.pocketpalai.speech", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
     _signpostIdMap = [NSMutableDictionary new];
     _pollQueue = dispatch_queue_create("com.speech.benchmark.poll", DISPATCH_QUEUE_SERIAL);
     _isMemoryPolling = NO;

@@ -1,4 +1,4 @@
-// native_dict_jni.cpp — JNI bridge for com.mhpdev.speech.NativeDict.
+// native_dict_jni.cpp — JNI bridge for com.pocketpalai.speech.NativeDict.
 #include <jni.h>
 #include <android/log.h>
 #include <memory>
@@ -16,7 +16,7 @@ std::unique_ptr<rnspeech::NativeDict> sDict;
 }  // namespace
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_mhpdev_speech_NativeDict_nativeOpen(JNIEnv* env, jclass, jstring path) {
+Java_com_pocketpalai_speech_NativeDict_nativeOpen(JNIEnv* env, jclass, jstring path) {
   if (path == nullptr) return JNI_FALSE;
   const char* cpath = env->GetStringUTFChars(path, nullptr);
   if (cpath == nullptr) return JNI_FALSE;
@@ -34,13 +34,13 @@ Java_com_mhpdev_speech_NativeDict_nativeOpen(JNIEnv* env, jclass, jstring path) 
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_mhpdev_speech_NativeDict_nativeClose(JNIEnv*, jclass) {
+Java_com_pocketpalai_speech_NativeDict_nativeClose(JNIEnv*, jclass) {
   std::lock_guard<std::mutex> lock(sDictMutex);
   sDict.reset();
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_mhpdev_speech_NativeDict_nativeLookup(JNIEnv* env, jclass, jstring word) {
+Java_com_pocketpalai_speech_NativeDict_nativeLookup(JNIEnv* env, jclass, jstring word) {
   if (word == nullptr) return nullptr;
 
   const char* cword = env->GetStringUTFChars(word, nullptr);

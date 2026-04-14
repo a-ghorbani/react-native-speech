@@ -8,8 +8,8 @@ static os_log_t _ttsLog;
 static os_log_t _ttsPoiLog;
 
 void RNSpeechTraceInit(void) {
-    _ttsLog = os_log_create("com.mhpdev.speech", "TTS");
-    _ttsPoiLog = os_log_create("com.mhpdev.speech", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+    _ttsLog = os_log_create("com.pocketpalai.speech", "TTS");
+    _ttsPoiLog = os_log_create("com.pocketpalai.speech", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
 }
 
 RNSpeechTraceHandle RNSpeechTraceBegin(const char *name, NSString *message) {

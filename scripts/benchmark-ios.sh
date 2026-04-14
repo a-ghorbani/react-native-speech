@@ -9,7 +9,7 @@
 #
 # The app must be built with RN_SPEECH_TRACE=1 to enable os_signpost
 # instrumentation (see RNSpeechTrace.h/mm). Signpost intervals appear
-# under the "com.mhpdev.speech" subsystem with category "TTS"
+# under the "com.pocketpalai.speech" subsystem with category "TTS"
 # (auto-instrumented) or "JS" (benchmark runner phases).
 #
 # Enable: set ENV['RN_SPEECH_TRACE']='1' in Podfile, then pod install.
@@ -218,8 +218,8 @@ echo ""
 # - Physical device: markers are written to the app's Documents/benchmark-markers.json
 #   by the native RNBenchmark module. We pull the file after recording via devicectl.
 #   Auto-stop uses Darwin notification observation via devicectl.
-BUNDLE_ID="com.mhpdev.rn.speech"
-DARWIN_NOTIFICATION="com.mhpdev.rn.speech.benchmarkComplete"
+BUNDLE_ID="com.pocketpalai.rn.speech"
+DARWIN_NOTIFICATION="com.pocketpalai.rn.speech.benchmarkComplete"
 
 if $IS_REMOTE; then
   echo "Physical device: markers collected via app file (devicectl copy)."
@@ -510,7 +510,7 @@ try:
                     record['category'] = val
 
         # Only include TTS-related signposts
-        if record.get('subsystem', '') == 'com.mhpdev.speech' or \
+        if record.get('subsystem', '') == 'com.pocketpalai.speech' or \
            record.get('name', '').startswith('TTS:'):
             intervals.append(record)
 

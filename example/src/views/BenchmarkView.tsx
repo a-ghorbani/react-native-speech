@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {TTSEngine} from '@mhpdev/react-native-speech';
+import {TTSEngine} from '@pocketpalai/react-native-speech';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {supertonicModelManager} from '../utils/SupertonicModelManager';
 import {kittenModelManager} from '../utils/KittenModelManager';
@@ -22,7 +22,7 @@ import {
   type BenchmarkProgress,
   type EngineTestConfig,
 } from '../benchmark';
-import type {ExecutionProviderPreset} from '@mhpdev/react-native-speech';
+import type {ExecutionProviderPreset} from '@pocketpalai/react-native-speech';
 
 const TEST_PHRASE =
   'The quick brown fox jumps over the lazy dog. ' +

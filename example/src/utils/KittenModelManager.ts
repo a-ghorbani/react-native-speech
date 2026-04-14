@@ -11,7 +11,7 @@
  * - mini: ~78MB, largest/highest quality
  */
 
-import type {KittenConfig} from '@mhpdev/react-native-speech';
+import type {KittenConfig} from '@pocketpalai/react-native-speech';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
 // Model variant keys

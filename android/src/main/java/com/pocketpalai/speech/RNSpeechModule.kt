@@ -1,4 +1,4 @@
-package com.mhpdev.speech
+package com.pocketpalai.speech
 
 import java.util.UUID
 import java.util.Locale

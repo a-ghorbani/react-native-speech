@@ -13,7 +13,7 @@
  */
 
 import {Platform} from 'react-native';
-import type {SupertonicConfig} from '@mhpdev/react-native-speech';
+import type {SupertonicConfig} from '@pocketpalai/react-native-speech';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
 // Model version types

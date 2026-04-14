@@ -2,7 +2,7 @@ import type {
   TTSEngine,
   SynthesisOptions,
   ExecutionProviderPreset,
-} from '@mhpdev/react-native-speech';
+} from '@pocketpalai/react-native-speech';
 
 export interface EngineTestConfig {
   engine: TTSEngine;
