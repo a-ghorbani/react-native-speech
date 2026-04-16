@@ -265,6 +265,87 @@ describe('SpeechStream', () => {
     await expect(finalizePromise).resolves.toBeUndefined();
   });
 
+  test('CJK: chinese sentence flushes on 。 without trailing whitespace', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    const stream = new SpeechStreamImpl({synthesize, stop});
+
+    // CJK punctuation is unambiguous — no trailing space needed. Without
+    // this branch in the regex, nothing would flush until finalize and
+    // CJK streaming would regress vs. the per-sentence fallback.
+    stream.append('你好。');
+    await flushMicrotasks();
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.text).toBe('你好。');
+
+    calls[0]!.resolve();
+  });
+
+  test('CJK: multiple consecutive CJK punct collapses into one boundary', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    const stream = new SpeechStreamImpl({synthesize, stop});
+
+    stream.append('你好？！');
+    await flushMicrotasks();
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.text).toBe('你好？！');
+
+    calls[0]!.resolve();
+  });
+
+  test('CJK: mixed ASCII + CJK handles both boundary styles', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    const stream = new SpeechStreamImpl({
+      synthesize,
+      stop,
+      options: {targetChars: 300},
+    });
+
+    stream.append('Hello! ');
+    await flushMicrotasks();
+    expect(calls[0]!.text).toBe('Hello! ');
+
+    // CJK follow-up arrives while batch 1 is playing — below target, so
+    // no pre-queue during playback.
+    stream.append('你好。再見。');
+    await flushMicrotasks();
+    expect(synthesize).toHaveBeenCalledTimes(1);
+
+    // Resolve batch 1 → underrun fires, picks up all complete CJK sentences.
+    calls[0]!.resolve();
+    await flushMicrotasks();
+
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    expect(calls[1]!.text).toBe('你好。再見。');
+
+    calls[1]!.resolve();
+  });
+
+  test('CJK: ASCII decimal still not mistaken for sentence end', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    const stream = new SpeechStreamImpl({synthesize, stop});
+
+    // "3.14" should not match — the ASCII branch still requires
+    // trailing whitespace. Only flushes on finalize.
+    stream.append('3.14');
+    await flushMicrotasks();
+    expect(synthesize).not.toHaveBeenCalled();
+
+    const finalizePromise = stream.finalize();
+    await flushMicrotasks();
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(calls[0]!.text).toBe('3.14');
+
+    calls[0]!.resolve();
+    await expect(finalizePromise).resolves.toBeUndefined();
+  });
+
   test('finalize rejects with synth error; onError callback receives it', async () => {
     const {synthesize, calls} = makeControllableSynth();
     const stop = jest.fn(async () => {});
