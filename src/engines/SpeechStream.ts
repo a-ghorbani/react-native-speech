@@ -55,6 +55,8 @@ export interface SpeechStreamConfig {
   options?: SpeechStreamOptions;
 }
 
+type FlushReason = 'first-sentence' | 'target-chars' | 'underrun' | 'finalize';
+
 export class SpeechStreamImpl implements ISpeechStream {
   private buffer = '';
   private queue: string[] = [];
@@ -66,6 +68,12 @@ export class SpeechStreamImpl implements ISpeechStream {
   private firstError: Error | null = null;
 
   private drainResolvers: Array<() => void> = [];
+
+  // Diagnostic state — used only for logging, not for control flow.
+  private readonly streamStartTs: number = Date.now();
+  private batchCount = 0;
+  private lastBatchEndTs: number | null = null;
+  private totalAppendedChars = 0;
 
   private readonly targetChars: number;
   private readonly synthesize: (text: string) => Promise<void>;
@@ -80,6 +88,7 @@ export class SpeechStreamImpl implements ISpeechStream {
       config.options?.targetChars ?? DEFAULT_TARGET_CHARS,
     );
     this.onError = config.options?.onError;
+    log.info(`stream created: targetChars=${this.targetChars}, t+0ms`);
   }
 
   append(text: string): void {
@@ -90,7 +99,16 @@ export class SpeechStreamImpl implements ISpeechStream {
       return;
     }
     this.buffer += text;
+    this.totalAppendedChars += text.length;
+    log.debug(
+      `append: +${text.length}, buffer=${this.buffer.length}, t+${this.rel()}ms`,
+    );
     this.tryFlush();
+  }
+
+  /** Milliseconds since stream was created — compact origin for log lines. */
+  private rel(): number {
+    return Date.now() - this.streamStartTs;
   }
 
   async finalize(): Promise<void> {
@@ -100,9 +118,13 @@ export class SpeechStreamImpl implements ISpeechStream {
     }
     if (!this.finalized) {
       this.finalized = true;
+      log.info(
+        `finalize: tailBuffer=${this.buffer.length}, totalAppended=${this.totalAppendedChars}, t+${this.rel()}ms`,
+      );
       this.tryFlush();
     }
     await this.waitForDrain();
+    log.info(`drained: batches=${this.batchCount}, elapsed=${this.rel()}ms`);
     if (this.firstError) {
       throw this.firstError;
     }
@@ -145,8 +167,9 @@ export class SpeechStreamImpl implements ISpeechStream {
       if (this.buffer.length === 0) {
         return;
       }
-      this.enqueueBatch(this.buffer);
+      const tail = this.buffer;
       this.buffer = '';
+      this.enqueueBatch(tail, 'finalize');
       return;
     }
 
@@ -154,8 +177,8 @@ export class SpeechStreamImpl implements ISpeechStream {
       const split = extractFirstSentence(this.buffer);
       if (split) {
         this.firstFlushDone = true;
-        this.enqueueBatch(split.head);
         this.buffer = split.tail;
+        this.enqueueBatch(split.head, 'first-sentence');
       }
       return;
     }
@@ -169,16 +192,22 @@ export class SpeechStreamImpl implements ISpeechStream {
 
     const split = extractAllCompleteSentences(this.buffer);
     if (split) {
-      this.enqueueBatch(split.head);
       this.buffer = split.tail;
+      this.enqueueBatch(
+        split.head,
+        sizeThresholdHit ? 'target-chars' : 'underrun',
+      );
     }
   }
 
-  private enqueueBatch(text: string): void {
+  private enqueueBatch(text: string, reason: FlushReason): void {
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       return;
     }
+    log.info(
+      `flush[${reason}]: ${text.length} chars, buffer_after=${this.buffer.length}, t+${this.rel()}ms`,
+    );
     this.queue.push(text);
     this.pump();
   }
@@ -201,7 +230,20 @@ export class SpeechStreamImpl implements ISpeechStream {
       return;
     }
     const batch = this.queue.shift() as string;
-    log.debug(`Synthesizing batch (${batch.length} chars)`);
+    const batchId = ++this.batchCount;
+    const batchStartTs = Date.now();
+    // Gap since the previous batch's audio finished playing. This is the
+    // unhidden dead-air between batches — if it's large, it's the
+    // first-chunk synth time of this batch (confirm with engine's
+    // "Chunk done: inference=Xms" log below).
+    const gapFromPrev =
+      this.lastBatchEndTs !== null ? batchStartTs - this.lastBatchEndTs : null;
+    log.info(
+      `batch#${batchId} START: ${batch.length} chars` +
+        (gapFromPrev !== null ? `, gap_since_prev_end=${gapFromPrev}ms` : '') +
+        `, preview="${previewText(batch)}", t+${this.rel()}ms`,
+    );
+
     this.inflight = this.synthesize(batch)
       .catch(err => {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -217,6 +259,11 @@ export class SpeechStreamImpl implements ISpeechStream {
         }
       })
       .then(() => {
+        const endTs = Date.now();
+        this.lastBatchEndTs = endTs;
+        log.info(
+          `batch#${batchId} DONE: synth+play=${endTs - batchStartTs}ms, t+${this.rel()}ms`,
+        );
         this.inflight = null;
         this.pump();
         this.tryFlush();
@@ -251,6 +298,15 @@ export class SpeechStreamImpl implements ISpeechStream {
     this.drainResolvers = [];
     resolvers.forEach(r => r());
   }
+}
+
+/**
+ * Compact single-line preview of a batch for log lines. Strips newlines
+ * and ellipsises past 40 chars so a batch log entry stays readable.
+ */
+function previewText(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > 40 ? `${flat.slice(0, 40)}…` : flat;
 }
 
 /**
