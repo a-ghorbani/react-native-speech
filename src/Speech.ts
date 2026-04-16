@@ -33,6 +33,8 @@ import type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ReleaseResult,
+  SpeechStream as ISpeechStream,
+  SpeechStreamOptions,
 } from './types';
 import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
@@ -40,6 +42,7 @@ import {KokoroEngine} from './engines/kokoro';
 import {SupertonicEngine} from './engines/supertonic';
 import {KittenEngine} from './engines/kitten';
 import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
+import {SpeechStreamImpl} from './engines/SpeechStream';
 import {createComponentLogger} from './utils/logger';
 
 const log = createComponentLogger('Speech', 'Api');
@@ -214,6 +217,51 @@ export default class Speech {
     await engineInstance.synthesize(text, {
       voiceId,
       ...options,
+    });
+  }
+
+  /**
+   * Create a streaming input handle for incremental TTS.
+   *
+   * Feed text to the returned stream as it becomes available (e.g. from
+   * an LLM token stream). The stream internally buffers and batches
+   * text so that playback sounds like one continuous utterance — the
+   * first sentence flushes as soon as it's complete (low latency) and
+   * subsequent batches are packed up to `targetChars` characters.
+   *
+   * **Engine support**: designed for the neural engines (Kokoro,
+   * Supertonic, Kitten), where each `speak()` resolves only after the
+   * batch finishes playing so the stream can pack large batches while
+   * earlier ones play. The OS engine's native `speak()` resolves on
+   * dispatch, which makes the adaptive batching effectively a no-op —
+   * the stream still works (the OS queues utterances natively) but
+   * sounds roughly the same as per-sentence `speak()`.
+   *
+   * @param voiceId - Voice identifier for the active engine
+   * @param options - Synthesis options + stream-specific tuning
+   * @returns A handle with `append()`, `finalize()`, and `cancel()`
+   *
+   * @example
+   * const stream = Speech.createSpeechStream('af_bella');
+   * for await (const token of llmStream) {
+   *   stream.append(token);
+   * }
+   * await stream.finalize();
+   */
+  public static createSpeechStream(
+    voiceId?: string,
+    options?: SpeechStreamOptions,
+  ): ISpeechStream {
+    // `SpeechStreamOptions` extends `SynthesisOptions`; engines ignore the
+    // stream-only fields (`targetChars`, `onError`) since they only read
+    // the properties they care about.
+    const synthesisOptions: SynthesisOptions | undefined = options;
+
+    return new SpeechStreamImpl({
+      synthesize: (text: string) =>
+        Speech.speak(text, voiceId, synthesisOptions),
+      stop: () => Speech.stop(),
+      options,
     });
   }
 
@@ -537,4 +585,6 @@ export type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ReleaseResult,
+  ISpeechStream as SpeechStream,
+  SpeechStreamOptions,
 };

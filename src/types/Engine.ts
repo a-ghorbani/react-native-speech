@@ -202,3 +202,58 @@ export interface ChunkProgressEvent {
  * Callback type for chunk progress events
  */
 export type ChunkProgressCallback = (event: ChunkProgressEvent) => void;
+
+/**
+ * Options for `Speech.createSpeechStream`.
+ * Extends `SynthesisOptions` — all regular speak options apply to each batch.
+ */
+export interface SpeechStreamOptions extends SynthesisOptions {
+  /**
+   * Target size (in characters) for batches flushed after the first
+   * sentence. Larger values produce more natural prosody across sentence
+   * boundaries at the cost of higher latency before each batch starts.
+   *
+   * The first batch always flushes as soon as a complete sentence is
+   * available (for low time-to-first-audio), regardless of this value.
+   *
+   * @default 300
+   */
+  targetChars?: number;
+
+  /**
+   * Called when synthesis of a batch fails. Errors from individual batches
+   * do not reject `append()` (which is synchronous). `finalize()` rejects
+   * with the first error encountered if any batch failed.
+   */
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Streaming input handle returned by `Speech.createSpeechStream`.
+ *
+ * Feed text incrementally (e.g. LLM tokens) via `append()`; the stream
+ * decides when to flush batches to the underlying engine so that the
+ * audio sounds continuous instead of like a sequence of per-sentence
+ * utterances.
+ */
+export interface SpeechStream {
+  /**
+   * Append text to the buffer. Non-blocking and never throws. Safe to
+   * call at any rate — the stream batches internally. Calls after
+   * `finalize()` or `cancel()` are silently ignored.
+   */
+  append(text: string): void;
+
+  /**
+   * Flush any remaining buffered text (including a trailing incomplete
+   * sentence) and resolve once all queued audio has finished playing.
+   * Rejects if any batch failed to synthesize.
+   */
+  finalize(): Promise<void>;
+
+  /**
+   * Abort immediately. Clears the buffer + queue and stops any in-flight
+   * synthesis. Further `append()` calls are no-ops.
+   */
+  cancel(): Promise<void>;
+}

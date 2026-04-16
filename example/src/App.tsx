@@ -8,10 +8,11 @@ import {
 } from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
+import StreamingView from './views/StreamingView';
 import {FRProvider} from 'react-native-full-responsive';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 
-type Tab = 'demo' | 'benchmark';
+type Tab = 'demo' | 'streaming' | 'benchmark';
 
 export default function App() {
   const [tab, setTab] = React.useState<Tab>('demo');
@@ -26,7 +27,34 @@ export default function App() {
     <SafeAreaProvider>
       <FRProvider>
         <View style={styles.container}>
-          {tab === 'demo' ? <RootView /> : <BenchmarkView />}
+          {/*
+            Keep all tabs mounted and toggle visibility. Conditional
+            rendering would unmount the active view, and RootView's
+            release-on-unmount cleanup (intended for app close /
+            background) would release the neural engine every time the
+            user switches tabs — breaking streaming + benchmark flows.
+          */}
+          <View
+            style={[
+              styles.tabContent,
+              tab === 'demo' ? styles.tabVisible : styles.tabHidden,
+            ]}>
+            <RootView />
+          </View>
+          <View
+            style={[
+              styles.tabContent,
+              tab === 'streaming' ? styles.tabVisible : styles.tabHidden,
+            ]}>
+            <StreamingView visible={tab === 'streaming'} />
+          </View>
+          <View
+            style={[
+              styles.tabContent,
+              tab === 'benchmark' ? styles.tabVisible : styles.tabHidden,
+            ]}>
+            <BenchmarkView />
+          </View>
           <View style={[styles.tabBar, {backgroundColor: barBg}]}>
             <TouchableOpacity
               style={styles.tabItem}
@@ -37,6 +65,17 @@ export default function App() {
                   {color: tab === 'demo' ? activeColor : inactiveColor},
                 ]}>
                 Demo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setTab('streaming')}>
+              <Text
+                style={[
+                  styles.tabText,
+                  {color: tab === 'streaming' ? activeColor : inactiveColor},
+                ]}>
+                Streaming
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -60,6 +99,15 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  tabContent: {
+    flex: 1,
+  },
+  tabVisible: {
+    display: 'flex',
+  },
+  tabHidden: {
+    display: 'none',
   },
   tabBar: {
     flexDirection: 'row',
