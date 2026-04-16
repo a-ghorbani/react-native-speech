@@ -35,7 +35,17 @@ function tokenize(text: string): string[] {
   return text.match(/\S+\s*|\s+/g) ?? [text];
 }
 
-const StreamingView: React.FC = () => {
+interface StreamingViewProps {
+  /**
+   * True when the Streaming tab is the active one. Used to re-poll
+   * engine readiness whenever the user lands on this tab, so we don't
+   * show stale status after the engine was initialized on a sibling
+   * tab (RootView) while this one was hidden.
+   */
+  visible?: boolean;
+}
+
+const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const textColor = isDark ? '#FFFFFF' : '#000000';
@@ -56,8 +66,12 @@ const StreamingView: React.FC = () => {
   const streamRef = React.useRef<SpeechStream | null>(null);
   const cancelledRef = React.useRef(false);
 
-  // Poll engine readiness whenever view is focused / state changes.
+  // Poll engine readiness whenever view becomes visible or streaming
+  // state flips. Engines are initialized on the Demo tab; switching
+  // to this tab should reflect the current engine without waiting for
+  // the user to interact.
   React.useEffect(() => {
+    if (!visible) return;
     let mounted = true;
     (async () => {
       const ready = await Speech.isReady();
@@ -69,7 +83,7 @@ const StreamingView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [isStreaming]);
+  }, [isStreaming, visible]);
 
   const startStreaming = React.useCallback(async () => {
     if (isStreaming) return;
