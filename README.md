@@ -105,6 +105,28 @@ await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
 
 Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
 
+## Streaming input (LLM token streams)
+
+If your app plays a token-by-token LLM response through TTS, use `createSpeechStream()` instead of calling `speak()` per sentence. It buffers incoming text and adaptively flushes batches through the underlying engine so playback sounds continuous — the first sentence flushes as soon as it completes (low latency) and subsequent batches are packed up to `targetChars` characters.
+
+```ts
+const stream = Speech.createSpeechStream('af_bella', {
+  targetChars: 300, // default
+  onError: err => console.warn(err),
+});
+
+for await (const token of llmTokenStream) {
+  stream.append(token); // non-blocking
+}
+
+await stream.finalize(); // flushes the tail and resolves when playback ends
+// or: await stream.cancel(); // stops and discards
+```
+
+Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. Feeding the same text through a stream lets the engine keep one call containing many sentences, so its internal chunker and pipelined synth do their normal job.
+
+Works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
+
 ## Architecture (short)
 
 1. `Speech` is the public facade. `Speech.initialize(config)` dispatches on `config.engine` and constructs the matching engine.

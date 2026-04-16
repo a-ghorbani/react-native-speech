@@ -8,10 +8,11 @@ import {
 } from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
+import StreamingView from './views/StreamingView';
 import {FRProvider} from 'react-native-full-responsive';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 
-type Tab = 'demo' | 'benchmark';
+type Tab = 'demo' | 'streaming' | 'benchmark';
 
 export default function App() {
   const [tab, setTab] = React.useState<Tab>('demo');
@@ -26,7 +27,13 @@ export default function App() {
     <SafeAreaProvider>
       <FRProvider>
         <View style={styles.container}>
-          {tab === 'demo' ? <RootView /> : <BenchmarkView />}
+          {tab === 'demo' ? (
+            <RootView />
+          ) : tab === 'streaming' ? (
+            <StreamingView />
+          ) : (
+            <BenchmarkView />
+          )}
           <View style={[styles.tabBar, {backgroundColor: barBg}]}>
             <TouchableOpacity
               style={styles.tabItem}
@@ -37,6 +44,17 @@ export default function App() {
                   {color: tab === 'demo' ? activeColor : inactiveColor},
                 ]}>
                 Demo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setTab('streaming')}>
+              <Text
+                style={[
+                  styles.tabText,
+                  {color: tab === 'streaming' ? activeColor : inactiveColor},
+                ]}>
+                Streaming
               </Text>
             </TouchableOpacity>
             <TouchableOpacity

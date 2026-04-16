@@ -70,3 +70,72 @@ A new JS event fires when iOS `AVAudioSession` or Android `AudioFocus` reports a
 - `@dr.pogodin/react-native-fs` (required peer)
 - `onnxruntime-react-native` (optional peer; required only for neural engines)
 - `phonemize` (runtime dep, transitive — no action required)
+
+## Per-sentence speak → `createSpeechStream`
+
+If your app plays an LLM token stream through TTS, you've probably
+accumulated a client-side queue that buffers tokens, detects sentence
+endings, calls `Speech.speak()` per sentence, and chains on `onFinish`.
+That pattern produces choppy audio — each call resets the engine's
+synth pipeline, so sentence boundaries turn into audible pauses.
+
+Replace the whole queue with a stream. The library now owns the
+batching policy and routes each batch through the engine's internal
+chunker + pipelined synth so sentences share prosody naturally.
+
+```ts
+// Before — per-sentence queue (abridged)
+const SENTENCE_END = /^[\s\S]*?[.!?](?=\s|$)/;
+let buffer = '';
+let playing = false;
+const queue: string[] = [];
+
+async function playNext() {
+  if (playing || queue.length === 0) return;
+  playing = true;
+  try {
+    await Speech.speak(queue.shift()!, voiceId);
+  } finally {
+    playing = false;
+    playNext();
+  }
+}
+
+function onToken(chunk: string) {
+  buffer += chunk;
+  let match;
+  while ((match = buffer.match(SENTENCE_END))) {
+    queue.push(match[0].trim());
+    buffer = buffer.slice(match[0].length);
+    playNext();
+  }
+}
+
+async function onDone() {
+  if (buffer.trim()) queue.push(buffer.trim());
+  buffer = '';
+  playNext();
+}
+```
+
+```ts
+// After — let the library batch for you
+const stream = Speech.createSpeechStream(voiceId);
+
+function onToken(chunk: string) {
+  stream.append(chunk); // non-blocking; batches adaptively
+}
+
+async function onDone() {
+  await stream.finalize(); // flushes tail, waits for playback
+}
+
+// Interrupted mid-stream?
+await stream.cancel();
+```
+
+`targetChars` (default `300`) tunes how much text subsequent batches
+are allowed to accumulate before flushing. Higher values produce more
+natural prosody across sentence boundaries at the cost of a larger
+gap before each batch starts. The first batch always flushes on the
+first complete sentence, regardless of this value.
