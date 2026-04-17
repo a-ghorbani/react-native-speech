@@ -1,5 +1,6 @@
 import React from 'react';
 import {View, StyleSheet} from 'react-native';
+import {C} from '../styles/cyber';
 
 const LINE_COUNT = 60;
 const lines = Array.from({length: LINE_COUNT});
@@ -20,7 +21,7 @@ const styles = StyleSheet.create({
   },
   line: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,255,65,0.04)',
+    backgroundColor: C.greenGhost,
   },
 });
 

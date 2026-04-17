@@ -25,7 +25,7 @@ const VARIANTS: Record<
     bg: C.redGhost,
     border: C.redBorder,
     text: C.red,
-    bracket: 'rgba(255,0,64,0.4)',
+    bracket: C.redBorder,
   },
   secondary: {
     bg: 'rgba(255,255,255,0.02)',

@@ -1670,8 +1670,8 @@ export default RootView;
 const styles = StyleSheet.create({
   highlighted: {
     fontWeight: '600',
-    backgroundColor: 'rgba(0,212,255,0.2)',
-    color: '#00D4FF',
+    backgroundColor: C.cyanGhost,
+    color: C.cyan,
   },
   textInput: {
     minHeight: 120,
@@ -1682,8 +1682,8 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: 'Courier',
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.12)',
-    color: '#00FF41',
+    borderColor: C.greenBorder,
+    color: C.green,
   },
   controlBar: {
     flexDirection: 'row',
@@ -1702,7 +1702,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 4,
     maxHeight: '75%',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,255,65,0.2)',
+    borderTopColor: C.greenFaint,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1800,15 +1800,15 @@ const styles = StyleSheet.create({
     color: '#34C759',
   },
   useBtn: {
-    backgroundColor: 'rgba(0,212,255,0.1)',
+    backgroundColor: C.cyanGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,212,255,0.3)',
+    borderColor: C.cyanBorder,
   },
   useBtnText: {
-    color: '#00D4FF',
+    color: C.cyan,
     fontSize: 11,
     fontWeight: '700',
     fontFamily: 'Courier',
@@ -1818,7 +1818,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   deleteBtnText: {
-    color: '#FF0040',
+    color: C.red,
     fontSize: 11,
     fontWeight: '700',
     fontFamily: 'Courier',
@@ -1891,7 +1891,7 @@ const styles = StyleSheet.create({
   },
   checkmark: {
     fontSize: 14,
-    color: '#00FF41',
+    color: C.green,
     fontWeight: '700',
     fontFamily: 'Courier',
   },
@@ -1914,15 +1914,15 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   manageBtn: {
-    backgroundColor: 'rgba(0,212,255,0.1)',
+    backgroundColor: C.cyanGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,212,255,0.3)',
+    borderColor: C.cyanBorder,
   },
   manageBtnText: {
-    color: '#00D4FF',
+    color: C.cyan,
     fontSize: 11,
     fontWeight: '700',
     fontFamily: 'Courier',
@@ -1966,29 +1966,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   unloadBtn: {
-    backgroundColor: 'rgba(255,176,0,0.1)',
+    backgroundColor: C.amberGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,176,0,0.3)',
+    borderColor: C.amberBorder,
   },
   unloadBtnText: {
-    color: '#FFB000',
+    color: C.amber,
     fontSize: 11,
     fontWeight: '700',
     fontFamily: 'Courier',
   },
   loadBtn: {
-    backgroundColor: 'rgba(0,255,65,0.1)',
+    backgroundColor: C.greenGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.3)',
+    borderColor: C.greenBorder,
   },
   loadBtnText: {
-    color: '#00FF41',
+    color: C.green,
     fontSize: 11,
     fontWeight: '700',
     fontFamily: 'Courier',
@@ -2063,7 +2063,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginBottom: 12,
     borderLeftWidth: 2,
-    borderLeftColor: '#00D4FF',
+    borderLeftColor: C.cyan,
   },
   chunkHeader: {
     flexDirection: 'row',
@@ -2083,12 +2083,12 @@ const styles = StyleSheet.create({
   },
   chunkBarBg: {
     height: 2,
-    backgroundColor: 'rgba(0,255,65,0.1)',
+    backgroundColor: C.greenGhost,
     overflow: 'hidden',
   },
   chunkBarFill: {
     height: '100%',
-    backgroundColor: '#00D4FF',
+    backgroundColor: C.cyan,
   },
   rootContainer: {
     backgroundColor: C.bg,

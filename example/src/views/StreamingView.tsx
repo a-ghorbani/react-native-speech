@@ -158,7 +158,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
           onChangeText={setText}
           multiline
           editable={!isStreaming}
-          placeholderTextColor="rgba(0,255,65,0.2)"
+          placeholderTextColor={C.greenBorder}
         />
 
         <Text style={styles.sectionLabel}>{'// TOKEN_RATE'}</Text>
@@ -197,7 +197,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
               (!engineReady || isStreaming) && styles.actionBtnDisabled,
             ]}>
             {isStreaming ? (
-              <ActivityIndicator color="#00FF41" />
+              <ActivityIndicator color={C.green} />
             ) : (
               <Text style={styles.actionBtnStartText}>EXECUTE</Text>
             )}
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     fontFamily: MONO,
-    color: '#00FF41',
+    color: C.green,
     letterSpacing: 3,
     marginBottom: 6,
   },
@@ -248,21 +248,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
     marginBottom: 16,
-    color: 'rgba(0,255,65,0.5)',
+    color: C.greenDim,
     fontFamily: MONO,
   },
-  code: {color: '#00D4FF'},
+  code: {color: C.cyan},
   statusCard: {
     padding: 12,
     borderRadius: 4,
     marginBottom: 16,
-    backgroundColor: 'rgba(0,255,65,0.04)',
+    backgroundColor: C.bgCard,
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.12)',
+    borderColor: C.greenBorder,
   },
   statusLabel: {
     fontSize: 10,
-    color: 'rgba(0,255,65,0.35)',
+    color: C.muted,
     fontFamily: MONO,
     letterSpacing: 1,
     marginBottom: 4,
@@ -271,21 +271,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     fontFamily: MONO,
-    color: '#00FF41',
+    color: C.green,
   },
-  statusOk: {color: '#00FF41'},
-  statusErr: {color: '#FF0040'},
+  statusOk: {color: C.green},
+  statusErr: {color: C.red},
   helpText: {
     fontSize: 11,
     marginTop: 6,
-    color: 'rgba(0,255,65,0.4)',
+    color: C.muted,
     fontFamily: MONO,
   },
   sectionLabel: {
     fontSize: 10,
     marginTop: 12,
     marginBottom: 6,
-    color: 'rgba(0,255,65,0.35)',
+    color: C.muted,
     fontFamily: MONO,
     letterSpacing: 1,
   },
@@ -296,10 +296,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: MONO,
     textAlignVertical: 'top',
-    color: '#00FF41',
-    backgroundColor: 'rgba(0,255,65,0.04)',
+    color: C.green,
+    backgroundColor: C.bgCard,
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.12)',
+    borderColor: C.greenBorder,
   },
   rateRow: {flexDirection: 'row', gap: 8},
   rateBtn: {
@@ -307,21 +307,21 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.12)',
+    borderColor: C.greenBorder,
     backgroundColor: 'rgba(255,255,255,0.02)',
   },
   rateBtnSelected: {
-    borderColor: '#00FF41',
-    backgroundColor: 'rgba(0,255,65,0.1)',
+    borderColor: C.green,
+    backgroundColor: C.greenGhost,
   },
-  rateBtnDisabled: {opacity: 0.35},
+  rateBtnDisabled: {opacity: 0.3},
   rateBtnText: {
     fontSize: 11,
     fontWeight: '700',
     fontFamily: MONO,
-    color: 'rgba(0,255,65,0.4)',
+    color: C.muted,
   },
-  rateBtnTextSelected: {color: '#00FF41'},
+  rateBtnTextSelected: {color: C.green},
   actionRow: {flexDirection: 'row', gap: 10, marginTop: 16},
   actionBtn: {
     flex: 1,
@@ -332,55 +332,55 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   actionBtnStart: {
-    backgroundColor: 'rgba(0,255,65,0.08)',
-    borderColor: 'rgba(0,255,65,0.3)',
+    backgroundColor: C.greenGhost,
+    borderColor: C.greenBorder,
   },
   actionBtnStartText: {
-    color: '#00FF41',
+    color: C.green,
     fontSize: 13,
     fontWeight: '700',
     fontFamily: MONO,
     letterSpacing: 2,
   },
   actionBtnStop: {
-    backgroundColor: 'rgba(255,0,64,0.08)',
-    borderColor: 'rgba(255,0,64,0.3)',
+    backgroundColor: C.redGhost,
+    borderColor: C.redBorder,
   },
   actionBtnStopText: {
-    color: '#FF0040',
+    color: C.red,
     fontSize: 13,
     fontWeight: '700',
     fontFamily: MONO,
     letterSpacing: 2,
   },
-  actionBtnDisabled: {opacity: 0.35},
+  actionBtnDisabled: {opacity: 0.3},
   previewCard: {
     padding: 12,
     borderRadius: 4,
     minHeight: 80,
-    backgroundColor: 'rgba(0,255,65,0.04)',
+    backgroundColor: C.bgCard,
     borderWidth: 1,
-    borderColor: 'rgba(0,255,65,0.12)',
+    borderColor: C.greenBorder,
   },
   previewText: {
     fontSize: 13,
     lineHeight: 22,
     fontFamily: MONO,
-    color: '#00FF41',
+    color: C.green,
   },
-  previewPending: {color: 'rgba(0,255,65,0.15)'},
-  cursor: {color: '#00D4FF', fontWeight: '700'},
+  previewPending: {color: C.greenBorder},
+  cursor: {color: C.cyan, fontWeight: '700'},
   errorCard: {
     padding: 12,
     borderRadius: 4,
     marginTop: 12,
-    backgroundColor: 'rgba(255,0,64,0.06)',
+    backgroundColor: C.redGhost,
     borderWidth: 1,
-    borderColor: 'rgba(255,0,64,0.2)',
+    borderColor: C.redBorder,
   },
   errorText: {
     fontSize: 12,
-    color: '#FF0040',
+    color: C.red,
     fontFamily: MONO,
   },
 });
