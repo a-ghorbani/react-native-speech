@@ -25,7 +25,6 @@ import Speech, {
 } from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
 import {C, MONO} from '../styles/cyber';
-import {useTypewriter} from '../hooks/useTypewriter';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {
@@ -658,21 +657,6 @@ const RootView: React.FC = () => {
     }
     return `${voice.name} - ${voice.description || voice.id}`;
   };
-
-  const statusMsg = React.useMemo(() => {
-    if (isInitializing) {
-      return `> initializing ${selectedEngine}...`;
-    }
-    if (isReleasing) {
-      return '> releasing resources...';
-    }
-    if (engineReady) {
-      return `> engine: ${selectedEngine} [LOADED]\n> voice_module: ${selectedVoice || 'default'}\n> status: ONLINE`;
-    }
-    return `> engine: ${selectedEngine} [NOT_LOADED]\n> status: STANDBY`;
-  }, [selectedEngine, engineReady, selectedVoice, isInitializing, isReleasing]);
-
-  const typedStatus = useTypewriter(statusMsg, 15);
 
   // ==================== RENDER ====================
 
@@ -1331,12 +1315,6 @@ const RootView: React.FC = () => {
           </View>
         </View>
       </Modal>
-
-      {/* System status terminal */}
-      <View style={styles.terminalBlock}>
-        <Text style={styles.terminalText}>{typedStatus}</Text>
-        <Text style={styles.terminalCursor}>_</Text>
-      </View>
 
       {/* ==================== ENGINE SELECTOR ==================== */}
       <View style={[styles.engineSelector, themedStyles.bgCard]}>
