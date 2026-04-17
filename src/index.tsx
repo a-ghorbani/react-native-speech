@@ -53,6 +53,7 @@ export {TTSEngine} from './types';
 // Export engine types
 export type {
   TTSEngineInterface,
+  EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
   EngineStatus,

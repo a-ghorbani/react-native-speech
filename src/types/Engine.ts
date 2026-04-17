@@ -116,6 +116,18 @@ export interface ReleaseResult {
   errors: ReleaseError[];
 }
 
+/**
+ * Handle returned by `TTSEngineInterface.synthesizeStream()`. The
+ * caller pushes text in via `append()` and the engine pulls chunks
+ * from an internal streaming chunker, pipelining synth + play so
+ * there is no gap between chunks.
+ */
+export interface EngineStreamHandle {
+  append(text: string): void;
+  finalize(): Promise<void>;
+  cancel(): Promise<void>;
+}
+
 export interface TTSEngineInterface<TConfig = void> {
   /** Unique engine identifier */
   readonly name: TTSEngine;
@@ -136,6 +148,16 @@ export interface TTSEngineInterface<TConfig = void> {
     text: string,
     options?: SynthesisOptions,
   ): Promise<AudioBuffer | void>;
+
+  /**
+   * Start a streaming synthesis session. Text is pushed incrementally
+   * via `append()` and the engine pulls chunks as they become ready,
+   * synthesizing the next chunk while the current one plays.
+   *
+   * Optional — only neural engines implement this. `SpeechStream`
+   * falls back to the Tier 1 adaptive batcher when this is absent.
+   */
+  synthesizeStream?(options?: SynthesisOptions): EngineStreamHandle;
 
   /** Get available voices for this engine */
   getAvailableVoices(language?: string): Promise<string[]>;

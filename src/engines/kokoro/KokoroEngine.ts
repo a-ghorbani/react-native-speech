@@ -16,6 +16,7 @@ import type {
   TTSEngine,
   TTSEngineInterface,
   AudioBuffer,
+  EngineStreamHandle,
   KokoroConfig,
   KokoroSynthesisOptions,
   KokoroVoice,
@@ -35,6 +36,7 @@ import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
 import {loadNativeDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
+import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {KOKORO_CONSTANTS} from './constants';
 
@@ -167,6 +169,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   // Synthesis state tracking for safe resource release
   private isSynthesizing = false;
   private synthesisCompleteResolver: (() => void) | null = null;
+
+  private activeStreamSession: EngineStreamSession | null = null;
 
   constructor() {
     this.tokenizer = new BPETokenizer();
@@ -309,6 +313,67 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         this.synthesisCompleteResolver = null;
       }
     }
+  }
+
+  synthesizeStream(options?: KokoroSynthesisOptions): EngineStreamHandle {
+    if (!this.isInitialized || !this.session) {
+      throw new Error('Kokoro engine not initialized');
+    }
+
+    this.stopRequested = false;
+    this.isSynthesizing = true;
+    const voiceId = options?.voiceId || this.defaultVoiceId;
+    const language = this.getLanguageFromVoice(voiceId);
+    const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
+
+    const session = new EngineStreamSession({
+      synthesizeChunk: (text: string) =>
+        this.synthesizeTextChunk(text, voiceId, language, options),
+      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      stopPlayback: () => neuralAudioPlayer.stop(),
+      maxChunkSize,
+      playbackOptions: {
+        ducking: options?.ducking,
+        silentMode: options?.silentMode,
+      },
+      onChunkProgress: this.chunkProgressCallback
+        ? event => this.emitChunkProgress(event)
+        : undefined,
+    });
+
+    this.activeStreamSession = session;
+
+    const wrapFinalize = async () => {
+      try {
+        await session.finalize();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    const wrapCancel = async () => {
+      try {
+        await session.cancel();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    return {
+      append: (text: string) => session.append(text),
+      finalize: wrapFinalize,
+      cancel: wrapCancel,
+    };
   }
 
   /**
@@ -621,6 +686,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
+    }
+    if (this.activeStreamSession) {
+      await this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
     }
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});

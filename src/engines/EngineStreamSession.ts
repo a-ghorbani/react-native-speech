@@ -137,7 +137,6 @@ export class EngineStreamSession implements EngineStreamHandle {
       let chunkIdx = 0;
 
       // Main loop: play current chunk while synthesizing next.
-      // eslint-disable-next-line no-constant-condition
       while (true) {
         if (this.cancelled) {
           return;

@@ -17,6 +17,7 @@ import type {
   TTSEngine,
   TTSEngineInterface,
   AudioBuffer,
+  EngineStreamHandle,
   ChunkProgressEvent,
   ChunkProgressCallback,
   ReleaseResult,
@@ -44,6 +45,7 @@ import {
 } from '../kokoro/Phonemizer';
 import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
+import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Kitten', 'Engine');
@@ -158,6 +160,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   // Synthesis state tracking for safe resource release
   private isSynthesizing = false;
   private synthesisCompleteResolver: (() => void) | null = null;
+
+  private activeStreamSession: EngineStreamSession | null = null;
 
   constructor() {
     this.tokenizer = new IPATokenizer();
@@ -285,6 +289,82 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         this.synthesisCompleteResolver = null;
       }
     }
+  }
+
+  synthesizeStream(options?: KittenSynthesisOptions): EngineStreamHandle {
+    if (!this.isInitialized || !this.session) {
+      throw new Error('Kitten engine not initialized');
+    }
+
+    this.stopRequested = false;
+    this.isSynthesizing = true;
+    const voiceId = options?.voiceId || this.defaultVoiceId;
+    const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
+
+    const volumeAdjust =
+      options?.volume !== undefined && options.volume !== 1.0
+        ? (buf: AudioBuffer) => {
+            const v = Math.max(0, Math.min(1, options.volume!));
+            for (let i = 0; i < buf.samples.length; i++) {
+              const s = buf.samples[i];
+              if (s !== undefined) {
+                buf.samples[i] = Math.max(-1, Math.min(1, s * v));
+              }
+            }
+          }
+        : undefined;
+
+    const session = new EngineStreamSession({
+      synthesizeChunk: (text: string) => {
+        const processed = this.preprocessor.process(text);
+        return this.synthesizeTextChunk(processed, voiceId, options);
+      },
+      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      stopPlayback: () => neuralAudioPlayer.stop(),
+      maxChunkSize,
+      playbackOptions: {
+        ducking: options?.ducking,
+        silentMode: options?.silentMode,
+      },
+      postProcess: volumeAdjust,
+      onChunkProgress: this.chunkProgressCallback
+        ? event => this.emitChunkProgress(event)
+        : undefined,
+    });
+
+    this.activeStreamSession = session;
+
+    const wrapFinalize = async () => {
+      try {
+        await session.finalize();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    const wrapCancel = async () => {
+      try {
+        await session.cancel();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    return {
+      append: (text: string) => session.append(text),
+      finalize: wrapFinalize,
+      cancel: wrapCancel,
+    };
   }
 
   private createStopSignal(): Promise<null> {
@@ -608,6 +688,10 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
+    }
+    if (this.activeStreamSession) {
+      await this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
     }
     neuralAudioPlayer.stop().catch(() => {});
   }
