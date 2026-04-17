@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  useColorScheme,
   Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -23,6 +22,7 @@ import {
   type EngineTestConfig,
 } from '../benchmark';
 import type {ExecutionProviderPreset} from '@pocketpalai/react-native-speech';
+import {C, MONO} from '../styles/cyber';
 
 const TEST_PHRASE =
   'The quick brown fox jumps over the lazy dog. ' +
@@ -38,15 +38,6 @@ interface InstalledEngine {
 }
 
 const BenchmarkView: React.FC = () => {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-
-  const textColor = isDark ? '#FFFFFF' : '#000000';
-  const secondaryTextColor = isDark ? '#8E8E93' : '#6D6D72';
-  const cardBg = isDark ? '#1C1C1E' : '#F2F2F7';
-  const inputBg = isDark ? '#3A3A3C' : '#E5E5EA';
-  const dimColor = isDark ? '#555' : '#BBB';
-
   const [installedEngines, setInstalledEngines] = React.useState<
     InstalledEngine[]
   >([]);
@@ -65,7 +56,6 @@ const BenchmarkView: React.FC = () => {
   const [error, setError] = React.useState<string | null>(null);
   const [isScanning, setIsScanning] = React.useState(true);
 
-  // Scan for installed models on mount
   React.useEffect(() => {
     scanModels();
   }, []);
@@ -74,11 +64,9 @@ const BenchmarkView: React.FC = () => {
     setIsScanning(true);
     const engines: InstalledEngine[] = [];
 
-    // Phonemizer dict is shared by Kokoro + Kitten; download once up-front.
     const dictPath = await phonemizerDictManager.ensureDict('en-us');
 
     try {
-      // Kokoro
       await kokoroModelManager.scanInstalledModels();
       const kokoroModels = kokoroModelManager.getInstalledModels();
       if (kokoroModels.length > 0) {
@@ -96,7 +84,7 @@ const BenchmarkView: React.FC = () => {
             phonemizerType: 'js',
             maxChunkSize: 100,
           }),
-          defaultVoice: '', // auto-detect after init
+          defaultVoice: '',
         });
       }
     } catch {
@@ -104,7 +92,6 @@ const BenchmarkView: React.FC = () => {
     }
 
     try {
-      // Supertonic
       await supertonicModelManager.scanInstalledModel();
       const stModels = supertonicModelManager.getAllInstalledModels();
       for (const model of stModels) {
@@ -118,7 +105,7 @@ const BenchmarkView: React.FC = () => {
             ),
             maxChunkSize: 200,
           }),
-          defaultVoice: '', // auto-detect after init
+          defaultVoice: '',
         });
       }
     } catch {
@@ -126,10 +113,9 @@ const BenchmarkView: React.FC = () => {
     }
 
     try {
-      // Kitten
       await kittenModelManager.scanInstalledModel();
-      const kittenModels = kittenModelManager.getAllInstalledModels();
-      for (const model of kittenModels) {
+      const kitModels = kittenModelManager.getAllInstalledModels();
+      for (const model of kitModels) {
         engines.push({
           engine: TTSEngine.KITTEN,
           label: `Kitten (${model.variant})`,
@@ -141,7 +127,7 @@ const BenchmarkView: React.FC = () => {
             dictPath,
             maxChunkSize: 500,
           }),
-          defaultVoice: '', // auto-detect after init
+          defaultVoice: '',
         });
       }
     } catch {
@@ -149,7 +135,6 @@ const BenchmarkView: React.FC = () => {
     }
 
     setInstalledEngines(engines);
-    // Select all by default
     setSelectedEngines(new Set(engines.map((_, i) => String(i))));
     setIsScanning(false);
   };
@@ -207,86 +192,64 @@ const BenchmarkView: React.FC = () => {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.container, {backgroundColor: isDark ? '#000' : '#FFF'}]}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.title, {color: textColor}]}>Benchmark</Text>
+        <Text style={styles.title}>PERF_BENCH</Text>
 
-        {/* Scanning state */}
         {isScanning && (
           <View style={styles.centered}>
-            <ActivityIndicator size="small" />
-            <Text style={[styles.label, {color: secondaryTextColor}]}>
-              Scanning installed models...
-            </Text>
+            <ActivityIndicator size="small" color={C.cyan} />
+            <Text style={styles.label}>{'> scanning installed models...'}</Text>
           </View>
         )}
 
-        {/* No engines installed */}
         {!isScanning && installedEngines.length === 0 && (
-          <View style={[styles.card, {backgroundColor: cardBg}]}>
-            <Text style={[styles.label, {color: secondaryTextColor}]}>
-              No engines installed. Download models from the Demo tab first.
+          <View style={styles.card}>
+            <Text style={styles.label}>
+              {'> no engines installed.\n> download models from the SYS tab.'}
             </Text>
           </View>
         )}
 
-        {/* Config section */}
         {!isScanning && installedEngines.length > 0 && (
           <>
-            {/* Engine selection */}
-            <Text style={[styles.sectionTitle, {color: textColor}]}>
-              Engines
-            </Text>
-            <View style={[styles.card, {backgroundColor: cardBg}]}>
+            <Text style={styles.sectionTitle}>{'// TARGET_ENGINES'}</Text>
+            <View style={styles.card}>
               {installedEngines.map((eng, i) => {
                 const key = String(i);
                 const selected = selectedEngines.has(key);
                 return (
                   <TouchableOpacity
                     key={key}
-                    style={[
-                      styles.checkRow,
-                      selected && {
-                        backgroundColor: isDark ? '#1A3A5C' : '#E8F4FD',
-                      },
-                    ]}
+                    style={[styles.checkRow, selected && styles.checkRowActive]}
                     onPress={() => toggleEngine(key)}
                     disabled={isRunning}>
-                    <Text style={[styles.checkBox, {color: textColor}]}>
+                    <Text style={styles.checkBox}>
                       {selected ? '[x]' : '[ ]'}
                     </Text>
-                    <Text style={[styles.checkLabel, {color: textColor}]}>
-                      {eng.label}
-                    </Text>
+                    <Text style={styles.checkLabel}>{eng.label}</Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            {/* Iterations + Warm-up row */}
             <View style={styles.configRow}>
               <View style={styles.configCol}>
-                <Text style={[styles.sectionTitle, {color: textColor}]}>
-                  Iterations
-                </Text>
+                <Text style={styles.sectionTitle}>{'// ITERATIONS'}</Text>
                 <View style={styles.row}>
                   {[1, 3, 5].map(n => (
                     <TouchableOpacity
                       key={n}
                       style={[
                         styles.optionBtn,
-                        {
-                          backgroundColor:
-                            iterations === n ? '#007AFF' : inputBg,
-                        },
+                        iterations === n && styles.optionBtnActive,
                       ]}
                       onPress={() => setIterations(n)}
                       disabled={isRunning}>
                       <Text
                         style={[
                           styles.optionText,
-                          {color: iterations === n ? '#FFF' : textColor},
+                          iterations === n && styles.optionTextActive,
                         ]}>
                         {n}
                       </Text>
@@ -295,26 +258,21 @@ const BenchmarkView: React.FC = () => {
                 </View>
               </View>
               <View style={styles.configCol}>
-                <Text style={[styles.sectionTitle, {color: textColor}]}>
-                  Warm-up
-                </Text>
+                <Text style={styles.sectionTitle}>{'// WARMUP'}</Text>
                 <View style={styles.row}>
                   {[0, 1, 2].map(n => (
                     <TouchableOpacity
                       key={n}
                       style={[
                         styles.optionBtn,
-                        {
-                          backgroundColor:
-                            warmupIterations === n ? '#FF9500' : inputBg,
-                        },
+                        warmupIterations === n && styles.optionBtnWarmup,
                       ]}
                       onPress={() => setWarmupIterations(n)}
                       disabled={isRunning}>
                       <Text
                         style={[
                           styles.optionText,
-                          {color: warmupIterations === n ? '#FFF' : textColor},
+                          warmupIterations === n && styles.optionTextWarmup,
                         ]}>
                         {n}
                       </Text>
@@ -324,17 +282,14 @@ const BenchmarkView: React.FC = () => {
               </View>
             </View>
 
-            {/* Provider */}
-            <Text style={[styles.sectionTitle, {color: textColor}]}>
-              Execution Provider
-            </Text>
+            <Text style={styles.sectionTitle}>{'// EXEC_PROVIDER'}</Text>
             <View style={styles.row}>
               {(
                 [
-                  {key: 'auto', label: 'Auto'},
+                  {key: 'auto', label: 'AUTO'},
                   {
                     key: 'gpu',
-                    label: Platform.OS === 'ios' ? 'CoreML' : 'GPU',
+                    label: Platform.OS === 'ios' ? 'COREML' : 'GPU',
                   },
                   {key: 'cpu', label: 'CPU'},
                 ] as const
@@ -343,14 +298,14 @@ const BenchmarkView: React.FC = () => {
                   key={p.key}
                   style={[
                     styles.optionBtn,
-                    {backgroundColor: provider === p.key ? '#007AFF' : inputBg},
+                    provider === p.key && styles.optionBtnActive,
                   ]}
                   onPress={() => setProvider(p.key)}
                   disabled={isRunning}>
                   <Text
                     style={[
                       styles.optionText,
-                      {color: provider === p.key ? '#FFF' : textColor},
+                      provider === p.key && styles.optionTextActive,
                     ]}>
                     {p.label}
                   </Text>
@@ -358,160 +313,126 @@ const BenchmarkView: React.FC = () => {
               ))}
             </View>
 
-            {/* Run button */}
             <TouchableOpacity
               style={[styles.runBtn, isRunning && styles.runBtnDisabled]}
               onPress={handleRun}
               disabled={isRunning || selectedEngines.size === 0}>
               <Text style={styles.runBtnText}>
-                {isRunning ? 'Running...' : 'Run Benchmark'}
+                {isRunning ? '> RUNNING...' : '[ EXECUTE ]'}
               </Text>
             </TouchableOpacity>
           </>
         )}
 
-        {/* Progress */}
         {isRunning && progress && (
-          <View style={[styles.card, {backgroundColor: cardBg}]}>
-            <Text style={[styles.progressTitle, {color: textColor}]}>
-              {progress.engine}{' '}
+          <View style={styles.card}>
+            <Text style={styles.progressTitle}>
+              {progress.engine.toUpperCase()}{' '}
               {progress.variant ? `(${progress.variant})` : ''}
             </Text>
-            <Text style={[styles.label, {color: secondaryTextColor}]}>
-              {progress.isWarmup ? 'Warm-up' : 'Iteration'} {progress.iteration}
-              /{progress.totalIterations} — Engine {progress.engineIndex}/
+            <Text style={styles.label}>
+              {progress.isWarmup ? 'warmup' : 'iter'} {progress.iteration}/
+              {progress.totalIterations} — engine {progress.engineIndex}/
               {progress.totalEngines}
             </Text>
             <Text
               style={[
                 styles.phaseLabel,
-                {color: progress.isWarmup ? '#FF9500' : '#007AFF'},
+                {color: progress.isWarmup ? C.amber : C.cyan},
               ]}>
               {progress.phase.toUpperCase()}
             </Text>
           </View>
         )}
 
-        {/* Error */}
         {error && (
-          <View style={[styles.card, {backgroundColor: '#FFF0F0'}]}>
-            <Text style={styles.errorText}>{error}</Text>
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>[ERROR] {error}</Text>
           </View>
         )}
 
-        {/* Results */}
         {results && results.length > 0 && (
           <>
-            <Text style={[styles.sectionTitle, {color: textColor}]}>
-              Results (median / p90)
-            </Text>
+            <Text style={styles.sectionTitle}>{'// RESULTS (p50 / p90)'}</Text>
             {results.map((summary, i) => (
-              <View key={i} style={[styles.card, {backgroundColor: cardBg}]}>
-                <Text style={[styles.resultEngine, {color: textColor}]}>
-                  {summary.engine}
+              <View key={i} style={styles.card}>
+                <Text style={styles.resultEngine}>
+                  {summary.engine.toUpperCase()}
                   {summary.variant !== 'default' ? ` (${summary.variant})` : ''}
                 </Text>
 
-                {/* Row 1: Timing p50 */}
                 <View style={styles.resultRow}>
                   <ResultCell
-                    label="Init (p50)"
+                    label="INIT"
                     value={`${summary.stats.initMs.median}ms`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                   <ResultCell
-                    label="TTFA (p50)"
+                    label="TTFA"
                     value={`${summary.stats.ttfaMs.median}ms`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                   <ResultCell
-                    label="Total (p50)"
+                    label="TOTAL"
                     value={`${summary.stats.totalSpeakMs.median}ms`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                   <ResultCell
-                    label="Release"
+                    label="FREE"
                     value={`${summary.stats.releaseMs.median}ms`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                 </View>
 
-                {/* Row 2: Timing p90 */}
                 <View style={styles.resultRow}>
                   <ResultCell
-                    label="Init (p90)"
+                    label="p90"
                     value={`${summary.stats.initMs.p90}ms`}
-                    color={secondaryTextColor}
-                    secondaryColor={secondaryTextColor}
+                    dim
                   />
                   <ResultCell
-                    label="TTFA (p90)"
+                    label="p90"
                     value={`${summary.stats.ttfaMs.p90}ms`}
-                    color={secondaryTextColor}
-                    secondaryColor={secondaryTextColor}
+                    dim
                   />
                   <ResultCell
-                    label="Total (p90)"
+                    label="p90"
                     value={`${summary.stats.totalSpeakMs.p90}ms`}
-                    color={secondaryTextColor}
-                    secondaryColor={secondaryTextColor}
+                    dim
                   />
                   <ResultCell
-                    label="Rel (p90)"
+                    label="p90"
                     value={`${summary.stats.releaseMs.p90}ms`}
-                    color={secondaryTextColor}
-                    secondaryColor={secondaryTextColor}
+                    dim
                   />
                 </View>
 
-                {/* Row 3: Memory */}
                 <View style={styles.resultRow}>
                   <ResultCell
-                    label="Mem Load"
+                    label="MEM_LOAD"
                     value={`+${summary.averages.modelMemoryMB}MB`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                   <ResultCell
-                    label="Mem Infer"
+                    label="MEM_INFER"
                     value={`+${summary.averages.inferMemoryMB}MB`}
-                    color={textColor}
-                    secondaryColor={secondaryTextColor}
                   />
                   {summary.stats.peakInitMemoryMB != null && (
                     <ResultCell
-                      label="Peak Init"
+                      label="PEAK_INIT"
                       value={`${summary.stats.peakInitMemoryMB}MB`}
-                      color={textColor}
-                      secondaryColor={secondaryTextColor}
                     />
                   )}
                   {summary.stats.peakSpeakMemoryMB != null && (
                     <ResultCell
-                      label="Peak Speak"
+                      label="PEAK_INFER"
                       value={`${summary.stats.peakSpeakMemoryMB}MB`}
-                      color={textColor}
-                      secondaryColor={secondaryTextColor}
                     />
                   )}
                 </View>
 
-                {/* Per-iteration details */}
-                <Text style={[styles.iterHeader, {color: secondaryTextColor}]}>
-                  Measured iterations
+                <Text style={styles.iterHeader}>
+                  {'// MEASURED_ITERATIONS'}
                 </Text>
                 {summary.iterations.map((iter, j) => (
                   <View key={j} style={styles.iterRow}>
-                    <Text
-                      style={[styles.iterLabel, {color: secondaryTextColor}]}>
-                      #{j + 1}
-                    </Text>
-                    <Text
-                      style={[styles.iterValue, {color: secondaryTextColor}]}>
+                    <Text style={styles.iterLabel}>#{j + 1}</Text>
+                    <Text style={styles.iterValue}>
                       {iter.initMs} | {iter.ttfaMs} | {iter.totalSpeakMs} |{' '}
                       {iter.releaseMs} | +
                       {Math.round(
@@ -523,18 +444,15 @@ const BenchmarkView: React.FC = () => {
                   </View>
                 ))}
 
-                {/* Warm-up iterations (dimmed) */}
                 {summary.warmupIterations.length > 0 && (
                   <>
-                    <Text style={[styles.iterHeader, {color: dimColor}]}>
-                      Warm-up (discarded)
+                    <Text style={styles.iterHeaderDim}>
+                      {'// WARMUP (discarded)'}
                     </Text>
                     {summary.warmupIterations.map((iter, j) => (
                       <View key={`w${j}`} style={styles.iterRow}>
-                        <Text style={[styles.iterLabel, {color: dimColor}]}>
-                          W{j + 1}
-                        </Text>
-                        <Text style={[styles.iterValue, {color: dimColor}]}>
+                        <Text style={styles.iterLabelDim}>W{j + 1}</Text>
+                        <Text style={styles.iterValueDim}>
                           {iter.initMs} | {iter.ttfaMs} | {iter.totalSpeakMs} |{' '}
                           {iter.releaseMs}
                         </Text>
@@ -554,38 +472,49 @@ const BenchmarkView: React.FC = () => {
 const ResultCell: React.FC<{
   label: string;
   value: string;
-  color: string;
-  secondaryColor: string;
-}> = ({label, value, color, secondaryColor}) => (
+  dim?: boolean;
+}> = ({label, value, dim}) => (
   <View style={styles.resultCell}>
-    <Text style={[styles.resultValue, {color}]}>{value}</Text>
-    <Text style={[styles.resultLabel, {color: secondaryColor}]}>{label}</Text>
+    <Text style={[styles.resultValue, dim && styles.resultValueDim]}>
+      {value}
+    </Text>
+    <Text style={styles.resultLabel}>{label}</Text>
   </View>
 );
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: C.bg,
   },
   content: {
     padding: 16,
     paddingBottom: 40,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
+    fontFamily: MONO,
+    color: C.green,
+    letterSpacing: 3,
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1,
+    color: C.muted,
     marginTop: 16,
     marginBottom: 8,
   },
   card: {
-    borderRadius: 10,
+    borderRadius: 4,
     padding: 12,
     marginBottom: 8,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.border,
   },
   centered: {
     alignItems: 'center',
@@ -593,7 +522,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    fontSize: 14,
+    fontSize: 12,
+    fontFamily: MONO,
+    color: C.muted,
   },
   row: {
     flexDirection: 'row',
@@ -610,58 +541,103 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 8,
-    borderRadius: 6,
+    borderRadius: 4,
     gap: 8,
   },
+  checkRowActive: {
+    backgroundColor: C.greenGhost,
+  },
   checkBox: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 14,
+    fontFamily: MONO,
+    fontSize: 12,
+    color: C.green,
   },
   checkLabel: {
-    fontSize: 14,
+    fontSize: 12,
+    fontFamily: MONO,
+    color: C.green,
   },
   optionBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  optionBtnActive: {
+    borderColor: C.cyan,
+    backgroundColor: C.cyanGhost,
+  },
+  optionBtnWarmup: {
+    borderColor: C.amber,
+    backgroundColor: C.amberGhost,
   },
   optionText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.muted,
+  },
+  optionTextActive: {
+    color: C.cyan,
+  },
+  optionTextWarmup: {
+    color: C.amber,
   },
   runBtn: {
-    backgroundColor: '#34C759',
-    borderRadius: 10,
+    borderRadius: 4,
     padding: 14,
     alignItems: 'center',
     marginTop: 20,
+    backgroundColor: C.greenGhost,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
   },
   runBtnDisabled: {
-    opacity: 0.5,
+    opacity: 0.3,
   },
   runBtnText: {
-    color: '#FFF',
-    fontSize: 16,
+    color: C.green,
+    fontSize: 13,
     fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1.5,
   },
   progressTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.green,
     marginBottom: 4,
   },
   phaseLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
     marginTop: 4,
+    letterSpacing: 1,
+  },
+  errorCard: {
+    borderRadius: 4,
+    padding: 12,
+    marginTop: 8,
+    backgroundColor: C.redGhost,
+    borderWidth: 1,
+    borderColor: C.redBorder,
   },
   errorText: {
-    color: '#FF3B30',
-    fontSize: 14,
+    color: C.red,
+    fontSize: 12,
+    fontFamily: MONO,
   },
   resultEngine: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
-    marginBottom: 8,
+    fontFamily: MONO,
+    color: C.green,
+    marginBottom: 10,
+    letterSpacing: 0.5,
   },
   resultRow: {
     flexDirection: 'row',
@@ -672,18 +648,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resultValue: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
+    fontFamily: MONO,
+    color: C.green,
+  },
+  resultValueDim: {
+    color: C.muted,
   },
   resultLabel: {
-    fontSize: 11,
+    fontSize: 9,
+    fontFamily: MONO,
+    color: C.muted,
     marginTop: 2,
+    letterSpacing: 0.5,
   },
   iterHeader: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 8,
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.muted,
+    marginTop: 10,
     marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  iterHeaderDim: {
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.greenBorder,
+    marginTop: 10,
+    marginBottom: 4,
+    letterSpacing: 0.5,
   },
   iterRow: {
     flexDirection: 'row',
@@ -691,13 +687,28 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   iterLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
     width: 24,
+    color: C.muted,
   },
   iterValue: {
-    fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.greenDim,
+  },
+  iterLabelDim: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
+    width: 24,
+    color: C.greenBorder,
+  },
+  iterValueDim: {
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.greenBorder,
   },
 });
 

@@ -11,9 +11,17 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Preview
 
-| <center>Kokoro · iOS</center> | <center>Kitten · Android</center> |
+### Streaming (LLM token stream → TTS)
+
+| <center>iOS</center> | <center>Android</center> |
 | :---: | :---: |
-| <video src="https://github.com/user-attachments/assets/1d055e24-8c44-41a8-a607-2ff239397684" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/02395df1-fbe8-411f-a44e-35c95ce09e9e" controls width="100%" height="500"></video> |
+| <video src="https://github.com/user-attachments/assets/c3f6b6e5-a778-4d19-bed5-d2c79843eba1" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/f05a342c-fd7b-4938-98e2-20a44eeece94" controls width="100%" height="500"></video> |
+
+### One-shot speak
+
+| <center>iOS</center> | <center>Android</center> |
+| :---: | :---: |
+| <video src="https://github.com/user-attachments/assets/648120eb-0e96-4b59-94f8-64012824942d" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/417b2763-10dc-43fa-9637-ea7b9a41fb59" controls width="100%" height="500"></video> |
 
 ## Features
 
@@ -123,7 +131,16 @@ await stream.finalize(); // flushes the tail and resolves when playback ends
 // or: await stream.cancel(); // stops and discards
 ```
 
-Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. Feeding the same text through a stream lets the engine keep one call containing many sentences, so its internal chunker and pipelined synth do their normal job.
+Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. The stream avoids this by keeping one continuous synth+play loop alive for the stream's entire lifetime — the next chunk is synthesized while the current one plays, so the only gap is genuine token-rate underrun (LLM slower than playback).
+
+You can also track playback position with stream-absolute offsets:
+
+```ts
+stream.onProgress(event => {
+  // event.streamRange is relative to the total text appended so far
+  highlightText(event.streamRange.start, event.streamRange.end);
+});
+```
 
 Works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 

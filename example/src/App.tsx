@@ -1,96 +1,81 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  useColorScheme,
-} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
 import {FRProvider} from 'react-native-full-responsive';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {C, MONO} from './styles/cyber';
 
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
-export default function App() {
+const TABS: {key: Tab; label: string}[] = [
+  {key: 'demo', label: 'SYS'},
+  {key: 'streaming', label: 'STRM'},
+  {key: 'benchmark', label: 'PERF'},
+];
+
+function AppContent() {
   const [tab, setTab] = React.useState<Tab>('demo');
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const insets = useSafeAreaInsets();
 
-  const barBg = isDark ? '#1C1C1E' : '#F2F2F7';
-  const activeColor = '#007AFF';
-  const inactiveColor = isDark ? '#8E8E93' : '#6D6D72';
+  return (
+    <View style={styles.container}>
+      <View
+        style={[
+          styles.tabContent,
+          tab === 'demo' ? styles.tabVisible : styles.tabHidden,
+        ]}>
+        <RootView />
+      </View>
+      <View
+        style={[
+          styles.tabContent,
+          tab === 'streaming' ? styles.tabVisible : styles.tabHidden,
+        ]}>
+        <StreamingView visible={tab === 'streaming'} />
+      </View>
+      <View
+        style={[
+          styles.tabContent,
+          tab === 'benchmark' ? styles.tabVisible : styles.tabHidden,
+        ]}>
+        <BenchmarkView />
+      </View>
+      <View style={[styles.tabBar, {paddingBottom: insets.bottom || 6}]}>
+        {TABS.map(t => {
+          const isActive = tab === t.key;
+          return (
+            <TouchableOpacity
+              key={t.key}
+              style={styles.tabItem}
+              onPress={() => setTab(t.key)}
+              activeOpacity={0.6}>
+              <View
+                style={[
+                  styles.tabIndicator,
+                  isActive && styles.tabIndicatorActive,
+                ]}
+              />
+              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                {isActive ? `> ${t.label}` : `  ${t.label}`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
 
+export default function App() {
   return (
     <SafeAreaProvider>
       <FRProvider>
-        <View style={styles.container}>
-          {/*
-            Keep all tabs mounted and toggle visibility. Conditional
-            rendering would unmount the active view, and RootView's
-            release-on-unmount cleanup (intended for app close /
-            background) would release the neural engine every time the
-            user switches tabs — breaking streaming + benchmark flows.
-          */}
-          <View
-            style={[
-              styles.tabContent,
-              tab === 'demo' ? styles.tabVisible : styles.tabHidden,
-            ]}>
-            <RootView />
-          </View>
-          <View
-            style={[
-              styles.tabContent,
-              tab === 'streaming' ? styles.tabVisible : styles.tabHidden,
-            ]}>
-            <StreamingView visible={tab === 'streaming'} />
-          </View>
-          <View
-            style={[
-              styles.tabContent,
-              tab === 'benchmark' ? styles.tabVisible : styles.tabHidden,
-            ]}>
-            <BenchmarkView />
-          </View>
-          <View style={[styles.tabBar, {backgroundColor: barBg}]}>
-            <TouchableOpacity
-              style={styles.tabItem}
-              onPress={() => setTab('demo')}>
-              <Text
-                style={[
-                  styles.tabText,
-                  {color: tab === 'demo' ? activeColor : inactiveColor},
-                ]}>
-                Demo
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.tabItem}
-              onPress={() => setTab('streaming')}>
-              <Text
-                style={[
-                  styles.tabText,
-                  {color: tab === 'streaming' ? activeColor : inactiveColor},
-                ]}>
-                Streaming
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.tabItem}
-              onPress={() => setTab('benchmark')}>
-              <Text
-                style={[
-                  styles.tabText,
-                  {color: tab === 'benchmark' ? activeColor : inactiveColor},
-                ]}>
-                Benchmark
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <AppContent />
       </FRProvider>
     </SafeAreaProvider>
   );
@@ -99,6 +84,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: C.bg,
   },
   tabContent: {
     flex: 1,
@@ -111,16 +97,37 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#3C3C43',
+    backgroundColor: '#0a0a0a',
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    paddingTop: 10,
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
+    paddingVertical: 4,
+    gap: 6,
+  },
+  tabIndicator: {
+    width: 16,
+    height: 1,
+    backgroundColor: 'transparent',
+  },
+  tabIndicatorActive: {
+    backgroundColor: C.green,
+    shadowColor: C.green,
+    shadowOffset: {width: 0, height: 0},
+    shadowOpacity: 1,
+    shadowRadius: 6,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 2.5,
+    color: C.muted,
+  },
+  tabTextActive: {
+    color: C.green,
   },
 });

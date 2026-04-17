@@ -35,6 +35,7 @@ import type {
   ReleaseResult,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 } from './types';
 import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
@@ -257,10 +258,37 @@ export default class Speech {
     // the properties they care about.
     const synthesisOptions: SynthesisOptions | undefined = options;
 
+    // Detect whether the active engine supports streaming. Neural engines
+    // expose synthesizeStream(), which eliminates cross-batch gaps by
+    // keeping the pipelined synth+play loop alive for the stream's
+    // lifetime. OS engine doesn't — fall back to the adaptive batcher.
+    const engine = Speech.currentEngine;
+    let engineStreamFactory:
+      | ((opts?: SpeechStreamOptions) => import('./types').EngineStreamHandle)
+      | undefined;
+
+    const streamVoiceOpt = voiceId ? {voiceId} : {};
+    if (engine === 'kokoro' && kokoroEngine) {
+      engineStreamFactory = opts =>
+        kokoroEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
+    } else if (engine === 'supertonic' && supertonicEngine) {
+      engineStreamFactory = opts =>
+        supertonicEngine!.synthesizeStream({
+          ...streamVoiceOpt,
+          ...opts,
+        } as any);
+    } else if (engine === 'kitten' && kittenEngine) {
+      engineStreamFactory = opts =>
+        kittenEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
+    }
+
     return new SpeechStreamImpl({
       synthesize: (text: string) =>
         Speech.speak(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
+      subscribeProgress: (cb: ChunkProgressCallback) =>
+        Speech.onChunkProgress(cb),
+      engineStreamFactory,
       options,
     });
   }
@@ -587,4 +615,5 @@ export type {
   ReleaseResult,
   ISpeechStream as SpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 };

@@ -1,41 +1,46 @@
+import {Platform} from 'react-native';
 import {createRStyle} from 'react-native-full-responsive';
+
+const mono = Platform.select({ios: 'Menlo', default: 'monospace'});
 
 export const gs = createRStyle({
   flex: {
     flex: 1,
   },
   disabled: {
-    opacity: 0.6,
+    opacity: 0.3,
   },
   button: {
     flex: 1,
-    height: '35rs',
-    borderRadius: '5rs',
+    height: '44rs',
+    borderRadius: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'skyblue',
+    borderWidth: 1,
   },
   buttonText: {
-    color: '#000000',
-    fontSize: '14rs',
-    fontWeight: '600',
+    fontSize: '11rs',
+    fontWeight: '700',
+    fontFamily: mono,
+    letterSpacing: 1,
   },
   title: {
     fontSize: '18rs',
     fontWeight: '700',
+    fontFamily: mono,
     marginBottom: '10rs',
     textAlign: 'center',
   },
   paragraph: {
-    fontSize: '14rs',
-    lineHeight: '22rs',
-    textAlign: 'justify',
+    fontSize: '13rs',
+    lineHeight: '21rs',
+    fontFamily: mono,
   },
   p10: {
     padding: '10rs',
   },
   row: {
-    columnGap: '5rs',
+    columnGap: '8rs',
     flexDirection: 'row',
   },
 });

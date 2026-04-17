@@ -6,7 +6,6 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  useColorScheme,
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -14,6 +13,7 @@ import Speech, {
   TTSEngine,
   type SpeechStream,
 } from '@pocketpalai/react-native-speech';
+import {C, MONO} from '../styles/cyber';
 
 const SAMPLE_TEXT =
   "Hello! How can I help you today? I am here to help. Let's walk " +
@@ -25,34 +25,20 @@ const SAMPLE_TEXT =
 
 type Rate = {label: string; tokensPerSec: number};
 const RATES: Rate[] = [
-  {label: 'Slow (5 tok/s)', tokensPerSec: 5},
-  {label: 'Medium (20 tok/s)', tokensPerSec: 20},
-  {label: 'Fast (80 tok/s)', tokensPerSec: 80},
+  {label: '5 tok/s', tokensPerSec: 5},
+  {label: '20 tok/s', tokensPerSec: 20},
+  {label: '80 tok/s', tokensPerSec: 80},
 ];
 
-/** Chop a string into rough word-ish tokens so we can feed it at a rate. */
 function tokenize(text: string): string[] {
   return text.match(/\S+\s*|\s+/g) ?? [text];
 }
 
 interface StreamingViewProps {
-  /**
-   * True when the Streaming tab is the active one. Used to re-poll
-   * engine readiness whenever the user lands on this tab, so we don't
-   * show stale status after the engine was initialized on a sibling
-   * tab (RootView) while this one was hidden.
-   */
   visible?: boolean;
 }
 
 const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const textColor = isDark ? '#FFFFFF' : '#000000';
-  const secondary = isDark ? '#8E8E93' : '#6D6D72';
-  const cardBg = isDark ? '#1C1C1E' : '#F2F2F7';
-  const inputBg = isDark ? '#3A3A3C' : '#E5E5EA';
-
   const [text, setText] = React.useState(SAMPLE_TEXT);
   const [rate, setRate] = React.useState<Rate>(RATES[1]!);
   const [isStreaming, setIsStreaming] = React.useState(false);
@@ -62,14 +48,14 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   );
   const [engineReady, setEngineReady] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [voices, setVoices] = React.useState<Array<{id: string; name: string}>>(
+    [],
+  );
+  const [selectedVoice, setSelectedVoice] = React.useState<string | null>(null);
 
   const streamRef = React.useRef<SpeechStream | null>(null);
   const cancelledRef = React.useRef(false);
 
-  // Poll engine readiness whenever view becomes visible or streaming
-  // state flips. Engines are initialized on the Demo tab; switching
-  // to this tab should reflect the current engine without waiting for
-  // the user to interact.
   React.useEffect(() => {
     if (!visible) return;
     let mounted = true;
@@ -78,12 +64,35 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       if (mounted) {
         setEngineReady(ready);
         setEngineName(Speech.getCurrentEngine());
+        if (ready) {
+          try {
+            const meta = await Speech.getVoicesWithMetadata();
+            if (mounted) {
+              const v = meta.map((m: any) => ({
+                id: m.id,
+                name: m.name || m.id,
+              }));
+              setVoices(v);
+              if (!selectedVoice && v.length > 0) {
+                setSelectedVoice(v[0]!.id);
+              }
+            }
+          } catch {
+            const v = await Speech.getVoices();
+            if (mounted) {
+              setVoices(v.map(id => ({id, name: id})));
+              if (!selectedVoice && v.length > 0) {
+                setSelectedVoice(v[0]!);
+              }
+            }
+          }
+        }
       }
     })();
     return () => {
       mounted = false;
     };
-  }, [isStreaming, visible]);
+  }, [isStreaming, visible, selectedVoice]);
 
   const startStreaming = React.useCallback(async () => {
     if (isStreaming) return;
@@ -95,7 +104,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     const tokens = tokenize(text);
     const intervalMs = 1000 / rate.tokensPerSec;
 
-    const stream = Speech.createSpeechStream(undefined, {
+    const stream = Speech.createSpeechStream(selectedVoice || undefined, {
       targetChars: 300,
       onError: err => {
         setErrorMsg(err.message);
@@ -121,7 +130,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       streamRef.current = null;
       setIsStreaming(false);
     }
-  }, [isStreaming, rate, text]);
+  }, [isStreaming, rate, text, selectedVoice]);
 
   const stopStreaming = React.useCallback(async () => {
     cancelledRef.current = true;
@@ -140,49 +149,77 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   const pendingText = text.slice(streamedChars);
 
   return (
-    <SafeAreaView
-      style={[styles.container, {backgroundColor: isDark ? '#000' : '#fff'}]}>
+    <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled">
-        <Text style={[styles.title, {color: textColor}]}>Streaming input</Text>
-        <Text style={[styles.subtitle, {color: secondary}]}>
+        <Text style={styles.title}>STREAM_INPUT</Text>
+        <Text style={styles.subtitle}>
           Feeds text one token at a time into{' '}
-          <Text style={styles.code}>Speech.createSpeechStream()</Text> to
-          simulate an LLM token stream. The stream batches adaptively so
-          playback stays smooth instead of sounding like per-sentence speaks.
+          <Text style={styles.code}>createSpeechStream()</Text> to simulate an
+          LLM token stream. The engine's synth+play loop stays alive across
+          chunks — no inter-batch gaps.
         </Text>
 
-        <View style={[styles.statusCard, {backgroundColor: cardBg}]}>
-          <Text style={[styles.statusLabel, {color: secondary}]}>
-            Active engine
-          </Text>
-          <Text style={[styles.statusValue, {color: textColor}]}>
-            {engineName} {engineReady ? '✓' : '(not ready)'}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>{'// ACTIVE_ENGINE'}</Text>
+          <Text style={styles.statusValue}>
+            {engineName.toUpperCase()}{' '}
+            {engineReady ? (
+              <Text style={styles.statusOk}>[READY]</Text>
+            ) : (
+              <Text style={styles.statusErr}>[NOT_READY]</Text>
+            )}
           </Text>
           {!engineReady && (
-            <Text style={[styles.helpText, {color: secondary}]}>
-              Open the Demo tab first to initialize an engine.
+            <Text style={styles.helpText}>
+              {'> '}Initialize an engine on the DEMO tab first.
             </Text>
           )}
         </View>
 
-        <Text style={[styles.sectionLabel, {color: secondary}]}>Text</Text>
+        {voices.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>{'// VOICE'}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.voiceRow}>
+              {voices.map(v => (
+                <TouchableOpacity
+                  key={v.id}
+                  disabled={isStreaming}
+                  onPress={() => setSelectedVoice(v.id)}
+                  style={[
+                    styles.rateBtn,
+                    selectedVoice === v.id && styles.rateBtnSelected,
+                    isStreaming && styles.rateBtnDisabled,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.rateBtnText,
+                      selectedVoice === v.id && styles.rateBtnTextSelected,
+                    ]}
+                    numberOfLines={1}>
+                    {v.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        <Text style={styles.sectionLabel}>{'// INPUT_BUFFER'}</Text>
         <TextInput
-          style={[
-            styles.textArea,
-            {backgroundColor: inputBg, color: textColor},
-          ]}
+          style={styles.textArea}
           value={text}
           onChangeText={setText}
           multiline
           editable={!isStreaming}
-          placeholderTextColor={secondary}
+          placeholderTextColor={C.greenBorder}
         />
 
-        <Text style={[styles.sectionLabel, {color: secondary}]}>
-          Token rate
-        </Text>
+        <Text style={styles.sectionLabel}>{'// TOKEN_RATE'}</Text>
         <View style={styles.rateRow}>
           {RATES.map(r => {
             const selected = r.tokensPerSec === rate.tokensPerSec;
@@ -193,15 +230,13 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
                 onPress={() => setRate(r)}
                 style={[
                   styles.rateBtn,
-                  {
-                    backgroundColor: selected ? '#007AFF' : inputBg,
-                    opacity: isStreaming ? 0.5 : 1,
-                  },
+                  selected && styles.rateBtnSelected,
+                  isStreaming && styles.rateBtnDisabled,
                 ]}>
                 <Text
                   style={[
                     styles.rateBtnText,
-                    {color: selected ? '#fff' : textColor},
+                    selected && styles.rateBtnTextSelected,
                   ]}>
                   {r.label}
                 </Text>
@@ -216,15 +251,13 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
             onPress={startStreaming}
             style={[
               styles.actionBtn,
-              {
-                backgroundColor: '#34C759',
-                opacity: !engineReady || isStreaming ? 0.5 : 1,
-              },
+              styles.actionBtnStart,
+              (!engineReady || isStreaming) && styles.actionBtnDisabled,
             ]}>
             {isStreaming ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={C.green} />
             ) : (
-              <Text style={styles.actionBtnText}>Start streaming</Text>
+              <Text style={styles.actionBtnStartText}>EXECUTE</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity
@@ -232,32 +265,25 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
             onPress={stopStreaming}
             style={[
               styles.actionBtn,
-              {
-                backgroundColor: '#FF3B30',
-                opacity: isStreaming ? 1 : 0.5,
-              },
+              styles.actionBtnStop,
+              !isStreaming && styles.actionBtnDisabled,
             ]}>
-            <Text style={styles.actionBtnText}>Stop</Text>
+            <Text style={styles.actionBtnStopText}>ABORT</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={[styles.sectionLabel, {color: secondary}]}>
-          Stream preview
-        </Text>
-        <View style={[styles.previewCard, {backgroundColor: cardBg}]}>
-          <Text style={[styles.previewText, {color: textColor}]}>
+        <Text style={styles.sectionLabel}>{'// OUTPUT_STREAM'}</Text>
+        <View style={styles.previewCard}>
+          <Text style={styles.previewText}>
             {streamedText}
-            <Text style={[styles.previewPending, {color: secondary}]}>
-              {pendingText}
-            </Text>
+            <Text style={styles.previewPending}>{pendingText}</Text>
+            {isStreaming && <Text style={styles.cursor}>_</Text>}
           </Text>
         </View>
 
         {errorMsg && (
-          <View style={[styles.errorCard, {backgroundColor: '#FF3B3020'}]}>
-            <Text style={[styles.errorText, {color: '#FF3B30'}]}>
-              {errorMsg}
-            </Text>
+          <View style={styles.errorCard}>
+            <Text style={styles.errorText}>[ERROR] {errorMsg}</Text>
           </View>
         )}
       </ScrollView>
@@ -266,48 +292,156 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1},
+  container: {flex: 1, backgroundColor: C.bg},
   scroll: {padding: 16, paddingBottom: 80},
-  title: {fontSize: 22, fontWeight: '700', marginBottom: 4},
-  subtitle: {fontSize: 14, lineHeight: 20, marginBottom: 16},
-  code: {fontFamily: 'Menlo', fontSize: 13},
-  statusCard: {padding: 12, borderRadius: 8, marginBottom: 16},
-  statusLabel: {fontSize: 12, marginBottom: 2},
-  statusValue: {fontSize: 16, fontWeight: '600'},
-  helpText: {fontSize: 12, marginTop: 4},
-  sectionLabel: {fontSize: 12, marginTop: 8, marginBottom: 4},
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.green,
+    letterSpacing: 3,
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 16,
+    color: C.greenDim,
+    fontFamily: MONO,
+  },
+  code: {color: C.cyan},
+  statusCard: {
+    padding: 12,
+    borderRadius: 4,
+    marginBottom: 16,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
+  },
+  statusLabel: {
+    fontSize: 10,
+    color: C.muted,
+    fontFamily: MONO,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  statusValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.green,
+  },
+  statusOk: {color: C.green},
+  statusErr: {color: C.red},
+  helpText: {
+    fontSize: 11,
+    marginTop: 6,
+    color: C.muted,
+    fontFamily: MONO,
+  },
+  sectionLabel: {
+    fontSize: 10,
+    marginTop: 12,
+    marginBottom: 6,
+    color: C.muted,
+    fontFamily: MONO,
+    letterSpacing: 1,
+  },
   textArea: {
     minHeight: 120,
-    borderRadius: 8,
+    borderRadius: 4,
     padding: 12,
-    fontSize: 14,
+    fontSize: 13,
+    fontFamily: MONO,
     textAlignVertical: 'top',
+    color: C.green,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
   },
-  rateRow: {flexDirection: 'row', gap: 8, flexWrap: 'wrap'},
+  voiceRow: {flexDirection: 'row', gap: 8, marginBottom: 4},
+  rateRow: {flexDirection: 'row', gap: 8},
   rateBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
-  rateBtnText: {fontSize: 13, fontWeight: '600'},
-  actionRow: {flexDirection: 'row', gap: 12, marginTop: 16},
+  rateBtnSelected: {
+    borderColor: C.green,
+    backgroundColor: C.greenGhost,
+  },
+  rateBtnDisabled: {opacity: 0.3},
+  rateBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.muted,
+  },
+  rateBtnTextSelected: {color: C.green},
+  actionRow: {flexDirection: 'row', gap: 10, marginTop: 16},
   actionBtn: {
     flex: 1,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
-  actionBtnText: {color: '#fff', fontSize: 15, fontWeight: '600'},
+  actionBtnStart: {
+    backgroundColor: C.greenGhost,
+    borderColor: C.greenBorder,
+  },
+  actionBtnStartText: {
+    color: C.green,
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 2,
+  },
+  actionBtnStop: {
+    backgroundColor: C.redGhost,
+    borderColor: C.redBorder,
+  },
+  actionBtnStopText: {
+    color: C.red,
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 2,
+  },
+  actionBtnDisabled: {opacity: 0.3},
   previewCard: {
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 4,
     minHeight: 80,
+    backgroundColor: C.bgCard,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
   },
-  previewText: {fontSize: 14, lineHeight: 22},
-  previewPending: {fontStyle: 'italic'},
-  errorCard: {padding: 12, borderRadius: 8, marginTop: 12},
-  errorText: {fontSize: 13},
+  previewText: {
+    fontSize: 13,
+    lineHeight: 22,
+    fontFamily: MONO,
+    color: C.green,
+  },
+  previewPending: {color: C.greenBorder},
+  cursor: {color: C.cyan, fontWeight: '700'},
+  errorCard: {
+    padding: 12,
+    borderRadius: 4,
+    marginTop: 12,
+    backgroundColor: C.redGhost,
+    borderWidth: 1,
+    borderColor: C.redBorder,
+  },
+  errorText: {
+    fontSize: 12,
+    color: C.red,
+    fontFamily: MONO,
+  },
 });
 
 export default StreamingView;

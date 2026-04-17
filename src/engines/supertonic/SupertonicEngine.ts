@@ -19,6 +19,7 @@ import type {
   TTSEngine,
   TTSEngineInterface,
   AudioBuffer,
+  EngineStreamHandle,
   SupertonicConfig,
   SupertonicSynthesisOptions,
   SupertonicVoice,
@@ -39,6 +40,7 @@ import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {loadAssetAsJSON} from '../../utils/AssetLoader';
 import {TextChunker, type TextChunk} from '../../utils/TextChunker';
 import {SUPERTONIC_CONSTANTS} from './constants';
+import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 
 const log = createComponentLogger('Supertonic', 'Engine');
@@ -69,6 +71,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
   // Synthesis state tracking for safe resource release
   private isSynthesizing = false;
   private synthesisCompleteResolver: (() => void) | null = null;
+
+  private activeStreamSession: EngineStreamSession | null = null;
 
   constructor() {
     this.inference = new SupertonicInference();
@@ -198,6 +202,92 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         this.synthesisCompleteResolver = null;
       }
     }
+  }
+
+  synthesizeStream(options?: SupertonicSynthesisOptions): EngineStreamHandle {
+    if (!this.isInitialized) {
+      throw new Error('Supertonic engine not initialized');
+    }
+
+    if (this.activeStreamSession) {
+      this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
+    this.stopRequested = false;
+    this.isSynthesizing = true;
+    const voiceId = options?.voiceId || this.defaultVoiceId;
+    const inferenceSteps =
+      options?.inferenceSteps || this.defaultInferenceSteps;
+    const speed = options?.speed ?? 1.0;
+    const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
+
+    const voiceStylePromise = this.styleLoader.getVoiceStyle(voiceId);
+
+    const volumeAdjust =
+      options?.volume !== undefined && options.volume !== 1.0
+        ? (buf: AudioBuffer) => {
+            const v = Math.max(0, Math.min(1, options.volume!));
+            for (let i = 0; i < buf.samples.length; i++) {
+              const s = buf.samples[i];
+              if (s !== undefined) {
+                buf.samples[i] = Math.max(-1, Math.min(1, s * v));
+              }
+            }
+          }
+        : undefined;
+
+    const session = new EngineStreamSession({
+      synthesizeChunk: async (text: string) => {
+        const voiceStyle = await voiceStylePromise;
+        return this.synthesizeChunk(text, voiceStyle, inferenceSteps, speed);
+      },
+      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      stopPlayback: () => neuralAudioPlayer.stop(),
+      maxChunkSize,
+      playbackOptions: {
+        ducking: options?.ducking,
+        silentMode: options?.silentMode,
+      },
+      postProcess: volumeAdjust,
+      onChunkProgress: this.chunkProgressCallback
+        ? event => this.emitChunkProgress(event)
+        : undefined,
+    });
+
+    this.activeStreamSession = session;
+
+    const wrapFinalize = async () => {
+      try {
+        await session.finalize();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    const wrapCancel = async () => {
+      try {
+        await session.cancel();
+      } finally {
+        this.activeStreamSession = null;
+        this.isSynthesizing = false;
+        if (this.synthesisCompleteResolver) {
+          this.synthesisCompleteResolver();
+          this.synthesisCompleteResolver = null;
+        }
+      }
+    };
+
+    return {
+      append: (text: string) => session.append(text),
+      finalize: wrapFinalize,
+      cancel: wrapCancel,
+    };
   }
 
   /**
@@ -417,6 +507,11 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
+    }
+    if (this.activeStreamSession) {
+      await this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+      this.isSynthesizing = false;
     }
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});

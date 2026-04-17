@@ -53,6 +53,7 @@ export {TTSEngine} from './types';
 // Export engine types
 export type {
   TTSEngineInterface,
+  EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
   EngineStatus,
@@ -60,6 +61,7 @@ export type {
   ChunkProgressCallback,
   SpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 } from './types';
 
 // Export Kokoro types

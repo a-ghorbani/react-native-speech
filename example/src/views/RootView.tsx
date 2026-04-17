@@ -7,7 +7,6 @@ import {
   AppState,
   Platform,
   StyleSheet,
-  useColorScheme,
   TouchableOpacity,
   ActivityIndicator,
   Modal,
@@ -24,6 +23,7 @@ import Speech, {
   TTSEngine,
 } from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
+import {C, MONO} from '../styles/cyber';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {
@@ -38,74 +38,81 @@ import {
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
-const Introduction =
-  "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.";
+const DEFAULT_TEXT =
+  'Welcome! This is a quick demo of on-device neural text-to-speech. ' +
+  'Everything you hear is synthesized locally — no internet, no cloud ' +
+  'API, just the model running on your phone. Switch voices above to ' +
+  'hear the difference.';
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
 
 const RootView: React.FC = () => {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-
-  const textColor = isDark ? '#FFFFFF' : '#000000';
-  const secondaryTextColor = isDark ? '#8E8E93' : '#6D6D72';
-  const cardBg = isDark ? '#1C1C1E' : '#F2F2F7';
-  const cardBgSecondary = isDark ? '#2C2C2E' : '#FFFFFF';
-  const inputBg = isDark ? '#3A3A3C' : '#E5E5EA';
-
-  // Memoized theme-dependent styles to avoid inline styles
   const themedStyles = React.useMemo(
     () =>
       StyleSheet.create({
-        // Text colors
-        textPrimary: {color: textColor},
-        textSecondary: {color: secondaryTextColor},
-        textWhite: {color: 'white'},
-        // Backgrounds
-        bgCard: {backgroundColor: cardBg},
-        bgCardSecondary: {backgroundColor: cardBgSecondary},
-        bgInput: {backgroundColor: inputBg},
-        bgChunkProgress: {backgroundColor: 'rgba(0, 122, 255, 0.1)'},
-        // Button states
-        btnSelected: {backgroundColor: '#007AFF'},
-        btnUnselected: {backgroundColor: inputBg},
-        btnSelectedGreen: {backgroundColor: '#34C759'},
-        // Status colors
-        statusReady: {color: '#34C759'},
-        statusNotReady: {color: '#FF3B30'},
-        statusAccent: {color: '#007AFF'},
-        // Voice item
-        voiceItemSelected: {backgroundColor: isDark ? '#3A3A3C' : '#E8F4FD'},
+        textPrimary: {color: C.green},
+        textSecondary: {color: C.muted},
+        textWhite: {color: C.green},
+        bgCard: {
+          backgroundColor: C.bgCard,
+          borderWidth: 1,
+          borderColor: C.border,
+        },
+        bgCardSecondary: {backgroundColor: '#080c08'},
+        bgInput: {backgroundColor: C.bgInput},
+        bgChunkProgress: {backgroundColor: C.cyanGhost},
+        btnSelected: {
+          backgroundColor: C.greenGhost,
+          borderWidth: 1,
+          borderColor: C.green,
+        },
+        btnUnselected: {
+          backgroundColor: 'rgba(255,255,255,0.02)',
+          borderWidth: 1,
+          borderColor: C.border,
+        },
+        btnSelectedGreen: {backgroundColor: C.greenGhost},
+        statusReady: {color: C.green},
+        statusNotReady: {color: C.red},
+        statusAccent: {color: C.cyan},
+        voiceItemSelected: {backgroundColor: C.greenGhost},
         voiceItemUnselected: {backgroundColor: 'transparent'},
-        // Download card colors
-        downloadTextInstalled: {color: secondaryTextColor},
-        downloadTextWhite: {color: 'white'},
-        downloadMetaWhite: {color: 'rgba(255,255,255,0.8)'},
-        downloadLangsWhite: {color: 'rgba(255,255,255,0.7)'},
-        // Opacity
-        opacityFaded: {opacity: 0.5},
+        downloadTextInstalled: {color: C.muted},
+        downloadTextWhite: {color: C.green},
+        downloadMetaWhite: {color: C.greenDim},
+        downloadLangsWhite: {color: C.greenFaint},
+        opacityFaded: {opacity: 0.3},
         opacityFull: {opacity: 1},
-        // Section label with margin
         sectionLabelWithMargin: {marginTop: 20},
-        // Download card variants
-        downloadCardBlue: {backgroundColor: '#007AFF'},
-        downloadCardGreen: {backgroundColor: '#34C759'},
-        downloadCardOrange: {backgroundColor: '#FF9500'},
-        downloadCardInstalled: {backgroundColor: cardBg},
+        downloadCardBlue: {
+          backgroundColor: C.cyanGhost,
+          borderWidth: 1,
+          borderColor: C.cyanBorder,
+        },
+        downloadCardGreen: {
+          backgroundColor: C.greenGhost,
+          borderWidth: 1,
+          borderColor: C.greenBorder,
+        },
+        downloadCardOrange: {
+          backgroundColor: C.amberGhost,
+          borderWidth: 1,
+          borderColor: C.amberBorder,
+        },
+        downloadCardInstalled: {backgroundColor: C.bgCard},
       }),
-    [textColor, secondaryTextColor, cardBg, cardBgSecondary, inputBg, isDark],
+    [],
   );
-  console.log('just testing rerender');
-
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
+  const [spokenText] = React.useState<string>(DEFAULT_TEXT);
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
 
   const [selectedEngine, setSelectedEngine] = React.useState<TTSEngine>(
-    TTSEngine.OS_NATIVE,
+    TTSEngine.KITTEN,
   );
   const [initializedEngine, setInitializedEngine] =
     React.useState<TTSEngine | null>(null);
@@ -477,12 +484,12 @@ const RootView: React.FC = () => {
     setIsStarted(true);
     try {
       if (selectedEngine === TTSEngine.SUPERTONIC) {
-        await Speech.speak(Introduction, selectedVoice || undefined, {
+        await Speech.speak(spokenText, selectedVoice || undefined, {
           speed,
           inferenceSteps,
         });
       } else {
-        await Speech.speak(Introduction, selectedVoice || undefined);
+        await Speech.speak(spokenText, selectedVoice || undefined);
       }
     } finally {
       // Speech finished or was stopped — ensure we reset
@@ -491,7 +498,7 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
-  }, [selectedVoice, selectedEngine, speed, inferenceSteps]);
+  }, [selectedVoice, selectedEngine, speed, inferenceSteps, spokenText]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -651,7 +658,7 @@ const RootView: React.FC = () => {
   // ==================== RENDER ====================
 
   return (
-    <SafeAreaView style={[gs.flex, gs.p10]}>
+    <SafeAreaView style={[gs.flex, gs.p10, styles.rootContainer]}>
       {/* ==================== MODEL MANAGER MODAL ==================== */}
       <Modal
         visible={showModelManager}
@@ -1310,7 +1317,7 @@ const RootView: React.FC = () => {
       <View style={[styles.engineSelector, themedStyles.bgCard]}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, themedStyles.textPrimary]}>
-            Engine
+            ENGINE_SELECT
           </Text>
           {/* Only show Manage Models for neural engines */}
           {selectedEngine !== TTSEngine.OS_NATIVE && (
@@ -1333,10 +1340,10 @@ const RootView: React.FC = () => {
 
         <View style={styles.engineButtons}>
           {[
-            {engine: TTSEngine.OS_NATIVE, label: 'System'},
+            {engine: TTSEngine.KITTEN, label: 'Kitten'},
             {engine: TTSEngine.KOKORO, label: 'Kokoro'},
             {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
-            {engine: TTSEngine.KITTEN, label: 'Kitten'},
+            {engine: TTSEngine.OS_NATIVE, label: 'System'},
           ].map(item => {
             const isEngineSelected = selectedEngine === item.engine;
             return (
@@ -1368,9 +1375,11 @@ const RootView: React.FC = () => {
         <View style={styles.statusRow}>
           {isInitializing || isReleasing ? (
             <View style={styles.statusLoading}>
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color={C.cyan} />
               <Text style={[styles.statusText, themedStyles.textSecondary]}>
-                {isReleasing ? 'Releasing...' : 'Initializing...'}
+                {isReleasing
+                  ? '> releasing resources...'
+                  : '> loading model...'}
               </Text>
             </View>
           ) : (
@@ -1381,7 +1390,7 @@ const RootView: React.FC = () => {
                   ? themedStyles.statusReady
                   : themedStyles.statusNotReady,
               ]}>
-              {engineReady ? '● Ready' : '● Not Ready'}
+              {engineReady ? '[ONLINE]' : '[OFFLINE]'}
             </Text>
           )}
 
@@ -1393,14 +1402,14 @@ const RootView: React.FC = () => {
                   style={styles.unloadBtn}
                   onPress={onUnloadPress}
                   disabled={isStarted || isReleasing || isInitializing}>
-                  <Text style={styles.unloadBtnText}>Unload</Text>
+                  <Text style={styles.unloadBtnText}>RELEASE</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   style={styles.loadBtn}
                   onPress={onReloadPress}
                   disabled={isInitializing || isReleasing}>
-                  <Text style={styles.loadBtnText}>Load</Text>
+                  <Text style={styles.loadBtnText}>INIT</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1548,33 +1557,22 @@ const RootView: React.FC = () => {
         )}
       </View>
 
-      {/* Chunk Progress */}
-      {currentChunk && isStarted && (
-        <View style={[styles.chunkProgress, themedStyles.bgChunkProgress]}>
-          <View style={styles.chunkHeader}>
-            <Text style={[styles.chunkLabel, themedStyles.textPrimary]}>
-              Sentence {currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}
-            </Text>
-            <Text style={[styles.chunkPercent, themedStyles.statusAccent]}>
+      {/* Chunk Progress — always mounted to avoid layout shift */}
+      <View style={styles.chunkProgress}>
+        {currentChunk && isStarted ? (
+          <Text style={[styles.chunkLabel, themedStyles.textSecondary]}>
+            CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]{' '}
+            <Text style={themedStyles.statusAccent}>
               {currentChunk.progress}%
             </Text>
-          </View>
-          <View style={styles.chunkBarBg}>
-            <View
-              style={[
-                styles.chunkBarFill,
-                {width: `${currentChunk.progress}%`},
-              ]}
-            />
-          </View>
-        </View>
-      )}
+          </Text>
+        ) : null}
+      </View>
 
       {/* Main Content */}
       <View style={gs.flex}>
-        <Text style={[gs.title, themedStyles.textPrimary]}>Introduction</Text>
         <HighlightedText
-          text={Introduction}
+          text={spokenText}
           highlights={highlights}
           highlightedStyle={styles.highlighted}
           onHighlightedPress={onHighlightedPress}
@@ -1583,22 +1581,30 @@ const RootView: React.FC = () => {
       </View>
 
       {/* Controls */}
-      <View style={[gs.row, gs.p10]}>
+      <View style={styles.controlBar}>
         <Button
-          label="Start"
+          label="RUN"
+          variant="success"
           disabled={isStarted || !engineReady || isInitializing}
           onPress={onStartPress}
         />
-        <Button label="Stop" disabled={!isStarted} onPress={Speech.stop} />
+        <Button
+          label="KILL"
+          variant="danger"
+          disabled={!isStarted}
+          onPress={Speech.stop}
+        />
         {!isAndroidLowerThan26 && (
           <>
             <Button
-              label="Pause"
+              label="HOLD"
+              variant="secondary"
               onPress={Speech.pause}
               disabled={isPaused || !isStarted}
             />
             <Button
-              label="Resume"
+              label="CONT"
+              variant="secondary"
               disabled={!isPaused}
               onPress={Speech.resume}
             />
@@ -1613,20 +1619,40 @@ export default RootView;
 
 const styles = StyleSheet.create({
   highlighted: {
-    color: 'black',
     fontWeight: '600',
-    backgroundColor: '#ffff00',
+    backgroundColor: C.cyanGhost,
+    color: C.cyan,
+  },
+  textInput: {
+    minHeight: 120,
+    borderRadius: 4,
+    padding: 14,
+    textAlignVertical: 'top',
+    fontSize: 14,
+    lineHeight: 22,
+    fontFamily: MONO,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
+    color: C.green,
+  },
+  controlBar: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 12,
   },
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
     maxHeight: '75%',
+    borderTopWidth: 1,
+    borderTopColor: C.greenFaint,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1637,8 +1663,11 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(128, 128, 128, 0.3)',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1.5,
+    color: C.green,
   },
   closeIcon: {
     padding: 4,
@@ -1721,24 +1750,28 @@ const styles = StyleSheet.create({
     color: '#34C759',
   },
   useBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: C.cyanGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.cyanBorder,
   },
   useBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: C.cyan,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   deleteBtn: {
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
   deleteBtnText: {
-    color: '#FF3B30',
-    fontSize: 13,
-    fontWeight: '500',
+    color: C.red,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   // Download Cards
   downloadCard: {
@@ -1807,15 +1840,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   checkmark: {
-    fontSize: 16,
-    color: '#007AFF',
+    fontSize: 14,
+    color: C.green,
     fontWeight: '700',
+    fontFamily: MONO,
   },
   // Engine Selector
   engineSelector: {
-    borderRadius: 12,
+    borderRadius: 4,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1824,33 +1858,41 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1.5,
   },
   manageBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: C.cyanGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.cyanBorder,
   },
   manageBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: C.cyan,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 0.5,
   },
   engineButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   engineBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 2,
+    borderRadius: 4,
     alignItems: 'center',
   },
   engineBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   statusRow: {
     marginTop: 10,
@@ -1864,43 +1906,54 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statusText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1,
   },
   loadUnloadButtons: {
     flexDirection: 'row',
     gap: 8,
   },
   unloadBtn: {
-    backgroundColor: '#FF9500',
+    backgroundColor: C.amberGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.amberBorder,
   },
   unloadBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: C.amber,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   loadBtn: {
-    backgroundColor: '#34C759',
+    backgroundColor: C.greenGhost,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.greenBorder,
   },
   loadBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: C.green,
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   // Acceleration
   accelerationSection: {
     marginTop: 14,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1,
     marginBottom: 6,
+    color: C.muted,
   },
   accelerationButtons: {
     flexDirection: 'row',
@@ -1956,11 +2009,9 @@ const styles = StyleSheet.create({
   },
   // Chunk Progress
   chunkProgress: {
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: '#007AFF',
+    height: 24,
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
   chunkHeader: {
     flexDirection: 'row',
@@ -1968,22 +2019,51 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chunkLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 0.5,
   },
   chunkPercent: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   chunkBarBg: {
-    height: 4,
-    backgroundColor: 'rgba(128,128,128,0.2)',
-    borderRadius: 2,
+    height: 2,
+    backgroundColor: C.greenGhost,
     overflow: 'hidden',
   },
   chunkBarFill: {
     height: '100%',
-    backgroundColor: '#007AFF',
+    backgroundColor: C.cyan,
+  },
+  rootContainer: {
+    backgroundColor: C.bg,
+  },
+  visible: {
+    display: 'flex' as const,
+    flex: 1,
+  },
+  hidden: {
+    display: 'none' as const,
+  },
+  terminalBlock: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  terminalText: {
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.greenDim,
+    lineHeight: 18,
+  },
+  terminalCursor: {
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.cyan,
+    fontWeight: '700',
   },
   // Common
   closeIconText: {

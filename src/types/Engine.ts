@@ -116,6 +116,18 @@ export interface ReleaseResult {
   errors: ReleaseError[];
 }
 
+/**
+ * Handle returned by `TTSEngineInterface.synthesizeStream()`. The
+ * caller pushes text in via `append()` and the engine pulls chunks
+ * from an internal streaming chunker, pipelining synth + play so
+ * there is no gap between chunks.
+ */
+export interface EngineStreamHandle {
+  append(text: string): void;
+  finalize(): Promise<void>;
+  cancel(): Promise<void>;
+}
+
 export interface TTSEngineInterface<TConfig = void> {
   /** Unique engine identifier */
   readonly name: TTSEngine;
@@ -136,6 +148,16 @@ export interface TTSEngineInterface<TConfig = void> {
     text: string,
     options?: SynthesisOptions,
   ): Promise<AudioBuffer | void>;
+
+  /**
+   * Start a streaming synthesis session. Text is pushed incrementally
+   * via `append()` and the engine pulls chunks as they become ready,
+   * synthesizing the next chunk while the current one plays.
+   *
+   * Optional — only neural engines implement this. `SpeechStream`
+   * falls back to the Tier 1 adaptive batcher when this is absent.
+   */
+  synthesizeStream?(options?: SynthesisOptions): EngineStreamHandle;
 
   /** Get available voices for this engine */
   getAvailableVoices(language?: string): Promise<string[]>;
@@ -229,6 +251,31 @@ export interface SpeechStreamOptions extends SynthesisOptions {
 }
 
 /**
+ * Progress event emitted by a `SpeechStream` as each chunk starts
+ * playing. Offsets are relative to the **total text appended to the
+ * stream so far** — not to any single batch — so consumers can
+ * highlight ranges directly in the accumulated LLM output.
+ */
+export interface StreamProgressEvent {
+  /** Text of the chunk currently being spoken. */
+  chunkText: string;
+  /**
+   * Absolute character range within the consumer's accumulated text
+   * (sum of all `append()` arguments, in order). Monotonically
+   * non-decreasing across a stream's lifetime.
+   */
+  streamRange: {start: number; end: number};
+  /** Chunk index within the current batch (0-based). */
+  chunkIndex: number;
+  /**
+   * Batch index across the whole stream (0-based). For engines that
+   * support incremental streaming synth (neural engines), the entire
+   * stream is a single batch and this is always 0.
+   */
+  batchIndex: number;
+}
+
+/**
  * Streaming input handle returned by `Speech.createSpeechStream`.
  *
  * Feed text incrementally (e.g. LLM tokens) via `append()`; the stream
@@ -256,4 +303,15 @@ export interface SpeechStream {
    * synthesis. Further `append()` calls are no-ops.
    */
   cancel(): Promise<void>;
+
+  /**
+   * Subscribe to per-chunk progress events with stream-absolute offsets.
+   * Returns an unsubscribe function. No events fire after `finalize()`
+   * resolves or `cancel()` is called.
+   *
+   * Use this instead of `Speech.onChunkProgress` when you need to
+   * highlight text in the accumulated consumer buffer — batch-local
+   * offsets from `Speech.onChunkProgress` would not map there.
+   */
+  onProgress(cb: (event: StreamProgressEvent) => void): () => void;
 }
