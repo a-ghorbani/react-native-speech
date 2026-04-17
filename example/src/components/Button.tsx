@@ -1,19 +1,21 @@
 import React from 'react';
 import {gs} from '../styles/gs';
-import {
-  Text,
-  TouchableOpacity,
-  useColorScheme,
-  type TouchableOpacityProps,
-} from 'react-native';
+import {Text, TouchableOpacity, type TouchableOpacityProps} from 'react-native';
 
 export type ButtonVariant = 'primary' | 'success' | 'danger' | 'secondary';
 
-const VARIANT_COLORS: Record<ButtonVariant, {bg: string; text: string}> = {
-  primary: {bg: '#007AFF', text: '#FFFFFF'},
-  success: {bg: '#34C759', text: '#FFFFFF'},
-  danger: {bg: '#FF3B30', text: '#FFFFFF'},
-  secondary: {bg: 'transparent', text: '#007AFF'},
+const VARIANTS: Record<
+  ButtonVariant,
+  {bg: string; border: string; text: string}
+> = {
+  primary: {bg: 'rgba(0,212,255,0.1)', border: '#00D4FF', text: '#00D4FF'},
+  success: {bg: 'rgba(0,255,65,0.1)', border: '#00FF41', text: '#00FF41'},
+  danger: {bg: 'rgba(255,0,64,0.1)', border: '#FF0040', text: '#FF0040'},
+  secondary: {
+    bg: 'rgba(255,255,255,0.03)',
+    border: 'rgba(0,255,65,0.25)',
+    text: 'rgba(0,255,65,0.6)',
+  },
 };
 
 export interface ButtonProps extends TouchableOpacityProps {
@@ -27,23 +29,19 @@ const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   ...rest
 }) => {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const colors = VARIANT_COLORS[variant];
-  const bg =
-    variant === 'secondary'
-      ? isDark
-        ? 'rgba(255,255,255,0.08)'
-        : 'rgba(0,0,0,0.05)'
-      : colors.bg;
+  const v = VARIANTS[variant];
 
   return (
     <TouchableOpacity
       activeOpacity={0.7}
       disabled={disabled}
-      style={[gs.button, {backgroundColor: bg}, disabled && gs.disabled]}
+      style={[
+        gs.button,
+        {backgroundColor: v.bg, borderColor: v.border},
+        disabled && gs.disabled,
+      ]}
       {...rest}>
-      <Text style={[gs.buttonText, {color: colors.text}]}>{label}</Text>
+      <Text style={[gs.buttonText, {color: v.text}]}>{label}</Text>
     </TouchableOpacity>
   );
 };

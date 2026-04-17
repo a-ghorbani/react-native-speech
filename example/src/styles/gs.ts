@@ -5,18 +5,22 @@ export const gs = createRStyle({
     flex: 1,
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.35,
   },
   button: {
     flex: 1,
     height: '44rs',
-    borderRadius: '10rs',
+    borderRadius: '4rs',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   buttonText: {
-    fontSize: '14rs',
-    fontWeight: '600',
+    fontSize: '13rs',
+    fontWeight: '700',
+    fontFamily: 'Courier',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   title: {
     fontSize: '18rs',
@@ -25,7 +29,7 @@ export const gs = createRStyle({
     textAlign: 'center',
   },
   paragraph: {
-    fontSize: '15rs',
+    fontSize: '14rs',
     lineHeight: '22rs',
   },
   p10: {

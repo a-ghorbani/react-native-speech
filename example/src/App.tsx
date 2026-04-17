@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  useColorScheme,
-} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
@@ -18,28 +12,17 @@ import {
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
 const TABS: {key: Tab; label: string}[] = [
-  {key: 'demo', label: 'Demo'},
-  {key: 'streaming', label: 'Streaming'},
-  {key: 'benchmark', label: 'Benchmark'},
+  {key: 'demo', label: 'DEMO'},
+  {key: 'streaming', label: 'STREAM'},
+  {key: 'benchmark', label: 'BENCH'},
 ];
 
 function AppContent() {
   const [tab, setTab] = React.useState<Tab>('demo');
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  const barBg = isDark ? '#1C1C1E' : '#FFFFFF';
-  const activeColor = '#007AFF';
-  const inactiveColor = isDark ? '#636366' : '#8E8E93';
-  const borderColor = isDark ? 'rgba(84,84,88,0.65)' : 'rgba(60,60,67,0.18)';
-
   return (
-    <View
-      style={[
-        styles.container,
-        {backgroundColor: isDark ? '#000' : '#F2F2F7'},
-      ]}>
+    <View style={styles.container}>
       <View
         style={[
           styles.tabContent,
@@ -61,15 +44,7 @@ function AppContent() {
         ]}>
         <BenchmarkView />
       </View>
-      <View
-        style={[
-          styles.tabBar,
-          {
-            backgroundColor: barBg,
-            paddingBottom: insets.bottom,
-            borderTopColor: borderColor,
-          },
-        ]}>
+      <View style={[styles.tabBar, {paddingBottom: insets.bottom || 4}]}>
         {TABS.map(t => {
           const isActive = tab === t.key;
           return (
@@ -80,15 +55,11 @@ function AppContent() {
               activeOpacity={0.6}>
               <View
                 style={[
-                  styles.tabDot,
-                  {backgroundColor: isActive ? activeColor : 'transparent'},
+                  styles.tabIndicator,
+                  isActive && styles.tabIndicatorActive,
                 ]}
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  {color: isActive ? activeColor : inactiveColor},
-                ]}>
+              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
                 {t.label}
               </Text>
             </TouchableOpacity>
@@ -112,6 +83,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#050505',
   },
   tabContent: {
     flex: 1,
@@ -124,23 +96,37 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 6,
+    backgroundColor: '#0a0a0a',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,255,65,0.15)',
+    paddingTop: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
-    gap: 4,
+    paddingVertical: 6,
+    gap: 5,
   },
-  tabDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+  tabIndicator: {
+    width: 20,
+    height: 2,
+    backgroundColor: 'transparent',
+  },
+  tabIndicatorActive: {
+    backgroundColor: '#00FF41',
+    shadowColor: '#00FF41',
+    shadowOffset: {width: 0, height: 0},
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
   },
   tabText: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 0.1,
+    fontSize: 10,
+    fontWeight: '600',
+    fontFamily: 'Courier',
+    letterSpacing: 2,
+    color: 'rgba(0,255,65,0.3)',
+  },
+  tabTextActive: {
+    color: '#00FF41',
   },
 });

@@ -7,7 +7,6 @@ import {
   AppState,
   Platform,
   StyleSheet,
-  useColorScheme,
   TouchableOpacity,
   ActivityIndicator,
   Modal,
@@ -49,56 +48,65 @@ const DEFAULT_TEXT =
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
 
 const RootView: React.FC = () => {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const secondaryTextColor = 'rgba(0,255,65,0.45)';
+  const cardBg = 'rgba(0,255,65,0.04)';
+  const inputBg = 'rgba(0,255,65,0.06)';
 
-  const textColor = isDark ? '#FFFFFF' : '#000000';
-  const secondaryTextColor = isDark ? '#8E8E93' : '#6D6D72';
-  const cardBg = isDark ? '#1C1C1E' : '#F2F2F7';
-  const cardBgSecondary = isDark ? '#2C2C2E' : '#FFFFFF';
-  const inputBg = isDark ? '#3A3A3C' : '#E5E5EA';
-
-  // Memoized theme-dependent styles to avoid inline styles
   const themedStyles = React.useMemo(
     () =>
       StyleSheet.create({
-        // Text colors
-        textPrimary: {color: textColor},
+        textPrimary: {color: '#00FF41'},
         textSecondary: {color: secondaryTextColor},
-        textWhite: {color: 'white'},
-        // Backgrounds
-        bgCard: {backgroundColor: cardBg},
-        bgCardSecondary: {backgroundColor: cardBgSecondary},
+        textWhite: {color: '#00FF41'},
+        bgCard: {
+          backgroundColor: cardBg,
+          borderWidth: 1,
+          borderColor: 'rgba(0,255,65,0.12)',
+        },
+        bgCardSecondary: {backgroundColor: '#0a0f0a'},
         bgInput: {backgroundColor: inputBg},
-        bgChunkProgress: {backgroundColor: 'rgba(0, 122, 255, 0.1)'},
-        // Button states
-        btnSelected: {backgroundColor: '#007AFF'},
-        btnUnselected: {backgroundColor: inputBg},
-        btnSelectedGreen: {backgroundColor: '#34C759'},
-        // Status colors
-        statusReady: {color: '#34C759'},
-        statusNotReady: {color: '#FF3B30'},
-        statusAccent: {color: '#007AFF'},
-        // Voice item
-        voiceItemSelected: {backgroundColor: isDark ? '#3A3A3C' : '#E8F4FD'},
+        bgChunkProgress: {backgroundColor: 'rgba(0,212,255,0.06)'},
+        btnSelected: {
+          backgroundColor: 'rgba(0,255,65,0.15)',
+          borderWidth: 1,
+          borderColor: '#00FF41',
+        },
+        btnUnselected: {
+          backgroundColor: 'rgba(255,255,255,0.02)',
+          borderWidth: 1,
+          borderColor: 'rgba(0,255,65,0.12)',
+        },
+        btnSelectedGreen: {backgroundColor: 'rgba(0,255,65,0.15)'},
+        statusReady: {color: '#00FF41'},
+        statusNotReady: {color: '#FF0040'},
+        statusAccent: {color: '#00D4FF'},
+        voiceItemSelected: {backgroundColor: 'rgba(0,255,65,0.1)'},
         voiceItemUnselected: {backgroundColor: 'transparent'},
-        // Download card colors
         downloadTextInstalled: {color: secondaryTextColor},
-        downloadTextWhite: {color: 'white'},
-        downloadMetaWhite: {color: 'rgba(255,255,255,0.8)'},
-        downloadLangsWhite: {color: 'rgba(255,255,255,0.7)'},
-        // Opacity
-        opacityFaded: {opacity: 0.5},
+        downloadTextWhite: {color: '#00FF41'},
+        downloadMetaWhite: {color: 'rgba(0,255,65,0.6)'},
+        downloadLangsWhite: {color: 'rgba(0,255,65,0.5)'},
+        opacityFaded: {opacity: 0.35},
         opacityFull: {opacity: 1},
-        // Section label with margin
         sectionLabelWithMargin: {marginTop: 20},
-        // Download card variants
-        downloadCardBlue: {backgroundColor: '#007AFF'},
-        downloadCardGreen: {backgroundColor: '#34C759'},
-        downloadCardOrange: {backgroundColor: '#FF9500'},
+        downloadCardBlue: {
+          backgroundColor: 'rgba(0,212,255,0.06)',
+          borderWidth: 1,
+          borderColor: 'rgba(0,212,255,0.25)',
+        },
+        downloadCardGreen: {
+          backgroundColor: 'rgba(0,255,65,0.06)',
+          borderWidth: 1,
+          borderColor: 'rgba(0,255,65,0.25)',
+        },
+        downloadCardOrange: {
+          backgroundColor: 'rgba(255,176,0,0.06)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,176,0,0.25)',
+        },
         downloadCardInstalled: {backgroundColor: cardBg},
       }),
-    [textColor, secondaryTextColor, cardBg, cardBgSecondary, inputBg, isDark],
+    [],
   );
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
@@ -654,7 +662,7 @@ const RootView: React.FC = () => {
   // ==================== RENDER ====================
 
   return (
-    <SafeAreaView style={[gs.flex, gs.p10]}>
+    <SafeAreaView style={[gs.flex, gs.p10, {backgroundColor: '#050505'}]}>
       {/* ==================== MODEL MANAGER MODAL ==================== */}
       <Modal
         visible={showModelManager}
@@ -1639,17 +1647,20 @@ export default RootView;
 const styles = StyleSheet.create({
   highlighted: {
     fontWeight: '600',
-    backgroundColor: 'rgba(0, 122, 255, 0.15)',
-    color: '#007AFF',
-    borderRadius: 3,
+    backgroundColor: 'rgba(0,212,255,0.2)',
+    color: '#00D4FF',
   },
   textInput: {
     minHeight: 120,
-    borderRadius: 12,
+    borderRadius: 4,
     padding: 14,
     textAlignVertical: 'top',
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
+    fontFamily: 'Courier',
+    borderWidth: 1,
+    borderColor: 'rgba(0,255,65,0.12)',
+    color: '#00FF41',
   },
   controlBar: {
     flexDirection: 'row',
@@ -1660,13 +1671,15 @@ const styles = StyleSheet.create({
   // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
     maxHeight: '75%',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,255,65,0.2)',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1761,24 +1774,28 @@ const styles = StyleSheet.create({
     color: '#34C759',
   },
   useBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: 'rgba(0,212,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.3)',
   },
   useBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#00D4FF',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Courier',
   },
   deleteBtn: {
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
   deleteBtnText: {
-    color: '#FF3B30',
-    fontSize: 13,
-    fontWeight: '500',
+    color: '#FF0040',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Courier',
   },
   // Download Cards
   downloadCard: {
@@ -1847,13 +1864,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   checkmark: {
-    fontSize: 16,
-    color: '#007AFF',
+    fontSize: 14,
+    color: '#00FF41',
     fontWeight: '700',
+    fontFamily: 'Courier',
   },
   // Engine Selector
   engineSelector: {
-    borderRadius: 16,
+    borderRadius: 4,
     padding: 16,
     marginBottom: 12,
   },
@@ -1868,15 +1886,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   manageBtn: {
-    backgroundColor: '#007AFF',
+    backgroundColor: 'rgba(0,212,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.3)',
   },
   manageBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#00D4FF',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Courier',
+    letterSpacing: 0.5,
   },
   engineButtons: {
     flexDirection: 'row',
@@ -1885,12 +1907,14 @@ const styles = StyleSheet.create({
   engineBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 4,
     alignItems: 'center',
   },
   engineBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: 'Courier',
+    letterSpacing: 0.5,
   },
   statusRow: {
     marginTop: 10,
@@ -1912,26 +1936,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   unloadBtn: {
-    backgroundColor: '#FF9500',
+    backgroundColor: 'rgba(255,176,0,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,176,0,0.3)',
   },
   unloadBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#FFB000',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Courier',
   },
   loadBtn: {
-    backgroundColor: '#34C759',
+    backgroundColor: 'rgba(0,255,65,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,255,65,0.3)',
   },
   loadBtnText: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '600',
+    color: '#00FF41',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: 'Courier',
   },
   // Acceleration
   accelerationSection: {
@@ -1997,8 +2027,10 @@ const styles = StyleSheet.create({
   // Chunk Progress
   chunkProgress: {
     padding: 14,
-    borderRadius: 12,
+    borderRadius: 4,
     marginBottom: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: '#00D4FF',
   },
   chunkHeader: {
     flexDirection: 'row',
@@ -2014,15 +2046,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chunkBarBg: {
-    height: 3,
-    backgroundColor: 'rgba(128,128,128,0.15)',
-    borderRadius: 1.5,
+    height: 2,
+    backgroundColor: 'rgba(0,255,65,0.1)',
     overflow: 'hidden',
   },
   chunkBarFill: {
     height: '100%',
-    backgroundColor: '#007AFF',
-    borderRadius: 1.5,
+    backgroundColor: '#00D4FF',
   },
   // Common
   closeIconText: {
