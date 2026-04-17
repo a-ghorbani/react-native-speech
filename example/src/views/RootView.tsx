@@ -12,7 +12,6 @@ import {
   Modal,
   ScrollView,
   Pressable,
-  TextInput,
 } from 'react-native';
 import type {AppStateStatus} from 'react-native';
 import Speech, {
@@ -49,8 +48,6 @@ const DEFAULT_TEXT =
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
 
 const RootView: React.FC = () => {
-  const secondaryTextColor = C.muted;
-
   const themedStyles = React.useMemo(
     () =>
       StyleSheet.create({
@@ -109,7 +106,7 @@ const RootView: React.FC = () => {
   );
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
-  const [spokenText, setSpokenText] = React.useState<string>(DEFAULT_TEXT);
+  const [spokenText] = React.useState<string>(DEFAULT_TEXT);
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
@@ -1574,30 +1571,13 @@ const RootView: React.FC = () => {
 
       {/* Main Content */}
       <View style={gs.flex}>
-        <View style={isStarted ? styles.visible : styles.hidden}>
-          <HighlightedText
-            text={spokenText}
-            highlights={highlights}
-            highlightedStyle={styles.highlighted}
-            onHighlightedPress={onHighlightedPress}
-            style={[gs.paragraph, themedStyles.textPrimary]}
-          />
-        </View>
-        <View style={isStarted ? styles.hidden : styles.visible}>
-          <TextInput
-            style={[
-              gs.paragraph,
-              themedStyles.textPrimary,
-              styles.textInput,
-              themedStyles.bgInput,
-            ]}
-            value={spokenText}
-            onChangeText={setSpokenText}
-            multiline
-            editable={!isStarted}
-            placeholderTextColor={secondaryTextColor}
-          />
-        </View>
+        <HighlightedText
+          text={spokenText}
+          highlights={highlights}
+          highlightedStyle={styles.highlighted}
+          onHighlightedPress={onHighlightedPress}
+          style={[gs.paragraph, themedStyles.textPrimary]}
+        />
       </View>
 
       {/* Controls */}
