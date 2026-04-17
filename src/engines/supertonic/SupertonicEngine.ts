@@ -209,6 +209,11 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       throw new Error('Supertonic engine not initialized');
     }
 
+    if (this.activeStreamSession) {
+      this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
     this.stopRequested = false;
     this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -506,6 +511,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     if (this.activeStreamSession) {
       await this.activeStreamSession.cancel().catch(() => {});
       this.activeStreamSession = null;
+      this.isSynthesizing = false;
     }
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});

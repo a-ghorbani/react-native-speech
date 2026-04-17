@@ -296,6 +296,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       throw new Error('Kitten engine not initialized');
     }
 
+    if (this.activeStreamSession) {
+      this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
     this.stopRequested = false;
     this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -692,6 +697,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     if (this.activeStreamSession) {
       await this.activeStreamSession.cancel().catch(() => {});
       this.activeStreamSession = null;
+      this.isSynthesizing = false;
     }
     neuralAudioPlayer.stop().catch(() => {});
   }

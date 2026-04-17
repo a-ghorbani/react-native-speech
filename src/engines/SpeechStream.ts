@@ -223,6 +223,14 @@ export class SpeechStreamImpl implements ISpeechStream {
   }
 
   async finalize(): Promise<void> {
+    if (this.cancelled || this.finalized) {
+      if (!this.engineStream) {
+        return this.waitForDrain();
+      }
+      return;
+    }
+    this.finalized = true;
+
     if (this.engineStream) {
       try {
         await this.engineStream.finalize();
@@ -238,16 +246,10 @@ export class SpeechStreamImpl implements ISpeechStream {
       return;
     }
 
-    if (this.cancelled) {
-      return this.waitForDrain();
-    }
-    if (!this.finalized) {
-      this.finalized = true;
-      log.info(
-        `finalize: tailBuffer=${this.buffer.length}, totalAppended=${this.totalAppendedChars}, t+${this.rel()}ms`,
-      );
-      this.tryFlush();
-    }
+    log.info(
+      `finalize: tailBuffer=${this.buffer.length}, totalAppended=${this.totalAppendedChars}, t+${this.rel()}ms`,
+    );
+    this.tryFlush();
     await this.waitForDrain();
     log.info(`drained: batches=${this.batchCount}, elapsed=${this.rel()}ms`);
     if (this.firstError) {
@@ -263,7 +265,11 @@ export class SpeechStreamImpl implements ISpeechStream {
 
     if (this.engineStream) {
       this.cleanupProgressSub();
-      await this.engineStream.cancel();
+      try {
+        await this.engineStream.cancel();
+      } catch (err) {
+        log.warn('Engine stream cancel failed:', err);
+      }
       return;
     }
 

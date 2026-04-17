@@ -320,6 +320,11 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       throw new Error('Kokoro engine not initialized');
     }
 
+    if (this.activeStreamSession) {
+      this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
     this.stopRequested = false;
     this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -690,6 +695,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (this.activeStreamSession) {
       await this.activeStreamSession.cancel().catch(() => {});
       this.activeStreamSession = null;
+      this.isSynthesizing = false;
     }
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});
