@@ -110,7 +110,7 @@ const RootView: React.FC = () => {
   >([]);
 
   const [selectedEngine, setSelectedEngine] = React.useState<TTSEngine>(
-    TTSEngine.OS_NATIVE,
+    TTSEngine.KITTEN,
   );
   const [initializedEngine, setInitializedEngine] =
     React.useState<TTSEngine | null>(null);
@@ -1338,10 +1338,10 @@ const RootView: React.FC = () => {
 
         <View style={styles.engineButtons}>
           {[
-            {engine: TTSEngine.OS_NATIVE, label: 'System'},
+            {engine: TTSEngine.KITTEN, label: 'Kitten'},
             {engine: TTSEngine.KOKORO, label: 'Kokoro'},
             {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
-            {engine: TTSEngine.KITTEN, label: 'Kitten'},
+            {engine: TTSEngine.OS_NATIVE, label: 'System'},
           ].map(item => {
             const isEngineSelected = selectedEngine === item.engine;
             return (
