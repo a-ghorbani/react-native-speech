@@ -1563,22 +1563,12 @@ const RootView: React.FC = () => {
       {/* Chunk Progress */}
       {currentChunk && isStarted && (
         <View style={[styles.chunkProgress, themedStyles.bgChunkProgress]}>
-          <View style={styles.chunkHeader}>
-            <Text style={[styles.chunkLabel, themedStyles.textPrimary]}>
-              CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]
-            </Text>
-            <Text style={[styles.chunkPercent, themedStyles.statusAccent]}>
+          <Text style={[styles.chunkLabel, themedStyles.textSecondary]}>
+            CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]{' '}
+            <Text style={themedStyles.statusAccent}>
               {currentChunk.progress}%
             </Text>
-          </View>
-          <View style={styles.chunkBarBg}>
-            <View
-              style={[
-                styles.chunkBarFill,
-                {width: `${currentChunk.progress}%`},
-              ]}
-            />
-          </View>
+          </Text>
         </View>
       )}
 
@@ -1658,7 +1648,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     fontSize: 14,
     lineHeight: 22,
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     borderWidth: 1,
     borderColor: C.greenBorder,
     color: C.green,
@@ -1789,7 +1779,7 @@ const styles = StyleSheet.create({
     color: C.cyan,
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   deleteBtn: {
     paddingHorizontal: 8,
@@ -1799,7 +1789,7 @@ const styles = StyleSheet.create({
     color: C.red,
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   // Download Cards
   downloadCard: {
@@ -1871,7 +1861,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: C.green,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   // Engine Selector
   engineSelector: {
@@ -1903,7 +1893,7 @@ const styles = StyleSheet.create({
     color: C.cyan,
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     letterSpacing: 0.5,
   },
   engineButtons: {
@@ -1955,7 +1945,7 @@ const styles = StyleSheet.create({
     color: C.amber,
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   loadBtn: {
     backgroundColor: C.greenGhost,
@@ -1969,7 +1959,7 @@ const styles = StyleSheet.create({
     color: C.green,
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   // Acceleration
   accelerationSection: {
@@ -2037,11 +2027,9 @@ const styles = StyleSheet.create({
   },
   // Chunk Progress
   chunkProgress: {
-    padding: 14,
-    borderRadius: 4,
-    marginBottom: 12,
-    borderLeftWidth: 2,
-    borderLeftColor: C.cyan,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginBottom: 4,
   },
   chunkHeader: {
     flexDirection: 'row',
