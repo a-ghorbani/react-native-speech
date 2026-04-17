@@ -139,3 +139,15 @@ are allowed to accumulate before flushing. Higher values produce more
 natural prosody across sentence boundaries at the cost of a larger
 gap before each batch starts. The first batch always flushes on the
 first complete sentence, regardless of this value.
+
+### Playback position tracking
+
+Use `stream.onProgress()` to highlight the currently spoken text:
+
+```ts
+const unsub = stream.onProgress(event => {
+  // streamRange offsets are relative to total text appended
+  highlightRange(event.streamRange.start, event.streamRange.end);
+});
+// unsub() when done
+```

@@ -123,7 +123,16 @@ await stream.finalize(); // flushes the tail and resolves when playback ends
 // or: await stream.cancel(); // stops and discards
 ```
 
-Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. Feeding the same text through a stream lets the engine keep one call containing many sentences, so its internal chunker and pipelined synth do their normal job.
+Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. The stream avoids this by keeping one continuous synth+play loop alive for the stream's entire lifetime — the next chunk is synthesized while the current one plays, so the only gap is genuine token-rate underrun (LLM slower than playback).
+
+You can also track playback position with stream-absolute offsets:
+
+```ts
+stream.onProgress(event => {
+  // event.streamRange is relative to the total text appended so far
+  highlightText(event.streamRange.start, event.streamRange.end);
+});
+```
 
 Works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 
