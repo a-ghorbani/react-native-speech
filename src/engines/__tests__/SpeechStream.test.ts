@@ -346,6 +346,189 @@ describe('SpeechStream', () => {
     await expect(finalizePromise).resolves.toBeUndefined();
   });
 
+  test('onProgress: translates batch-local offsets to stream-absolute', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+
+    // Simulates the engine emitting chunk progress while a batch is being
+    // synthesized. The test wiring runs synchronously inside synthesize
+    // so we can assert precisely when events fire.
+    let engineEmit: ((event: any) => void) | null = null;
+    const subscribeProgress = jest.fn(
+      (cb: (event: any) => void): (() => void) => {
+        engineEmit = cb;
+        return () => {
+          if (engineEmit === cb) engineEmit = null;
+        };
+      },
+    );
+
+    const stream = new SpeechStreamImpl({
+      synthesize,
+      stop,
+      subscribeProgress,
+      options: {targetChars: 300},
+    });
+
+    const events: any[] = [];
+    stream.onProgress(e => events.push(e));
+
+    // Batch 1: "First. " (starts at offset 0).
+    stream.append('First. ');
+    await flushMicrotasks();
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(subscribeProgress).toHaveBeenCalledTimes(1);
+    expect(engineEmit).not.toBeNull();
+
+    // Simulate engine emitting a chunk event with batch-local offsets.
+    engineEmit!({
+      id: 1,
+      chunkIndex: 0,
+      totalChunks: 1,
+      chunkText: 'First.',
+      textRange: {start: 0, end: 6},
+      progress: 0,
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      chunkText: 'First.',
+      streamRange: {start: 0, end: 6},
+      chunkIndex: 0,
+      batchIndex: 0,
+    });
+
+    // Resolve batch 1 and append below-target text. Nothing flushes until
+    // underrun; batch 1 unsub runs when synth resolves.
+    calls[0]!.resolve();
+    await flushMicrotasks();
+    expect(engineEmit).toBeNull();
+
+    // Batch 2 comes from underrun. startOffset = total appended so far = 7.
+    stream.append('Second done. ');
+    await flushMicrotasks();
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    expect(engineEmit).not.toBeNull();
+
+    engineEmit!({
+      id: 2,
+      chunkIndex: 0,
+      totalChunks: 1,
+      chunkText: 'Second done.',
+      textRange: {start: 0, end: 12},
+      progress: 0,
+    });
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toEqual({
+      chunkText: 'Second done.',
+      streamRange: {start: 7, end: 19},
+      chunkIndex: 0,
+      batchIndex: 1,
+    });
+
+    calls[1]!.resolve();
+  });
+
+  test('onProgress: returns unsubscribe; no events after unsubscribe', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+
+    let engineEmit: ((event: any) => void) | null = null;
+    const subscribeProgress = jest.fn(
+      (cb: (event: any) => void): (() => void) => {
+        engineEmit = cb;
+        return () => {
+          if (engineEmit === cb) engineEmit = null;
+        };
+      },
+    );
+
+    const stream = new SpeechStreamImpl({synthesize, stop, subscribeProgress});
+    const events: any[] = [];
+    const unsubscribe = stream.onProgress(e => events.push(e));
+
+    stream.append('Hello. ');
+    await flushMicrotasks();
+
+    engineEmit!({
+      id: 1,
+      chunkIndex: 0,
+      totalChunks: 1,
+      chunkText: 'Hello.',
+      textRange: {start: 0, end: 6},
+      progress: 0,
+    });
+    expect(events).toHaveLength(1);
+
+    unsubscribe();
+    engineEmit!({
+      id: 1,
+      chunkIndex: 1,
+      totalChunks: 2,
+      chunkText: 'World.',
+      textRange: {start: 0, end: 6},
+      progress: 50,
+    });
+    expect(events).toHaveLength(1);
+
+    calls[0]!.resolve();
+  });
+
+  test('onProgress: hot path skips subscribe when no listeners registered', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    const subscribeProgress = jest.fn();
+
+    const stream = new SpeechStreamImpl({synthesize, stop, subscribeProgress});
+
+    stream.append('No listeners. ');
+    await flushMicrotasks();
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(subscribeProgress).not.toHaveBeenCalled();
+
+    calls[0]!.resolve();
+  });
+
+  test('onProgress: no events after finalize resolves', async () => {
+    const {synthesize, calls} = makeControllableSynth();
+    const stop = jest.fn(async () => {});
+    let engineEmit: ((event: any) => void) | null = null;
+    const subscribeProgress = jest.fn(
+      (cb: (event: any) => void): (() => void) => {
+        engineEmit = cb;
+        return () => {
+          if (engineEmit === cb) engineEmit = null;
+        };
+      },
+    );
+
+    const stream = new SpeechStreamImpl({synthesize, stop, subscribeProgress});
+    const events: any[] = [];
+    stream.onProgress(e => events.push(e));
+
+    stream.append('Hello. ');
+    await flushMicrotasks();
+    engineEmit!({
+      id: 1,
+      chunkIndex: 0,
+      totalChunks: 1,
+      chunkText: 'Hello.',
+      textRange: {start: 0, end: 6},
+      progress: 0,
+    });
+    expect(events).toHaveLength(1);
+
+    calls[0]!.resolve();
+    await expect(stream.finalize()).resolves.toBeUndefined();
+
+    // After finalize, unsub has fired — the engineEmit reference is
+    // stale (forwarder detached via the unsubscribe the stream returned).
+    expect(engineEmit).toBeNull();
+    expect(events).toHaveLength(1);
+  });
+
   test('finalize rejects with synth error; onError callback receives it', async () => {
     const {synthesize, calls} = makeControllableSynth();
     const stop = jest.fn(async () => {});

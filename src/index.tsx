@@ -60,6 +60,7 @@ export type {
   ChunkProgressCallback,
   SpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 } from './types';
 
 // Export Kokoro types

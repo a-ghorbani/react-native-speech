@@ -28,8 +28,10 @@
  */
 
 import type {
+  ChunkProgressCallback,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 } from '../types';
 import {createComponentLogger} from '../utils/logger';
 
@@ -63,15 +65,37 @@ export interface SpeechStreamConfig {
   synthesize: (text: string) => Promise<void>;
   /** Aborts any in-flight synth/playback. Called from `cancel()`. */
   stop: () => Promise<void>;
+  /**
+   * Optional hook for the stream to subscribe to the underlying
+   * engine's per-chunk progress events for the duration of a single
+   * `synthesize()` call. The returned function unsubscribes.
+   *
+   * When present, the stream wires each batch's chunk events to its
+   * own `onProgress` listeners with translated (stream-absolute)
+   * offsets. Omit for engines/environments without chunk progress.
+   */
+  subscribeProgress?: (cb: ChunkProgressCallback) => () => void;
   /** User-supplied options — only `targetChars` and `onError` are read here. */
   options?: SpeechStreamOptions;
 }
 
 type FlushReason = 'first-sentence' | 'target-chars' | 'underrun' | 'finalize';
 
+/**
+ * A batch queued for synthesis. `startOffset` is the absolute position
+ * (in the consumer's accumulated `append()` input) where `text` begins
+ * — used to translate chunk progress events into stream-relative
+ * offsets for `onProgress` listeners.
+ */
+interface QueuedBatch {
+  text: string;
+  startOffset: number;
+  batchIndex: number;
+}
+
 export class SpeechStreamImpl implements ISpeechStream {
   private buffer = '';
-  private queue: string[] = [];
+  private queue: QueuedBatch[] = [];
   private inflight: Promise<void> | null = null;
 
   private firstFlushDone = false;
@@ -87,20 +111,36 @@ export class SpeechStreamImpl implements ISpeechStream {
   private lastBatchEndTs: number | null = null;
   private totalAppendedChars = 0;
 
+  private progressListeners: Array<(event: StreamProgressEvent) => void> = [];
+
   private readonly targetChars: number;
   private readonly synthesize: (text: string) => Promise<void>;
   private readonly stopFn: () => Promise<void>;
+  private readonly subscribeProgress?: (
+    cb: ChunkProgressCallback,
+  ) => () => void;
   private readonly onError?: (err: Error) => void;
 
   constructor(config: SpeechStreamConfig) {
     this.synthesize = config.synthesize;
     this.stopFn = config.stop;
+    this.subscribeProgress = config.subscribeProgress;
     this.targetChars = Math.max(
       1,
       config.options?.targetChars ?? DEFAULT_TARGET_CHARS,
     );
     this.onError = config.options?.onError;
     log.info(`stream created: targetChars=${this.targetChars}, t+0ms`);
+  }
+
+  onProgress(cb: (event: StreamProgressEvent) => void): () => void {
+    this.progressListeners.push(cb);
+    return () => {
+      const idx = this.progressListeners.indexOf(cb);
+      if (idx >= 0) {
+        this.progressListeners.splice(idx, 1);
+      }
+    };
   }
 
   append(text: string): void {
@@ -179,18 +219,20 @@ export class SpeechStreamImpl implements ISpeechStream {
       if (this.buffer.length === 0) {
         return;
       }
+      const startOffset = this.totalAppendedChars - this.buffer.length;
       const tail = this.buffer;
       this.buffer = '';
-      this.enqueueBatch(tail, 'finalize');
+      this.enqueueBatch(tail, startOffset, 'finalize');
       return;
     }
 
     if (!this.firstFlushDone) {
       const split = extractFirstSentence(this.buffer);
       if (split) {
+        const startOffset = this.totalAppendedChars - this.buffer.length;
         this.firstFlushDone = true;
         this.buffer = split.tail;
-        this.enqueueBatch(split.head, 'first-sentence');
+        this.enqueueBatch(split.head, startOffset, 'first-sentence');
       }
       return;
     }
@@ -204,15 +246,21 @@ export class SpeechStreamImpl implements ISpeechStream {
 
     const split = extractAllCompleteSentences(this.buffer);
     if (split) {
+      const startOffset = this.totalAppendedChars - this.buffer.length;
       this.buffer = split.tail;
       this.enqueueBatch(
         split.head,
+        startOffset,
         sizeThresholdHit ? 'target-chars' : 'underrun',
       );
     }
   }
 
-  private enqueueBatch(text: string, reason: FlushReason): void {
+  private enqueueBatch(
+    text: string,
+    startOffset: number,
+    reason: FlushReason,
+  ): void {
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       return;
@@ -220,7 +268,7 @@ export class SpeechStreamImpl implements ISpeechStream {
     log.info(
       `flush[${reason}]: ${text.length} chars, buffer_after=${this.buffer.length}, t+${this.rel()}ms`,
     );
-    this.queue.push(text);
+    this.queue.push({text, startOffset, batchIndex: this.batchCount});
     this.pump();
   }
 
@@ -241,8 +289,9 @@ export class SpeechStreamImpl implements ISpeechStream {
       this.maybeResolveDrain();
       return;
     }
-    const batch = this.queue.shift() as string;
-    const batchId = ++this.batchCount;
+    const batch = this.queue.shift() as QueuedBatch;
+    this.batchCount += 1;
+    const batchId = this.batchCount;
     const batchStartTs = Date.now();
     // Gap since the previous batch's audio finished playing. This is the
     // unhidden dead-air between batches — if it's large, it's the
@@ -251,12 +300,14 @@ export class SpeechStreamImpl implements ISpeechStream {
     const gapFromPrev =
       this.lastBatchEndTs !== null ? batchStartTs - this.lastBatchEndTs : null;
     log.info(
-      `batch#${batchId} START: ${batch.length} chars` +
+      `batch#${batchId} START: ${batch.text.length} chars` +
         (gapFromPrev !== null ? `, gap_since_prev_end=${gapFromPrev}ms` : '') +
-        `, preview="${previewText(batch)}", t+${this.rel()}ms`,
+        `, preview="${previewText(batch.text)}", t+${this.rel()}ms`,
     );
 
-    this.inflight = this.synthesize(batch)
+    const unsubscribeProgress = this.installProgressForwarder(batch);
+
+    this.inflight = this.synthesize(batch.text)
       .catch(err => {
         const error = err instanceof Error ? err : new Error(String(err));
         if (!this.firstError) {
@@ -271,6 +322,13 @@ export class SpeechStreamImpl implements ISpeechStream {
         }
       })
       .then(() => {
+        if (unsubscribeProgress) {
+          try {
+            unsubscribeProgress();
+          } catch (e) {
+            log.warn('unsubscribeProgress threw:', e);
+          }
+        }
         const endTs = Date.now();
         this.lastBatchEndTs = endTs;
         log.info(
@@ -280,6 +338,45 @@ export class SpeechStreamImpl implements ISpeechStream {
         this.pump();
         this.tryFlush();
       });
+  }
+
+  /**
+   * Subscribe to the underlying engine's per-chunk progress events for
+   * the duration of a single batch, translating each event's batch-local
+   * textRange into a stream-absolute range before fanning it out to
+   * `onProgress` listeners.
+   *
+   * Returns null (no-op) if the stream has no listeners, no injected
+   * subscribe hook, or subscription fails — so the hot path pays nothing
+   * when progress isn't being observed.
+   */
+  private installProgressForwarder(batch: QueuedBatch): (() => void) | null {
+    if (!this.subscribeProgress || this.progressListeners.length === 0) {
+      return null;
+    }
+    try {
+      return this.subscribeProgress(event => {
+        const streamEvent: StreamProgressEvent = {
+          chunkText: event.chunkText,
+          streamRange: {
+            start: batch.startOffset + event.textRange.start,
+            end: batch.startOffset + event.textRange.end,
+          },
+          chunkIndex: event.chunkIndex,
+          batchIndex: batch.batchIndex,
+        };
+        for (const listener of this.progressListeners) {
+          try {
+            listener(streamEvent);
+          } catch (listenerErr) {
+            log.warn('stream onProgress listener threw:', listenerErr);
+          }
+        }
+      });
+    } catch (err) {
+      log.warn('subscribeProgress threw, progress events disabled:', err);
+      return null;
+    }
   }
 
   private async waitForDrain(): Promise<void> {

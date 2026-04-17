@@ -35,6 +35,7 @@ import type {
   ReleaseResult,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 } from './types';
 import {engineManager} from './engines/EngineManager';
 import {OSEngine} from './engines/OSEngine';
@@ -261,6 +262,13 @@ export default class Speech {
       synthesize: (text: string) =>
         Speech.speak(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
+      // Lets the stream translate batch-local chunk progress into
+      // stream-absolute offsets for its own `onProgress` listeners.
+      // Per-batch subscribe/unsubscribe avoids cross-batch leakage and
+      // only clobbers `Speech.onChunkProgress` while a stream listener
+      // is active.
+      subscribeProgress: (cb: ChunkProgressCallback) =>
+        Speech.onChunkProgress(cb),
       options,
     });
   }
@@ -587,4 +595,5 @@ export type {
   ReleaseResult,
   ISpeechStream as SpeechStream,
   SpeechStreamOptions,
+  StreamProgressEvent,
 };
