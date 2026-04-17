@@ -3,7 +3,6 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
-import ScanlineOverlay from './components/ScanlineOverlay';
 import {FRProvider} from 'react-native-full-responsive';
 import {
   SafeAreaProvider,
@@ -25,7 +24,6 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      <ScanlineOverlay />
       <View
         style={[
           styles.tabContent,
