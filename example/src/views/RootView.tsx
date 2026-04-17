@@ -13,6 +13,7 @@ import {
   Modal,
   ScrollView,
   Pressable,
+  TextInput,
 } from 'react-native';
 import type {AppStateStatus} from 'react-native';
 import Speech, {
@@ -38,8 +39,11 @@ import {
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
-const Introduction =
-  "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.";
+const DEFAULT_TEXT =
+  'Welcome! This is a quick demo of on-device neural text-to-speech. ' +
+  'Everything you hear is synthesized locally — no internet, no cloud ' +
+  'API, just the model running on your phone. Try editing this text, ' +
+  'or switch voices above to hear the difference.';
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
@@ -100,6 +104,7 @@ const RootView: React.FC = () => {
 
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
+  const [spokenText, setSpokenText] = React.useState<string>(DEFAULT_TEXT);
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
@@ -477,12 +482,12 @@ const RootView: React.FC = () => {
     setIsStarted(true);
     try {
       if (selectedEngine === TTSEngine.SUPERTONIC) {
-        await Speech.speak(Introduction, selectedVoice || undefined, {
+        await Speech.speak(spokenText, selectedVoice || undefined, {
           speed,
           inferenceSteps,
         });
       } else {
-        await Speech.speak(Introduction, selectedVoice || undefined);
+        await Speech.speak(spokenText, selectedVoice || undefined);
       }
     } finally {
       // Speech finished or was stopped — ensure we reset
@@ -491,7 +496,7 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
-  }, [selectedVoice, selectedEngine, speed, inferenceSteps]);
+  }, [selectedVoice, selectedEngine, speed, inferenceSteps, spokenText]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -1572,14 +1577,28 @@ const RootView: React.FC = () => {
 
       {/* Main Content */}
       <View style={gs.flex}>
-        <Text style={[gs.title, themedStyles.textPrimary]}>Introduction</Text>
-        <HighlightedText
-          text={Introduction}
-          highlights={highlights}
-          highlightedStyle={styles.highlighted}
-          onHighlightedPress={onHighlightedPress}
-          style={[gs.paragraph, themedStyles.textPrimary]}
-        />
+        {isStarted ? (
+          <HighlightedText
+            text={spokenText}
+            highlights={highlights}
+            highlightedStyle={styles.highlighted}
+            onHighlightedPress={onHighlightedPress}
+            style={[gs.paragraph, themedStyles.textPrimary]}
+          />
+        ) : (
+          <TextInput
+            style={[
+              gs.paragraph,
+              themedStyles.textPrimary,
+              styles.textInput,
+              themedStyles.bgInput,
+            ]}
+            value={spokenText}
+            onChangeText={setSpokenText}
+            multiline
+            placeholderTextColor={secondaryTextColor}
+          />
+        )}
       </View>
 
       {/* Controls */}
@@ -1616,6 +1635,12 @@ const styles = StyleSheet.create({
     color: 'black',
     fontWeight: '600',
     backgroundColor: '#ffff00',
+  },
+  textInput: {
+    minHeight: 100,
+    borderRadius: 8,
+    padding: 12,
+    textAlignVertical: 'top',
   },
   // Modal
   modalOverlay: {
