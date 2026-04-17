@@ -48,6 +48,8 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   );
   const [engineReady, setEngineReady] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [voices, setVoices] = React.useState<string[]>([]);
+  const [selectedVoice, setSelectedVoice] = React.useState<string | null>(null);
 
   const streamRef = React.useRef<SpeechStream | null>(null);
   const cancelledRef = React.useRef(false);
@@ -60,12 +62,21 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       if (mounted) {
         setEngineReady(ready);
         setEngineName(Speech.getCurrentEngine());
+        if (ready) {
+          const v = await Speech.getVoices();
+          if (mounted) {
+            setVoices(v);
+            if (!selectedVoice && v.length > 0) {
+              setSelectedVoice(v[0]!);
+            }
+          }
+        }
       }
     })();
     return () => {
       mounted = false;
     };
-  }, [isStreaming, visible]);
+  }, [isStreaming, visible, selectedVoice]);
 
   const startStreaming = React.useCallback(async () => {
     if (isStreaming) return;
@@ -77,7 +88,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     const tokens = tokenize(text);
     const intervalMs = 1000 / rate.tokensPerSec;
 
-    const stream = Speech.createSpeechStream(undefined, {
+    const stream = Speech.createSpeechStream(selectedVoice || undefined, {
       targetChars: 300,
       onError: err => {
         setErrorMsg(err.message);
@@ -103,7 +114,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       streamRef.current = null;
       setIsStreaming(false);
     }
-  }, [isStreaming, rate, text]);
+  }, [isStreaming, rate, text, selectedVoice]);
 
   const stopStreaming = React.useCallback(async () => {
     cancelledRef.current = true;
@@ -150,6 +161,37 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
             </Text>
           )}
         </View>
+
+        {voices.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>{'// VOICE'}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.voiceRow}>
+              {voices.map(v => (
+                <TouchableOpacity
+                  key={v}
+                  disabled={isStreaming}
+                  onPress={() => setSelectedVoice(v)}
+                  style={[
+                    styles.rateBtn,
+                    selectedVoice === v && styles.rateBtnSelected,
+                    isStreaming && styles.rateBtnDisabled,
+                  ]}>
+                  <Text
+                    style={[
+                      styles.rateBtnText,
+                      selectedVoice === v && styles.rateBtnTextSelected,
+                    ]}
+                    numberOfLines={1}>
+                    {v}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         <Text style={styles.sectionLabel}>{'// INPUT_BUFFER'}</Text>
         <TextInput
@@ -301,6 +343,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.greenBorder,
   },
+  voiceRow: {flexDirection: 'row', gap: 8, marginBottom: 4},
   rateRow: {flexDirection: 'row', gap: 8},
   rateBtn: {
     paddingHorizontal: 14,
