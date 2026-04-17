@@ -1908,19 +1908,19 @@ const styles = StyleSheet.create({
   },
   engineButtons: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   engineBtn: {
     flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 2,
     borderRadius: 4,
     alignItems: 'center',
   },
   engineBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
-    letterSpacing: 0.5,
+    fontFamily: MONO,
   },
   statusRow: {
     marginTop: 10,
