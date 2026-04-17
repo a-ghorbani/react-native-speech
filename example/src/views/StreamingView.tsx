@@ -48,7 +48,9 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   );
   const [engineReady, setEngineReady] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
-  const [voices, setVoices] = React.useState<string[]>([]);
+  const [voices, setVoices] = React.useState<Array<{id: string; name: string}>>(
+    [],
+  );
   const [selectedVoice, setSelectedVoice] = React.useState<string | null>(null);
 
   const streamRef = React.useRef<SpeechStream | null>(null);
@@ -63,11 +65,25 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
         setEngineReady(ready);
         setEngineName(Speech.getCurrentEngine());
         if (ready) {
-          const v = await Speech.getVoices();
-          if (mounted) {
-            setVoices(v);
-            if (!selectedVoice && v.length > 0) {
-              setSelectedVoice(v[0]!);
+          try {
+            const meta = await Speech.getVoicesWithMetadata();
+            if (mounted) {
+              const v = meta.map((m: any) => ({
+                id: m.id,
+                name: m.name || m.id,
+              }));
+              setVoices(v);
+              if (!selectedVoice && v.length > 0) {
+                setSelectedVoice(v[0]!.id);
+              }
+            }
+          } catch {
+            const v = await Speech.getVoices();
+            if (mounted) {
+              setVoices(v.map(id => ({id, name: id})));
+              if (!selectedVoice && v.length > 0) {
+                setSelectedVoice(v[0]!);
+              }
             }
           }
         }
@@ -171,21 +187,21 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
               style={styles.voiceRow}>
               {voices.map(v => (
                 <TouchableOpacity
-                  key={v}
+                  key={v.id}
                   disabled={isStreaming}
-                  onPress={() => setSelectedVoice(v)}
+                  onPress={() => setSelectedVoice(v.id)}
                   style={[
                     styles.rateBtn,
-                    selectedVoice === v && styles.rateBtnSelected,
+                    selectedVoice === v.id && styles.rateBtnSelected,
                     isStreaming && styles.rateBtnDisabled,
                   ]}>
                   <Text
                     style={[
                       styles.rateBtnText,
-                      selectedVoice === v && styles.rateBtnTextSelected,
+                      selectedVoice === v.id && styles.rateBtnTextSelected,
                     ]}
                     numberOfLines={1}>
-                    {v}
+                    {v.name}
                   </Text>
                 </TouchableOpacity>
               ))}
