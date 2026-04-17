@@ -258,17 +258,36 @@ export default class Speech {
     // the properties they care about.
     const synthesisOptions: SynthesisOptions | undefined = options;
 
+    // Detect whether the active engine supports streaming. Neural engines
+    // expose synthesizeStream(), which eliminates cross-batch gaps by
+    // keeping the pipelined synth+play loop alive for the stream's
+    // lifetime. OS engine doesn't — fall back to the adaptive batcher.
+    const engine = Speech.currentEngine;
+    let engineStreamFactory:
+      | ((opts?: SpeechStreamOptions) => import('./types').EngineStreamHandle)
+      | undefined;
+
+    if (engine === 'kokoro' && kokoroEngine) {
+      engineStreamFactory = opts =>
+        kokoroEngine!.synthesizeStream({
+          voiceId: voiceId ?? kokoroEngine!.name,
+          ...opts,
+        } as any);
+    } else if (engine === 'supertonic' && supertonicEngine) {
+      engineStreamFactory = opts =>
+        supertonicEngine!.synthesizeStream({voiceId, ...opts} as any);
+    } else if (engine === 'kitten' && kittenEngine) {
+      engineStreamFactory = opts =>
+        kittenEngine!.synthesizeStream({voiceId, ...opts} as any);
+    }
+
     return new SpeechStreamImpl({
       synthesize: (text: string) =>
         Speech.speak(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
-      // Lets the stream translate batch-local chunk progress into
-      // stream-absolute offsets for its own `onProgress` listeners.
-      // Per-batch subscribe/unsubscribe avoids cross-batch leakage and
-      // only clobbers `Speech.onChunkProgress` while a stream listener
-      // is active.
       subscribeProgress: (cb: ChunkProgressCallback) =>
         Speech.onChunkProgress(cb),
+      engineStreamFactory,
       options,
     });
   }

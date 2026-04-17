@@ -29,6 +29,7 @@
 
 import type {
   ChunkProgressCallback,
+  EngineStreamHandle,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
   StreamProgressEvent,
@@ -75,6 +76,16 @@ export interface SpeechStreamConfig {
    * offsets. Omit for engines/environments without chunk progress.
    */
   subscribeProgress?: (cb: ChunkProgressCallback) => () => void;
+  /**
+   * When provided, the stream uses Tier 3 pass-through mode: text is
+   * forwarded directly to the engine's streaming session instead of
+   * going through the adaptive batcher. This eliminates cross-batch
+   * gaps because the engine's synth+play loop never resets.
+   *
+   * Falls back to the adaptive batcher (Tier 1) when absent — used
+   * by the OS engine and any engine that doesn't support streaming.
+   */
+  engineStreamFactory?: (options?: SpeechStreamOptions) => EngineStreamHandle;
   /** User-supplied options — only `targetChars` and `onError` are read here. */
   options?: SpeechStreamOptions;
 }
@@ -94,6 +105,10 @@ interface QueuedBatch {
 }
 
 export class SpeechStreamImpl implements ISpeechStream {
+  // ── Tier 3 pass-through state (when engine supports streaming) ───
+  private readonly engineStream: EngineStreamHandle | null = null;
+
+  // ── Tier 1 adaptive-batcher state (fallback for OS engine) ───────
   private buffer = '';
   private queue: QueuedBatch[] = [];
   private inflight: Promise<void> | null = null;
@@ -112,6 +127,7 @@ export class SpeechStreamImpl implements ISpeechStream {
   private totalAppendedChars = 0;
 
   private progressListeners: Array<(event: StreamProgressEvent) => void> = [];
+  private progressUnsub: (() => void) | null = null;
 
   private readonly targetChars: number;
   private readonly synthesize: (text: string) => Promise<void>;
@@ -130,15 +146,52 @@ export class SpeechStreamImpl implements ISpeechStream {
       config.options?.targetChars ?? DEFAULT_TARGET_CHARS,
     );
     this.onError = config.options?.onError;
-    log.info(`stream created: targetChars=${this.targetChars}, t+0ms`);
+
+    if (config.engineStreamFactory) {
+      log.info('stream created: Tier 3 pass-through, t+0ms');
+      this.engineStream = config.engineStreamFactory(config.options);
+    } else {
+      log.info(
+        `stream created: Tier 1 batcher, targetChars=${this.targetChars}, t+0ms`,
+      );
+    }
   }
 
   onProgress(cb: (event: StreamProgressEvent) => void): () => void {
     this.progressListeners.push(cb);
+
+    // In Tier 3 mode, subscribe once to engine's chunk progress events
+    // and translate to StreamProgressEvent. The engine stream emits
+    // absolute offsets from StreamingChunker, so batchStartOffset = 0.
+    if (this.engineStream && !this.progressUnsub && this.subscribeProgress) {
+      this.progressUnsub = this.subscribeProgress(event => {
+        const streamEvent: StreamProgressEvent = {
+          chunkText: event.chunkText,
+          streamRange: {
+            start: event.textRange.start,
+            end: event.textRange.end,
+          },
+          chunkIndex: event.chunkIndex,
+          batchIndex: 0,
+        };
+        for (const listener of this.progressListeners) {
+          try {
+            listener(streamEvent);
+          } catch (listenerErr) {
+            log.warn('stream onProgress listener threw:', listenerErr);
+          }
+        }
+      });
+    }
+
     return () => {
       const idx = this.progressListeners.indexOf(cb);
       if (idx >= 0) {
         this.progressListeners.splice(idx, 1);
+      }
+      if (this.progressListeners.length === 0 && this.progressUnsub) {
+        this.progressUnsub();
+        this.progressUnsub = null;
       }
     };
   }
@@ -150,6 +203,12 @@ export class SpeechStreamImpl implements ISpeechStream {
     if (!text) {
       return;
     }
+
+    if (this.engineStream) {
+      this.engineStream.append(text);
+      return;
+    }
+
     this.buffer += text;
     this.totalAppendedChars += text.length;
     log.debug(
@@ -164,8 +223,22 @@ export class SpeechStreamImpl implements ISpeechStream {
   }
 
   async finalize(): Promise<void> {
+    if (this.engineStream) {
+      try {
+        await this.engineStream.finalize();
+      } catch (err) {
+        if (this.onError) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          this.onError(error);
+        }
+        throw err;
+      } finally {
+        this.cleanupProgressSub();
+      }
+      return;
+    }
+
     if (this.cancelled) {
-      // Already cancelled — just wait for any still-resolving state.
       return this.waitForDrain();
     }
     if (!this.finalized) {
@@ -187,6 +260,13 @@ export class SpeechStreamImpl implements ISpeechStream {
       return;
     }
     this.cancelled = true;
+
+    if (this.engineStream) {
+      this.cleanupProgressSub();
+      await this.engineStream.cancel();
+      return;
+    }
+
     this.buffer = '';
     this.queue = [];
 
@@ -198,6 +278,13 @@ export class SpeechStreamImpl implements ISpeechStream {
       await this.stopFn();
     } catch (err) {
       log.warn('Stop failed during cancel:', err);
+    }
+  }
+
+  private cleanupProgressSub(): void {
+    if (this.progressUnsub) {
+      this.progressUnsub();
+      this.progressUnsub = null;
     }
   }
 
