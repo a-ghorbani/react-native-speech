@@ -3,18 +3,20 @@ import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
+import ScanlineOverlay from './components/ScanlineOverlay';
 import {FRProvider} from 'react-native-full-responsive';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import {C, MONO} from './styles/cyber';
 
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
 const TABS: {key: Tab; label: string}[] = [
-  {key: 'demo', label: 'DEMO'},
-  {key: 'streaming', label: 'STREAM'},
-  {key: 'benchmark', label: 'BENCH'},
+  {key: 'demo', label: 'SYS'},
+  {key: 'streaming', label: 'STRM'},
+  {key: 'benchmark', label: 'PERF'},
 ];
 
 function AppContent() {
@@ -23,6 +25,7 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
+      <ScanlineOverlay />
       <View
         style={[
           styles.tabContent,
@@ -44,7 +47,7 @@ function AppContent() {
         ]}>
         <BenchmarkView />
       </View>
-      <View style={[styles.tabBar, {paddingBottom: insets.bottom || 4}]}>
+      <View style={[styles.tabBar, {paddingBottom: insets.bottom || 6}]}>
         {TABS.map(t => {
           const isActive = tab === t.key;
           return (
@@ -60,7 +63,7 @@ function AppContent() {
                 ]}
               />
               <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                {t.label}
+                {isActive ? `> ${t.label}` : `  ${t.label}`}
               </Text>
             </TouchableOpacity>
           );
@@ -83,7 +86,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
+    backgroundColor: C.bg,
   },
   tabContent: {
     flex: 1,
@@ -98,35 +101,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#0a0a0a',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,255,65,0.15)',
-    paddingTop: 8,
+    borderTopColor: C.border,
+    paddingTop: 10,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 6,
-    gap: 5,
+    paddingVertical: 4,
+    gap: 6,
   },
   tabIndicator: {
-    width: 20,
-    height: 2,
+    width: 16,
+    height: 1,
     backgroundColor: 'transparent',
   },
   tabIndicatorActive: {
-    backgroundColor: '#00FF41',
-    shadowColor: '#00FF41',
+    backgroundColor: C.green,
+    shadowColor: C.green,
     shadowOffset: {width: 0, height: 0},
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
+    shadowOpacity: 1,
+    shadowRadius: 6,
   },
   tabText: {
     fontSize: 10,
-    fontWeight: '600',
-    fontFamily: 'Courier',
-    letterSpacing: 2,
-    color: 'rgba(0,255,65,0.3)',
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 2.5,
+    color: C.muted,
   },
   tabTextActive: {
-    color: '#00FF41',
+    color: C.green,
   },
 });

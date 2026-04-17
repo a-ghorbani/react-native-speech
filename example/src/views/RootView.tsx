@@ -24,6 +24,8 @@ import Speech, {
   TTSEngine,
 } from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
+import {C, MONO} from '../styles/cyber';
+import {useTypewriter} from '../hooks/useTypewriter';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {
@@ -48,63 +50,61 @@ const DEFAULT_TEXT =
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
 
 const RootView: React.FC = () => {
-  const secondaryTextColor = 'rgba(0,255,65,0.45)';
-  const cardBg = 'rgba(0,255,65,0.04)';
-  const inputBg = 'rgba(0,255,65,0.06)';
+  const secondaryTextColor = C.muted;
 
   const themedStyles = React.useMemo(
     () =>
       StyleSheet.create({
-        textPrimary: {color: '#00FF41'},
-        textSecondary: {color: secondaryTextColor},
-        textWhite: {color: '#00FF41'},
+        textPrimary: {color: C.green},
+        textSecondary: {color: C.muted},
+        textWhite: {color: C.green},
         bgCard: {
-          backgroundColor: cardBg,
+          backgroundColor: C.bgCard,
           borderWidth: 1,
-          borderColor: 'rgba(0,255,65,0.12)',
+          borderColor: C.border,
         },
-        bgCardSecondary: {backgroundColor: '#0a0f0a'},
-        bgInput: {backgroundColor: inputBg},
-        bgChunkProgress: {backgroundColor: 'rgba(0,212,255,0.06)'},
+        bgCardSecondary: {backgroundColor: '#080c08'},
+        bgInput: {backgroundColor: C.bgInput},
+        bgChunkProgress: {backgroundColor: C.cyanGhost},
         btnSelected: {
-          backgroundColor: 'rgba(0,255,65,0.15)',
+          backgroundColor: C.greenGhost,
           borderWidth: 1,
-          borderColor: '#00FF41',
+          borderColor: C.green,
         },
         btnUnselected: {
           backgroundColor: 'rgba(255,255,255,0.02)',
           borderWidth: 1,
-          borderColor: 'rgba(0,255,65,0.12)',
+          borderColor: C.border,
         },
-        btnSelectedGreen: {backgroundColor: 'rgba(0,255,65,0.15)'},
-        statusReady: {color: '#00FF41'},
-        statusNotReady: {color: '#FF0040'},
-        statusAccent: {color: '#00D4FF'},
-        voiceItemSelected: {backgroundColor: 'rgba(0,255,65,0.1)'},
+        btnSelectedGreen: {backgroundColor: C.greenGhost},
+        statusReady: {color: C.green},
+        statusNotReady: {color: C.red},
+        statusAccent: {color: C.cyan},
+        voiceItemSelected: {backgroundColor: C.greenGhost},
         voiceItemUnselected: {backgroundColor: 'transparent'},
-        downloadTextInstalled: {color: secondaryTextColor},
-        downloadTextWhite: {color: '#00FF41'},
-        downloadMetaWhite: {color: 'rgba(0,255,65,0.6)'},
-        downloadLangsWhite: {color: 'rgba(0,255,65,0.5)'},
-        opacityFaded: {opacity: 0.35},
+        downloadTextInstalled: {color: C.muted},
+        downloadTextWhite: {color: C.green},
+        downloadMetaWhite: {color: C.greenDim},
+        downloadLangsWhite: {color: C.greenFaint},
+        opacityFaded: {opacity: 0.3},
         opacityFull: {opacity: 1},
         sectionLabelWithMargin: {marginTop: 20},
         downloadCardBlue: {
-          backgroundColor: 'rgba(0,212,255,0.06)',
+          backgroundColor: C.cyanGhost,
           borderWidth: 1,
-          borderColor: 'rgba(0,212,255,0.25)',
+          borderColor: C.cyanBorder,
         },
         downloadCardGreen: {
-          backgroundColor: 'rgba(0,255,65,0.06)',
+          backgroundColor: C.greenGhost,
           borderWidth: 1,
-          borderColor: 'rgba(0,255,65,0.25)',
+          borderColor: C.greenBorder,
         },
         downloadCardOrange: {
-          backgroundColor: 'rgba(255,176,0,0.06)',
+          backgroundColor: C.amberGhost,
           borderWidth: 1,
-          borderColor: 'rgba(255,176,0,0.25)',
+          borderColor: C.amberBorder,
         },
-        downloadCardInstalled: {backgroundColor: cardBg},
+        downloadCardInstalled: {backgroundColor: C.bgCard},
       }),
     [],
   );
@@ -659,10 +659,25 @@ const RootView: React.FC = () => {
     return `${voice.name} - ${voice.description || voice.id}`;
   };
 
+  const statusMsg = React.useMemo(() => {
+    if (isInitializing) {
+      return `> initializing ${selectedEngine}...`;
+    }
+    if (isReleasing) {
+      return '> releasing resources...';
+    }
+    if (engineReady) {
+      return `> engine: ${selectedEngine} [LOADED]\n> voice_module: ${selectedVoice || 'default'}\n> status: ONLINE`;
+    }
+    return `> engine: ${selectedEngine} [NOT_LOADED]\n> status: STANDBY`;
+  }, [selectedEngine, engineReady, selectedVoice, isInitializing, isReleasing]);
+
+  const typedStatus = useTypewriter(statusMsg, 15);
+
   // ==================== RENDER ====================
 
   return (
-    <SafeAreaView style={[gs.flex, gs.p10, {backgroundColor: '#050505'}]}>
+    <SafeAreaView style={[gs.flex, gs.p10, styles.rootContainer]}>
       {/* ==================== MODEL MANAGER MODAL ==================== */}
       <Modal
         visible={showModelManager}
@@ -1317,11 +1332,17 @@ const RootView: React.FC = () => {
         </View>
       </Modal>
 
+      {/* System status terminal */}
+      <View style={styles.terminalBlock}>
+        <Text style={styles.terminalText}>{typedStatus}</Text>
+        <Text style={styles.terminalCursor}>_</Text>
+      </View>
+
       {/* ==================== ENGINE SELECTOR ==================== */}
       <View style={[styles.engineSelector, themedStyles.bgCard]}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, themedStyles.textPrimary]}>
-            Engine
+            ENGINE_SELECT
           </Text>
           {/* Only show Manage Models for neural engines */}
           {selectedEngine !== TTSEngine.OS_NATIVE && (
@@ -1379,9 +1400,11 @@ const RootView: React.FC = () => {
         <View style={styles.statusRow}>
           {isInitializing || isReleasing ? (
             <View style={styles.statusLoading}>
-              <ActivityIndicator size="small" color="#007AFF" />
+              <ActivityIndicator size="small" color={C.cyan} />
               <Text style={[styles.statusText, themedStyles.textSecondary]}>
-                {isReleasing ? 'Releasing...' : 'Initializing...'}
+                {isReleasing
+                  ? '> releasing resources...'
+                  : '> loading model...'}
               </Text>
             </View>
           ) : (
@@ -1392,7 +1415,7 @@ const RootView: React.FC = () => {
                   ? themedStyles.statusReady
                   : themedStyles.statusNotReady,
               ]}>
-              {engineReady ? '● Ready' : '● Not Ready'}
+              {engineReady ? '[ONLINE]' : '[OFFLINE]'}
             </Text>
           )}
 
@@ -1404,14 +1427,14 @@ const RootView: React.FC = () => {
                   style={styles.unloadBtn}
                   onPress={onUnloadPress}
                   disabled={isStarted || isReleasing || isInitializing}>
-                  <Text style={styles.unloadBtnText}>Unload</Text>
+                  <Text style={styles.unloadBtnText}>RELEASE</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   style={styles.loadBtn}
                   onPress={onReloadPress}
                   disabled={isInitializing || isReleasing}>
-                  <Text style={styles.loadBtnText}>Load</Text>
+                  <Text style={styles.loadBtnText}>INIT</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1564,7 +1587,7 @@ const RootView: React.FC = () => {
         <View style={[styles.chunkProgress, themedStyles.bgChunkProgress]}>
           <View style={styles.chunkHeader}>
             <Text style={[styles.chunkLabel, themedStyles.textPrimary]}>
-              Sentence {currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}
+              CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]
             </Text>
             <Text style={[styles.chunkPercent, themedStyles.statusAccent]}>
               {currentChunk.progress}%
@@ -1690,8 +1713,11 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(128, 128, 128, 0.3)',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1.5,
+    color: C.green,
   },
   closeIcon: {
     padding: 4,
@@ -1882,8 +1908,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1.5,
   },
   manageBtn: {
     backgroundColor: 'rgba(0,212,255,0.1)',
@@ -1928,8 +1956,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   statusText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1,
   },
   loadUnloadButtons: {
     flexDirection: 'row',
@@ -1968,9 +1998,12 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 1,
     marginBottom: 6,
+    color: C.muted,
   },
   accelerationButtons: {
     flexDirection: 'row',
@@ -2038,12 +2071,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   chunkLabel: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
+    letterSpacing: 0.5,
   },
   chunkPercent: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    fontFamily: MONO,
   },
   chunkBarBg: {
     height: 2,
@@ -2053,6 +2089,26 @@ const styles = StyleSheet.create({
   chunkBarFill: {
     height: '100%',
     backgroundColor: '#00D4FF',
+  },
+  rootContainer: {
+    backgroundColor: C.bg,
+  },
+  terminalBlock: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  terminalText: {
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.greenDim,
+    lineHeight: 18,
+  },
+  terminalCursor: {
+    fontSize: 11,
+    fontFamily: MONO,
+    color: C.cyan,
+    fontWeight: '700',
   },
   // Common
   closeIconText: {

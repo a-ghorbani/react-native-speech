@@ -13,6 +13,7 @@ import Speech, {
   TTSEngine,
   type SpeechStream,
 } from '@pocketpalai/react-native-speech';
+import {C, MONO} from '../styles/cyber';
 
 const SAMPLE_TEXT =
   "Hello! How can I help you today? I am here to help. Let's walk " +
@@ -233,12 +234,12 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
 };
 
 const styles = StyleSheet.create({
-  container: {flex: 1, backgroundColor: '#050505'},
+  container: {flex: 1, backgroundColor: C.bg},
   scroll: {padding: 16, paddingBottom: 80},
   title: {
     fontSize: 20,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     color: '#00FF41',
     letterSpacing: 3,
     marginBottom: 6,
@@ -248,7 +249,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 16,
     color: 'rgba(0,255,65,0.5)',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   code: {color: '#00D4FF'},
   statusCard: {
@@ -262,14 +263,14 @@ const styles = StyleSheet.create({
   statusLabel: {
     fontSize: 10,
     color: 'rgba(0,255,65,0.35)',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     letterSpacing: 1,
     marginBottom: 4,
   },
   statusValue: {
     fontSize: 15,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     color: '#00FF41',
   },
   statusOk: {color: '#00FF41'},
@@ -278,14 +279,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
     color: 'rgba(0,255,65,0.4)',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
   sectionLabel: {
     fontSize: 10,
     marginTop: 12,
     marginBottom: 6,
     color: 'rgba(0,255,65,0.35)',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     letterSpacing: 1,
   },
   textArea: {
@@ -293,7 +294,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     padding: 12,
     fontSize: 13,
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     textAlignVertical: 'top',
     color: '#00FF41',
     backgroundColor: 'rgba(0,255,65,0.04)',
@@ -317,7 +318,7 @@ const styles = StyleSheet.create({
   rateBtnText: {
     fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     color: 'rgba(0,255,65,0.4)',
   },
   rateBtnTextSelected: {color: '#00FF41'},
@@ -338,7 +339,7 @@ const styles = StyleSheet.create({
     color: '#00FF41',
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     letterSpacing: 2,
   },
   actionBtnStop: {
@@ -349,7 +350,7 @@ const styles = StyleSheet.create({
     color: '#FF0040',
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     letterSpacing: 2,
   },
   actionBtnDisabled: {opacity: 0.35},
@@ -364,7 +365,7 @@ const styles = StyleSheet.create({
   previewText: {
     fontSize: 13,
     lineHeight: 22,
-    fontFamily: 'Courier',
+    fontFamily: MONO,
     color: '#00FF41',
   },
   previewPending: {color: 'rgba(0,255,65,0.15)'},
@@ -380,7 +381,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 12,
     color: '#FF0040',
-    fontFamily: 'Courier',
+    fontFamily: MONO,
   },
 });
 

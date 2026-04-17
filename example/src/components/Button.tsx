@@ -1,20 +1,37 @@
 import React from 'react';
 import {gs} from '../styles/gs';
 import {Text, TouchableOpacity, type TouchableOpacityProps} from 'react-native';
+import {C} from '../styles/cyber';
 
 export type ButtonVariant = 'primary' | 'success' | 'danger' | 'secondary';
 
 const VARIANTS: Record<
   ButtonVariant,
-  {bg: string; border: string; text: string}
+  {bg: string; border: string; text: string; bracket: string}
 > = {
-  primary: {bg: 'rgba(0,212,255,0.1)', border: '#00D4FF', text: '#00D4FF'},
-  success: {bg: 'rgba(0,255,65,0.1)', border: '#00FF41', text: '#00FF41'},
-  danger: {bg: 'rgba(255,0,64,0.1)', border: '#FF0040', text: '#FF0040'},
+  primary: {
+    bg: C.cyanGhost,
+    border: C.cyanBorder,
+    text: C.cyan,
+    bracket: C.cyanDim,
+  },
+  success: {
+    bg: C.greenGhost,
+    border: C.greenBorder,
+    text: C.green,
+    bracket: C.greenDim,
+  },
+  danger: {
+    bg: C.redGhost,
+    border: C.redBorder,
+    text: C.red,
+    bracket: 'rgba(255,0,64,0.4)',
+  },
   secondary: {
-    bg: 'rgba(255,255,255,0.03)',
-    border: 'rgba(0,255,65,0.25)',
-    text: 'rgba(0,255,65,0.6)',
+    bg: 'rgba(255,255,255,0.02)',
+    border: C.greenBorder,
+    text: C.greenDim,
+    bracket: C.muted,
   },
 };
 
@@ -41,7 +58,11 @@ const Button: React.FC<ButtonProps> = ({
         disabled && gs.disabled,
       ]}
       {...rest}>
-      <Text style={[gs.buttonText, {color: v.text}]}>{label}</Text>
+      <Text style={[gs.buttonText, {color: v.text}]}>
+        <Text style={{color: v.bracket}}>{'[ '}</Text>
+        {label}
+        <Text style={{color: v.bracket}}>{' ]'}</Text>
+      </Text>
     </TouchableOpacity>
   );
 };
