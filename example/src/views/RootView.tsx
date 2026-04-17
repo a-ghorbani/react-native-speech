@@ -41,8 +41,8 @@ const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 const DEFAULT_TEXT =
   'Welcome! This is a quick demo of on-device neural text-to-speech. ' +
   'Everything you hear is synthesized locally — no internet, no cloud ' +
-  'API, just the model running on your phone. Try editing this text, ' +
-  'or switch voices above to hear the difference.';
+  'API, just the model running on your phone. Switch voices above to ' +
+  'hear the difference.';
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
