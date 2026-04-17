@@ -1574,7 +1574,7 @@ const RootView: React.FC = () => {
 
       {/* Main Content */}
       <View style={gs.flex}>
-        {isStarted ? (
+        <View style={isStarted ? styles.visible : styles.hidden}>
           <HighlightedText
             text={spokenText}
             highlights={highlights}
@@ -1582,7 +1582,8 @@ const RootView: React.FC = () => {
             onHighlightedPress={onHighlightedPress}
             style={[gs.paragraph, themedStyles.textPrimary]}
           />
-        ) : (
+        </View>
+        <View style={isStarted ? styles.hidden : styles.visible}>
           <TextInput
             style={[
               gs.paragraph,
@@ -1593,9 +1594,10 @@ const RootView: React.FC = () => {
             value={spokenText}
             onChangeText={setSpokenText}
             multiline
+            editable={!isStarted}
             placeholderTextColor={secondaryTextColor}
           />
-        )}
+        </View>
       </View>
 
       {/* Controls */}
@@ -2058,6 +2060,13 @@ const styles = StyleSheet.create({
   },
   rootContainer: {
     backgroundColor: C.bg,
+  },
+  visible: {
+    display: 'flex' as const,
+    flex: 1,
+  },
+  hidden: {
+    display: 'none' as const,
   },
   terminalBlock: {
     flexDirection: 'row',
