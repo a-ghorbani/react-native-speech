@@ -267,18 +267,19 @@ export default class Speech {
       | ((opts?: SpeechStreamOptions) => import('./types').EngineStreamHandle)
       | undefined;
 
+    const streamVoiceOpt = voiceId ? {voiceId} : {};
     if (engine === 'kokoro' && kokoroEngine) {
       engineStreamFactory = opts =>
-        kokoroEngine!.synthesizeStream({
-          voiceId: voiceId ?? kokoroEngine!.name,
-          ...opts,
-        } as any);
+        kokoroEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
     } else if (engine === 'supertonic' && supertonicEngine) {
       engineStreamFactory = opts =>
-        supertonicEngine!.synthesizeStream({voiceId, ...opts} as any);
+        supertonicEngine!.synthesizeStream({
+          ...streamVoiceOpt,
+          ...opts,
+        } as any);
     } else if (engine === 'kitten' && kittenEngine) {
       engineStreamFactory = opts =>
-        kittenEngine!.synthesizeStream({voiceId, ...opts} as any);
+        kittenEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
     }
 
     return new SpeechStreamImpl({
