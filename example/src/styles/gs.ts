@@ -5,18 +5,16 @@ export const gs = createRStyle({
     flex: 1,
   },
   disabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   button: {
     flex: 1,
-    height: '35rs',
-    borderRadius: '5rs',
+    height: '44rs',
+    borderRadius: '10rs',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'skyblue',
   },
   buttonText: {
-    color: '#000000',
     fontSize: '14rs',
     fontWeight: '600',
   },
@@ -27,15 +25,14 @@ export const gs = createRStyle({
     textAlign: 'center',
   },
   paragraph: {
-    fontSize: '14rs',
+    fontSize: '15rs',
     lineHeight: '22rs',
-    textAlign: 'justify',
   },
   p10: {
     padding: '10rs',
   },
   row: {
-    columnGap: '5rs',
+    columnGap: '8rs',
     flexDirection: 'row',
   },
 });

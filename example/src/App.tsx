@@ -17,25 +17,29 @@ import {
 
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
+const TABS: {key: Tab; label: string}[] = [
+  {key: 'demo', label: 'Demo'},
+  {key: 'streaming', label: 'Streaming'},
+  {key: 'benchmark', label: 'Benchmark'},
+];
+
 function AppContent() {
   const [tab, setTab] = React.useState<Tab>('demo');
   const scheme = useColorScheme();
   const isDark = scheme === 'dark';
   const insets = useSafeAreaInsets();
 
-  const barBg = isDark ? '#1C1C1E' : '#F2F2F7';
+  const barBg = isDark ? '#1C1C1E' : '#FFFFFF';
   const activeColor = '#007AFF';
-  const inactiveColor = isDark ? '#8E8E93' : '#6D6D72';
+  const inactiveColor = isDark ? '#636366' : '#8E8E93';
+  const borderColor = isDark ? 'rgba(84,84,88,0.65)' : 'rgba(60,60,67,0.18)';
 
   return (
-    <View style={styles.container}>
-      {/*
-        Keep all tabs mounted and toggle visibility. Conditional
-        rendering would unmount the active view, and RootView's
-        release-on-unmount cleanup (intended for app close /
-        background) would release the neural engine every time the
-        user switches tabs — breaking streaming + benchmark flows.
-      */}
+    <View
+      style={[
+        styles.container,
+        {backgroundColor: isDark ? '#000' : '#F2F2F7'},
+      ]}>
       <View
         style={[
           styles.tabContent,
@@ -60,39 +64,36 @@ function AppContent() {
       <View
         style={[
           styles.tabBar,
-          {backgroundColor: barBg, paddingBottom: insets.bottom},
+          {
+            backgroundColor: barBg,
+            paddingBottom: insets.bottom,
+            borderTopColor: borderColor,
+          },
         ]}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setTab('demo')}>
-          <Text
-            style={[
-              styles.tabText,
-              {color: tab === 'demo' ? activeColor : inactiveColor},
-            ]}>
-            Demo
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setTab('streaming')}>
-          <Text
-            style={[
-              styles.tabText,
-              {color: tab === 'streaming' ? activeColor : inactiveColor},
-            ]}>
-            Streaming
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setTab('benchmark')}>
-          <Text
-            style={[
-              styles.tabText,
-              {color: tab === 'benchmark' ? activeColor : inactiveColor},
-            ]}>
-            Benchmark
-          </Text>
-        </TouchableOpacity>
+        {TABS.map(t => {
+          const isActive = tab === t.key;
+          return (
+            <TouchableOpacity
+              key={t.key}
+              style={styles.tabItem}
+              onPress={() => setTab(t.key)}
+              activeOpacity={0.6}>
+              <View
+                style={[
+                  styles.tabDot,
+                  {backgroundColor: isActive ? activeColor : 'transparent'},
+                ]}
+              />
+              <Text
+                style={[
+                  styles.tabText,
+                  {color: isActive ? activeColor : inactiveColor},
+                ]}>
+                {t.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
     </View>
   );
@@ -124,15 +125,22 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#3C3C43',
+    paddingTop: 6,
   },
   tabItem: {
     flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
+    paddingVertical: 8,
+    gap: 4,
+  },
+  tabDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   tabText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '500',
+    letterSpacing: 0.1,
   },
 });

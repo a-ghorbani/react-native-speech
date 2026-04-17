@@ -100,8 +100,6 @@ const RootView: React.FC = () => {
       }),
     [textColor, secondaryTextColor, cardBg, cardBgSecondary, inputBg, isDark],
   );
-  console.log('just testing rerender');
-
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
   const [spokenText, setSpokenText] = React.useState<string>(DEFAULT_TEXT);
@@ -1602,22 +1600,30 @@ const RootView: React.FC = () => {
       </View>
 
       {/* Controls */}
-      <View style={[gs.row, gs.p10]}>
+      <View style={styles.controlBar}>
         <Button
           label="Start"
+          variant="success"
           disabled={isStarted || !engineReady || isInitializing}
           onPress={onStartPress}
         />
-        <Button label="Stop" disabled={!isStarted} onPress={Speech.stop} />
+        <Button
+          label="Stop"
+          variant="danger"
+          disabled={!isStarted}
+          onPress={Speech.stop}
+        />
         {!isAndroidLowerThan26 && (
           <>
             <Button
               label="Pause"
+              variant="secondary"
               onPress={Speech.pause}
               disabled={isPaused || !isStarted}
             />
             <Button
               label="Resume"
+              variant="secondary"
               disabled={!isPaused}
               onPress={Speech.resume}
             />
@@ -1632,15 +1638,24 @@ export default RootView;
 
 const styles = StyleSheet.create({
   highlighted: {
-    color: 'black',
     fontWeight: '600',
-    backgroundColor: '#ffff00',
+    backgroundColor: 'rgba(0, 122, 255, 0.15)',
+    color: '#007AFF',
+    borderRadius: 3,
   },
   textInput: {
-    minHeight: 100,
-    borderRadius: 8,
-    padding: 12,
+    minHeight: 120,
+    borderRadius: 12,
+    padding: 14,
     textAlignVertical: 'top',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  controlBar: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 12,
   },
   // Modal
   modalOverlay: {
@@ -1838,9 +1853,9 @@ const styles = StyleSheet.create({
   },
   // Engine Selector
   engineSelector: {
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1870,7 +1885,7 @@ const styles = StyleSheet.create({
   engineBtn: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   engineBtnText: {
@@ -1981,11 +1996,9 @@ const styles = StyleSheet.create({
   },
   // Chunk Progress
   chunkProgress: {
-    padding: 12,
-    borderRadius: 8,
+    padding: 14,
+    borderRadius: 12,
     marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: '#007AFF',
   },
   chunkHeader: {
     flexDirection: 'row',
@@ -2001,14 +2014,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   chunkBarBg: {
-    height: 4,
-    backgroundColor: 'rgba(128,128,128,0.2)',
-    borderRadius: 2,
+    height: 3,
+    backgroundColor: 'rgba(128,128,128,0.15)',
+    borderRadius: 1.5,
     overflow: 'hidden',
   },
   chunkBarFill: {
     height: '100%',
     backgroundColor: '#007AFF',
+    borderRadius: 1.5,
   },
   // Common
   closeIconText: {
