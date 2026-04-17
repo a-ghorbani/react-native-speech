@@ -1633,13 +1633,13 @@ const RootView: React.FC = () => {
       {/* Controls */}
       <View style={styles.controlBar}>
         <Button
-          label="Start"
+          label="RUN"
           variant="success"
           disabled={isStarted || !engineReady || isInitializing}
           onPress={onStartPress}
         />
         <Button
-          label="Stop"
+          label="KILL"
           variant="danger"
           disabled={!isStarted}
           onPress={Speech.stop}
@@ -1647,13 +1647,13 @@ const RootView: React.FC = () => {
         {!isAndroidLowerThan26 && (
           <>
             <Button
-              label="Pause"
+              label="HOLD"
               variant="secondary"
               onPress={Speech.pause}
               disabled={isPaused || !isStarted}
             />
             <Button
-              label="Resume"
+              label="CONT"
               variant="secondary"
               disabled={!isPaused}
               onPress={Speech.resume}

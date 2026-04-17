@@ -19,10 +19,10 @@ export const gs = createRStyle({
     borderWidth: 1,
   },
   buttonText: {
-    fontSize: '12rs',
+    fontSize: '11rs',
     fontWeight: '700',
     fontFamily: mono,
-    letterSpacing: 1.5,
+    letterSpacing: 1,
   },
   title: {
     fontSize: '18rs',

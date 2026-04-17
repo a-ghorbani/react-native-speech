@@ -58,10 +58,13 @@ const Button: React.FC<ButtonProps> = ({
         disabled && gs.disabled,
       ]}
       {...rest}>
-      <Text style={[gs.buttonText, {color: v.text}]}>
-        <Text style={{color: v.bracket}}>{'[ '}</Text>
-        {label}
-        <Text style={{color: v.bracket}}>{' ]'}</Text>
+      <Text
+        style={[gs.buttonText, {color: v.text}]}
+        numberOfLines={1}
+        adjustsFontSizeToFit>
+        <Text style={{color: v.bracket}}>{'['}</Text>
+        {` ${label} `}
+        <Text style={{color: v.bracket}}>{']'}</Text>
       </Text>
     </TouchableOpacity>
   );
