@@ -1557,17 +1557,17 @@ const RootView: React.FC = () => {
         )}
       </View>
 
-      {/* Chunk Progress */}
-      {currentChunk && isStarted && (
-        <View style={[styles.chunkProgress, themedStyles.bgChunkProgress]}>
+      {/* Chunk Progress — always mounted to avoid layout shift */}
+      <View style={styles.chunkProgress}>
+        {currentChunk && isStarted ? (
           <Text style={[styles.chunkLabel, themedStyles.textSecondary]}>
             CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]{' '}
             <Text style={themedStyles.statusAccent}>
               {currentChunk.progress}%
             </Text>
           </Text>
-        </View>
-      )}
+        ) : null}
+      </View>
 
       {/* Main Content */}
       <View style={gs.flex}>
@@ -2009,9 +2009,9 @@ const styles = StyleSheet.create({
   },
   // Chunk Progress
   chunkProgress: {
-    paddingVertical: 6,
+    height: 24,
+    justifyContent: 'center',
     paddingHorizontal: 4,
-    marginBottom: 4,
   },
   chunkHeader: {
     flexDirection: 'row',
