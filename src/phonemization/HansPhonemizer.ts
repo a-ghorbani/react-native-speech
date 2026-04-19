@@ -218,7 +218,9 @@ function phonemizeWord(
         return fromHans && !/^[A-Za-z']+$/.test(fromHans) ? fromHans : letter;
       });
       g2p = letters.join(' ');
-      log.debug(
+      // info (not debug) so it surfaces even with debug logs filtered;
+      // useful for confirming the build actually contains this fix.
+      log.info(
         `acronym fallback: ${JSON.stringify(word)} -> ${JSON.stringify(g2p)} (letter-by-letter)`,
       );
     }
