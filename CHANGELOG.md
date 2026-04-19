@@ -19,6 +19,12 @@
   encoder (debug builds), `getHans00` warns once and falls back to
   dict-only letter spellout for short OOV tokens, instead of crashing
   synthesis. Release builds are unaffected.
+- **Android 16 KB page-size alignment** for the library's `native_dict.so`
+  via `target_link_options(... -Wl,-z,max-page-size=16384)`. Required
+  for the library to load on Android 15+ devices that use 16 KB pages.
+  AGP 8.12+ injects this for app modules but not library modules, so it
+  has to be set explicitly here. See README "Known limitations" for the
+  matching `onnxruntime-react-native` patch consumers need to apply.
 
 ### Behavior change to flag
 

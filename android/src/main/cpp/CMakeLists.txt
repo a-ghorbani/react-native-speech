@@ -20,3 +20,8 @@ target_include_directories(native_dict PRIVATE
 target_link_libraries(native_dict
     ${log-lib}
 )
+
+# 16 KB page-size alignment for Android 15+ devices. AGP 8.12+ only injects this
+# for the consumer app's own CMake targets, not for library-module builds like
+# this one, so we have to set it explicitly regardless of the consumer's AGP.
+target_link_options(native_dict PRIVATE "-Wl,-z,max-page-size=16384")
