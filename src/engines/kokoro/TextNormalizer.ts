@@ -10,6 +10,8 @@
  * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js
  */
 
+import {splitCamelCase} from '../../phonemization/splitCamelCase';
+
 export class TextNormalizer {
   /**
    * Split numbers into phonetic equivalents
@@ -247,7 +249,12 @@ export class TextNormalizer {
       return n >= 0 && n <= 999999 ? this.intToWords(n) : m;
     });
 
-    // 10. Strip leading and trailing whitespace
+    // 10. Split camelCase / PascalCase tokens so each part is phonemized
+    // independently (e.g. "PrismML" → "Prism ML", "iOS's" → "i OS's").
+    // Conservative — won't touch iPhone, McDonald, JavaScript, etc.
+    result = splitCamelCase(result);
+
+    // 11. Strip leading and trailing whitespace
     return result.trim();
   }
 

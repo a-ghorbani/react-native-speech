@@ -229,6 +229,25 @@ describe('TextNormalizer', () => {
     });
   });
 
+  describe('camelCase splitting', () => {
+    test('splits trailing all-caps acronym', () => {
+      expect(normalizer.normalize('PrismML')).toBe('Prism ML');
+      expect(normalizer.normalize('prismML')).toBe('prism ML');
+    });
+
+    test('splits acronym + word', () => {
+      expect(normalizer.normalize('XMLParser')).toBe('XML Parser');
+      expect(normalizer.normalize('DNAStrand')).toBe('DNA Strand');
+    });
+
+    test('does NOT split common camelCase brand names', () => {
+      // hans00 already handles these correctly; splitting would degrade output.
+      expect(normalizer.normalize('iPhone')).toBe('iPhone');
+      expect(normalizer.normalize('McDonald')).toBe('McDonald');
+      expect(normalizer.normalize('JavaScript')).toBe('JavaScript');
+    });
+  });
+
   describe('chunkBySentences', () => {
     test('splits text into sentence chunks', () => {
       const text = 'Hello world. This is a test. Another sentence.';

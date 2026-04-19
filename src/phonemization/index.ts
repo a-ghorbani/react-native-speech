@@ -10,6 +10,7 @@ export type {DictSource} from './DictSource';
 export {JsDictSource} from './JsDictSource';
 export {NativeDictSource, openNativeDict} from './NativeDictSource';
 export {HansPhonemizer, type HansPhonemizerOptions} from './HansPhonemizer';
+export {splitCamelCase} from './splitCamelCase';
 export {
   TextPreprocessor,
   type TextPreprocessorConfig,

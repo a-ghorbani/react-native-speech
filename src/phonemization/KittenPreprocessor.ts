@@ -7,6 +7,8 @@
  * `TextPreprocessor(remove_punctuation=False)`.
  */
 
+import {splitCamelCase} from './splitCamelCase';
+
 // ─────────────────────────────────────────────
 // Number → words
 // ─────────────────────────────────────────────
@@ -615,6 +617,7 @@ export interface TextPreprocessorConfig {
   normalizeUnicode: boolean;
   removeAccents: boolean;
   removeExtraWhitespace: boolean;
+  splitCamelCase: boolean;
 }
 
 const DEFAULT_CONFIG: TextPreprocessorConfig = {
@@ -646,6 +649,7 @@ const DEFAULT_CONFIG: TextPreprocessorConfig = {
   normalizeUnicode: true,
   removeAccents: false,
   removeExtraWhitespace: true,
+  splitCamelCase: true,
 };
 
 export class TextPreprocessor {
@@ -682,6 +686,9 @@ export class TextPreprocessor {
     if (c.replaceNumbers) text = replaceNumbers(text, c.replaceFloats);
     if (c.removeAccents) text = removeAccents(text);
     if (c.removePunctuation) text = removePunctuation(text);
+    // CamelCase splitter must run before lowercase, otherwise the case info
+    // is gone and "PrismML" / "iOS" can't be recovered.
+    if (c.splitCamelCase) text = splitCamelCase(text);
     if (c.lowercase) text = toLowercase(text);
     if (c.removeExtraWhitespace) text = removeExtraWhitespace(text);
     return text;
