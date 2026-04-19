@@ -7,7 +7,8 @@
     "ios": "react-native run-ios --simulator=\"iPhone 16 Pro Max\"",
     "start": "react-native start",
     "build:android": "react-native build-android --extra-params \"--no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a\"",
-    "build:ios": "react-native build-ios --mode Debug"
+    "build:ios": "react-native build-ios --mode Debug",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@dr.pogodin/react-native-fs": "^2.36.1",
@@ -28,6 +29,7 @@
     "@react-native/metro-config": "0.81.0",
     "@react-native/typescript-config": "0.81.0",
     "@types/react": "^19.1.0",
+    "patch-package": "^8.0.1",
     "react-native-builder-bob": "^0.40.13",
     "react-native-monorepo-config": "^0.1.9"
   },
