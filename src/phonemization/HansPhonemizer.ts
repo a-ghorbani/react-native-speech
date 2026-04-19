@@ -199,8 +199,30 @@ function phonemizeWord(
 
   // 5. hans00 G2P fallback
   if (!ipa && hans00) {
-    let g2p = hans00.toIPA(word, {stripStress: false});
+    const h = hans00;
+    let g2p = h.toIPA(word, {stripStress: false});
     g2p = g2p.replace(/- /g, '').replace(/ɫ/g, 'l');
+
+    // Echo detection: if hans00 returned only ASCII letters (no IPA chars),
+    // the token isn't in its corpus — common for lowercased acronyms like
+    // "ml" or "xlm" produced by Kitten's preprocessor. Without this fallback
+    // those tokens leak into the phoneme stream as literal letters and get
+    // spoken as "m, l" (i.e. silence between letters in the audio model).
+    // Spell short tokens out letter-by-letter so the IPA stream stays clean.
+    const isEcho = g2p.length > 0 && /^[A-Za-z']+$/.test(g2p);
+    if (isEcho && /^[a-z]{2,4}$/.test(clean)) {
+      const letters = clean.split('').map(letter => {
+        const fromDict = dict.lookup(letter);
+        if (fromDict) return fromDict;
+        const fromHans = h.toIPA(letter.toUpperCase(), {stripStress: false});
+        return fromHans && !/^[A-Za-z']+$/.test(fromHans) ? fromHans : letter;
+      });
+      g2p = letters.join(' ');
+      log.debug(
+        `acronym fallback: ${JSON.stringify(word)} -> ${JSON.stringify(g2p)} (letter-by-letter)`,
+      );
+    }
+
     ipa = relocateStress(g2p);
   }
 

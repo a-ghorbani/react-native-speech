@@ -102,6 +102,12 @@ describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
   const phonemize = (text: string) =>
     phon.phonemize(splitCamelCase(text), 'en-us');
 
+  // Kitten-style composition: split → lowercase → phonemize. Catches the
+  // class of bugs where lowercasing strips the acronym signal hans00 needs
+  // to spell letters out (e.g. "PrismML" → "prism ml" → hans00 echoes "ml").
+  const phonemizeKittenStyle = (text: string) =>
+    phon.phonemize(splitCamelCase(text).toLowerCase(), 'en-us');
+
   describe('words that SHOULD split (the bug we fixed)', () => {
     test('PrismML → "prism" + spelled-out "ML"', async () => {
       const out = await phonemize('PrismML');
@@ -190,6 +196,47 @@ describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
       expect(out).toContain('həlˈoʊ');
       expect(out).toContain('pɹˈɪzəm');
       expect(out).toContain('wˈɜːld');
+    });
+  });
+
+  describe('Kitten-style pipeline (split + lowercase + phonemize)', () => {
+    // These verify the acronym-fallback fix: even after lowercase strips
+    // the acronym signal, the phonemizer must produce clean IPA — no
+    // literal letter characters leaking into the phoneme stream.
+    test.each([
+      ['PrismML', 'pɹˈɪzəm'], // dict-hit for "prism" still works
+      ['prismML', 'pɹˈɪzəm'],
+      ['XMLParser', 'pˈɑːɹsɚ'], // dict-hit for "parser"
+    ])(
+      '%s — broken hans00 echo for lowercased acronym is fixed',
+      async (input, expectedSubstring) => {
+        const out = await phonemizeKittenStyle(input);
+        // No literal lowercase letter sequence (length ≥ 2) sandwiched
+        // between IPA characters — that would mean the acronym echoed.
+        // Look specifically for the lowercased acronym fragments.
+        if (input.includes('ML')) {
+          expect(out).not.toMatch(/\bml\b/);
+        }
+        if (input.includes('XML')) {
+          expect(out).not.toMatch(/\bxml\b/);
+        }
+        expect(out).toContain(expectedSubstring);
+      },
+    );
+
+    test('standalone lowercased acronym (ml) gets letter-by-letter', async () => {
+      // Mimics the exact failure from production logs: dict miss, hans00
+      // echoes "ml", fallback spells out as letters.
+      const out = await phon.phonemize('ml', 'en-us');
+      expect(out).not.toMatch(/\bml\b/);
+      // Both letters M and L share the ɛ vowel — at least one must appear.
+      expect(out).toMatch(/ɛ/);
+    });
+
+    test('standalone lowercased acronym (xlm) gets letter-by-letter', async () => {
+      const out = await phon.phonemize('xlm', 'en-us');
+      expect(out).not.toMatch(/\bxlm\b/);
+      expect(out).toMatch(/ɛ/);
     });
   });
 });
