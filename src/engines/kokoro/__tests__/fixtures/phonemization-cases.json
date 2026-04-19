@@ -3,10 +3,10 @@
   "en-us": [
     {
       "input": "iOS's",
-      "normalized": "iOS's",
+      "normalized": "i OS's",
       "chunks": [
         {
-          "text": "iOS's",
+          "text": "i OS's",
           "isPunctuation": false,
           "phoneme": "ˈaɪ ˌoʊˈɛsɪz"
         }
@@ -579,7 +579,7 @@
     },
     {
       "input": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture (default from React Native 0.76). It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
-      "normalized": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and iOS's new architecture «default from React Native zero point seven six». It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
+      "normalized": "This high-performance text-to-speech library is built for bare React Native and Expo, compatible with Android and i OS's new architecture «default from React Native zero point seven six». It enables seamless speech management with start, pause, resume, and stop controls, and provides events for detailed synthesis management.",
       "chunks": [
         {
           "text": "This high-performance text-to-speech library is built for bare React Native and Expo",
@@ -592,7 +592,7 @@
           "phoneme": ", "
         },
         {
-          "text": "compatible with Android and iOS's new architecture",
+          "text": "compatible with Android and i OS's new architecture",
           "isPunctuation": false,
           "phoneme": "kəmpˈæɾᵻbəl wɪð ˈændɹɔɪd ænd ˈaɪ ˌoʊˈɛsɪz nˈuː ˈɑːɹkɪtˌɛktʃɚ"
         },

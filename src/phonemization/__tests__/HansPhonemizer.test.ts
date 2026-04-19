@@ -42,6 +42,14 @@ jest.mock(
       const map: Record<string, string> = {
         floofulous: 'ˈfluːfələs',
         zoomy: 'ˈzuːmi',
+        // Echo cases — simulates lowercased acronyms hans00 doesn't recognize.
+        ml: 'ml',
+        xlm: 'xlm',
+        // Single letters — what the acronym fallback queries when spelling out.
+        // Mock lowercases input before lookup, so 'M'/'L'/'X' all hit these.
+        m: 'ɛm',
+        l: 'ɛl',
+        x: 'ɛks',
       };
       const key = word.toLowerCase();
       return map[key] ?? `ˈ${key}`;
@@ -97,6 +105,34 @@ describe('HansPhonemizer', () => {
   test('possessive fallback: X\u2019s uses dict[X] + ɪz', async () => {
     const out = await phon.phonemize("apple's", 'en-us');
     expect(out).toContain('ˈæpəl' + 'ɪz');
+  });
+
+  test('lowercased acronym falls back to letter-by-letter spelling', async () => {
+    // hans00 echoes "ml" (no IPA chars) — a real-world failure for tokens
+    // like Kitten's lowercased "PrismML" → "prism ml". The fallback should
+    // spell out each letter so the IPA stream stays clean.
+    const out = await phon.phonemize('ml', 'en-us');
+    expect(out).toContain('ɛm');
+    expect(out).toContain('ɛl');
+    // The literal token must NOT leak into the IPA.
+    expect(out).not.toMatch(/\bml\b/);
+  });
+
+  test('three-letter acronym (xlm) also spells out', async () => {
+    const out = await phon.phonemize('xlm', 'en-us');
+    expect(out).toContain('ɛks');
+    expect(out).toContain('ɛl');
+    expect(out).toContain('ɛm');
+    expect(out).not.toMatch(/\bxlm\b/);
+  });
+
+  test('echo detection does NOT fire for words producing real IPA', async () => {
+    // "floofulous" has IPA chars (ː, ə) so isn't echo — fallback skipped.
+    // (relocateStress shifts the ˈ mark; just check the IPA body remains.)
+    const out = await phon.phonemize('floofulous', 'en-us');
+    expect(out).toContain('uːfələs');
+    // No letter-spelled fallback — output is one IPA blob, no internal spaces.
+    expect(out).not.toMatch(/\s/);
   });
 
   test('OOV words fall back to hans00/phonemize', async () => {

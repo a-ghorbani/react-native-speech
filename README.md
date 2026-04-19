@@ -162,6 +162,7 @@ The library ships no model or dictionary assets. Consumer apps fetch them from t
 - Neural engines recommend a 3 GB+ RAM device. Low-memory devices should prefer the Kitten nano/micro variants or fall back to `OS_NATIVE`.
 - OS TTS interruption handling is limited to what the platform provides — no library-level custom ducking beyond what iOS/Android expose.
 - Hermes is supported, but has no `TextDecoder` or WASM — relevant only if you extend the library's text pipeline.
+- **Android 16 KB page sizes (Android 15+):** the library's own `native_dict.so` is 16 KB-aligned, but `onnxruntime-react-native` (≤ 1.24.3 at time of writing) is not — apps that load a neural engine on a 16 KB-page device will fail with `dlopen` errors. Workaround: a one-line linker flag added to its `CMakeLists.txt` via `patch-package`. See [`example/patches/onnxruntime-react-native+1.24.3.patch`](./example/patches/onnxruntime-react-native+1.24.3.patch) and the `postinstall` wiring in [`example/package.json`](./example/package.json) for the full setup. Drop the patch once upstream ships the fix.
 
 ## Testing
 
