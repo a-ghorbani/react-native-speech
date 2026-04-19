@@ -608,6 +608,8 @@ await Speech.speak('Hello from Kokoro.', 'af_bella', {speed: 1.0, volume: 1.0});
 
 Voice blending: pass multiple voice IDs (see `src/engines/kokoro/VoiceLoader.ts`).
 
+> **Android note:** the q8-quantized Kokoro ONNX build (`model_q8f16.onnx`) produces NaN samples under onnxruntime-react-native's CPU execution provider and plays back as silence. Ship the fp16 (`model_fp16.onnx`) or full (`model.onnx`) variant for Android. iOS (CoreML) handles q8 fine.
+
 ### Supertonic
 
 Fast English / multilingual pipeline composed of four ONNX models.
