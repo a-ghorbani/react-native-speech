@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **CamelCase / PascalCase tokens are split before phonemization.**
+  `PrismML` → `Prism ML`, `XMLParser` → `XML Parser`, `iOS` → `i OS`.
+  Conservative two-rule splitter — `iPhone`, `McDonald`, `JavaScript`,
+  `MacBook` etc. are intentionally left alone. Affects both Kokoro
+  (`TextNormalizer`) and Kitten (`TextPreprocessor`).
+- **Lowercased acronyms no longer leak as literal letters.** When the
+  G2P fallback echoes its input (e.g. `ml` → `ml`) or returns
+  ASCII-only noise (`xlm` → `ksm`), the phonemizer now spells the
+  token out via dict letter lookups (`ml` → `ɛm ɛl`) — preventing
+  silence-between-letters in the audio model.
+- **Hermes debug bytecode failure on `phonemize` is now non-fatal.**
+  When the 4.3MB en-g2p bundle exceeds Hermes' on-the-fly bytecode
+  encoder (debug builds), `getHans00` warns once and falls back to
+  dict-only letter spellout for short OOV tokens, instead of crashing
+  synthesis. Release builds are unaffected.
+
+### Behavior change to flag
+
+The splitter changes audio for any input containing camelCase /
+PascalCase. If you depended on the previous pronunciation, opt out
+per-engine:
+
+- **Kitten:** construct the engine with a custom preprocessor:
+  `new TextPreprocessor({splitCamelCase: false})` (this requires
+  customizing the engine wiring; see `KittenEngine.ts`).
+- **Kokoro:** the splitter is hardcoded into `TextNormalizer.normalize`
+  step 10 — currently no runtime opt-out. File an issue if you need one.
+
 ## 2.0.0 — 2026-04-14
 
 First release under `@pocketpalai/react-native-speech`. Transitions the

@@ -293,7 +293,7 @@ function phonemizeWord(
       const spelled = spellOutLetters(clean, dict, hans00);
       if (spelled !== null) {
         g2p = spelled;
-        log.info(
+        log.debug(
           `acronym fallback (hans00 non-IPA): ${JSON.stringify(word)} -> ${JSON.stringify(g2p)}`,
         );
       }
@@ -309,7 +309,7 @@ function phonemizeWord(
     const spelled = spellOutLetters(clean, dict, null);
     if (spelled !== null) {
       ipa = spelled;
-      log.info(
+      log.debug(
         `acronym fallback (no hans00): ${JSON.stringify(word)} -> ${JSON.stringify(ipa)}`,
       );
     }
