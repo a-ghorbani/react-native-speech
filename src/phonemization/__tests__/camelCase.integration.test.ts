@@ -108,7 +108,7 @@ describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
   const phonemizeKittenStyle = (text: string) =>
     phon.phonemize(splitCamelCase(text).toLowerCase(), 'en-us');
 
-  describe('words that SHOULD split (the bug we fixed)', () => {
+  describe('words that SHOULD split', () => {
     test('PrismML → "prism" + spelled-out "ML"', async () => {
       const out = await phonemize('PrismML');
       // Splitter ran (output has internal whitespace separating parts)
@@ -200,15 +200,15 @@ describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
   });
 
   describe('Kitten-style pipeline (split + lowercase + phonemize)', () => {
-    // These verify the acronym-fallback fix: even after lowercase strips
-    // the acronym signal, the phonemizer must produce clean IPA — no
-    // literal letter characters leaking into the phoneme stream.
+    // After lowercase strips the acronym signal, the phonemizer must still
+    // produce clean IPA — no literal letter characters leaking into the
+    // phoneme stream that the audio model would emit as silence.
     test.each([
       ['PrismML', 'pɹˈɪzəm'], // dict-hit for "prism" still works
       ['prismML', 'pɹˈɪzəm'],
       ['XMLParser', 'pˈɑːɹsɚ'], // dict-hit for "parser"
     ])(
-      '%s — broken hans00 echo for lowercased acronym is fixed',
+      '%s phonemizes without literal letter leakage',
       async (input, expectedSubstring) => {
         const out = await phonemizeKittenStyle(input);
         // No literal lowercase letter sequence (length ≥ 2) sandwiched
@@ -225,8 +225,7 @@ describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
     );
 
     test('standalone lowercased acronym (ml) gets letter-by-letter', async () => {
-      // Mimics the exact failure from production logs: dict miss, hans00
-      // echoes "ml", fallback spells out as letters.
+      // dict miss + hans00 echoes "ml" → letter spellout via dict.
       const out = await phon.phonemize('ml', 'en-us');
       expect(out).not.toMatch(/\bml\b/);
       // Both letters M and L share the ɛ vowel — at least one must appear.

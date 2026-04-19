@@ -26,10 +26,9 @@ type Hans00 = {
   toIPA: (text: string, options?: {stripStress?: boolean}) => string;
 };
 
-// Module-level cache. `loaded` is set true after the first attempt, so we
-// never retry — both successful loads and known failures are sticky for the
-// process lifetime. Splitting the "tried" flag from the "value" avoids a
-// tri-state and the cast-through-falsy that comes with it.
+// Module-level cache. `hans00Loaded` is set true after the first attempt,
+// so both successful loads and known failures are sticky for the process
+// lifetime — we never retry the require.
 let hans00Lib: Hans00 | null = null;
 let hans00Loaded = false;
 

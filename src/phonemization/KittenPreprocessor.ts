@@ -617,10 +617,8 @@ export interface TextPreprocessorConfig {
   normalizeUnicode: boolean;
   removeAccents: boolean;
   removeExtraWhitespace: boolean;
-  // Optional so that adding new toggles in the future doesn't break
-  // consumers who construct full-literal config objects (rather than the
-  // documented `Partial<>` overrides). Defaults are still supplied via
-  // DEFAULT_CONFIG below.
+  // New toggles are added as optional so existing full-literal configs
+  // keep type-checking. DEFAULT_CONFIG below supplies the runtime value.
   splitCamelCase?: boolean;
 }
 
