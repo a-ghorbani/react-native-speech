@@ -3,8 +3,24 @@
 #import <os/signpost.h>
 #import <os/log.h>
 #import <mach/mach.h>
+#import <mach/task_info.h>
 #import <os/proc.h>
 #import <notify.h>
+
+// Returns the process's physical footprint in bytes, matching what Instruments
+// labels "Physical memory" and what iOS jetsam uses. Excludes clean memory-
+// mapped file pages and shared framework memory — unlike `resident_size`, which
+// double-counts mmap'd model weights and system libraries.
+static uint64_t RNSpeechPhysFootprint(void) {
+  task_vm_info_data_t vmInfo;
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  kern_return_t kr = task_info(mach_task_self(), TASK_VM_INFO,
+                                (task_info_t)&vmInfo, &count);
+  if (kr == KERN_SUCCESS) {
+    return (uint64_t)vmInfo.phys_footprint;
+  }
+  return 0;
+}
 
 static NSString *const kBenchmarkDoneNotification = @"com.pocketpalai.rn.speech.benchmarkComplete";
 static NSString *const kMarkersFilename = @"benchmark-markers.json";
@@ -75,17 +91,7 @@ RCT_EXPORT_MODULE();
 
 RCT_EXPORT_METHOD(getMemoryStats:(RCTPromiseResolveBlock)resolve
                           reject:(RCTPromiseRejectBlock)reject) {
-  mach_task_basic_info_data_t taskInfo;
-  mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-  kern_return_t kernReturn = task_info(mach_task_self(),
-                                        MACH_TASK_BASIC_INFO,
-                                        (task_info_t)&taskInfo,
-                                        &infoCount);
-
-  double residentMB = 0;
-  if (kernReturn == KERN_SUCCESS) {
-    residentMB = taskInfo.resident_size / (1024.0 * 1024.0);
-  }
+  double footprintMB = RNSpeechPhysFootprint() / (1024.0 * 1024.0);
 
   double availableMB = 0;
   if (@available(iOS 13.0, *)) {
@@ -94,8 +100,10 @@ RCT_EXPORT_METHOD(getMemoryStats:(RCTPromiseResolveBlock)resolve
 
   double totalMemMB = [NSProcessInfo processInfo].physicalMemory / (1024.0 * 1024.0);
 
+  // Key name kept for JSON/schema backward compat; the value is now
+  // phys_footprint (Instruments-equivalent), not malloc heap size.
   resolve(@{
-    @"nativeHeapAllocatedMB": @(residentMB),
+    @"nativeHeapAllocatedMB": @(footprintMB),
     @"nativeHeapFreeMB": @(0),
     @"totalMemoryMB": @(totalMemMB),
     @"availableMemoryMB": @(availableMB)
@@ -181,17 +189,11 @@ RCT_EXPORT_METHOD(startMemoryPolling:(double)intervalMs) {
     RNBenchmark *strongSelf = weakSelf;
     if (!strongSelf) return;
 
-    mach_task_basic_info_data_t taskInfo;
-    mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
-    kern_return_t kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
-                                 (task_info_t)&taskInfo, &infoCount);
-    if (kr == KERN_SUCCESS) {
-      double residentMB = taskInfo.resident_size / (1024.0 * 1024.0);
-      if (residentMB > strongSelf->_peakResidentMB) {
-        strongSelf->_peakResidentMB = residentMB;
-      }
-      strongSelf->_memorySampleCount++;
+    double footprintMB = RNSpeechPhysFootprint() / (1024.0 * 1024.0);
+    if (footprintMB > strongSelf->_peakResidentMB) {
+      strongSelf->_peakResidentMB = footprintMB;
     }
+    strongSelf->_memorySampleCount++;
   });
 
   dispatch_resume(_memoryPollTimer);
