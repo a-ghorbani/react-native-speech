@@ -26,34 +26,66 @@ type Hans00 = {
   toIPA: (text: string, options?: {stripStress?: boolean}) => string;
 };
 
-let hans00Lib: Hans00 | null = null;
+// Tri-state: null = not attempted, false = attempted and failed (do not retry),
+// Hans00 object = loaded and usable.
+let hans00Lib: Hans00 | null | false = null;
 
-function getHans00(): Hans00 {
-  if (!hans00Lib) {
-    try {
-      // Dynamic require keeps `phonemize` optional at bundle time for apps
-      // that only use OS native TTS (no neural engines / no phonemizer).
-      hans00Lib = require('phonemize');
-    } catch (e) {
-      const isBytecodeError =
-        e instanceof SyntaxError &&
-        String(e.message).includes('encoding bytecode');
-      if (isBytecodeError) {
-        throw new Error(
-          'phonemize failed to load in Hermes debug mode (dictionary too large for on-the-fly bytecode compilation). ' +
-            'Use a release build, or disable the JS phonemizer in debug.',
-        );
-      }
-      throw new Error(
-        'phonemize package is required for HansPhonemizer.\n\n' +
-          'Install it with:\n' +
-          '  npm install phonemize\n' +
-          '  # or\n' +
-          '  yarn add phonemize',
+/**
+ * Lazy-load hans00/phonemize. Returns null if unavailable.
+ *
+ * Three failure modes are handled gracefully (warn + return null) so the
+ * phonemizer can fall back to dict-only spelling instead of crashing
+ * synthesis:
+ *
+ *   1. `require()` throws SyntaxError("Error encoding bytecode") — Hermes
+ *      debug mode can't bytecode-encode the 4.3MB en-g2p dictionary.
+ *      Subsequent requires sometimes return undefined silently in Metro,
+ *      so we also handle (2).
+ *   2. `require()` returns undefined or an object missing `toIPA` — same
+ *      Hermes failure on the second-and-later call paths.
+ *   3. `require()` throws because the package isn't installed.
+ *
+ * Use a release build for full G2P coverage; in debug, OOV words spell out
+ * via dict letter lookup (see phonemizeWord layer 5b).
+ */
+function getHans00(): Hans00 | null {
+  if (hans00Lib === false) return null;
+  if (hans00Lib) return hans00Lib;
+  try {
+    const required = require('phonemize');
+    if (!required || typeof required.toIPA !== 'function') {
+      log.warn(
+        'phonemize package returned no toIPA — likely a Hermes bytecode ' +
+          'encoding failure in debug mode (the en-g2p dictionary is too ' +
+          'large for on-the-fly compilation). OOV short tokens will spell ' +
+          'out via dict; longer OOV words will pass through. Use a release ' +
+          'build for full G2P coverage.',
+      );
+      hans00Lib = false;
+      return null;
+    }
+    hans00Lib = required as Hans00;
+    return hans00Lib;
+  } catch (e) {
+    const isBytecodeError =
+      e instanceof SyntaxError &&
+      String(e.message).includes('encoding bytecode');
+    if (isBytecodeError) {
+      log.warn(
+        'phonemize failed to load: Hermes bytecode encoding error in debug ' +
+          'mode. OOV short tokens will spell out via dict; longer OOV words ' +
+          'will pass through. Use a release build for full G2P coverage.',
+      );
+    } else {
+      log.warn(
+        'phonemize package is not installed or failed to load. OOV short ' +
+          'tokens will spell out via dict; longer OOV words will pass ' +
+          'through. Install with `npm install phonemize` for full G2P.',
       );
     }
+    hans00Lib = false;
+    return null;
   }
-  return hans00Lib!;
 }
 
 // --- Constants ---
@@ -136,6 +168,33 @@ const SECONDARY_STRESSED = new Set([
 
 // --- Helpers ---
 
+/**
+ * Spell out a short token letter-by-letter. Tries dict first (most accurate
+ * for the target voice), then hans00 with the uppercase letter. Falls back
+ * to the literal letter only if both fail. Joins with spaces so each letter
+ * becomes a separate IPA word.
+ */
+function spellOutLetters(
+  clean: string,
+  dict: DictSource,
+  hans00: Hans00 | null,
+): string {
+  return clean
+    .split('')
+    .map(letter => {
+      const fromDict = dict.lookup(letter);
+      if (fromDict) return fromDict;
+      if (hans00) {
+        const fromHans = hans00.toIPA(letter.toUpperCase(), {
+          stripStress: false,
+        });
+        if (fromHans && !/^[A-Za-z']+$/.test(fromHans)) return fromHans;
+      }
+      return letter;
+    })
+    .join(' ');
+}
+
 function relocateStress(ipa: string): string {
   return ipa
     .split(' ')
@@ -197,7 +256,7 @@ function phonemizeWord(
     if (baseIpa) ipa = baseIpa + 'ɪz';
   }
 
-  // 5. hans00 G2P fallback
+  // 5. hans00 G2P fallback (full neural-style coverage when available)
   if (!ipa && hans00) {
     const h = hans00;
     let g2p = h.toIPA(word, {stripStress: false});
@@ -207,25 +266,30 @@ function phonemizeWord(
     // the token isn't in its corpus — common for lowercased acronyms like
     // "ml" or "xlm" produced by Kitten's preprocessor. Without this fallback
     // those tokens leak into the phoneme stream as literal letters and get
-    // spoken as "m, l" (i.e. silence between letters in the audio model).
-    // Spell short tokens out letter-by-letter so the IPA stream stays clean.
+    // spoken as silence between letters by the audio model.
     const isEcho = g2p.length > 0 && /^[A-Za-z']+$/.test(g2p);
     if (isEcho && /^[a-z]{2,4}$/.test(clean)) {
-      const letters = clean.split('').map(letter => {
-        const fromDict = dict.lookup(letter);
-        if (fromDict) return fromDict;
-        const fromHans = h.toIPA(letter.toUpperCase(), {stripStress: false});
-        return fromHans && !/^[A-Za-z']+$/.test(fromHans) ? fromHans : letter;
-      });
-      g2p = letters.join(' ');
-      // info (not debug) so it surfaces even with debug logs filtered;
-      // useful for confirming the build actually contains this fix.
+      g2p = spellOutLetters(clean, dict, h);
       log.info(
-        `acronym fallback: ${JSON.stringify(word)} -> ${JSON.stringify(g2p)} (letter-by-letter)`,
+        `acronym fallback (hans00 echo): ${JSON.stringify(word)} -> ${JSON.stringify(g2p)}`,
       );
     }
 
     ipa = relocateStress(g2p);
+  }
+
+  // 5b. Dict-only spellout fallback. Fires when hans00 isn't available at
+  // all (Hermes debug bytecode failure) for short OOV tokens. Without this,
+  // words like "ml" / "xlm" pass through as literal ASCII letters and get
+  // spoken as garbage by the audio model.
+  if (!ipa && /^[a-z]{2,4}$/.test(clean)) {
+    const spelled = spellOutLetters(clean, dict, null);
+    if (spelled && spelled !== clean) {
+      ipa = spelled;
+      log.info(
+        `acronym fallback (no hans00): ${JSON.stringify(word)} -> ${JSON.stringify(ipa)}`,
+      );
+    }
   }
 
   if (!ipa) return word;
@@ -260,9 +324,11 @@ export class HansPhonemizer implements IPhonemizer {
   async phonemize(text: string, language: string): Promise<string> {
     try {
       const dict = this.dict;
-      // Lazy hans00 load; only needed for OOV words
+      // Lazy hans00 load; only needed for OOV words. Returns null if
+      // unavailable (Hermes debug bytecode failure or package not installed)
+      // — phonemizeWord then falls back to dict-only spellout.
       let hans00: Hans00 | null = null;
-      const getHans = (): Hans00 => {
+      const getHans = (): Hans00 | null => {
         if (!hans00) hans00 = getHans00();
         return hans00;
       };
