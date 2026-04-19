@@ -805,26 +805,42 @@ const RootView: React.FC = () => {
                     ]}>
                     AVAILABLE DOWNLOADS
                   </Text>
-                  {[
-                    {
-                      variant: 'q8',
-                      size: '82 MB',
-                      desc: 'Recommended',
-                      color: '#007AFF',
-                    },
-                    {
-                      variant: 'fp16',
-                      size: '164 MB',
-                      desc: 'Higher quality',
-                      color: '#34C759',
-                    },
-                    {
-                      variant: 'full',
-                      size: '328 MB',
-                      desc: 'Best quality',
-                      color: '#FF9500',
-                    },
-                  ].map(item => {
+                  {(Platform.OS === 'android'
+                    ? [
+                        {
+                          variant: 'fp16',
+                          size: '164 MB',
+                          desc: 'Recommended',
+                          color: '#007AFF',
+                        },
+                        {
+                          variant: 'full',
+                          size: '328 MB',
+                          desc: 'Best quality',
+                          color: '#FF9500',
+                        },
+                      ]
+                    : [
+                        {
+                          variant: 'q8',
+                          size: '82 MB',
+                          desc: 'Recommended',
+                          color: '#007AFF',
+                        },
+                        {
+                          variant: 'fp16',
+                          size: '164 MB',
+                          desc: 'Higher quality',
+                          color: '#34C759',
+                        },
+                        {
+                          variant: 'full',
+                          size: '328 MB',
+                          desc: 'Best quality',
+                          color: '#FF9500',
+                        },
+                      ]
+                  ).map(item => {
                     const isInstalled = kokoroModels.some(
                       m => m.variant === item.variant,
                     );

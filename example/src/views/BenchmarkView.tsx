@@ -69,8 +69,7 @@ const BenchmarkView: React.FC = () => {
     try {
       await kokoroModelManager.scanInstalledModels();
       const kokoroModels = kokoroModelManager.getInstalledModels();
-      if (kokoroModels.length > 0) {
-        const model = kokoroModels[0]!;
+      for (const model of kokoroModels) {
         engines.push({
           engine: TTSEngine.KOKORO,
           label: `Kokoro (${model.variant})`,
