@@ -125,6 +125,10 @@
     ],
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)/)"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.shared\\.ts$"
     ]
   },
   "commitlint": {

@@ -63,12 +63,19 @@ function mockRealToIPA(word: string): string {
 
 // Tiny dict — enough to exercise dict-hit + hans00-fallback paths.
 // Keep entries minimal so OOV behavior is visible in the test output.
+// USA/HTTP/OK are included because they ship in the upstream palshub dict;
+// in production they're always dict hits, never OOV. Mirror that here so
+// the test's "no-op" assertions aren't testing a synthetic scenario that
+// doesn't happen in the field.
 const DICT: Record<string, string> = {
   prism: 'pɹˈɪzəm',
   parser: 'pˈɑːɹsɚ',
   strand: 'stɹˈænd',
   hello: 'həlˈoʊ',
   world: 'wˈɜːld',
+  usa: 'jˌuːˌɛsˈeɪ',
+  http: 'ˌeɪtʃtˌiːtˌiːpˈiː',
+  ok: 'ˌoʊkˈeɪ',
 };
 
 function makeDict(map: Record<string, string>): DictSource {

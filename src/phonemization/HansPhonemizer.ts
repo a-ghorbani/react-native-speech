@@ -166,15 +166,58 @@ const SECONDARY_STRESSED = new Set([
   'about',
 ]);
 
+/**
+ * Dict overrides — transient bugfix hatch, NOT a pronunciation store.
+ *
+ * Consulted before the dict lookup so an entry here takes priority. Use
+ * only when we need to correct a specific known-wrong dict entry while
+ * the upstream fix is in flight; each entry should carry a TODO pointing
+ * at the upstream fix that will let us remove it.
+ *
+ * Pronunciations belong in the dict (palshub/phonemizer-dicts), not here.
+ * Adding general-purpose entries to this map is architectural drift —
+ * over time it becomes a parallel pronunciation source that silently
+ * diverges from the dict. Resist the temptation.
+ *
+ * Currently empty: the 48-entry dict update on 2026-04-20 absorbed the
+ * former interjection overlay (hmm, mhm, shh, mmm, pfft, brr, psst, ew).
+ */
+const DICT_OVERRIDES: Record<string, string> = {};
+
 // --- Helpers ---
 
 /**
- * Acronyms that benefit from letter-by-letter spelling. Lower bound 2 covers
- * "ML", "OS", "OK". Upper bound 4 covers "HTML", "JSON", "NASA". Beyond 4,
- * all-caps tokens are more likely styled words (RADAR, SCUBA) where letter
- * spellout would be wrong, so we leave them to whatever fallback fires.
+ * Phonotactic "unpronounceable" check. A word is unpronounceable (and
+ * should be spelled letter-by-letter) when its first vowel appears past
+ * the typical maximum consonant onset for English (~3 — per the Maximal
+ * Onset Principle, English syllable onsets can be at most 3 consonants,
+ * e.g. "spl-", "str-", "scr-"), so any pronounceable word must have a
+ * vowel within the first 4 characters.
+ *
+ * Standard phonotactic reasoning, independently implemented here; the same
+ * principle appears across TTS systems (Festival, Flite, espeak-ng).
+ *
+ * Replaces the length-based SHORT_ACRONYM heuristic, which misfired on
+ * interjections (hmm, shh) and short real words / model names (himm, Qwen,
+ * Phi). Case is irrelevant — `ml`, `ML`, `Ml` all spell out equally.
+ *
+ *   "ml"    → no vowel → unpronounceable → spell out ✓
+ *   "xlm"   → no vowel → unpronounceable → spell out ✓
+ *   "hmm"   → no vowel → unpronounceable (but dict has it as 'həm') ✓
+ *   "himm"  → 'i' at pos 2 → pronounceable → G2P or passthrough ✓
+ *   "qwen"  → 'e' at pos 3 → pronounceable ✓
+ *   "phi"   → 'i' at pos 3 → pronounceable ✓
+ *
+ * Treats 'y' as a vowel — standard treatment for English phonotactic
+ * classification where y functions as a secondary vowel. Keeps "yi"
+ * pronounceable.
  */
-const SHORT_ACRONYM = /^[a-z]{2,4}$/;
+const MAX_CONSONANT_ONSET = 3;
+function isUnpronounceable(clean: string): boolean {
+  if (clean.length < 2) return false;
+  const firstVowel = clean.search(/[aeiouy]/);
+  return firstVowel === -1 || firstVowel >= MAX_CONSONANT_ONSET + 1;
+}
 
 /**
  * Returns true if `s` looks like raw ASCII (letters + apostrophes only) —
@@ -253,6 +296,12 @@ function phonemizeWord(
   const reduced = REDUCED_FORMS[clean];
   if (reduced) return reduced;
 
+  // 1b. DICT_OVERRIDES — runs before dict lookup so we can patch a
+  // known-wrong upstream entry in-code while the dict fix ships.
+  // Empty by default; see the constant's docstring.
+  const override = DICT_OVERRIDES[clean];
+  if (override) return override;
+
   // 2. Dict lookup (already done by caller)
   let ipa: string | null = primaryHit;
 
@@ -278,22 +327,32 @@ function phonemizeWord(
     if (baseIpa) ipa = baseIpa + 'ɪz';
   }
 
+  // Two spellout triggers, each independent:
+  //
+  //   forceSpellOut — word was typed as short all-caps ("GPU", "NSA",
+  //     "AWS"). A strong user signal that they mean the acronym, not a
+  //     word. Overrides hans00 even when hans00 produced IPA-looking
+  //     output (hans00 transcribes AWS → "ɔz" like "awes", which is
+  //     rarely what the user wanted).
+  //
+  //   fallbackSpellOut — hans00 echoed ASCII (failed G2P) AND the word
+  //     is phonotactically unpronounceable. Catches lowercase vowelless
+  //     inputs ("ml", "xlm") when they reach hans00 without being caught
+  //     by the overlay.
+  const forceSpellOut = /^[A-Z]{2,4}$/.test(word);
+
   // 5. hans00 G2P fallback (full neural-style coverage when available)
   if (!ipa && hans00) {
     let g2p = hans00.toIPA(word, {stripStress: false});
     g2p = g2p.replace(/- /g, '').replace(/ɫ/g, 'l');
 
-    // If hans00 returned an ASCII-only string, it didn't actually produce
-    // IPA — either echoed the input ("ml" → "ml") or spat letter-noise
-    // ("xlm" → "ksm"). For short tokens those are almost always acronyms,
-    // so spell them out letter-by-letter rather than letting the literal
-    // characters reach the audio model as silence.
-    if (looksLikeAscii(g2p) && SHORT_ACRONYM.test(clean)) {
+    const fallbackSpellOut = looksLikeAscii(g2p) && isUnpronounceable(clean);
+    if (forceSpellOut || fallbackSpellOut) {
       const spelled = spellOutLetters(clean, dict, hans00);
       if (spelled !== null) {
         g2p = spelled;
         log.debug(
-          `acronym fallback (hans00 non-IPA): ${JSON.stringify(word)} -> ${JSON.stringify(g2p)}`,
+          `acronym fallback (${forceSpellOut ? 'all-caps' : 'hans00 non-IPA'}): ${JSON.stringify(word)} -> ${JSON.stringify(g2p)}`,
         );
       }
     }
@@ -301,10 +360,14 @@ function phonemizeWord(
     ipa = relocateStress(g2p);
   }
 
-  // 5b. Dict-only spellout for short OOV tokens when hans00 isn't available
-  // (Hermes debug bytecode failure). Without this, "ml"/"xlm" pass through
-  // as literal ASCII letters and the audio model emits silence between them.
-  if (!ipa && SHORT_ACRONYM.test(clean)) {
+  // 5b. Dict-only spellout when hans00 isn't available (Hermes debug
+  // bytecode failure). Without this, "ml"/"xlm" pass through as literal
+  // ASCII letters and the audio model emits silence. Uses the phonotactic
+  // check plus the all-caps typographic signal — "GPU" (all-caps) spells
+  // out, while "himm"/"Qwen" pass through for the phonemizer. Vowelless
+  // interjections (hmm, shh) normally hit the dict at Layer 2 before
+  // reaching this point.
+  if (!ipa && (forceSpellOut || isUnpronounceable(clean))) {
     const spelled = spellOutLetters(clean, dict, null);
     if (spelled !== null) {
       ipa = spelled;
@@ -367,6 +430,7 @@ export class HansPhonemizer implements IPhonemizer {
 
             const needsHans =
               !REDUCED_FORMS[clean] &&
+              !DICT_OVERRIDES[clean] &&
               !primaryHit &&
               !(
                 w.includes('-') &&
