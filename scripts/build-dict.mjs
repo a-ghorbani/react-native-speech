@@ -21,6 +21,7 @@
  * Keys are sorted bytewise (UTF-8). Values are parallel to keys (not sorted).
  */
 
+import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -131,3 +132,11 @@ console.log(`[build-dict] Wrote ${outPath}`);
 console.log(`[build-dict] entries=${n}`);
 console.log(`[build-dict] keys_size=${keysSize} vals_size=${valsSize}`);
 console.log(`[build-dict] file_size=${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+
+// Validate the output immediately — catches format corruption, offset
+// math drift, and sort-order bugs before a bad .bin ships.
+execFileSync(
+  process.execPath,
+  [join(__dirname, 'validate-dict.mjs'), lang],
+  {stdio: 'inherit', env: process.env},
+);
