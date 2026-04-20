@@ -21,6 +21,7 @@
  * Keys are sorted bytewise (UTF-8). Values are parallel to keys (not sorted).
  */
 
+import {execFileSync} from 'node:child_process';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -28,9 +29,17 @@ import {fileURLToPath} from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
+// Dict source lives outside this repo by design — the TSV is espeak-ng-
+// derived (GPL-adjacent) and this repo is MIT. Point `PHONEMIZER_DICTS_DIR`
+// at a clone of https://huggingface.co/datasets/palshub/phonemizer-dicts
+// (or a local working copy). Falls back to ./third-party/phonemizer-dicts/
+// for backward compatibility if that directory exists.
 const lang = process.argv[2] || 'en-us';
-const inPath = join(ROOT, 'third-party', 'phonemizer-dicts', `${lang}.tsv`);
-const outPath = join(ROOT, 'third-party', 'phonemizer-dicts', `${lang}.bin`);
+const dictsDir =
+  process.env.PHONEMIZER_DICTS_DIR ||
+  join(ROOT, 'third-party', 'phonemizer-dicts');
+const inPath = join(dictsDir, `${lang}.tsv`);
+const outPath = join(dictsDir, `${lang}.bin`);
 
 const MAGIC = Buffer.from('EPD1', 'ascii');
 const VERSION = 1;
@@ -123,3 +132,11 @@ console.log(`[build-dict] Wrote ${outPath}`);
 console.log(`[build-dict] entries=${n}`);
 console.log(`[build-dict] keys_size=${keysSize} vals_size=${valsSize}`);
 console.log(`[build-dict] file_size=${totalSize} bytes (${(totalSize / 1024 / 1024).toFixed(2)} MB)`);
+
+// Validate the output immediately — catches format corruption, offset
+// math drift, and sort-order bugs before a bad .bin ships.
+execFileSync(
+  process.execPath,
+  [join(__dirname, 'validate-dict.mjs'), lang],
+  {stdio: 'inherit', env: process.env},
+);

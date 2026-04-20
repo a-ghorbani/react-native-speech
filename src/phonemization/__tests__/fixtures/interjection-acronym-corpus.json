@@ -1,0 +1,506 @@
+{
+  "description": "Corpus for exercising interjection vs acronym vs real-word disambiguation in HansPhonemizer. Each case has a category and structured assertions. Reference IPA from espeak-ng 1.52 CLI (en-us) for comparison; our output may differ in surface form but must match the behavioral class (spelled-out letters vs pronounced syllable).",
+  "categories": {
+    "interjection": "Non-acronym short token (hmm, ugh, shh). Must NOT be spelled letter-by-letter. Should produce a syllable-like phoneme cluster.",
+    "acronym": "Initialism intended to be spelled (ML, XLM, API). SHOULD be spelled letter-by-letter.",
+    "real_word": "Normal English word, possibly OOV (himm, prism, dash). Must NOT be spelled letter-by-letter. Must have at least one vowel phoneme.",
+    "camelcase_with_acronym": "Mixed-case token with embedded acronym (prismML, XMLParser). After split, acronym part spells out; word part pronounces.",
+    "sentence_interjection": "Full sentence containing an interjection. Interjection must integrate cleanly, not spell out.",
+    "sentence_acronym": "Full sentence containing an acronym. Acronym must spell out.",
+    "normal": "Plain English, no special handling needed. Regression guard.",
+    "model_name": "LLM/lab name (Qwen, Gemma, Llama, Phi, etc.) — OOV but real word, must NOT spell out. Phonetic approximation acceptable even if not linguistically accurate.",
+    "sentence_model_name": "Sentence where the LLM introduces itself or mentions a lab/model. Real use case for PocketPal AI."
+  },
+  "cases": [
+    {
+      "input": "hmm",
+      "category": "interjection",
+      "espeakRef": "hˈəm",
+      "notes": "User-reported bug: currently spelled 'h m m'. Should be a single syllable hum.",
+      "status": "BUG"
+    },
+    {
+      "input": "Hmm",
+      "category": "interjection",
+      "espeakRef": "hˈəm",
+      "notes": "Case-insensitive: same as 'hmm'.",
+      "status": "BUG"
+    },
+    {
+      "input": "HMM",
+      "category": "interjection",
+      "espeakRef": "hˈəm",
+      "notes": "All-caps still an interjection in real text ('HMM.').",
+      "status": "UNKNOWN"
+    },
+    {
+      "input": "hmmm",
+      "category": "interjection",
+      "espeakRef": "hˈəm",
+      "notes": "Elongated form.",
+      "status": "UNKNOWN"
+    },
+    {
+      "input": "ugh",
+      "category": "interjection",
+      "espeakRef": "ˈʌɡ",
+      "notes": "Already in dict as ˈʌɡ. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "eh",
+      "category": "interjection",
+      "espeakRef": "ˈeɪ",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "uh",
+      "category": "interjection",
+      "espeakRef": "ˈʌ",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "um",
+      "category": "interjection",
+      "espeakRef": "ˈʌm",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "ooh",
+      "category": "interjection",
+      "espeakRef": "ˈuː",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "ahh",
+      "category": "interjection",
+      "espeakRef": "ˈɑː",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "huh",
+      "category": "interjection",
+      "espeakRef": "hˈʌ",
+      "notes": "Already in dict. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "shh",
+      "category": "interjection",
+      "espeakRef": "ˌɛsˌeɪtʃˈeɪtʃ",
+      "notes": "Espeak spells 'shh' as letters (S-H-H) — INCORRECT. Real interjection is /ʃː/. Overlay should fix.",
+      "status": "BUG_ESPEAK_ALSO_WRONG"
+    },
+    {
+      "input": "mmm",
+      "category": "interjection",
+      "espeakRef": null,
+      "notes": "Prolonged /mː/ — likely spelled out now (no vowels).",
+      "status": "BUG"
+    },
+    {
+      "input": "mhm",
+      "category": "interjection",
+      "espeakRef": "ˌɛmˌeɪtʃˈɛm",
+      "notes": "Affirmative closed-mouth grunt. Dict has espeak's wrong spellout. Overlay must override.",
+      "status": "BUG"
+    },
+    {
+      "input": "pfft",
+      "category": "interjection",
+      "espeakRef": null,
+      "notes": "Dismissive noise. Probably spelled out now.",
+      "status": "BUG"
+    },
+    {
+      "input": "himm",
+      "category": "real_word",
+      "espeakRef": "hˈɪm",
+      "notes": "User-reported: currently 'h i m m'. Should be /hɪm/ like 'him'.",
+      "status": "BUG"
+    },
+    {
+      "input": "dash",
+      "category": "real_word",
+      "espeakRef": "dˈæʃ",
+      "notes": "Real English word; has a vowel. Must not spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "cat",
+      "category": "real_word",
+      "espeakRef": "kˈæt",
+      "notes": "Dict hit. Regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "ml",
+      "category": "acronym",
+      "espeakRef": "ˌɛmˈɛl",
+      "notes": "Machine learning. No vowel → spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "ML",
+      "category": "acronym",
+      "espeakRef": "ˌɛmˈɛl",
+      "notes": "Same as 'ml', any case.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "xlm",
+      "category": "acronym",
+      "espeakRef": "ˌɛksˌɛlˈɛm",
+      "notes": "No vowel → spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "XLM",
+      "category": "acronym",
+      "espeakRef": "ˌɛksˌɛlˈɛm",
+      "notes": "Same as 'xlm'.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "html",
+      "category": "acronym",
+      "espeakRef": "ˌeɪtʃtˌiːɛmˈɛl",
+      "notes": "4-letter, no vowel → spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "sql",
+      "category": "acronym",
+      "espeakRef": "sˈiːkwəl",
+      "notes": "Espeak pronounces as 'sequel'. Edge case — we'd spell out; that's acceptable.",
+      "status": "ACCEPTABLE_DIVERGENCE"
+    },
+    {
+      "input": "PrismML",
+      "category": "camelcase_with_acronym",
+      "espeakRef": null,
+      "notes": "Splits to 'Prism ML'. 'Prism' phonemizes, 'ML' spells out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "XMLParser",
+      "category": "camelcase_with_acronym",
+      "espeakRef": null,
+      "notes": "Splits to 'XML Parser'. 'XML' spells out; 'Parser' phonemizes.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Hmm, how are you?",
+      "category": "sentence_interjection",
+      "espeakRef": "hˈəm, hˌaʊ ɑːɹ juː?",
+      "notes": "Primary user-reported case. 'Hmm' must NOT be 'H m m'.",
+      "status": "BUG"
+    },
+    {
+      "input": "himm, how are you?",
+      "category": "sentence_interjection",
+      "espeakRef": "hˈɪm, hˌaʊ ɑːɹ juː?",
+      "notes": "Primary user-reported case for real words.",
+      "status": "BUG"
+    },
+    {
+      "input": "Ugh, this is hard.",
+      "category": "sentence_interjection",
+      "espeakRef": "ˈʌɡ, ðɪs ɪz hˈɑːɹd.",
+      "notes": "Dict-hit interjection in sentence.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Shh, be quiet!",
+      "category": "sentence_interjection",
+      "espeakRef": null,
+      "notes": "Interjection needing overlay.",
+      "status": "BUG"
+    },
+    {
+      "input": "Mhm, exactly.",
+      "category": "sentence_interjection",
+      "espeakRef": null,
+      "notes": "Affirmative interjection; dict has wrong spellout.",
+      "status": "BUG"
+    },
+    {
+      "input": "Use the ML model.",
+      "category": "sentence_acronym",
+      "espeakRef": null,
+      "notes": "Acronym in sentence must spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Parse the XML file.",
+      "category": "sentence_acronym",
+      "espeakRef": null,
+      "notes": "Acronym in sentence must spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "hello world",
+      "category": "normal",
+      "espeakRef": "həlˈoʊ wˈɜːld",
+      "notes": "Basic regression guard.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "The cat sat on the mat.",
+      "category": "normal",
+      "espeakRef": null,
+      "notes": "Full sentence regression.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "I'm going to the store.",
+      "category": "normal",
+      "espeakRef": null,
+      "notes": "Contraction handling.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Qwen",
+      "category": "model_name",
+      "espeakRef": "kjˈuːwˈɛn",
+      "notes": "Alibaba model. 4 chars — currently likely spelled Q-W-E-N. Pronounceable (has vowel at pos 3).",
+      "status": "BUG"
+    },
+    {
+      "input": "qwen",
+      "category": "model_name",
+      "espeakRef": "kjˈuːwˈɛn",
+      "notes": "Lowercase variant.",
+      "status": "BUG"
+    },
+    {
+      "input": "Gemma",
+      "category": "model_name",
+      "espeakRef": "dʒˈɛmə",
+      "notes": "Google model. 5 chars — above SHORT_ACRONYM. Should pass through or phonemize cleanly.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Llama",
+      "category": "model_name",
+      "espeakRef": "lˈɑːmə",
+      "notes": "Meta model. Real Spanish word — may be in dict.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Mistral",
+      "category": "model_name",
+      "espeakRef": "mˈɪstɹəl",
+      "notes": "7 chars, French mix of consonants/vowels.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Phi",
+      "category": "model_name",
+      "espeakRef": "fˈaɪ",
+      "notes": "Microsoft model. 3 chars, Greek letter — currently likely spelled P-H-I. Pronounceable (vowel at pos 3 — edge of limit).",
+      "status": "BUG"
+    },
+    {
+      "input": "Yi",
+      "category": "model_name",
+      "espeakRef": "jˈi",
+      "notes": "01.AI model. 2 chars. 'y' often counts as vowel. Espeak says 'yee'; spelling out (Y-I) would be acceptable fallback.",
+      "status": "ACCEPTABLE_DIVERGENCE"
+    },
+    {
+      "input": "DeepSeek",
+      "category": "model_name",
+      "espeakRef": "dˈiːp sˈiːk",
+      "notes": "No camelCase split (no lowercase-UPPER boundary). hans00 should phonemize the compound; without hans00 pass through.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Kokoro",
+      "category": "model_name",
+      "espeakRef": "kəkˈɔːɹoʊ",
+      "notes": "Japanese word 'heart'. 6 chars, pronounceable.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Kitten",
+      "category": "model_name",
+      "espeakRef": "kˈɪʔn̩",
+      "notes": "English word; should be in dict.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Supertonic",
+      "category": "model_name",
+      "espeakRef": "sˈuːpɚtˈɑːnɪk",
+      "notes": "Long word; pronounceable.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Claude",
+      "category": "model_name",
+      "espeakRef": "klˈɔːd",
+      "notes": "Anthropic. Real English/French name.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Falcon",
+      "category": "model_name",
+      "espeakRef": "fˈælkən",
+      "notes": "TII model. Dict word.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Mixtral",
+      "category": "model_name",
+      "espeakRef": "mˈɪkstɹəl",
+      "notes": "Mistral mixture model. 7 chars, OOV.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "TinyLlama",
+      "category": "model_name",
+      "espeakRef": null,
+      "notes": "camelCase model name; no split (no uppercase run). Pass through to hans00.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "CodeLlama",
+      "category": "model_name",
+      "espeakRef": null,
+      "notes": "camelCase model name.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Baichuan",
+      "category": "model_name",
+      "espeakRef": "bˈeɪtʃjuːən",
+      "notes": "Chinese lab — transliterated, OOV.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "I'm Qwen, a large language model from Alibaba.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "Canonical self-introduction pattern.",
+      "status": "BUG"
+    },
+    {
+      "input": "I'm Gemma from Google.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "Self-introduction.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "I am Phi-3 from Microsoft.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "Phi is 3 chars and currently spelled out. With hyphen the compound may split.",
+      "status": "BUG"
+    },
+    {
+      "input": "Try the DeepSeek R1 model.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "DeepSeek + version token. R1 is 2-char alphanum — may pass through.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Llama 3 is from Meta.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "Llama + digit.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "The PrismML team released a new Kokoro checkpoint.",
+      "category": "sentence_model_name",
+      "espeakRef": null,
+      "notes": "camelCase lab name + model name in same sentence.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "GPU",
+      "category": "acronym",
+      "espeakRef": "dʒˌiːpˌiːjˈuː",
+      "notes": "OOV (not in upstream dict). All-caps heuristic forces spellout even though 'u' is a vowel at pos 3.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "NSA",
+      "category": "acronym",
+      "espeakRef": "ˌɛnˌɛsˈeɪ",
+      "notes": "OOV. All-caps heuristic triggers spellout.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "AWS",
+      "category": "acronym",
+      "espeakRef": "ˈɔːz",
+      "notes": "OOV. Espeak treats as a fake word 'ɔːz'; our all-caps heuristic spells out as A-W-S. Better default for TTS because AWS is almost always an acronym.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "ash",
+      "category": "real_word",
+      "espeakRef": "ˈæʃ",
+      "notes": "FALSE-POSITIVE PROBE: 3-char real word, 'a' at pos 0. Unpronouncable must not fire.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "try",
+      "category": "real_word",
+      "espeakRef": "tɹˈaɪ",
+      "notes": "FALSE-POSITIVE PROBE: 3-char word, 'y' at pos 2 counts as vowel. Must not spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "my",
+      "category": "real_word",
+      "espeakRef": "mˈaɪ",
+      "notes": "FALSE-POSITIVE PROBE: 2-char word with y-as-vowel.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "shtick",
+      "category": "real_word",
+      "espeakRef": "ʃtˈɪk",
+      "notes": "FALSE-POSITIVE PROBE: Yiddish-origin, 'i' at pos 3. Borderline pronounceable.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "Ash is here.",
+      "category": "normal",
+      "espeakRef": null,
+      "notes": "Case-insensitive check: mixed-case 'Ash' must not spell out.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "iOS's latest feature.",
+      "category": "camelcase_with_acronym",
+      "espeakRef": null,
+      "notes": "CAMELCASE INTERACTION: iOS splits to 'i OS's'. 'OS' is 2-char and all-caps; our all-caps heuristic spells it out. Regression guard — existing Kokoro test expects this exact behavior.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "XMLParser uses the DOM.",
+      "category": "sentence_acronym",
+      "espeakRef": null,
+      "notes": "CAMELCASE INTERACTION: XML splits off; DOM is separate all-caps acronym. Both must spell.",
+      "status": "OK_EXPECTED"
+    },
+    {
+      "input": "i am",
+      "category": "normal",
+      "espeakRef": "ˈaɪ ˈæm",
+      "notes": "FALSE-POSITIVE PROBE: single-letter 'i' (1 char) must bypass all heuristics. Uses REDUCED_FORMS/dict.",
+      "status": "OK_EXPECTED"
+    }
+  ]
+}
