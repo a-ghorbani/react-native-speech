@@ -1,4 +1,5 @@
 import {StreamingChunker} from '../StreamingChunker';
+import {createMarkdownStreamBuffer} from '../../utils/stripMarkdown';
 
 async function flushMicrotasks() {
   for (let i = 0; i < 5; i++) {
@@ -156,5 +157,144 @@ describe('StreamingChunker', () => {
     chunker.finalize();
     await chunker.getNextChunk();
     expect(chunker.tryPeek()).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Integration: MarkdownStreamBuffer → StreamingChunker
+//
+// The bug pattern: an isolated horizontal-rule line (`---`) flows through
+// `createMarkdownStreamBuffer`, which converts it to `.\n` and emits as a
+// complete-line batch. When that batch lands in StreamingChunker between
+// other content, it can be the ENTIRE buffer at the moment of extraction
+// — so the chunker emits a 2-char `.\n` chunk by itself. Engines like
+// Kitten that don't tolerate trivial inputs then crash.
+//
+// These tests pin the contract that no-content chunks ARE produced under
+// realistic interleaving, so downstream consumers (engines, sessions)
+// must be designed to skip them rather than assume every chunk has
+// synthesizable content.
+// ─────────────────────────────────────────────────────────────────────────
+describe('integration: MarkdownStreamBuffer → StreamingChunker', () => {
+  function hasContent(text: string): boolean {
+    return /[\p{L}\p{N}]/u.test(text);
+  }
+
+  /**
+   * Drive the stream the same way realistic consumers do: append small
+   * fragments, drain whatever's ready after each. This reproduces the
+   * "engine consumes chunks faster than tokens arrive" race that surfaces
+   * the no-content chunk.
+   */
+  async function streamThrough(
+    text: string,
+    fragmenter: (s: string) => string[],
+    maxChunkSize = 500,
+  ) {
+    const chunker = new StreamingChunker(maxChunkSize);
+    const buf = createMarkdownStreamBuffer();
+    const chunks: Array<{text: string; startIndex: number; endIndex: number}> =
+      [];
+    for (const frag of fragmenter(text)) {
+      const emit = buf.push(frag);
+      if (emit) chunker.append(emit);
+      let ready = chunker.tryPeek();
+      while (ready !== undefined && ready !== null) {
+        chunks.push(ready);
+        ready = chunker.tryPeek();
+      }
+    }
+    const tail = buf.flush();
+    if (tail) chunker.append(tail);
+    chunker.finalize();
+    let final = chunker.tryPeek();
+    while (final !== undefined && final !== null) {
+      chunks.push(final);
+      final = chunker.tryPeek();
+    }
+    return chunks;
+  }
+
+  test('isolated --- between paragraphs yields a no-content chunk under interleaved drain', async () => {
+    const chunks = await streamThrough(
+      'Hello world. This is paragraph one.\n\n---\n\nThis is paragraph two.',
+      // Word-by-word — what `tokenize(text)` in StreamingView produces.
+      s => s.match(/\S+\s*|\s+/g) ?? [s],
+    );
+
+    // We expect at least one chunk to be the bare `.\n` from the stripped
+    // hrule. If this test starts to fail, either the stripper changed how
+    // it represents structural breaks (then update the engine guards to
+    // match), or the chunker started filtering — either way, downstream
+    // assumptions need to be revisited.
+    const noContent = chunks.filter(c => !hasContent(c.text));
+    expect(noContent.length).toBeGreaterThan(0);
+    expect(noContent.every(c => c.text.length <= 4)).toBe(true);
+
+    // Surrounding content survives intact.
+    const joined = chunks.map(c => c.text).join('');
+    expect(joined).toContain('Hello world.');
+    expect(joined).toContain('This is paragraph two.');
+  });
+
+  test('full markdown sample: chunker emits zero, one, or many no-content chunks', async () => {
+    // The full StreamingView sample (procrastination guide) — a robust
+    // test that the integration produces SOME chunks worth synthesizing
+    // and any no-content artifacts are short.
+    const sample = `# Title
+
+A paragraph.
+
+---
+
+## Section
+
+Another paragraph.
+
+---
+
+### Sub
+
+| A | B |
+|---|---|
+| 1 | 2 |
+
+End.`;
+    const chunks = await streamThrough(
+      sample,
+      s => s.match(/\S+\s*|\s+/g) ?? [s],
+    );
+
+    expect(chunks.length).toBeGreaterThan(0);
+    // Every no-content chunk must be tiny — if a large chunk has no
+    // letters/digits, something is upstream-mangled and we shouldn't
+    // hand it to a TTS model regardless.
+    for (const c of chunks) {
+      if (!hasContent(c.text)) {
+        expect(c.text.length).toBeLessThanOrEqual(4);
+      }
+    }
+    // At least one content-bearing chunk landed.
+    expect(chunks.some(c => hasContent(c.text))).toBe(true);
+  });
+
+  test('stripping disabled: hrule flows through verbatim and triggers a different chunk pattern', async () => {
+    // Sanity check: when consumers opt out of stripping (`stripMarkdown:
+    // false`), they DON'T get a `.\n` chunk because the hrule never gets
+    // converted. They get the raw `---` text instead. This confirms the
+    // no-content chunk is specifically a stripping artifact.
+    const chunker = new StreamingChunker(500);
+    const tokens = 'Hello.\n\n---\n\nWorld.'.match(/\S+\s*|\s+/g) ?? [];
+    for (const t of tokens) chunker.append(t);
+    chunker.finalize();
+    const chunks: string[] = [];
+    let c;
+    while ((c = await chunker.getNextChunk()) !== null) {
+      chunks.push(c.text);
+    }
+    const joined = chunks.join('');
+    expect(joined).toContain('---');
+    // No `.\n`-only chunk in the unstripped path.
+    expect(chunks.every(t => /[\p{L}\p{N}-]/u.test(t))).toBe(true);
   });
 });

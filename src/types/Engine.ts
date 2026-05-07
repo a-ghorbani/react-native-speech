@@ -92,6 +92,16 @@ export interface SynthesisOptions {
    * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
    */
   silentMode?: 'obey' | 'respect' | 'ignore';
+  /**
+   * If `true` (default), markdown syntax (`**bold**`, headers, tables, code
+   * fences, lists, links, etc.) is stripped before phonemization so the
+   * TTS doesn't read asterisks / pipes / hashes aloud. Set `false` to pass
+   * text through verbatim — useful when consumer has already cleaned the
+   * input or when preserving source-text offsets for highlighting.
+   * @platform neural-engines
+   * @default true
+   */
+  stripMarkdown?: boolean;
 }
 
 /**

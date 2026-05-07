@@ -38,6 +38,10 @@ import {loadNativeDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {
+  stripMarkdown,
+  createMarkdownStreamBuffer,
+} from '../../utils/stripMarkdown';
 import {KOKORO_CONSTANTS} from './constants';
 
 const log = createComponentLogger('Kokoro', 'Engine');
@@ -331,6 +335,13 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const language = this.getLanguageFromVoice(voiceId);
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
+    const stripMd = options?.stripMarkdown !== false;
+    // When stripping is enabled, buffer incoming text by complete lines and
+    // strip BEFORE StreamingChunker sees it — so hrules / headers / table
+    // rows get converted into sentence boundaries the chunker recognizes.
+    // Stripping inside synthesizeChunk (post-chunker) would only catch
+    // inline markers; structural breaks would be lost.
+    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.synthesizeTextChunk(text, voiceId, language, options),
@@ -375,8 +386,21 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     };
 
     return {
-      append: (text: string) => session.append(text),
-      finalize: wrapFinalize,
+      append: (text: string) => {
+        if (mdBuffer) {
+          const emit = mdBuffer.push(text);
+          if (emit) session.append(emit);
+        } else {
+          session.append(text);
+        }
+      },
+      finalize: async () => {
+        if (mdBuffer) {
+          const tail = mdBuffer.flush();
+          if (tail) session.append(tail);
+        }
+        return wrapFinalize();
+      },
       cancel: wrapCancel,
     };
   }
@@ -426,10 +450,16 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
+    // Strip markdown syntax before chunking so structural markers (`---`,
+    // `###`, table rows) get converted into sentence breaks the chunker
+    // recognizes. Default on; consumer can opt out via options.
+    const cleanText =
+      options?.stripMarkdown === false ? text : stripMarkdown(text);
+
     // Chunk text by sentences for streaming playback
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
     const chunks = this.normalizer.chunkBySentencesWithMetadata(
-      text,
+      cleanText,
       maxChunkSize,
     );
 

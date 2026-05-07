@@ -115,25 +115,19 @@ export class EngineStreamSession implements EngineStreamHandle {
     log.info(`stream session started, t+0ms`);
 
     try {
-      // Bootstrap: get first chunk and synthesize it. No pipelining yet
-      // since there's nothing to play concurrently.
-      const firstChunk = await this.chunker.getNextChunk();
-      if (!firstChunk || this.cancelled) {
-        return;
-      }
-
-      let currentAudio = await this.raceWithStop(
-        synthesizeChunk(firstChunk.text),
+      // Bootstrap: pull chunks until we find one that produces audio.
+      // Engines may legitimately return an empty buffer for no-content
+      // chunks (e.g. an isolated horizontal rule converted to `.`); we
+      // skip those rather than ending the whole session.
+      const bootstrap = await this.fetchNextWithAudio(
+        synthesizeChunk,
         stopSignal,
       );
-      if (!currentAudio || this.cancelled) {
+      if (!bootstrap || this.cancelled) {
         return;
       }
-      if (currentAudio.samples.length === 0) {
-        return;
-      }
-
-      let currentChunk = firstChunk;
+      let currentChunk = bootstrap.chunk;
+      let currentAudio: AudioBuffer = bootstrap.audio;
       let chunkIdx = 0;
 
       // Main loop: play current chunk while synthesizing next.
@@ -160,8 +154,13 @@ export class EngineStreamSession implements EngineStreamHandle {
 
         this.emitProgress(currentChunk, chunkIdx);
 
-        // Start fetching + synthesizing next chunk in background.
-        const prefetchPromise = this.prefetchNext(synthesizeChunk, stopSignal);
+        // Start fetching + synthesizing next chunk in background. Skips
+        // any no-audio chunks until it finds one with audio (or chunker
+        // drains).
+        const prefetchPromise = this.fetchNextWithAudio(
+          synthesizeChunk,
+          stopSignal,
+        );
 
         // Play current chunk (concurrent with prefetch).
         await this.raceWithStop(
@@ -205,28 +204,43 @@ export class EngineStreamSession implements EngineStreamHandle {
   }
 
   /**
-   * Fetch the next chunk from the chunker and synthesize it. Returns
-   * null if there are no more chunks or the session was cancelled.
+   * Fetch chunks from the chunker, synthesizing each, until we find one
+   * that produced audio. Returns null when the chunker is drained or the
+   * session was cancelled.
+   *
+   * Engines may legitimately produce an empty `AudioBuffer` for chunks
+   * that have no synthesizable content — e.g. Kitten skips a chunk that
+   * tokenizes to only framing tokens (which crashes its BERT expand op).
+   * Treating that as "stream done" would cut playback off mid-document,
+   * so we keep pulling until we have audio.
    */
-  private async prefetchNext(
+  private async fetchNextWithAudio(
     synthesizeChunk: (text: string) => Promise<AudioBuffer>,
     stopSignal: Promise<null>,
   ): Promise<{
     chunk: {text: string; startIndex: number; endIndex: number};
     audio: AudioBuffer;
   } | null> {
-    const chunk = await this.chunker.getNextChunk();
-    if (!chunk || this.cancelled) {
-      return null;
+    while (true) {
+      const chunk = await this.chunker.getNextChunk();
+      if (!chunk || this.cancelled) {
+        return null;
+      }
+      const audio = await this.raceWithStop(
+        synthesizeChunk(chunk.text),
+        stopSignal,
+      );
+      if (!audio || this.cancelled) {
+        return null;
+      }
+      if (audio.samples.length === 0) {
+        log.debug(
+          `skipping no-audio chunk (${chunk.text.length} chars), pulling next`,
+        );
+        continue;
+      }
+      return {chunk, audio};
     }
-    const audio = await this.raceWithStop(
-      synthesizeChunk(chunk.text),
-      stopSignal,
-    );
-    if (!audio || this.cancelled || audio.samples.length === 0) {
-      return null;
-    }
-    return {chunk, audio};
   }
 
   private emitProgress(

@@ -45,13 +45,23 @@ import {
 } from '../kokoro/Phonemizer';
 import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
+import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {
+  stripMarkdown,
+  createMarkdownStreamBuffer,
+} from '../../utils/stripMarkdown';
 
 const log = createComponentLogger('Kitten', 'Engine');
 
-const {SAMPLE_RATE, DEFAULT_MAX_CHUNK_SIZE, TRIM_SAMPLES, PHONEMIZER_LANGUAGE} =
-  KITTEN_CONSTANTS;
+const {
+  SAMPLE_RATE,
+  DEFAULT_MAX_CHUNK_SIZE,
+  TRIM_SAMPLES,
+  PHONEMIZER_LANGUAGE,
+  MAX_PHONEME_TOKENS,
+} = KITTEN_CONSTANTS;
 
 // Lazy-loaded ONNX Runtime
 interface OnnxRuntimeBindings {
@@ -319,6 +329,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           }
         : undefined;
 
+    const stripMd = options?.stripMarkdown !== false;
+    // See KokoroEngine.synthesizeStream for the rationale: strip markdown
+    // BEFORE StreamingChunker (via the line-buffered md stream buffer) so
+    // structural markers become chunk boundaries.
+    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
         const processed = this.preprocessor.process(text);
@@ -366,8 +381,21 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     };
 
     return {
-      append: (text: string) => session.append(text),
-      finalize: wrapFinalize,
+      append: (text: string) => {
+        if (mdBuffer) {
+          const emit = mdBuffer.push(text);
+          if (emit) session.append(emit);
+        } else {
+          session.append(text);
+        }
+      },
+      finalize: async () => {
+        if (mdBuffer) {
+          const tail = mdBuffer.flush();
+          if (tail) session.append(tail);
+        }
+        return wrapFinalize();
+      },
       cancel: wrapCancel,
     };
   }
@@ -405,6 +433,14 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
+    // Strip markdown first (default on) so structural markers become
+    // sentence breaks the chunker can split on. Consumers who wire
+    // HighlightedText to original-input offsets can opt out via
+    // `stripMarkdown: false` — note that textRange indices then track the
+    // original string, which is not the case when stripping is active.
+    const sourceText =
+      options?.stripMarkdown === false ? text : stripMarkdown(text);
+
     // Chunk the ORIGINAL text first (so textRange indices match what the
     // consumer passed to speak and stay aligned with HighlightedText), then
     // preprocess each chunk before phonemization. Preprocessor operations
@@ -413,7 +449,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     // preprocessing the whole string — without the position drift that
     // whole-text normalization introduces.
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const sentenceChunks = chunkTextWithPositions(text, maxChunkSize);
+    const sentenceChunks = chunkTextWithPositions(sourceText, maxChunkSize);
     const chunks = sentenceChunks.map(c => ({
       text: this.preprocessor.process(c.text),
       startIndex: c.startIndex,
@@ -520,6 +556,20 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         return emptyBuffer();
       }
 
+      // Guard against near-empty chunks. Streaming with markdown stripping
+      // can hand us a chunk that's just `.` (e.g. an isolated horizontal
+      // rule converted to a sentence break, then emitted alone by
+      // StreamingChunker). Tokenizing produces only [pad, eos, pad] which
+      // crashes Kitten's BERT expand op ("invalid expand shape"). Treat as
+      // a no-op — the period has already done its job as a chunk boundary
+      // upstream.
+      if (!/[\p{L}\p{N}]/u.test(chunkStr)) {
+        log.debug(
+          `Skipping no-content chunk: ${JSON.stringify(chunkStr.slice(0, 40))}`,
+        );
+        return emptyBuffer();
+      }
+
       // 1. Phonemize (GPL-free JS phonemizer, IPA mode)
       const phonemes = await this.phonemizeText(chunkStr);
       log.debug(
@@ -534,6 +584,53 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       log.debug(
         `Tokenized: ${tokens.length} tokens, first 10: [${tokens.slice(0, 10).join(',')}]`,
       );
+
+      // BERT's expand op needs more than just the framing tokens — encode()
+      // always emits [pad, ...content, eos, pad], so length 3 means zero
+      // content survived phonemization (e.g. punctuation that mapped to no
+      // vocab entries). Skip rather than feed garbage through ONNX.
+      if (tokens.length <= 3) {
+        log.debug(
+          `Skipping chunk with no phoneme tokens (got ${tokens.length})`,
+        );
+        return emptyBuffer();
+      }
+
+      // Upper bound: BERT's positional embeddings cap at MAX_PHONEME_TOKENS.
+      // English IPA expands at ~2-3.5x source-char count, so a 167-char
+      // source chunk can produce ~570 tokens — past the model limit. When
+      // we exceed the cap, split the source text into smaller pieces and
+      // synthesize each separately, then concatenate the audio. User
+      // hears the full content with a tiny prosody seam at the split,
+      // instead of silence. See splitOversized.ts for the split
+      // strategy.
+      if (tokens.length > MAX_PHONEME_TOKENS) {
+        log.warn(
+          `Oversized chunk (${tokens.length} > ${MAX_PHONEME_TOKENS}, ` +
+            `source chars=${chunkStr.length}); splitting and recursing.`,
+        );
+        const pieces = splitOversizedSource(chunkStr);
+        if (pieces.length <= 1) {
+          // Couldn't split (single huge token / no whitespace). Drop
+          // rather than recurse infinitely. Rare in real text.
+          log.warn(
+            `Unsplittable oversized chunk; dropping ${chunkStr.length} chars.`,
+          );
+          return emptyBuffer();
+        }
+        const subBuffers: AudioBuffer[] = [];
+        for (const piece of pieces) {
+          if (this.stopRequested) return emptyBuffer();
+          const subAudio = await this.synthesizeTextChunk(
+            piece,
+            voiceId,
+            options,
+          );
+          if (subAudio.samples.length > 0) subBuffers.push(subAudio);
+        }
+        if (subBuffers.length === 0) return emptyBuffer();
+        return concatAudioBuffers(subBuffers);
+      }
 
       // 3. Run ONNX inference with length-dependent voice style
       return await this.synthesizeChunk(

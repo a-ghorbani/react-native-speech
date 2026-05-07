@@ -1,0 +1,212 @@
+{
+  "meta": {
+    "description": "Characterization of Kokoro + Kitten text pipelines on markdown input. Captures both non-streaming (Speech.speak) and streaming (Speech.createSpeechStream) paths with the real en-us dict. Compare before-fix vs after-fix files.",
+    "sampleLength": 1934,
+    "stripMarkdownApplied": false,
+    "dictEntries": 124374,
+    "dictPath": "/Users/aghorbani/codes/phonemizer-dicts/en-us.tsv",
+    "kokoroStreamMaxChunkSize": 100,
+    "kittenStreamMaxChunkSize": 500,
+    "generator": "scripts/capture-markdown-baseline.mjs"
+  },
+  "sample": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context. Here are the most common interpretations:\n\n---\n\n### 1. **In Sports (especially boxing or combat sports):**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.\n- For example:\n  > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### 2. **In General Language (slang):**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.\n- It's typically a **compliment** or **expression of admiration**.\n- For example:\n  > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### 3. **In Psychology (a \"knockout\" in a lab):**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.\n- Used in research to study the function of genes.\n- For example:\n  > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### 4. **In Business or Marketing (a \"knockout product\"):**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.\n- It might be a new item or a service that **dominates the market** or is **remarkably effective**.\n\n---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out (unconscious or unable to continue) |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+  "kokoro": {
+    "nonStreaming": {
+      "chunkCount": 2,
+      "chunks": [
+        {
+          "rawChunk": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context.",
+          "startIndex": 0,
+          "endIndex": 96,
+          "normalized": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context.",
+          "ipa": "wˈɛn wiː sˈeɪ sˈʌmwʌn ɪz ɐ **\"nˈɑːkaʊt,\"** ɪt kæn mˈiːn dˈɪfɹənt θˈɪŋz dᵻpˈɛndɪŋ ˌɔn ðə kˈɑːntɛkst."
+        },
+        {
+          "rawChunk": "Here are the most common interpretations:\n\n---\n\n### 1. **In Sports (especially boxing or combat sports):**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.\n- For example:\n  > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### 2. **In General Language (slang):**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.\n- It's typically a **compliment** or **expression of admiration**.\n- For example:\n  > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### 3. **In Psychology (a \"knockout\" in a lab):**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.\n- Used in research to study the function of genes.\n- For example:\n  > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### 4. **In Business or Marketing (a \"knockout product\"):**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.\n- It might be a new item or a service that **dominates the market** or is **remarkably effective**.\n\n---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out (unconscious or unable to continue) |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+          "startIndex": 96,
+          "endIndex": 1934,
+          "normalized": "Here are the most common interpretations:\n\n---\n\n### one. **In Sports «especially boxing or combat sports»:**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.\n- For example:\n > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### two. **In General Language «slang»:**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.\n- It's typically a **compliment** or **expression of admiration**.\n- For example:\n > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### three. **In Psychology «a \"knockout\" in a lab»:**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.\n- Used in research to study the function of genes.\n- For example:\n > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### four. **In Business or Marketing «a \"knockout product\"»:**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.\n- It might be a new item or a service that **dominates the market** or is **remarkably effective**.\n\n---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out «unconscious or unable to continue» |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+          "ipa": "hˈɪɹ ɑːɹ ðə mˈoʊst kˈɑːmən ɪntˌɜːpɹɪtˈeɪʃənz:\n\n--- ### wˈʌn. ɪn spˈɔːɹts «ɪspˈɛʃəli bˈɑːksɪŋ ɔːɹ kˈɑːmbæt spˈɔːɹts»:** - ɐ nˈɑːkaʊt ɪz wˈɛn ɐ fˈaɪɾɚ ɪz dᵻfˈiːɾᵻd baɪ ɐ pˈʌntʃ ɔːɹ ˈʌðɚ stɹˈaɪk, ɹɪzˈʌltɪŋ ɪn ðə ˈʌðɚ fˈaɪɾɚ bˌiːɪŋ ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː.\n- fɔːɹ ɛɡzˈæmpəl:\n > \"hiː pˈʊt ˌɔn ɐ klˈɪnɪk ænd nˈɑːkt ˈaʊt hˈɪz əpˈoʊnənt ɪn ðə θˈɜːd ɹˈaʊnd.\"\n\n--- ### tˈuː. ɪn dʒˈɛnɚɹəl lˈæŋɡwɪdʒ «slˈæŋ»:** - **\"nˈɑːkaʊt\"** ɪz ˈɔfən jˈuːzd ** kəˈloʊkwiələli** tə mˈiːn sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv.\n- ˈɪts tˈɪpɪkli ɐ kˈɑːmplɪmənt ɔːɹ ɛkspɹˈɛʃən ʌv ˌædmɚɹˈeɪʃən.\n- fɔːɹ ɛɡzˈæmpəl:\n > \"ʃiː wʌz ɐ nˈɑːkaʊt æt ðə pˈɑːɹɾi—ˈɛvɹɪwˌʌn wʌz tˈɔːkɪŋ ɐbˌaʊt hɜː.\"\n\n--- ### θɹˈiː. ɪn saɪkˈɑːlədʒi «ɐ \"nˈɑːkaʊt\" ɪn ɐ lˈæb»:** - ɐ nˈɑːkaʊt ɹᵻfˈɜːz tə ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz lˈæk ʌv ɐ pɚtˈɪkjʊlɚ dʒˈiːn, mˈeɪkɪŋ ɪt ˌʌnɹᵻspˈɑːnsɪv tə ɐ dɹˈʌɡ ɔːɹ stˈɪmjʊləs.\n- jˈuːzd ɪn ɹᵻsˈɜːtʃ tə stˈʌdi ðə fˈʌŋkʃən ʌv dʒˈiːnz.\n- fɔːɹ ɛɡzˈæmpəl:\n > \"ðə nˈɑːkaʊt mˈaɪs ʃˈoʊd nˈoʊ ɹᵻspˈɑːns tə ðə dɹˈʌɡ, hˈɛlpɪŋ sˈaɪəntɪsts ˌʌndɚstˈænd ˈɪts mˈɛkənˌɪzəm.\"\n\n--- ### fˈoːɹ. ɪn bˈɪznəs ɔːɹ mˈɑːɹkɪɾɪŋ «ɐ \"nˈɑːkaʊt pɹˈɑːdʌkt\"»:** - ɐ nˈɑːkaʊt pɹˈɑːdʌkt ɪz wˈʌn ðæt stˈændz ˈaʊt dɹəmˈæɾɪkli ænd ɪmˈiːdɪətli kˈæptʃɚz ɐtˈɛnʃən.\n- ɪt mˌaɪt biː ɐ nˈuː ˈaɪɾəm ɔːɹ ɐ sˈɜːvɪs ðæt dˈɑːmᵻnˌeɪts ðə mˈɑːɹkɪt ɔːɹ ɪz ɹᵻmˈɑːɹkəbli ɪfˈɛktɪv.\n\n--- ### sˈʌmɚɹi:\n| kˈɑːntɛkst | mˈiːnɪŋ | |----------------|-------------------------------------------------------------------------| | spˈɔːɹts | ɐ fˈaɪɾɚ hˌuː ɪz nˈɑːkt ˈaʊt «ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː» | | dʒˈɛnɚɹəl | sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv | | saɪkˈɑːlədʒi | ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz ˌʌnɹᵻspˈɑːnsɪv tə ɐ stˈɪmjʊləs | | bˈɪznəs | ɐ pɹˈɑːdʌkt ɔːɹ sˈɜːvɪs ðæt mˈeɪks ɐ stɹˈɔŋ, stɹˈaɪkɪŋ ɪmpɹˈɛʃən | lˈɛt mˌiː nˈoʊ ɪf juː wˈɔnt tə ɛksplˈɔːɹ ɐ spəsˈɪfɪk kˈɑːntɛkst!"
+        }
+      ]
+    },
+    "streaming": {
+      "chunkCount": 13,
+      "chunks": [
+        {
+          "rawChunk": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context. ",
+          "startIndex": 0,
+          "endIndex": 96,
+          "normalized": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context.",
+          "ipa": "wˈɛn wiː sˈeɪ sˈʌmwʌn ɪz ɐ **\"nˈɑːkaʊt,\"** ɪt kæn mˈiːn dˈɪfɹənt θˈɪŋz dᵻpˈɛndɪŋ ˌɔn ðə kˈɑːntɛkst."
+        },
+        {
+          "rawChunk": "Here are the most common interpretations:\n\n---\n\n### 1. ",
+          "startIndex": 96,
+          "endIndex": 151,
+          "normalized": "Here are the most common interpretations:\n\n---\n\n### one.",
+          "ipa": "hˈɪɹ ɑːɹ ðə mˈoʊst kˈɑːmən ɪntˌɜːpɹɪtˈeɪʃənz:\n\n--- ### wˈʌn."
+        },
+        {
+          "rawChunk": "**In Sports (especially boxing or combat sports):**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.\n",
+          "startIndex": 151,
+          "endIndex": 362,
+          "normalized": "**In Sports «especially boxing or combat sports»:**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.",
+          "ipa": "ɪn spˈɔːɹts «ɪspˈɛʃəli bˈɑːksɪŋ ɔːɹ kˈɑːmbæt spˈɔːɹts»:** - ɐ nˈɑːkaʊt ɪz wˈɛn ɐ fˈaɪɾɚ ɪz dᵻfˈiːɾᵻd baɪ ɐ pˈʌntʃ ɔːɹ ˈʌðɚ stɹˈaɪk, ɹɪzˈʌltɪŋ ɪn ðə ˈʌðɚ fˈaɪɾɚ bˌiːɪŋ ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː."
+        },
+        {
+          "rawChunk": "- For example:\n  > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### 2. ",
+          "startIndex": 362,
+          "endIndex": 464,
+          "normalized": "- For example:\n > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### two.",
+          "ipa": "- fɔːɹ ɛɡzˈæmpəl:\n > \"hiː pˈʊt ˌɔn ɐ klˈɪnɪk ænd nˈɑːkt ˈaʊt hˈɪz əpˈoʊnənt ɪn ðə θˈɜːd ɹˈaʊnd.\"\n\n--- ### tˈuː."
+        },
+        {
+          "rawChunk": "**In General Language (slang):**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.\n",
+          "startIndex": 464,
+          "endIndex": 620,
+          "normalized": "**In General Language «slang»:**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.",
+          "ipa": "ɪn dʒˈɛnɚɹəl lˈæŋɡwɪdʒ «slˈæŋ»:** - **\"nˈɑːkaʊt\"** ɪz ˈɔfən jˈuːzd ** kəˈloʊkwiələli** tə mˈiːn sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv."
+        },
+        {
+          "rawChunk": "- It's typically a **compliment** or **expression of admiration**.\n",
+          "startIndex": 620,
+          "endIndex": 687,
+          "normalized": "- It's typically a **compliment** or **expression of admiration**.",
+          "ipa": "- ˈɪts tˈɪpɪkli ɐ kˈɑːmplɪmənt ɔːɹ ɛkspɹˈɛʃən ʌv ˌædmɚɹˈeɪʃən."
+        },
+        {
+          "rawChunk": "- For example:\n  > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### 3. ",
+          "startIndex": 687,
+          "endIndex": 785,
+          "normalized": "- For example:\n > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### three.",
+          "ipa": "- fɔːɹ ɛɡzˈæmpəl:\n > \"ʃiː wʌz ɐ nˈɑːkaʊt æt ðə pˈɑːɹɾi—ˈɛvɹɪwˌʌn wʌz tˈɔːkɪŋ ɐbˌaʊt hɜː.\"\n\n--- ### θɹˈiː."
+        },
+        {
+          "rawChunk": "**In Psychology (a \"knockout\" in a lab):**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.\n",
+          "startIndex": 785,
+          "endIndex": 978,
+          "normalized": "**In Psychology «a \"knockout\" in a lab»:**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.",
+          "ipa": "ɪn saɪkˈɑːlədʒi «ɐ \"nˈɑːkaʊt\" ɪn ɐ lˈæb»:** - ɐ nˈɑːkaʊt ɹᵻfˈɜːz tə ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz lˈæk ʌv ɐ pɚtˈɪkjʊlɚ dʒˈiːn, mˈeɪkɪŋ ɪt ˌʌnɹᵻspˈɑːnsɪv tə ɐ dɹˈʌɡ ɔːɹ stˈɪmjʊləs."
+        },
+        {
+          "rawChunk": "- Used in research to study the function of genes.\n",
+          "startIndex": 978,
+          "endIndex": 1029,
+          "normalized": "- Used in research to study the function of genes.",
+          "ipa": "- jˈuːzd ɪn ɹᵻsˈɜːtʃ tə stˈʌdi ðə fˈʌŋkʃən ʌv dʒˈiːnz."
+        },
+        {
+          "rawChunk": "- For example:\n  > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### 4. ",
+          "startIndex": 1029,
+          "endIndex": 1158,
+          "normalized": "- For example:\n > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### four.",
+          "ipa": "- fɔːɹ ɛɡzˈæmpəl:\n > \"ðə nˈɑːkaʊt mˈaɪs ʃˈoʊd nˈoʊ ɹᵻspˈɑːns tə ðə dɹˈʌɡ, hˈɛlpɪŋ sˈaɪəntɪsts ˌʌndɚstˈænd ˈɪts mˈɛkənˌɪzəm.\"\n\n--- ### fˈoːɹ."
+        },
+        {
+          "rawChunk": "**In Business or Marketing (a \"knockout product\"):**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.\n",
+          "startIndex": 1158,
+          "endIndex": 1316,
+          "normalized": "**In Business or Marketing «a \"knockout product\"»:**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.",
+          "ipa": "ɪn bˈɪznəs ɔːɹ mˈɑːɹkɪɾɪŋ «ɐ \"nˈɑːkaʊt pɹˈɑːdʌkt\"»:** - ɐ nˈɑːkaʊt pɹˈɑːdʌkt ɪz wˈʌn ðæt stˈændz ˈaʊt dɹəmˈæɾɪkli ænd ɪmˈiːdɪətli kˈæptʃɚz ɐtˈɛnʃən."
+        },
+        {
+          "rawChunk": "- It might be a new item or a service that **dominates the market** or is **remarkably effective**.\n\n",
+          "startIndex": 1316,
+          "endIndex": 1417,
+          "normalized": "- It might be a new item or a service that **dominates the market** or is **remarkably effective**.",
+          "ipa": "- ɪt mˌaɪt biː ɐ nˈuː ˈaɪɾəm ɔːɹ ɐ sˈɜːvɪs ðæt dˈɑːmᵻnˌeɪts ðə mˈɑːɹkɪt ɔːɹ ɪz ɹᵻmˈɑːɹkəbli ɪfˈɛktɪv."
+        },
+        {
+          "rawChunk": "---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out (unconscious or unable to continue) |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+          "startIndex": 1417,
+          "endIndex": 1934,
+          "normalized": "---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out «unconscious or unable to continue» |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+          "ipa": "--- ### sˈʌmɚɹi:\n| kˈɑːntɛkst | mˈiːnɪŋ | |----------------|-------------------------------------------------------------------------| | spˈɔːɹts | ɐ fˈaɪɾɚ hˌuː ɪz nˈɑːkt ˈaʊt «ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː» | | dʒˈɛnɚɹəl | sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv | | saɪkˈɑːlədʒi | ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz ˌʌnɹᵻspˈɑːnsɪv tə ɐ stˈɪmjʊləs | | bˈɪznəs | ɐ pɹˈɑːdʌkt ɔːɹ sˈɜːvɪs ðæt mˈeɪks ɐ stɹˈɔŋ, stɹˈaɪkɪŋ ɪmpɹˈɛʃən | lˈɛt mˌiː nˈoʊ ɪf juː wˈɔnt tə ɛksplˈɔːɹ ɐ spəsˈɪfɪk kˈɑːntɛkst!"
+        }
+      ]
+    }
+  },
+  "kitten": {
+    "nonStreaming": {
+      "chunkCount": 5,
+      "chunks": [
+        {
+          "rawChunk": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context.",
+          "startIndex": 0,
+          "endIndex": 95,
+          "processed": "when we say someone is a **\"knockout,\"** it can mean different things depending on the context.",
+          "ipa": "wˈɛn wiː sˈeɪ sˈʌmwʌn ɪz ɐ **\"nˈɑːkaʊt,\"** ɪt kæn mˈiːn dˈɪfɹənt θˈɪŋz dᵻpˈɛndɪŋ ˌɔn ðə kˈɑːntɛkst."
+        },
+        {
+          "rawChunk": "Here are the most common interpretations: --- ### 1. **In Sports (especially boxing or combat sports):** - A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**. - For example: > \"He put on a clinic and knocked out his opponent in the third round.\" --- ### 2. **In General Language (slang):** - **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident,",
+          "startIndex": 96,
+          "endIndex": 602,
+          "processed": "here are the most common interpretations: --- ### one. **in sports (especially boxing or combat sports):** - a **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**. - for example: > \"he put on a clinic and knocked out his opponent in the third round.\" --- ### two. **in general language (slang):** - **\"knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident,",
+          "ipa": "hˈɪɹ ɑːɹ ðə mˈoʊst kˈɑːmən ɪntˌɜːpɹɪtˈeɪʃənz: --- ### wˈʌn. ɪn spˈɔːɹts (ɪspˈɛʃəli bˈɑːksɪŋ ɔːɹ kˈɑːmbæt spˈɔːɹts):** - ɐ nˈɑːkaʊt ɪz wˈɛn ɐ fˈaɪɾɚ ɪz dᵻfˈiːɾᵻd baɪ ɐ pˈʌntʃ ɔːɹ ˈʌðɚ stɹˈaɪk, ɹɪzˈʌltɪŋ ɪn ðə ˈʌðɚ fˈaɪɾɚ bˌiːɪŋ ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː. - fɔːɹ ɛɡzˈæmpəl: > \"hiː pˈʊt ˌɔn ɐ klˈɪnɪk ænd nˈɑːkt ˈaʊt hˈɪz əpˈoʊnənt ɪn ðə θˈɜːd ɹˈaʊnd.\" --- ### tˈuː. ɪn dʒˈɛnɚɹəl lˈæŋɡwɪdʒ (slˈæŋ):** - **\"nˈɑːkaʊt\"** ɪz ˈɔfən jˈuːzd ** kəˈloʊkwiələli** tə mˈiːn sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt,"
+        },
+        {
+          "rawChunk": "or impressive**. - It's typically a **compliment** or **expression of admiration**. - For example: > \"She was a knockout at the party—everyone was talking about her.\" --- ### 3. **In Psychology (a \"knockout\" in a lab):** - A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**. - Used in research to study the function of genes. - For example: > \"The knockout mice showed no response to the drug, helping,",
+          "startIndex": 603,
+          "endIndex": 1106,
+          "processed": "or impressive**. - it is typically a **compliment** or **expression of admiration**. - for example: > \"she was a knockout at the party—everyone was talking about her.\" --- ### three. **in psychology (a \"knockout\" in a lab):** - a **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**. - used in research to study the function of genes. - for example: > \"the knockout mice showed no response to the drug, helping,",
+          "ipa": "ɔːɹ ɪmpɹˈɛsɪv. - ɪt ɪz tˈɪpɪkli ɐ kˈɑːmplɪmənt ɔːɹ ɛkspɹˈɛʃən ʌv ˌædmɚɹˈeɪʃən. - fɔːɹ ɛɡzˈæmpəl: > \"ʃiː wʌz ɐ nˈɑːkaʊt æt ðə pˈɑːɹɾi—ˈɛvɹɪwˌʌn wʌz tˈɔːkɪŋ ɐbˌaʊt hɜː.\" --- ### θɹˈiː. ɪn saɪkˈɑːlədʒi (ɐ \"nˈɑːkaʊt\" ɪn ɐ lˈæb):** - ɐ nˈɑːkaʊt ɹᵻfˈɜːz tə ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz lˈæk ʌv ɐ pɚtˈɪkjʊlɚ dʒˈiːn, mˈeɪkɪŋ ɪt ˌʌnɹᵻspˈɑːnsɪv tə ɐ dɹˈʌɡ ɔːɹ stˈɪmjʊləs. - jˈuːzd ɪn ɹᵻsˈɜːtʃ tə stˈʌdi ðə fˈʌŋkʃən ʌv dʒˈiːnz. - fɔːɹ ɛɡzˈæmpəl: > \"ðə nˈɑːkaʊt mˈaɪs ʃˈoʊd nˈoʊ ɹᵻspˈɑːns tə ðə dɹˈʌɡ, hˈɛlpɪŋ,"
+        },
+        {
+          "rawChunk": "scientists understand its mechanism.\" --- ### 4. **In Business or Marketing (a \"knockout product\"):** - A **knockout product** is one that **stands out dramatically** and **immediately captures attention**. - It might be a new item or a service that **dominates the market** or is **remarkably effective**. --- ### Summary: | Context | Meaning | |----------------|-------------------------------------------------------------------------| | **Sports** | A fighter who is knocked out (unconscious or,",
+          "startIndex": 1107,
+          "endIndex": 1609,
+          "processed": "scientists understand its mechanism.\" --- ### four. **in business or marketing (a \"knockout product\"):** - a **knockout product** is one that **stands out dramatically** and **immediately captures attention**. - it might be a new item or a service that **dominates the market** or is **remarkably effective**. --- ### summary: | context | meaning | |----------------|-------------------------------------------------------------------------| | **sports** | a fighter who is knocked out (unconscious or,",
+          "ipa": "sˈaɪəntɪsts ˌʌndɚstˈænd ˈɪts mˈɛkənˌɪzəm.\" --- ### fˈɔːɹ. ɪn bˈɪznəs ɔːɹ mˈɑːɹkɪɾɪŋ (ɐ \"nˈɑːkaʊt pɹˈɑːdʌkt\"):** - ɐ nˈɑːkaʊt pɹˈɑːdʌkt ɪz wˈʌn ðæt stˈændz ˈaʊt dɹəmˈæɾɪkli ænd ɪmˈiːdɪətli kˈæptʃɚz ɐtˈɛnʃən. - ɪt mˌaɪt biː ɐ nˈuː ˈaɪɾəm ɔːɹ ɐ sˈɜːvɪs ðæt dˈɑːmᵻnˌeɪts ðə mˈɑːɹkɪt ɔːɹ ɪz ɹᵻmˈɑːɹkəbli ɪfˈɛktɪv. --- ### sˈʌmɚɹi: | kˈɑːntɛkst | mˈiːnɪŋ | |----------------|-------------------------------------------------------------------------| | spˈɔːɹts | ɐ fˈaɪɾɚ hˌuː ɪz nˈɑːkt ˈaʊt (ʌŋkˈɑːnʃəs ɔːɹ,"
+        },
+        {
+          "rawChunk": "unable to continue) | | **General** | Someone who is extremely attractive, confident, or impressive | | **Psychology** | A genetically modified animal that is unresponsive to a stimulus | | **Business** | A product or service that makes a strong, striking impression | Let me know if you want to explore a specific context!",
+          "startIndex": 1610,
+          "endIndex": 1934,
+          "processed": "unable to continue) | | **general** | someone who is extremely attractive, confident, or impressive | | **psychology** | a genetically modified animal that is unresponsive to a stimulus | | **business** | a product or service that makes a strong, striking impression | let me know if you want to explore a specific context!",
+          "ipa": "ʌnˈeɪbəl tə kəntˈɪnjuː) | | dʒˈɛnɚɹəl | sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv | | saɪkˈɑːlədʒi | ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz ˌʌnɹᵻspˈɑːnsɪv tə ɐ stˈɪmjʊləs | | bˈɪznəs | ɐ pɹˈɑːdʌkt ɔːɹ sˈɜːvɪs ðæt mˈeɪks ɐ stɹˈɔŋ, stɹˈaɪkɪŋ ɪmpɹˈɛʃən | lˈɛt mˌiː nˈoʊ ɪf juː wˈɔnt tə ɛksplˈɔːɹ ɐ spəsˈɪfɪk kˈɑːntɛkst!"
+        }
+      ]
+    },
+    "streaming": {
+      "chunkCount": 5,
+      "chunks": [
+        {
+          "rawChunk": "When we say someone is a **\"knockout,\"** it can mean different things depending on the context. Here are the most common interpretations:\n\n---\n\n### 1. **In Sports (especially boxing or combat sports):**\n- A **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**.\n- For example:\n  > \"He put on a clinic and knocked out his opponent in the third round.\"\n\n---\n\n### 2. ",
+          "startIndex": 0,
+          "endIndex": 464,
+          "processed": "when we say someone is a **\"knockout,\"** it can mean different things depending on the context. here are the most common interpretations: --- ### one. **in sports (especially boxing or combat sports):** - a **knockout** is when a fighter is **defeated by a punch or other strike**, resulting in the other fighter being **unconscious** or **unable to continue**. - for example: > \"he put on a clinic and knocked out his opponent in the third round.\" --- ### two.",
+          "ipa": "wˈɛn wiː sˈeɪ sˈʌmwʌn ɪz ɐ **\"nˈɑːkaʊt,\"** ɪt kæn mˈiːn dˈɪfɹənt θˈɪŋz dᵻpˈɛndɪŋ ˌɔn ðə kˈɑːntɛkst. hˈɪɹ ɑːɹ ðə mˈoʊst kˈɑːmən ɪntˌɜːpɹɪtˈeɪʃənz: --- ### wˈʌn. ɪn spˈɔːɹts (ɪspˈɛʃəli bˈɑːksɪŋ ɔːɹ kˈɑːmbæt spˈɔːɹts):** - ɐ nˈɑːkaʊt ɪz wˈɛn ɐ fˈaɪɾɚ ɪz dᵻfˈiːɾᵻd baɪ ɐ pˈʌntʃ ɔːɹ ˈʌðɚ stɹˈaɪk, ɹɪzˈʌltɪŋ ɪn ðə ˈʌðɚ fˈaɪɾɚ bˌiːɪŋ ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː. - fɔːɹ ɛɡzˈæmpəl: > \"hiː pˈʊt ˌɔn ɐ klˈɪnɪk ænd nˈɑːkt ˈaʊt hˈɪz əpˈoʊnənt ɪn ðə θˈɜːd ɹˈaʊnd.\" --- ### tˈuː."
+        },
+        {
+          "rawChunk": "**In General Language (slang):**\n- **\"Knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**.\n- It's typically a **compliment** or **expression of admiration**.\n- For example:\n  > \"She was a knockout at the party—everyone was talking about her.\"\n\n---\n\n### 3. ",
+          "startIndex": 464,
+          "endIndex": 785,
+          "processed": "**in general language (slang):** - **\"knockout\"** is often used **colloquially** to mean **someone who is extremely attractive, confident, or impressive**. - it is typically a **compliment** or **expression of admiration**. - for example: > \"she was a knockout at the party—everyone was talking about her.\" --- ### three.",
+          "ipa": "ɪn dʒˈɛnɚɹəl lˈæŋɡwɪdʒ (slˈæŋ):** - **\"nˈɑːkaʊt\"** ɪz ˈɔfən jˈuːzd ** kəˈloʊkwiələli** tə mˈiːn sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv. - ɪt ɪz tˈɪpɪkli ɐ kˈɑːmplɪmənt ɔːɹ ɛkspɹˈɛʃən ʌv ˌædmɚɹˈeɪʃən. - fɔːɹ ɛɡzˈæmpəl: > \"ʃiː wʌz ɐ nˈɑːkaʊt æt ðə pˈɑːɹɾi—ˈɛvɹɪwˌʌn wʌz tˈɔːkɪŋ ɐbˌaʊt hɜː.\" --- ### θɹˈiː."
+        },
+        {
+          "rawChunk": "**In Psychology (a \"knockout\" in a lab):**\n- A **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**.\n- Used in research to study the function of genes.\n- For example:\n  > \"The knockout mice showed no response to the drug, helping scientists understand its mechanism.\"\n\n---\n\n### 4. ",
+          "startIndex": 785,
+          "endIndex": 1158,
+          "processed": "**in psychology (a \"knockout\" in a lab):** - a **knockout** refers to a **genetically modified animal** that is **lack of a particular gene**, making it **unresponsive to a drug or stimulus**. - used in research to study the function of genes. - for example: > \"the knockout mice showed no response to the drug, helping scientists understand its mechanism.\" --- ### four.",
+          "ipa": "ɪn saɪkˈɑːlədʒi (ɐ \"nˈɑːkaʊt\" ɪn ɐ lˈæb):** - ɐ nˈɑːkaʊt ɹᵻfˈɜːz tə ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz lˈæk ʌv ɐ pɚtˈɪkjʊlɚ dʒˈiːn, mˈeɪkɪŋ ɪt ˌʌnɹᵻspˈɑːnsɪv tə ɐ dɹˈʌɡ ɔːɹ stˈɪmjʊləs. - jˈuːzd ɪn ɹᵻsˈɜːtʃ tə stˈʌdi ðə fˈʌŋkʃən ʌv dʒˈiːnz. - fɔːɹ ɛɡzˈæmpəl: > \"ðə nˈɑːkaʊt mˈaɪs ʃˈoʊd nˈoʊ ɹᵻspˈɑːns tə ðə dɹˈʌɡ, hˈɛlpɪŋ sˈaɪəntɪsts ˌʌndɚstˈænd ˈɪts mˈɛkənˌɪzəm.\" --- ### fˈɔːɹ."
+        },
+        {
+          "rawChunk": "**In Business or Marketing (a \"knockout product\"):**\n- A **knockout product** is one that **stands out dramatically** and **immediately captures attention**.\n- It might be a new item or a service that **dominates the market** or is **remarkably effective**.\n\n",
+          "startIndex": 1158,
+          "endIndex": 1417,
+          "processed": "**in business or marketing (a \"knockout product\"):** - a **knockout product** is one that **stands out dramatically** and **immediately captures attention**. - it might be a new item or a service that **dominates the market** or is **remarkably effective**.",
+          "ipa": "ɪn bˈɪznəs ɔːɹ mˈɑːɹkɪɾɪŋ (ɐ \"nˈɑːkaʊt pɹˈɑːdʌkt\"):** - ɐ nˈɑːkaʊt pɹˈɑːdʌkt ɪz wˈʌn ðæt stˈændz ˈaʊt dɹəmˈæɾɪkli ænd ɪmˈiːdɪətli kˈæptʃɚz ɐtˈɛnʃən. - ɪt mˌaɪt biː ɐ nˈuː ˈaɪɾəm ɔːɹ ɐ sˈɜːvɪs ðæt dˈɑːmᵻnˌeɪts ðə mˈɑːɹkɪt ɔːɹ ɪz ɹᵻmˈɑːɹkəbli ɪfˈɛktɪv."
+        },
+        {
+          "rawChunk": "---\n\n### Summary:\n| Context | Meaning |\n|----------------|-------------------------------------------------------------------------|\n| **Sports** | A fighter who is knocked out (unconscious or unable to continue) |\n| **General** | Someone who is extremely attractive, confident, or impressive |\n| **Psychology** | A genetically modified animal that is unresponsive to a stimulus |\n| **Business** | A product or service that makes a strong, striking impression |\n\nLet me know if you want to explore a specific context!",
+          "startIndex": 1417,
+          "endIndex": 1934,
+          "processed": "--- ### summary: | context | meaning | |----------------|-------------------------------------------------------------------------| | **sports** | a fighter who is knocked out (unconscious or unable to continue) | | **general** | someone who is extremely attractive, confident, or impressive | | **psychology** | a genetically modified animal that is unresponsive to a stimulus | | **business** | a product or service that makes a strong, striking impression | let me know if you want to explore a specific context!",
+          "ipa": "--- ### sˈʌmɚɹi: | kˈɑːntɛkst | mˈiːnɪŋ | |----------------|-------------------------------------------------------------------------| | spˈɔːɹts | ɐ fˈaɪɾɚ hˌuː ɪz nˈɑːkt ˈaʊt (ʌŋkˈɑːnʃəs ɔːɹ ʌnˈeɪbəl tə kəntˈɪnjuː) | | dʒˈɛnɚɹəl | sˈʌmwʌn hˌuː ɪz ɛkstɹˈiːmli ɐtɹˈæktɪv, kˈɑːnfɪdənt, ɔːɹ ɪmpɹˈɛsɪv | | saɪkˈɑːlədʒi | ɐ dʒɪnˈɛɾɪkli mˈɑːdᵻfˌaɪd ˈænɪməl ðæt ɪz ˌʌnɹᵻspˈɑːnsɪv tə ɐ stˈɪmjʊləs | | bˈɪznəs | ɐ pɹˈɑːdʌkt ɔːɹ sˈɜːvɪs ðæt mˈeɪks ɐ stɹˈɔŋ, stɹˈaɪkɪŋ ɪmpɹˈɛʃən | lˈɛt mˌiː nˈoʊ ɪf juː wˈɔnt tə ɛksplˈɔːɹ ɐ spəsˈɪfɪk kˈɑːntɛkst!"
+        }
+      ]
+    }
+  }
+}
