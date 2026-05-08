@@ -582,17 +582,28 @@ const RootView: React.FC = () => {
         // and chunk-done (timings populated). Append on chunk-done so
         // the stats panel sees per-chunk synthesis cost.
         if (event.timings) {
-          setRunChunks(prev => [
-            ...prev,
-            {
-              chunkIndex: event.chunkIndex,
-              chars: event.chunkText.length,
-              inferenceMs: event.timings!.inferenceMs,
-              voiceLoadMs: event.timings!.voiceLoadMs,
-              totalMs: event.timings!.totalMs,
-              audioDurationS: event.timings!.audioDurationS,
-            },
-          ]);
+          const t = event.timings;
+          const newEntry = {
+            chunkIndex: event.chunkIndex,
+            chars: event.chunkText.length,
+            inferenceMs: t.inferenceMs,
+            voiceLoadMs: t.voiceLoadMs,
+            totalMs: t.totalMs,
+            audioDurationS: t.audioDurationS,
+          };
+          setRunChunks(prev => {
+            // chunkIndex=0 means a new synthesis session started
+            // (engine's per-session counter restarts at 0). Drop stale
+            // entries from the previous session so the streaming-tab
+            // and demo-tab stats stay distinct, and React keys don't
+            // collide.
+            if (event.chunkIndex === 0 && prev.length > 0) {
+              runStartRef.current = Date.now();
+              setRunMem([{tMs: 0, memMb: Speech.getProcessMemoryMB()}]);
+              return [newEntry];
+            }
+            return [...prev, newEntry];
+          });
         }
       },
     );
@@ -1914,20 +1925,26 @@ const RootView: React.FC = () => {
                       RTF
                     </Text>
                   </View>
-                  {runChunks.map(c => {
+                  {runChunks.map((c, i) => {
                     const rtf =
                       c.audioDurationS > 0
                         ? c.inferenceMs / (c.audioDurationS * 1000)
                         : 0;
                     return (
-                      <View key={c.chunkIndex} style={styles.statsTableRow}>
+                      // Use the array index — `chunkIndex` resets to 0
+                      // when a new synthesis session starts (streaming
+                      // vs demo, replay etc.) and would collide. The
+                      // session-reset logic in onChunkProgress keeps
+                      // this array append-only within a single run.
+                      // eslint-disable-next-line react/no-array-index-key
+                      <View key={i} style={styles.statsTableRow}>
                         <Text
                           style={[
                             styles.statsTableCol,
                             styles.statsTableColIdx,
                             themedStyles.textPrimary,
                           ]}>
-                          {c.chunkIndex + 1}
+                          {i + 1}
                         </Text>
                         <Text
                           style={[
