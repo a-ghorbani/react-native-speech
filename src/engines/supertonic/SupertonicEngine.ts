@@ -240,16 +240,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: async (text: string) => {
         const voiceStyle = await voiceStylePromise;
-        // Supertonic doesn't break inference into discrete stages, so it
-        // surfaces an audio-only result. Stats panel will show n/a for
-        // per-chunk timings until we instrument it.
-        const audio = await this.synthesizeChunk(
-          text,
-          voiceStyle,
-          inferenceSteps,
-          speed,
-        );
-        return {audio};
+        return this.synthesizeChunk(text, voiceStyle, inferenceSteps, speed);
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),

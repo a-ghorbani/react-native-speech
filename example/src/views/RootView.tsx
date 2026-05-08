@@ -129,41 +129,6 @@ const COREML_FLAG_OPTIONS: CoreMlFlagOption[] = [
   },
 ];
 
-/**
- * Tiny dependency-free bar-chart sparkline. Renders 1px-wide vertical
- * bars proportional to each value's distance above the series min, so
- * small changes (like a 50→55 MB memory delta) are still visible
- * without falsely zeroing the y-axis. Capped at 80 bars to avoid
- * unbounded width as runs grow long.
- */
-const Sparkline: React.FC<{data: number[]; color: string}> = ({
-  data,
-  color,
-}) => {
-  const trimmed = data.length > 80 ? data.slice(-80) : data;
-  const min = Math.min(...trimmed);
-  const max = Math.max(...trimmed);
-  const range = Math.max(max - min, 0.001);
-  return (
-    <View style={styles.sparkline}>
-      {trimmed.map((v, i) => {
-        const h = 2 + Math.round(((v - min) / range) * 22);
-        return (
-          <View
-            key={i}
-            style={{
-              width: 2,
-              height: h,
-              marginRight: 1,
-              backgroundColor: color,
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-};
-
 const RootView: React.FC = () => {
   const themedStyles = React.useMemo(
     () =>
@@ -265,29 +230,6 @@ const RootView: React.FC = () => {
   // Chunk progress for neural engines
   const [currentChunk, setCurrentChunk] =
     React.useState<ChunkProgressEvent | null>(null);
-
-  // Per-run stats: per-chunk synthesis timings + sampled memory series.
-  // Reset on each run start. Synthesis events populate `chunks`; an
-  // interval populates `memorySamples` while `isStarted` is true.
-  interface ChunkStat {
-    chunkIndex: number;
-    chars: number;
-    inferenceMs: number;
-    voiceLoadMs: number;
-    totalMs: number;
-    audioDurationS: number;
-    peakAmplitude: number;
-  }
-  interface MemorySample {
-    /** Milliseconds since run start. */
-    tMs: number;
-    /** MB at sample time. */
-    memMb: number;
-  }
-  const [runChunks, setRunChunks] = React.useState<ChunkStat[]>([]);
-  const [runMem, setRunMem] = React.useState<MemorySample[]>([]);
-  const [showStats, setShowStats] = React.useState<boolean>(true);
-  const runStartRef = React.useRef<number>(0);
 
   // Supertonic synthesis options
   const [speed, setSpeed] = React.useState<number>(1.0);
@@ -579,34 +521,6 @@ const RootView: React.FC = () => {
         setHighlights([
           {start: event.textRange.start, end: event.textRange.end},
         ]);
-        // Engines fire two events per chunk: chunk-start (no timings)
-        // and chunk-done (timings populated). Append on chunk-done so
-        // the stats panel sees per-chunk synthesis cost.
-        if (event.timings) {
-          const t = event.timings;
-          const newEntry = {
-            chunkIndex: event.chunkIndex,
-            chars: event.chunkText.length,
-            inferenceMs: t.inferenceMs,
-            voiceLoadMs: t.voiceLoadMs,
-            totalMs: t.totalMs,
-            audioDurationS: t.audioDurationS,
-            peakAmplitude: t.peakAmplitude,
-          };
-          setRunChunks(prev => {
-            // chunkIndex=0 means a new synthesis session started
-            // (engine's per-session counter restarts at 0). Drop stale
-            // entries from the previous session so the streaming-tab
-            // and demo-tab stats stay distinct, and React keys don't
-            // collide.
-            if (event.chunkIndex === 0 && prev.length > 0) {
-              runStartRef.current = Date.now();
-              setRunMem([{tMs: 0, memMb: Speech.getProcessMemoryMB()}]);
-              return [newEntry];
-            }
-            return [...prev, newEntry];
-          });
-        }
       },
     );
 
@@ -652,10 +566,6 @@ const RootView: React.FC = () => {
   }, [initializeEngine, selectedEngine, providers]);
 
   const onStartPress = React.useCallback(async () => {
-    // Reset run stats — each Start is a fresh measurement.
-    setRunChunks([]);
-    setRunMem([{tMs: 0, memMb: Speech.getProcessMemoryMB()}]);
-    runStartRef.current = Date.now();
     // Set started immediately so Stop is available during synthesis
     // (neural engines take time to synthesize the first chunk before audio starts)
     setIsStarted(true);
@@ -676,19 +586,6 @@ const RootView: React.FC = () => {
       setCurrentChunk(null);
     }
   }, [selectedVoice, selectedEngine, speed, inferenceSteps, spokenText]);
-
-  // Sample memory every 250ms while a run is active. The native call is
-  // synchronous and reasonably cheap; 250ms is fast enough to see the
-  // shape of model load / synthesis spikes without flooding state.
-  React.useEffect(() => {
-    if (!isStarted) return;
-    const id = setInterval(() => {
-      const tMs = Date.now() - runStartRef.current;
-      const memMb = Speech.getProcessMemoryMB();
-      setRunMem(prev => [...prev, {tMs, memMb}]);
-    }, 250);
-    return () => clearInterval(id);
-  }, [isStarted]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -1852,183 +1749,6 @@ const RootView: React.FC = () => {
         ) : null}
       </View>
 
-      {/* Run stats — collapsible. Shows post-synth per-chunk timings
-          (inference + RTF) and a memory sparkline sampled every 250ms
-          during the run. Empty until the first chunk completes. */}
-      {(runChunks.length > 0 || runMem.length > 1) && (
-        <View style={styles.statsSection}>
-          {(() => {
-            const silentCount = runChunks.filter(
-              c => c.peakAmplitude < 1e-3,
-            ).length;
-            return (
-              <TouchableOpacity onPress={() => setShowStats(s => !s)}>
-                <Text style={[styles.statsToggle, themedStyles.textSecondary]}>
-                  {showStats ? '▼' : '▶'} Run stats
-                  {runChunks.length > 0
-                    ? ` — ${runChunks.length} chunks, avg ${Math.round(
-                        runChunks.reduce((s, c) => s + c.inferenceMs, 0) /
-                          runChunks.length,
-                      )}ms inference`
-                    : ''}
-                  {silentCount > 0 ? (
-                    <Text style={styles.statsToggleSilent}>
-                      {' '}
-                      · {silentCount} silent
-                    </Text>
-                  ) : null}
-                </Text>
-              </TouchableOpacity>
-            );
-          })()}
-          {showStats && (
-            <View style={styles.statsBody}>
-              {/* Memory sparkline */}
-              {runMem.length > 1 && (
-                <View style={styles.statsRow}>
-                  <Text
-                    style={[styles.statsRowLabel, themedStyles.textSecondary]}>
-                    MEM
-                  </Text>
-                  <Sparkline data={runMem.map(s => s.memMb)} color={C.muted} />
-                  <Text style={[styles.statsRowVal, themedStyles.textPrimary]}>
-                    {runMem[runMem.length - 1]!.memMb.toFixed(0)} MB
-                    {' (peak '}
-                    {Math.max(...runMem.map(s => s.memMb)).toFixed(0)} MB)
-                  </Text>
-                </View>
-              )}
-
-              {/* Per-chunk table */}
-              {runChunks.length > 0 && (
-                <View style={styles.statsTable}>
-                  <View style={[styles.statsTableRow, styles.statsTableHead]}>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        styles.statsTableColIdx,
-                        themedStyles.textSecondary,
-                      ]}>
-                      #
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        themedStyles.textSecondary,
-                      ]}>
-                      chars
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        themedStyles.textSecondary,
-                      ]}>
-                      infer ms
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        themedStyles.textSecondary,
-                      ]}>
-                      audio s
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        themedStyles.textSecondary,
-                      ]}>
-                      RTF
-                    </Text>
-                    <Text
-                      style={[
-                        styles.statsTableCol,
-                        themedStyles.textSecondary,
-                      ]}>
-                      peak
-                    </Text>
-                  </View>
-                  {runChunks.map((c, i) => {
-                    const rtf =
-                      c.audioDurationS > 0
-                        ? c.inferenceMs / (c.audioDurationS * 1000)
-                        : 0;
-                    // Same threshold engines use to log silence
-                    // warnings. Highlights chunks where the model
-                    // produced near-zero output despite normal
-                    // duration — the EP/input bug we're tracking.
-                    const isSilent = c.peakAmplitude < 1e-3;
-                    return (
-                      // Use the array index — `chunkIndex` resets to 0
-                      // when a new synthesis session starts (streaming
-                      // vs demo, replay etc.) and would collide. The
-                      // session-reset logic in onChunkProgress keeps
-                      // this array append-only within a single run.
-
-                      <View
-                        key={i}
-                        style={[
-                          styles.statsTableRow,
-                          isSilent && styles.statsTableRowSilent,
-                        ]}>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            styles.statsTableColIdx,
-                            themedStyles.textPrimary,
-                          ]}>
-                          {i + 1}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            themedStyles.textPrimary,
-                          ]}>
-                          {c.chars}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            themedStyles.textPrimary,
-                          ]}>
-                          {c.inferenceMs}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            themedStyles.textPrimary,
-                          ]}>
-                          {c.audioDurationS.toFixed(2)}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            rtf < 1
-                              ? themedStyles.statusAccent
-                              : themedStyles.textPrimary,
-                          ]}>
-                          {rtf.toFixed(2)}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.statsTableCol,
-                            isSilent
-                              ? styles.statsTableColSilent
-                              : themedStyles.textPrimary,
-                          ]}>
-                          {c.peakAmplitude < 0.01
-                            ? c.peakAmplitude.toExponential(1)
-                            : c.peakAmplitude.toFixed(3)}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-      )}
-
       {/* Main Content */}
       <View style={gs.flex}>
         <HighlightedText
@@ -2519,79 +2239,6 @@ const styles = StyleSheet.create({
     height: 24,
     justifyContent: 'center',
     paddingHorizontal: 4,
-  },
-  // Run stats panel
-  statsSection: {
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-  },
-  statsToggle: {
-    fontSize: 10,
-    fontFamily: MONO,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  statsBody: {
-    marginTop: 6,
-    paddingLeft: 6,
-    borderLeftWidth: 2,
-    borderLeftColor: C.muted,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  statsRowLabel: {
-    width: 36,
-    fontSize: 10,
-    fontFamily: MONO,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  statsRowVal: {
-    fontSize: 10,
-    fontFamily: MONO,
-    marginLeft: 8,
-  },
-  sparkline: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 24,
-  },
-  statsTable: {
-    marginTop: 8,
-  },
-  statsTableRow: {
-    flexDirection: 'row',
-    paddingVertical: 2,
-  },
-  statsTableHead: {
-    borderBottomWidth: 1,
-    borderBottomColor: C.muted,
-    paddingBottom: 4,
-    marginBottom: 4,
-  },
-  statsTableCol: {
-    flex: 1,
-    fontSize: 10,
-    fontFamily: MONO,
-    textAlign: 'right',
-  },
-  statsTableColIdx: {
-    flex: 0.4,
-    textAlign: 'left',
-  },
-  statsTableRowSilent: {
-    backgroundColor: '#330000',
-  },
-  statsTableColSilent: {
-    color: '#ff6666',
-    fontWeight: '700',
-  },
-  statsToggleSilent: {
-    color: '#ff6666',
-    fontWeight: '700',
   },
   chunkHeader: {
     flexDirection: 'row',

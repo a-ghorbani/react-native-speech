@@ -5,7 +5,6 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import android.os.Build
 import android.os.Bundle
-import android.os.Debug
 import android.os.Handler
 import android.os.Looper
 import android.content.Intent
@@ -979,33 +978,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       NativeDict.lookup(word)
     } catch (e: Throwable) {
       null
-    }
-  }
-
-  /**
-   * Sample current process memory in MB. Returns total PSS — the same
-   * metric Android Studio's profiler reports. Returns 0.0 on failure.
-   *
-   * IMPORTANT: We use `Debug.getMemoryInfo(MemoryInfo)` (reads
-   * `/proc/self/smaps_rollup` directly) rather than
-   * `ActivityManager.getProcessMemoryInfo(pids)` because the latter has
-   * been rate-limited to roughly one fresh reading per ~5 minutes since
-   * Android Pie (API 28). Subsequent ActivityManager calls returned a
-   * stale cached value, which is why polling at 250ms reported the same
-   * number regardless of which model was loaded. The Debug API is
-   * unthrottled and per-process so it's appropriate for short-interval
-   * polling like the example app's stats panel.
-   *
-   * Reference: https://issuetracker.google.com/issues/137139201
-   */
-  override fun getProcessMemoryMB(): Double {
-    return try {
-      val info = Debug.MemoryInfo()
-      Debug.getMemoryInfo(info)
-      // totalPss is in KB. Convert to MB (1024 KB = 1 MB).
-      info.totalPss.toDouble() / 1024.0
-    } catch (e: Throwable) {
-      0.0
     }
   }
 

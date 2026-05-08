@@ -20,7 +20,6 @@ import type {
   EngineStreamHandle,
   ChunkProgressEvent,
   ChunkProgressCallback,
-  SynthesizeChunkResult,
   ReleaseResult,
   ReleaseError,
   ExecutionProvider,
@@ -64,10 +63,6 @@ const {
   PHONEMIZER_LANGUAGE,
   MAX_PHONEME_TOKENS,
 } = KITTEN_CONSTANTS;
-
-/** Peak-amplitude floor below which a chunk counts as silent. See
- * KokoroEngine for rationale on the value. */
-const SILENCE_THRESHOLD = 1e-3;
 
 // Lazy-loaded ONNX Runtime
 interface OnnxRuntimeBindings {
@@ -455,7 +450,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
     // Pipelined synthesis
-    let nextResultPromise: Promise<SynthesizeChunkResult> | null = null;
+    let nextAudioPromise: Promise<AudioBuffer> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       if (this.stopRequested) {
@@ -468,7 +463,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
 
-      // Chunk start (no timings yet)
       this.emitChunkProgress({
         id: utteranceId,
         chunkIndex,
@@ -478,15 +472,15 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         progress,
       });
 
-      // Get current chunk result (from pipeline or synthesize now)
-      let result: SynthesizeChunkResult | null;
+      // Get current chunk audio (from pipeline or synthesize now)
+      let audioBuffer: AudioBuffer | null;
 
       try {
-        if (nextResultPromise) {
-          result = await this.raceWithStop(nextResultPromise, stopSignal);
-          nextResultPromise = null;
+        if (nextAudioPromise) {
+          audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
+          nextAudioPromise = null;
         } else {
-          result = await this.raceWithStop(
+          audioBuffer = await this.raceWithStop(
             this.synthesizeTextChunk(chunk.text, voiceId, options),
             stopSignal,
           );
@@ -499,31 +493,19 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       }
 
       if (
-        result === null ||
+        audioBuffer === null ||
         this.stopRequested ||
-        result.audio.samples.length === 0
+        audioBuffer.samples.length === 0
       ) {
         log.debug('Stop requested, aborting before playback');
         return undefined;
       }
 
-      // Chunk done — emit timings so the example app stats panel can
-      // display per-chunk inference / RTF without scraping logs.
-      this.emitChunkProgress({
-        id: utteranceId,
-        chunkIndex,
-        totalChunks: chunks.length,
-        chunkText: chunk.text,
-        textRange: {start: chunk.startIndex, end: chunk.endIndex},
-        progress: Math.round(((chunkIndex + 1) / chunks.length) * 100),
-        timings: result.timings,
-      });
-
       // Start synthesizing next chunk in parallel
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
-        nextResultPromise = this.synthesizeTextChunk(
+        nextAudioPromise = this.synthesizeTextChunk(
           nextChunk.text,
           voiceId,
           options,
@@ -532,7 +514,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       // Play current chunk
       await this.raceWithStop(
-        neuralAudioPlayer.play(result.audio, {
+        neuralAudioPlayer.play(audioBuffer, {
           ducking: options?.ducking,
           silentMode: options?.silentMode,
         }),
@@ -551,21 +533,18 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     chunkStr: string,
     voiceId: string,
     options?: KittenSynthesisOptions,
-  ): Promise<SynthesizeChunkResult> {
-    const emptyResult = (): SynthesizeChunkResult => ({
-      audio: {
-        samples: new Float32Array(0),
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        duration: 0,
-      },
+  ): Promise<AudioBuffer> {
+    const emptyBuffer = (): AudioBuffer => ({
+      samples: new Float32Array(0),
+      sampleRate: SAMPLE_RATE,
+      channels: 1,
+      duration: 0,
     });
 
-    const wallStart = Date.now();
     try {
       // Text is already preprocessed by doSynthesize; go straight to phonemize.
       if (this.stopRequested) {
-        return emptyResult();
+        return emptyBuffer();
       }
 
       // Guard against near-empty chunks. Streaming with markdown stripping
@@ -579,7 +558,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         log.debug(
           `Skipping no-content chunk: ${JSON.stringify(chunkStr.slice(0, 40))}`,
         );
-        return emptyResult();
+        return emptyBuffer();
       }
 
       // 1. Phonemize (GPL-free JS phonemizer, IPA mode)
@@ -588,7 +567,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
       if (this.stopRequested) {
-        return emptyResult();
+        return emptyBuffer();
       }
 
       // 2. Tokenize IPA phonemes
@@ -605,7 +584,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         log.debug(
           `Skipping chunk with no phoneme tokens (got ${tokens.length})`,
         );
-        return emptyResult();
+        return emptyBuffer();
       }
 
       // Upper bound: BERT's positional embeddings cap at MAX_PHONEME_TOKENS.
@@ -615,8 +594,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       // synthesize each separately, then concatenate the audio. User
       // hears the full content with a tiny prosody seam at the split,
       // instead of silence. See splitOversized.ts for the split
-      // strategy. Sub-piece timings are summed so the consumer sees one
-      // aggregate timing per original (top-level) chunk.
+      // strategy.
       if (tokens.length > MAX_PHONEME_TOKENS) {
         log.warn(
           `Oversized chunk (${tokens.length} > ${MAX_PHONEME_TOKENS}, ` +
@@ -629,61 +607,29 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           log.warn(
             `Unsplittable oversized chunk; dropping ${chunkStr.length} chars.`,
           );
-          return emptyResult();
+          return emptyBuffer();
         }
         const subBuffers: AudioBuffer[] = [];
-        let agInference = 0;
-        let agVoice = 0;
-        let agAudio = 0;
-        let agPeak = 0;
         for (const piece of pieces) {
-          if (this.stopRequested) return emptyResult();
-          const sub = await this.synthesizeTextChunk(piece, voiceId, options);
-          if (sub.audio.samples.length === 0) continue;
-          subBuffers.push(sub.audio);
-          if (sub.timings) {
-            agInference += sub.timings.inferenceMs;
-            agVoice += sub.timings.voiceLoadMs;
-            agAudio += sub.timings.audioDurationS;
-            // Peak: max across pieces — if ANY sub-piece had real
-            // audio, the aggregate isn't silent. Stats panel still
-            // sees the silent-piece warnings logged inside the recursive
-            // call, so the diagnostic isn't lost.
-            if (sub.timings.peakAmplitude > agPeak)
-              agPeak = sub.timings.peakAmplitude;
-          }
+          if (this.stopRequested) return emptyBuffer();
+          const subAudio = await this.synthesizeTextChunk(
+            piece,
+            voiceId,
+            options,
+          );
+          if (subAudio.samples.length > 0) subBuffers.push(subAudio);
         }
-        if (subBuffers.length === 0) return emptyResult();
-        return {
-          audio: concatAudioBuffers(subBuffers),
-          timings: {
-            inferenceMs: agInference,
-            voiceLoadMs: agVoice,
-            totalMs: Date.now() - wallStart,
-            audioDurationS: agAudio,
-            peakAmplitude: agPeak,
-          },
-        };
+        if (subBuffers.length === 0) return emptyBuffer();
+        return concatAudioBuffers(subBuffers);
       }
 
-      // 3. Run ONNX inference with length-dependent voice style. Wrap
-      // inner timings with the wall-clock total (covers phonemize +
-      // tokenize + inference) so consumers see what they actually
-      // waited for.
-      const inner = await this.synthesizeChunk(
+      // 3. Run ONNX inference with length-dependent voice style.
+      return await this.synthesizeChunk(
         tokens,
         voiceId,
         chunkStr.length,
         options,
       );
-      if (!inner.timings) return inner;
-      return {
-        audio: inner.audio,
-        timings: {
-          ...inner.timings,
-          totalMs: Date.now() - wallStart,
-        },
-      };
     } catch (error) {
       log.error(
         `synthesizeTextChunk failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -715,7 +661,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     voiceId: string,
     rawTextLength: number,
     options?: KittenSynthesisOptions,
-  ): Promise<SynthesizeChunkResult> {
+  ): Promise<AudioBuffer> {
     const chunkStartTime = Date.now();
 
     // Resolve voice alias to internal name
@@ -808,41 +754,15 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     const totalChunkTime = Date.now() - chunkStartTime;
     const duration = audioData.length / SAMPLE_RATE;
 
-    // Peak absolute sample — silent chunks (correct duration, zero
-    // samples) are a known EP/input failure mode. See KokoroEngine for
-    // background. Logged at warn so it surfaces without a debug build.
-    let peak = 0;
-    for (let i = 0; i < audioData.length; i++) {
-      const a = Math.abs(audioData[i] as number);
-      if (a > peak) peak = a;
-    }
-    if (peak < SILENCE_THRESHOLD) {
-      log.warn(
-        `Chunk produced silent audio (peak=${peak.toExponential(2)}, ` +
-          `tokens=${tokens.length}). Likely an EP/input combination ` +
-          `that surfaces the silent-output bug — try a different ` +
-          `executionProviders setting.`,
-      );
-    }
-
     log.debug(
-      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${duration.toFixed(2)}s, peak=${peak.toFixed(3)}`,
+      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${duration.toFixed(2)}s`,
     );
 
     return {
-      audio: {
-        samples: audioData,
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        duration,
-      },
-      timings: {
-        inferenceMs: inferenceTime,
-        voiceLoadMs: voiceTime,
-        totalMs: totalChunkTime,
-        audioDurationS: duration,
-        peakAmplitude: peak,
-      },
+      samples: audioData,
+      sampleRate: SAMPLE_RATE,
+      channels: 1,
+      duration,
     };
   }
 

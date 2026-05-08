@@ -17,12 +17,7 @@
  * adaptive batcher there.
  */
 
-import type {
-  AudioBuffer,
-  ChunkProgressEvent,
-  ChunkTimings,
-  SynthesizeChunkResult,
-} from '../types';
+import type {AudioBuffer, ChunkProgressEvent} from '../types';
 import type {PlaybackOptions} from './NeuralAudioPlayer';
 import {StreamingChunker} from './StreamingChunker';
 import {createComponentLogger} from '../utils/logger';
@@ -30,7 +25,7 @@ import {createComponentLogger} from '../utils/logger';
 const log = createComponentLogger('EngineStream', 'Engine');
 
 export interface EngineStreamSessionConfig {
-  synthesizeChunk: (text: string) => Promise<SynthesizeChunkResult>;
+  synthesizeChunk: (text: string) => Promise<AudioBuffer>;
   playAudio: (buffer: AudioBuffer, options?: PlaybackOptions) => Promise<void>;
   stopPlayback: () => Promise<void>;
   maxChunkSize: number;
@@ -133,7 +128,6 @@ export class EngineStreamSession implements EngineStreamHandle {
       }
       let currentChunk = bootstrap.chunk;
       let currentAudio: AudioBuffer = bootstrap.audio;
-      let currentTimings: ChunkTimings | undefined = bootstrap.timings;
       let chunkIdx = 0;
 
       // Main loop: play current chunk while synthesizing next.
@@ -158,10 +152,7 @@ export class EngineStreamSession implements EngineStreamHandle {
           postProcess(currentAudio!);
         }
 
-        // Emit chunk-done event carrying the timings the engine measured.
-        // Consumers (e.g. example-app stats panel) read these to display
-        // per-chunk latency and RTF without scraping logs.
-        this.emitProgress(currentChunk, chunkIdx, currentTimings);
+        this.emitProgress(currentChunk, chunkIdx);
 
         // Start fetching + synthesizing next chunk in background. Skips
         // any no-audio chunks until it finds one with audio (or chunker
@@ -194,7 +185,6 @@ export class EngineStreamSession implements EngineStreamHandle {
 
         currentChunk = next.chunk;
         currentAudio = next.audio;
-        currentTimings = next.timings;
         chunkIdx++;
       }
     } catch (err) {
@@ -225,39 +215,37 @@ export class EngineStreamSession implements EngineStreamHandle {
    * so we keep pulling until we have audio.
    */
   private async fetchNextWithAudio(
-    synthesizeChunk: (text: string) => Promise<SynthesizeChunkResult>,
+    synthesizeChunk: (text: string) => Promise<AudioBuffer>,
     stopSignal: Promise<null>,
   ): Promise<{
     chunk: {text: string; startIndex: number; endIndex: number};
     audio: AudioBuffer;
-    timings?: ChunkTimings;
   } | null> {
     while (true) {
       const chunk = await this.chunker.getNextChunk();
       if (!chunk || this.cancelled) {
         return null;
       }
-      const result = await this.raceWithStop(
+      const audio = await this.raceWithStop(
         synthesizeChunk(chunk.text),
         stopSignal,
       );
-      if (!result || this.cancelled) {
+      if (!audio || this.cancelled) {
         return null;
       }
-      if (result.audio.samples.length === 0) {
+      if (audio.samples.length === 0) {
         log.debug(
           `skipping no-audio chunk (${chunk.text.length} chars), pulling next`,
         );
         continue;
       }
-      return {chunk, audio: result.audio, timings: result.timings};
+      return {chunk, audio};
     }
   }
 
   private emitProgress(
     chunk: {text: string; startIndex: number; endIndex: number},
     chunkIndex: number,
-    timings?: ChunkTimings,
   ): void {
     if (!this.config.onChunkProgress) {
       return;
@@ -268,12 +256,7 @@ export class EngineStreamSession implements EngineStreamHandle {
       totalChunks: 0,
       chunkText: chunk.text,
       textRange: {start: chunk.startIndex, end: chunk.endIndex},
-      // Streaming has no fixed total, so progress is meaningful only at
-      // chunk boundaries — bump to 100 when timings are present (the
-      // chunk has finished synthesizing) so consumers can distinguish
-      // start vs done events.
-      progress: timings ? 100 : 0,
-      timings,
+      progress: 0,
     });
   }
 }
