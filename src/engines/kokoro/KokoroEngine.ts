@@ -22,6 +22,7 @@ import type {
   KokoroVoice,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  SynthesizeChunkResult,
   ExecutionProvider,
   ExecutionProviderPreset,
   ReleaseResult,
@@ -463,7 +464,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
     // Use pipelined synthesis: synthesize next chunk while current one plays
     // This eliminates the gap between chunks
-    let nextAudioPromise: Promise<AudioBuffer> | null = null;
+    let nextResultPromise: Promise<SynthesizeChunkResult> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       // Check if stop was requested
@@ -477,7 +478,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
       log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
 
-      // Emit chunk start progress event
+      // Emit chunk start progress event (no timings yet)
       this.emitChunkProgress({
         id: utteranceId,
         chunkIndex,
@@ -490,15 +491,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         progress,
       });
 
-      // Get current chunk's audio (either from pipeline or synthesize now)
+      // Get current chunk's result (either from pipeline or synthesize now)
       // Race against stop signal so we don't block on ONNX inference
-      let audioBuffer: AudioBuffer | null;
+      let result: SynthesizeChunkResult | null;
 
-      if (nextAudioPromise) {
-        audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
-        nextAudioPromise = null;
+      if (nextResultPromise) {
+        result = await this.raceWithStop(nextResultPromise, stopSignal);
+        nextResultPromise = null;
       } else {
-        audioBuffer = await this.raceWithStop(
+        result = await this.raceWithStop(
           this.synthesizeTextChunk(chunk.text, voiceId, language, options),
           stopSignal,
         );
@@ -506,20 +507,35 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
       // Stop signal won the race, or empty buffer from early-stop check
       if (
-        audioBuffer === null ||
+        result === null ||
         this.stopRequested ||
-        audioBuffer.samples.length === 0
+        result.audio.samples.length === 0
       ) {
         log.debug('Stop requested, aborting before playback');
         return undefined;
       }
+
+      // Emit chunk-done event with synthesis timings — consumers (e.g.
+      // example app stats panel) read these for per-chunk latency / RTF.
+      this.emitChunkProgress({
+        id: utteranceId,
+        chunkIndex,
+        totalChunks: chunks.length,
+        chunkText: chunk.text,
+        textRange: {
+          start: chunk.startIndex,
+          end: chunk.endIndex,
+        },
+        progress: Math.round(((chunkIndex + 1) / chunks.length) * 100),
+        timings: result.timings,
+      });
 
       // Start synthesizing next chunk in parallel with playback
       // (only if not already stopping to avoid wasted work)
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
-        nextAudioPromise = this.synthesizeTextChunk(
+        nextResultPromise = this.synthesizeTextChunk(
           nextChunk.text,
           voiceId,
           language,
@@ -529,7 +545,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
       // Play current chunk audio, racing against stop signal
       await this.raceWithStop(
-        neuralAudioPlayer.play(audioBuffer, {
+        neuralAudioPlayer.play(result.audio, {
           ducking: options?.ducking,
           silentMode: options?.silentMode,
         }),
@@ -550,17 +566,20 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     voiceId: string,
     language: string,
     options?: KokoroSynthesisOptions,
-  ): Promise<AudioBuffer> {
+  ): Promise<SynthesizeChunkResult> {
+    const wallStart = Date.now();
     // Normalize chunk text
     const normalized = this.normalizer.normalize(chunkText);
 
     // Check stop between pipeline steps
     if (this.stopRequested) {
       return {
-        samples: new Float32Array(0),
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        duration: 0,
+        audio: {
+          samples: new Float32Array(0),
+          sampleRate: SAMPLE_RATE,
+          channels: 1,
+          duration: 0,
+        },
       };
     }
 
@@ -570,10 +589,12 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // Check stop after phonemization (can be slow)
     if (this.stopRequested) {
       return {
-        samples: new Float32Array(0),
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        duration: 0,
+        audio: {
+          samples: new Float32Array(0),
+          sampleRate: SAMPLE_RATE,
+          channels: 1,
+          duration: 0,
+        },
       };
     }
 
@@ -587,8 +608,18 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
 
-    // Generate audio for this chunk
-    return this.synthesizeChunk(tokens, voiceId, options);
+    // Generate audio for this chunk. Add the phonemize+tokenize cost
+    // into `totalMs` so the timing reflects what consumers actually wait
+    // for (inner inference is a subset).
+    const inner = await this.synthesizeChunk(tokens, voiceId, options);
+    if (!inner.timings) return inner;
+    return {
+      audio: inner.audio,
+      timings: {
+        ...inner.timings,
+        totalMs: Date.now() - wallStart,
+      },
+    };
   }
 
   /**
@@ -599,7 +630,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     tokens: number[],
     voiceId: string,
     options?: KokoroSynthesisOptions,
-  ): Promise<AudioBuffer> {
+  ): Promise<SynthesizeChunkResult> {
     const chunkStartTime = Date.now();
 
     // Get voice embedding
@@ -688,7 +719,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${audioBuffer.duration.toFixed(2)}s`,
     );
 
-    return audioBuffer;
+    return {
+      audio: audioBuffer,
+      timings: {
+        inferenceMs: inferenceTime,
+        voiceLoadMs: voiceTime,
+        totalMs: totalChunkTime,
+        audioDurationS: audioBuffer.duration,
+      },
+    };
   }
 
   /**

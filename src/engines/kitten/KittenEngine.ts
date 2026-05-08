@@ -20,6 +20,7 @@ import type {
   EngineStreamHandle,
   ChunkProgressEvent,
   ChunkProgressCallback,
+  SynthesizeChunkResult,
   ReleaseResult,
   ReleaseError,
   ExecutionProvider,
@@ -450,7 +451,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
     // Pipelined synthesis
-    let nextAudioPromise: Promise<AudioBuffer> | null = null;
+    let nextResultPromise: Promise<SynthesizeChunkResult> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       if (this.stopRequested) {
@@ -463,6 +464,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       log.debug(`Processing chunk ${chunkIndex + 1}/${chunks.length}`);
 
+      // Chunk start (no timings yet)
       this.emitChunkProgress({
         id: utteranceId,
         chunkIndex,
@@ -472,15 +474,15 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         progress,
       });
 
-      // Get current chunk audio (from pipeline or synthesize now)
-      let audioBuffer: AudioBuffer | null;
+      // Get current chunk result (from pipeline or synthesize now)
+      let result: SynthesizeChunkResult | null;
 
       try {
-        if (nextAudioPromise) {
-          audioBuffer = await this.raceWithStop(nextAudioPromise, stopSignal);
-          nextAudioPromise = null;
+        if (nextResultPromise) {
+          result = await this.raceWithStop(nextResultPromise, stopSignal);
+          nextResultPromise = null;
         } else {
-          audioBuffer = await this.raceWithStop(
+          result = await this.raceWithStop(
             this.synthesizeTextChunk(chunk.text, voiceId, options),
             stopSignal,
           );
@@ -493,19 +495,31 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       }
 
       if (
-        audioBuffer === null ||
+        result === null ||
         this.stopRequested ||
-        audioBuffer.samples.length === 0
+        result.audio.samples.length === 0
       ) {
         log.debug('Stop requested, aborting before playback');
         return undefined;
       }
 
+      // Chunk done — emit timings so the example app stats panel can
+      // display per-chunk inference / RTF without scraping logs.
+      this.emitChunkProgress({
+        id: utteranceId,
+        chunkIndex,
+        totalChunks: chunks.length,
+        chunkText: chunk.text,
+        textRange: {start: chunk.startIndex, end: chunk.endIndex},
+        progress: Math.round(((chunkIndex + 1) / chunks.length) * 100),
+        timings: result.timings,
+      });
+
       // Start synthesizing next chunk in parallel
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
-        nextAudioPromise = this.synthesizeTextChunk(
+        nextResultPromise = this.synthesizeTextChunk(
           nextChunk.text,
           voiceId,
           options,
@@ -514,7 +528,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       // Play current chunk
       await this.raceWithStop(
-        neuralAudioPlayer.play(audioBuffer, {
+        neuralAudioPlayer.play(result.audio, {
           ducking: options?.ducking,
           silentMode: options?.silentMode,
         }),
@@ -533,18 +547,21 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     chunkStr: string,
     voiceId: string,
     options?: KittenSynthesisOptions,
-  ): Promise<AudioBuffer> {
-    const emptyBuffer = (): AudioBuffer => ({
-      samples: new Float32Array(0),
-      sampleRate: SAMPLE_RATE,
-      channels: 1,
-      duration: 0,
+  ): Promise<SynthesizeChunkResult> {
+    const emptyResult = (): SynthesizeChunkResult => ({
+      audio: {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      },
     });
 
+    const wallStart = Date.now();
     try {
       // Text is already preprocessed by doSynthesize; go straight to phonemize.
       if (this.stopRequested) {
-        return emptyBuffer();
+        return emptyResult();
       }
 
       // Guard against near-empty chunks. Streaming with markdown stripping
@@ -558,7 +575,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         log.debug(
           `Skipping no-content chunk: ${JSON.stringify(chunkStr.slice(0, 40))}`,
         );
-        return emptyBuffer();
+        return emptyResult();
       }
 
       // 1. Phonemize (GPL-free JS phonemizer, IPA mode)
@@ -567,7 +584,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
       if (this.stopRequested) {
-        return emptyBuffer();
+        return emptyResult();
       }
 
       // 2. Tokenize IPA phonemes
@@ -584,7 +601,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         log.debug(
           `Skipping chunk with no phoneme tokens (got ${tokens.length})`,
         );
-        return emptyBuffer();
+        return emptyResult();
       }
 
       // Upper bound: BERT's positional embeddings cap at MAX_PHONEME_TOKENS.
@@ -594,7 +611,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       // synthesize each separately, then concatenate the audio. User
       // hears the full content with a tiny prosody seam at the split,
       // instead of silence. See splitOversized.ts for the split
-      // strategy.
+      // strategy. Sub-piece timings are summed so the consumer sees one
+      // aggregate timing per original (top-level) chunk.
       if (tokens.length > MAX_PHONEME_TOKENS) {
         log.warn(
           `Oversized chunk (${tokens.length} > ${MAX_PHONEME_TOKENS}, ` +
@@ -607,29 +625,53 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           log.warn(
             `Unsplittable oversized chunk; dropping ${chunkStr.length} chars.`,
           );
-          return emptyBuffer();
+          return emptyResult();
         }
         const subBuffers: AudioBuffer[] = [];
+        let agInference = 0;
+        let agVoice = 0;
+        let agAudio = 0;
         for (const piece of pieces) {
-          if (this.stopRequested) return emptyBuffer();
-          const subAudio = await this.synthesizeTextChunk(
-            piece,
-            voiceId,
-            options,
-          );
-          if (subAudio.samples.length > 0) subBuffers.push(subAudio);
+          if (this.stopRequested) return emptyResult();
+          const sub = await this.synthesizeTextChunk(piece, voiceId, options);
+          if (sub.audio.samples.length === 0) continue;
+          subBuffers.push(sub.audio);
+          if (sub.timings) {
+            agInference += sub.timings.inferenceMs;
+            agVoice += sub.timings.voiceLoadMs;
+            agAudio += sub.timings.audioDurationS;
+          }
         }
-        if (subBuffers.length === 0) return emptyBuffer();
-        return concatAudioBuffers(subBuffers);
+        if (subBuffers.length === 0) return emptyResult();
+        return {
+          audio: concatAudioBuffers(subBuffers),
+          timings: {
+            inferenceMs: agInference,
+            voiceLoadMs: agVoice,
+            totalMs: Date.now() - wallStart,
+            audioDurationS: agAudio,
+          },
+        };
       }
 
-      // 3. Run ONNX inference with length-dependent voice style
-      return await this.synthesizeChunk(
+      // 3. Run ONNX inference with length-dependent voice style. Wrap
+      // inner timings with the wall-clock total (covers phonemize +
+      // tokenize + inference) so consumers see what they actually
+      // waited for.
+      const inner = await this.synthesizeChunk(
         tokens,
         voiceId,
         chunkStr.length,
         options,
       );
+      if (!inner.timings) return inner;
+      return {
+        audio: inner.audio,
+        timings: {
+          ...inner.timings,
+          totalMs: Date.now() - wallStart,
+        },
+      };
     } catch (error) {
       log.error(
         `synthesizeTextChunk failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -661,7 +703,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     voiceId: string,
     rawTextLength: number,
     options?: KittenSynthesisOptions,
-  ): Promise<AudioBuffer> {
+  ): Promise<SynthesizeChunkResult> {
     const chunkStartTime = Date.now();
 
     // Resolve voice alias to internal name
@@ -758,10 +800,18 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     );
 
     return {
-      samples: audioData,
-      sampleRate: SAMPLE_RATE,
-      channels: 1,
-      duration,
+      audio: {
+        samples: audioData,
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration,
+      },
+      timings: {
+        inferenceMs: inferenceTime,
+        voiceLoadMs: voiceTime,
+        totalMs: totalChunkTime,
+        audioDurationS: duration,
+      },
     };
   }
 

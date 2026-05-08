@@ -90,6 +90,23 @@ export default class Speech {
   static readonly maxInputLength =
     TurboSpeech.getConstants().maxInputLength ?? Number.MAX_VALUE;
 
+  /**
+   * Sample current process memory in MB.
+   *
+   * - iOS: `phys_footprint` via `task_info` (matches Xcode Memory Report)
+   * - Android: `Debug.MemoryInfo.totalPss` via `ActivityManager`
+   *   (matches Android Studio profiler)
+   *
+   * Synchronous and reasonably fast. Useful for rough memory profiling
+   * around synthesis runs. Don't poll faster than ~250ms — the Android
+   * implementation is non-trivial.
+   *
+   * Returns 0 if the OS query fails.
+   */
+  public static getProcessMemoryMB(): number {
+    return TurboSpeech.getProcessMemoryMB();
+  }
+
   // Track current engine
   private static currentEngine: TTSEngine = 'os-native' as TTSEngine;
 

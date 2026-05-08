@@ -2,6 +2,8 @@
 #import "RNSpeechTrace.h"
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
+#import <mach/mach.h>
+#import <mach/task.h>
 
 using namespace JS::NativeSpeech;
 
@@ -644,6 +646,28 @@ RCT_EXPORT_MODULE();
 
 - (NSString *)dictLookup:(NSString *)word {
   return [NativeDictWrapper lookupWord:word];
+}
+
+- (NSNumber *)getProcessMemoryMB {
+  // `phys_footprint` is the metric Apple uses for the App Store / TestFlight
+  // memory budget and matches Xcode's Memory Report. It's available via
+  // `task_vm_info` on iOS 9+. Falls back to `resident_size` if the call
+  // fails (very unlikely on supported devices).
+  task_vm_info_data_t info = {};
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  kern_return_t kr = task_info(mach_task_self(), TASK_VM_INFO,
+                                (task_info_t)&info, &count);
+  if (kr == KERN_SUCCESS) {
+    return @((double)info.phys_footprint / (1024.0 * 1024.0));
+  }
+  mach_task_basic_info_data_t basic = {};
+  mach_msg_type_number_t basicCount = MACH_TASK_BASIC_INFO_COUNT;
+  kr = task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                 (task_info_t)&basic, &basicCount);
+  if (kr == KERN_SUCCESS) {
+    return @((double)basic.resident_size / (1024.0 * 1024.0));
+  }
+  return @(0);
 }
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:

@@ -3,10 +3,12 @@ package com.pocketpalai.speech
 import java.util.UUID
 import java.util.Locale
 import java.util.concurrent.Executors
+import android.app.ActivityManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.content.Intent
 import android.content.Context
 import android.speech.tts.Voice
@@ -978,6 +980,28 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       NativeDict.lookup(word)
     } catch (e: Throwable) {
       null
+    }
+  }
+
+  /**
+   * Sample current process memory in MB. Uses ActivityManager's PSS
+   * reading — the same metric Android Studio's profiler reports.
+   * Returns 0.0 on failure.
+   *
+   * Note: getProcessMemoryInfo is reasonably fast but not free. Callers
+   * should not poll faster than ~250ms.
+   */
+  override fun getProcessMemoryMB(): Double {
+    return try {
+      val am = reactApplicationContext.getSystemService(Context.ACTIVITY_SERVICE)
+        as? ActivityManager ?: return 0.0
+      val pids = intArrayOf(Process.myPid())
+      val infos = am.getProcessMemoryInfo(pids)
+      val info = infos.firstOrNull() ?: return 0.0
+      // totalPss is in KB. Convert to MB (1024 KB = 1 MB).
+      info.totalPss.toDouble() / 1024.0
+    } catch (e: Throwable) {
+      0.0
     }
   }
 

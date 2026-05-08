@@ -207,8 +207,44 @@ export interface ProgressEvent {
 }
 
 /**
- * Event emitted when a new chunk (sentence) starts being spoken
- * Used by neural TTS engines that process text in chunks
+ * Per-chunk synthesis timing breakdown. Populated on the chunk-done
+ * event (after `synthesizeChunk` returns, before playback starts).
+ * Undefined on chunk-start events.
+ *
+ * For engines that split an oversized chunk into sub-pieces (Kitten),
+ * timings are summed across the sub-pieces — `totalMs` reflects the
+ * full top-level synthesis cost the consumer cares about.
+ */
+export interface ChunkTimings {
+  /** Pure ONNX inference time (model.run) in ms. */
+  inferenceMs: number;
+  /** Voice / style embedding load time in ms (often 0 after first chunk). */
+  voiceLoadMs: number;
+  /** End-to-end synthesizeChunk time in ms (includes phonemize, tokenize, infer). */
+  totalMs: number;
+  /** Length of the resulting audio buffer in seconds. */
+  audioDurationS: number;
+}
+
+/**
+ * Internal: the shape engines return from their per-chunk synthesis
+ * function. Used by `EngineStreamSession` to extract both the audio
+ * buffer and its associated timings without a side-channel getter.
+ */
+export interface SynthesizeChunkResult {
+  audio: AudioBuffer;
+  timings?: ChunkTimings;
+}
+
+/**
+ * Event emitted when a chunk (sentence) reaches a milestone in the
+ * synth pipeline. Neural TTS engines fire this twice per chunk:
+ *   - chunk-start: timings undefined, progress reflects pre-synth state
+ *   - chunk-done: timings populated (inference / voice / total / audio
+ *     duration), progress reflects post-synth state
+ *
+ * Real-time factor (RTF) per chunk: `timings.inferenceMs / (timings.audioDurationS * 1000)`.
+ * RTF < 1.0 means inference is faster than audio playback (good).
  */
 export interface ChunkProgressEvent {
   /** Utterance ID */
@@ -228,6 +264,12 @@ export interface ChunkProgressEvent {
   };
   /** Overall progress percentage (0-100) */
   progress: number;
+  /**
+   * Synthesis timings — present on chunk-done events only. Engines that
+   * don't break inference into discrete stages may report all of
+   * `inferenceMs`/`totalMs` as the same value.
+   */
+  timings?: ChunkTimings;
 }
 
 /**

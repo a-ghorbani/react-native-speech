@@ -1,5 +1,9 @@
 import {EngineStreamSession} from '../EngineStreamSession';
-import type {AudioBuffer, ChunkProgressEvent} from '../../types';
+import type {
+  AudioBuffer,
+  ChunkProgressEvent,
+  SynthesizeChunkResult,
+} from '../../types';
 
 function makeAudioBuffer(text: string): AudioBuffer {
   return {
@@ -11,21 +15,23 @@ function makeAudioBuffer(text: string): AudioBuffer {
 }
 
 function makeControllableSynth() {
+  // Tests resolve with a bare AudioBuffer for ergonomics; we wrap into
+  // SynthesizeChunkResult here so the session sees the new shape.
   type Call = {
     text: string;
     resolve: (buf: AudioBuffer) => void;
     reject: (err: Error) => void;
-    promise: Promise<AudioBuffer>;
+    promise: Promise<SynthesizeChunkResult>;
   };
   const calls: Call[] = [];
   const synthesizeChunk = jest.fn((text: string) => {
-    let resolve!: (buf: AudioBuffer) => void;
+    let resolveBuffer!: (buf: AudioBuffer) => void;
     let reject!: (err: Error) => void;
-    const promise = new Promise<AudioBuffer>((res, rej) => {
-      resolve = res;
+    const promise = new Promise<SynthesizeChunkResult>((res, rej) => {
+      resolveBuffer = (buf: AudioBuffer) => res({audio: buf});
       reject = rej;
     });
-    calls.push({text, resolve, reject, promise});
+    calls.push({text, resolve: resolveBuffer, reject, promise});
     return promise;
   });
   return {synthesizeChunk, calls};
@@ -108,7 +114,7 @@ describe('EngineStreamSession', () => {
 
     const synthesizeChunk = jest.fn(async (text: string) => {
       synthOrder.push(text);
-      return makeAudioBuffer(text);
+      return {audio: makeAudioBuffer(text)};
     });
 
     const {playAudio, plays} = makeControllablePlayer();
@@ -197,9 +203,9 @@ describe('EngineStreamSession', () => {
   test('onChunkProgress emits with absolute offsets', async () => {
     const events: ChunkProgressEvent[] = [];
 
-    const synthesizeChunk = jest.fn(async (text: string) =>
-      makeAudioBuffer(text),
-    );
+    const synthesizeChunk = jest.fn(async (text: string) => ({
+      audio: makeAudioBuffer(text),
+    }));
     const {playAudio, plays} = makeControllablePlayer();
     const stop = jest.fn(async () => {});
 
@@ -241,9 +247,9 @@ describe('EngineStreamSession', () => {
   test('postProcess is called on each audio buffer before play', async () => {
     const processed: AudioBuffer[] = [];
 
-    const synthesizeChunk = jest.fn(async (text: string) =>
-      makeAudioBuffer(text),
-    );
+    const synthesizeChunk = jest.fn(async (text: string) => ({
+      audio: makeAudioBuffer(text),
+    }));
     const {playAudio, plays} = makeControllablePlayer();
     const stop = jest.fn(async () => {});
 
