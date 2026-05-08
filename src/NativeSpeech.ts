@@ -185,12 +185,15 @@ export interface Spec extends TurboModule {
    * Current process resident memory in megabytes (1024×1024 bytes),
    * sampled synchronously at call time.
    *
-   * - iOS: `task_info` with `MACH_TASK_BASIC_INFO`, returns
-   *   `phys_footprint` (the same value the App Store / TestFlight uses
-   *   for memory budgeting; preferred over `resident_size` on iOS 14+).
-   * - Android: `Debug.MemoryInfo.totalPss` (proportional set size, the
-   *   measure most representative of "what this process actually
-   *   costs"; matches Android Studio's profiler reading).
+   * - iOS: `task_info` with `TASK_VM_INFO`, returns `phys_footprint`
+   *   (the same value the App Store / TestFlight uses for memory
+   *   budgeting; preferred over `resident_size` on iOS 14+).
+   * - Android: `Debug.getMemoryInfo()` totalPss (proportional set
+   *   size; matches Android Studio's profiler reading). Read directly
+   *   from `/proc/self/smaps_rollup` — `ActivityManager
+   *   .getProcessMemoryInfo()` was deliberately avoided because it's
+   *   rate-limited to ~once per 5 minutes since Android Pie and would
+   *   make the polled series look frozen.
    *
    * Returns 0 on failure. Synchronous to keep the polling caller
    * lock-free.

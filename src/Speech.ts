@@ -94,12 +94,14 @@ export default class Speech {
    * Sample current process memory in MB.
    *
    * - iOS: `phys_footprint` via `task_info` (matches Xcode Memory Report)
-   * - Android: `Debug.MemoryInfo.totalPss` via `ActivityManager`
-   *   (matches Android Studio profiler)
+   * - Android: `Debug.getMemoryInfo().totalPss` (matches Android
+   *   Studio profiler). Reads `/proc/self/smaps_rollup` directly —
+   *   NOT `ActivityManager.getProcessMemoryInfo`, which is throttled
+   *   to ~one reading per 5 minutes since Android Pie and would make
+   *   polled series look frozen.
    *
    * Synchronous and reasonably fast. Useful for rough memory profiling
-   * around synthesis runs. Don't poll faster than ~250ms — the Android
-   * implementation is non-trivial.
+   * around synthesis runs.
    *
    * Returns 0 if the OS query fails.
    */
