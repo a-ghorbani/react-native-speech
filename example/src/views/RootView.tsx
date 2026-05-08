@@ -276,6 +276,7 @@ const RootView: React.FC = () => {
     voiceLoadMs: number;
     totalMs: number;
     audioDurationS: number;
+    peakAmplitude: number;
   }
   interface MemorySample {
     /** Milliseconds since run start. */
@@ -590,6 +591,7 @@ const RootView: React.FC = () => {
             voiceLoadMs: t.voiceLoadMs,
             totalMs: t.totalMs,
             audioDurationS: t.audioDurationS,
+            peakAmplitude: t.peakAmplitude,
           };
           setRunChunks(prev => {
             // chunkIndex=0 means a new synthesis session started
@@ -1855,17 +1857,30 @@ const RootView: React.FC = () => {
           during the run. Empty until the first chunk completes. */}
       {(runChunks.length > 0 || runMem.length > 1) && (
         <View style={styles.statsSection}>
-          <TouchableOpacity onPress={() => setShowStats(s => !s)}>
-            <Text style={[styles.statsToggle, themedStyles.textSecondary]}>
-              {showStats ? '▼' : '▶'} Run stats
-              {runChunks.length > 0
-                ? ` — ${runChunks.length} chunks, avg ${Math.round(
-                    runChunks.reduce((s, c) => s + c.inferenceMs, 0) /
-                      runChunks.length,
-                  )}ms inference`
-                : ''}
-            </Text>
-          </TouchableOpacity>
+          {(() => {
+            const silentCount = runChunks.filter(
+              c => c.peakAmplitude < 1e-3,
+            ).length;
+            return (
+              <TouchableOpacity onPress={() => setShowStats(s => !s)}>
+                <Text style={[styles.statsToggle, themedStyles.textSecondary]}>
+                  {showStats ? '▼' : '▶'} Run stats
+                  {runChunks.length > 0
+                    ? ` — ${runChunks.length} chunks, avg ${Math.round(
+                        runChunks.reduce((s, c) => s + c.inferenceMs, 0) /
+                          runChunks.length,
+                      )}ms inference`
+                    : ''}
+                  {silentCount > 0 ? (
+                    <Text style={styles.statsToggleSilent}>
+                      {' '}
+                      · {silentCount} silent
+                    </Text>
+                  ) : null}
+                </Text>
+              </TouchableOpacity>
+            );
+          })()}
           {showStats && (
             <View style={styles.statsBody}>
               {/* Memory sparkline */}
@@ -1924,20 +1939,37 @@ const RootView: React.FC = () => {
                       ]}>
                       RTF
                     </Text>
+                    <Text
+                      style={[
+                        styles.statsTableCol,
+                        themedStyles.textSecondary,
+                      ]}>
+                      peak
+                    </Text>
                   </View>
                   {runChunks.map((c, i) => {
                     const rtf =
                       c.audioDurationS > 0
                         ? c.inferenceMs / (c.audioDurationS * 1000)
                         : 0;
+                    // Same threshold engines use to log silence
+                    // warnings. Highlights chunks where the model
+                    // produced near-zero output despite normal
+                    // duration — the EP/input bug we're tracking.
+                    const isSilent = c.peakAmplitude < 1e-3;
                     return (
                       // Use the array index — `chunkIndex` resets to 0
                       // when a new synthesis session starts (streaming
                       // vs demo, replay etc.) and would collide. The
                       // session-reset logic in onChunkProgress keeps
                       // this array append-only within a single run.
-                      // eslint-disable-next-line react/no-array-index-key
-                      <View key={i} style={styles.statsTableRow}>
+
+                      <View
+                        key={i}
+                        style={[
+                          styles.statsTableRow,
+                          isSilent && styles.statsTableRowSilent,
+                        ]}>
                         <Text
                           style={[
                             styles.statsTableCol,
@@ -1975,6 +2007,17 @@ const RootView: React.FC = () => {
                               : themedStyles.textPrimary,
                           ]}>
                           {rtf.toFixed(2)}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.statsTableCol,
+                            isSilent
+                              ? styles.statsTableColSilent
+                              : themedStyles.textPrimary,
+                          ]}>
+                          {c.peakAmplitude < 0.01
+                            ? c.peakAmplitude.toExponential(1)
+                            : c.peakAmplitude.toFixed(3)}
                         </Text>
                       </View>
                     );
@@ -2538,6 +2581,17 @@ const styles = StyleSheet.create({
   statsTableColIdx: {
     flex: 0.4,
     textAlign: 'left',
+  },
+  statsTableRowSilent: {
+    backgroundColor: '#330000',
+  },
+  statsTableColSilent: {
+    color: '#ff6666',
+    fontWeight: '700',
+  },
+  statsToggleSilent: {
+    color: '#ff6666',
+    fontWeight: '700',
   },
   chunkHeader: {
     flexDirection: 'row',

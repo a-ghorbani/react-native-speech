@@ -87,6 +87,15 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
 
 /**
+ * Peak-amplitude floor below which a chunk's audio counts as silent.
+ * Real speech peaks ~0.3-0.9 in the typical normalized [-1, 1] range;
+ * background hum peaks ~0.001-0.005 in tested models. 1e-3 is well
+ * below the lowest legitimate peak observed and avoids false positives
+ * from very quiet ends of utterances.
+ */
+const SILENCE_THRESHOLD = 1e-3;
+
+/**
  * Resolve execution provider preset or array to ONNX Runtime format
  * Returns the executionProviders array for InferenceSession.create()
  */
@@ -715,8 +724,28 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     const totalChunkTime = Date.now() - chunkStartTime;
+
+    // Peak absolute sample — used to detect the "model returned a
+    // correctly-sized buffer of effectively-zero samples" failure mode
+    // some EP+input combinations hit. Logging a warning when peak is
+    // very low gives the consumer something to grep for and pin
+    // problematic inputs against.
+    let peak = 0;
+    for (let i = 0; i < audioBuffer.samples.length; i++) {
+      const a = Math.abs(audioBuffer.samples[i] as number);
+      if (a > peak) peak = a;
+    }
+    if (peak < SILENCE_THRESHOLD) {
+      log.warn(
+        `Chunk produced silent audio (peak=${peak.toExponential(2)}, ` +
+          `tokens=${tokens.length}). Likely an EP/input combination ` +
+          `that surfaces the silent-output bug — try a different ` +
+          `executionProviders setting.`,
+      );
+    }
+
     log.debug(
-      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${audioBuffer.duration.toFixed(2)}s`,
+      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${audioBuffer.duration.toFixed(2)}s, peak=${peak.toFixed(3)}`,
     );
 
     return {
@@ -726,6 +755,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         voiceLoadMs: voiceTime,
         totalMs: totalChunkTime,
         audioDurationS: audioBuffer.duration,
+        peakAmplitude: peak,
       },
     };
   }

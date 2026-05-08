@@ -65,6 +65,10 @@ const {
   MAX_PHONEME_TOKENS,
 } = KITTEN_CONSTANTS;
 
+/** Peak-amplitude floor below which a chunk counts as silent. See
+ * KokoroEngine for rationale on the value. */
+const SILENCE_THRESHOLD = 1e-3;
+
 // Lazy-loaded ONNX Runtime
 interface OnnxRuntimeBindings {
   InferenceSession: OnnxInferenceSessionConstructor;
@@ -631,6 +635,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         let agInference = 0;
         let agVoice = 0;
         let agAudio = 0;
+        let agPeak = 0;
         for (const piece of pieces) {
           if (this.stopRequested) return emptyResult();
           const sub = await this.synthesizeTextChunk(piece, voiceId, options);
@@ -640,6 +645,12 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
             agInference += sub.timings.inferenceMs;
             agVoice += sub.timings.voiceLoadMs;
             agAudio += sub.timings.audioDurationS;
+            // Peak: max across pieces — if ANY sub-piece had real
+            // audio, the aggregate isn't silent. Stats panel still
+            // sees the silent-piece warnings logged inside the recursive
+            // call, so the diagnostic isn't lost.
+            if (sub.timings.peakAmplitude > agPeak)
+              agPeak = sub.timings.peakAmplitude;
           }
         }
         if (subBuffers.length === 0) return emptyResult();
@@ -650,6 +661,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
             voiceLoadMs: agVoice,
             totalMs: Date.now() - wallStart,
             audioDurationS: agAudio,
+            peakAmplitude: agPeak,
           },
         };
       }
@@ -795,8 +807,26 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
     const totalChunkTime = Date.now() - chunkStartTime;
     const duration = audioData.length / SAMPLE_RATE;
+
+    // Peak absolute sample — silent chunks (correct duration, zero
+    // samples) are a known EP/input failure mode. See KokoroEngine for
+    // background. Logged at warn so it surfaces without a debug build.
+    let peak = 0;
+    for (let i = 0; i < audioData.length; i++) {
+      const a = Math.abs(audioData[i] as number);
+      if (a > peak) peak = a;
+    }
+    if (peak < SILENCE_THRESHOLD) {
+      log.warn(
+        `Chunk produced silent audio (peak=${peak.toExponential(2)}, ` +
+          `tokens=${tokens.length}). Likely an EP/input combination ` +
+          `that surfaces the silent-output bug — try a different ` +
+          `executionProviders setting.`,
+      );
+    }
+
     log.debug(
-      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${duration.toFixed(2)}s`,
+      `Chunk done: inference=${inferenceTime}ms, voice=${voiceTime}ms, total=${totalChunkTime}ms, audio=${duration.toFixed(2)}s, peak=${peak.toFixed(3)}`,
     );
 
     return {
@@ -811,6 +841,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         voiceLoadMs: voiceTime,
         totalMs: totalChunkTime,
         audioDurationS: duration,
+        peakAmplitude: peak,
       },
     };
   }

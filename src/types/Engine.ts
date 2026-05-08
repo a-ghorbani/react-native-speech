@@ -224,6 +224,14 @@ export interface ChunkTimings {
   totalMs: number;
   /** Length of the resulting audio buffer in seconds. */
   audioDurationS: number;
+  /**
+   * Peak absolute sample value of the resulting audio (0..1). Useful
+   * for detecting the "model produced a buffer of correct duration but
+   * silent samples" failure mode that affects certain EP+input
+   * combinations on Kokoro / Kitten. A value below ~0.001 means the
+   * chunk was effectively silent.
+   */
+  peakAmplitude: number;
 }
 
 /**
