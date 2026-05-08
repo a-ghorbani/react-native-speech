@@ -140,61 +140,86 @@ export interface VoiceEmbedding {
 }
 
 /**
- * CoreML execution provider options for iOS
- * Enables hardware acceleration via GPU (Metal) and Apple Neural Engine (ANE)
+ * CoreML EP flag bits — bit-OR these into `coreMlFlags`. Mirrors
+ * `coreml_provider_factory.h` in onnxruntime.
+ *
+ * IMPORTANT: The high-level option fields (`useCPUOnly`, `useCPUAndGPU`,
+ * `enableOnSubgraph`, `onlyEnableDeviceWithANE`) defined in
+ * `onnxruntime-common`'s `CoreMLExecutionProviderOption` are NOT honored
+ * by the `onnxruntime-react-native` native bridge. The bridge only reads
+ * `coreMlFlags` (numeric). Use these constants instead.
+ */
+export const CoreMlFlag = {
+  USE_CPU_ONLY: 0x001,
+  ENABLE_ON_SUBGRAPH: 0x002,
+  ONLY_ENABLE_DEVICE_WITH_ANE: 0x004,
+  ONLY_ALLOW_STATIC_INPUT_SHAPES: 0x008,
+  CREATE_MLPROGRAM: 0x010,
+  USE_CPU_AND_GPU: 0x020,
+} as const;
+
+/**
+ * Sensible defaults for CoreML — enable on subgraphs (broader op
+ * coverage) and use CPU+GPU (lets Metal accelerate where possible).
+ * Excludes ANE-only and CPU-only since those force narrower behavior
+ * that hurts most models.
+ */
+export const DEFAULT_COREML_FLAGS =
+  // eslint-disable-next-line no-bitwise
+  CoreMlFlag.ENABLE_ON_SUBGRAPH | CoreMlFlag.USE_CPU_AND_GPU;
+
+/**
+ * CoreML execution provider options for iOS.
+ *
+ * Only `coreMlFlags` is wired through the React Native bridge. The
+ * high-level booleans (`useCPUOnly`, etc.) are TypeScript-only and have
+ * no runtime effect.
  */
 export interface CoreMLExecutionProviderOption {
   readonly name: 'coreml';
-  /** Use CPU only (disables GPU/ANE acceleration) */
-  useCPUOnly?: boolean;
-  /** Enable both CPU and GPU execution via Metal */
-  useCPUAndGPU?: boolean;
-  /** Enable CoreML on subgraphs for better coverage */
-  enableOnSubgraph?: boolean;
-  /** Only enable on devices with Apple Neural Engine */
-  onlyEnableDeviceWithANE?: boolean;
+  /** Bit-OR of CoreMlFlag values. Defaults to no flags (0) if omitted. */
+  coreMlFlags?: number;
 }
 
 /**
- * NNAPI execution provider options for Android
- * Enables hardware acceleration via Android Neural Networks API
- */
-export interface NNAPIExecutionProviderOption {
-  readonly name: 'nnapi';
-}
-
-/**
- * XNNPACK execution provider options
- * Optimized CPU execution using XNNPACK library
+ * XNNPACK execution provider options.
+ * Optimized CPU kernels — works on both iOS and Android.
  */
 export interface XNNPackExecutionProviderOption {
   readonly name: 'xnnpack';
 }
 
 /**
- * CPU execution provider options
+ * CPU execution provider options.
  */
 export interface CPUExecutionProviderOption {
   readonly name: 'cpu';
 }
 
 /**
- * Union type for all supported execution providers
+ * Union type for supported execution providers.
+ *
+ * NOTE: NNAPI was removed from this union — Android's NNAPI OS API was
+ * deprecated in Android 15 (no longer developed by Google). XNNPACK
+ * provides optimized ARM CPU kernels and is the preferred Android EP
+ * for `onnxruntime-react-native`. Consumers needing GPU/NPU on Android
+ * should rebuild the package with QNN enabled (Qualcomm-only).
  */
 export type ExecutionProvider =
   | CoreMLExecutionProviderOption
-  | NNAPIExecutionProviderOption
   | XNNPackExecutionProviderOption
   | CPUExecutionProviderOption
   | 'coreml'
-  | 'nnapi'
   | 'xnnpack'
   | 'cpu';
 
 /**
- * Preset execution provider configurations for common use cases
+ * Preset execution provider configurations for common use cases.
+ *
+ * On Android, `'auto'` and `'gpu'` both resolve to `['xnnpack', 'cpu']`
+ * since NNAPI is no longer used and there is no other GPU EP exposed.
  */
 export type ExecutionProviderPreset =
-  | 'auto' // Automatically select best provider for platform (CoreML on iOS, NNAPI on Android)
-  | 'cpu' // Force CPU-only execution
-  | 'gpu'; // Prefer GPU acceleration (CoreML with GPU on iOS, NNAPI on Android)
+  | 'auto' // CoreML+xnnpack on iOS, xnnpack on Android. Best default.
+  | 'cpu' // bare CPU on iOS, xnnpack+cpu on Android (bare-CPU bug workaround)
+  | 'gpu'; // CoreML on iOS; same as 'auto' on Android

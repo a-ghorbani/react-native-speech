@@ -21,6 +21,7 @@ import type {
   OnnxInferenceSessionConstructor,
   OnnxTensorConstructor,
 } from '../../types';
+import {DEFAULT_COREML_FLAGS} from '../../types';
 import {
   createTextMask,
   createLatentMask,
@@ -76,40 +77,27 @@ function resolveExecutionProviders(
   if (typeof config === 'string') {
     const isIOS = Platform.OS === 'ios';
 
+    // See KokoroEngine.resolveExecutionProviders for the full rationale.
+    // Mirrored here so all neural engines pick the same EP defaults.
     switch (config) {
       case 'auto':
         if (isIOS) {
           return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
+            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
             'xnnpack',
             'cpu',
           ];
-        } else {
-          return ['nnapi', 'xnnpack', 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
 
       case 'cpu':
-        return ['cpu'];
+        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
 
       case 'gpu':
         if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'cpu'];
+          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
 
       default:
         return ['cpu'];

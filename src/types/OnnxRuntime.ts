@@ -57,10 +57,11 @@ export interface OnnxTensorConstructor {
 export interface OnnxSessionOptions {
   /**
    * Execution providers in order of preference.
-   * Each entry is either a provider name (e.g. 'cpu', 'nnapi') or a
-   * provider-specific options object. Declared loosely so engine-specific
-   * option interfaces (e.g. `CoreMLExecutionProviderOption`) remain
-   * assignable without requiring an index signature.
+   * Each entry is either a provider name (e.g. 'cpu', 'xnnpack',
+   * 'coreml') or a provider-specific options object. Declared loosely
+   * so engine-specific option interfaces (e.g.
+   * `CoreMLExecutionProviderOption`) remain assignable without
+   * requiring an index signature.
    */
   executionProviders: ReadonlyArray<string | {readonly name: string}>;
 }

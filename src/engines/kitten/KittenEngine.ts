@@ -46,6 +46,7 @@ import {
 import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
+import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {
@@ -105,38 +106,28 @@ function resolveExecutionProviders(
   if (typeof config === 'string') {
     const isIOS = Platform.OS === 'ios';
 
+    // See KokoroEngine.resolveExecutionProviders for the full rationale.
+    // Same approach: NNAPI dropped on Android (deprecated in Android 15);
+    // CoreML uses numeric `coreMlFlags` since the high-level option fields
+    // aren't honored by the React Native bridge; bare CPU on Android is
+    // shadowed by xnnpack to dodge the silent-audio bug.
     switch (config) {
       case 'auto':
         if (isIOS) {
           return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
+            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
             'xnnpack',
             'cpu',
           ];
-        } else {
-          return ['nnapi', 'xnnpack', 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
       case 'cpu':
-        return ['cpu'];
+        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
       case 'gpu':
         if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'cpu'];
+          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
       default:
         return ['cpu'];
     }

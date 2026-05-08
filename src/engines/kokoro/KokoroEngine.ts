@@ -34,6 +34,7 @@ import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
+import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
 import {loadNativeDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {EngineStreamSession} from '../EngineStreamSession';
@@ -102,42 +103,37 @@ function resolveExecutionProviders(
 
     switch (config) {
       case 'auto':
-        // Platform-specific defaults with hardware acceleration
+        // iOS: CoreML first (Metal/ANE) with sensible flag defaults,
+        // xnnpack second, bare cpu as last-resort.
+        // Android: xnnpack + cpu. NNAPI was removed (Android's NNAPI OS
+        // API is deprecated as of Android 15) and there is no other
+        // public GPU/NPU EP exposed by `onnxruntime-react-native`.
         if (isIOS) {
           return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
+            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
             'xnnpack',
             'cpu',
           ];
-        } else {
-          // Android
-          return ['nnapi', 'xnnpack', 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
 
       case 'cpu':
-        // Force CPU-only execution
-        return ['cpu'];
+        // CPU-only execution. On Android, prefer xnnpack with bare CPU
+        // as fallback — the bare ONNX CPU EP produces silent
+        // (zero-amplitude) audio for some Kokoro ops on Android while
+        // reporting normal-looking buffers and inference times. xnnpack
+        // is still CPU-only (no NPU/GPU) and handles those ops
+        // correctly. iOS bare CPU is verified working.
+        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
 
       case 'gpu':
-        // Prefer GPU acceleration
+        // iOS: CoreML alone (no xnnpack intermediate) so the model
+        // lands on Metal/ANE where it can.
+        // Android: no GPU/NPU EP available — same as 'auto'.
         if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'cpu'];
+          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
         }
+        return ['xnnpack', 'cpu'];
 
       default:
         return ['cpu'];
