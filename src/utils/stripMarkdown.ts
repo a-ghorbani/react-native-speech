@@ -244,52 +244,137 @@ export function stripMarkdown(
  * Line-buffered markdown stripper for streaming input.
  *
  * Engines' streaming paths hand text to `StreamingChunker` which splits on
- * `[.!?]+\s+` — so inline markers (`**`, backticks, pipes) survived the
- * chunker in the pre-fix baseline, and structural markers (`---`, `###`)
- * never produced chunk breaks because the chunker didn't recognize them.
+ * `[.!?]+\s+`. Without this buffer, inline markers (`**`, backticks, pipes)
+ * survive the chunker, and structural markers (`---`, `###`) never produce
+ * chunk breaks because the chunker doesn't recognize them.
  *
- * This buffer solves both: callers push incremental text via `push()`,
- * which flushes complete lines through `stripMarkdown` and returns the
- * cleaned text (with a trailing `\n` preserved so the chunker's `.!?\s`
- * boundary still fires). Partial lines stay buffered. `flush()` strips
- * and emits whatever's left, for end-of-stream.
+ * Callers push incremental text via `push()`. The buffer emits cleaned
+ * text whenever it can do so safely:
  *
- * Processing per-line instead of per-append avoids partial-token bugs:
- * `"### Hea"` alone would otherwise get a period injected mid-word once
- * the header regex sees an end-of-string. By waiting for the closing
- * `\n`, we only strip truly complete lines.
+ *   1. Complete-line flush. Whenever the buffer contains a newline,
+ *      everything up through the last newline is run through
+ *      `stripMarkdown`. Block-level constructs (headers, hrules, table
+ *      rows) need the whole line, so this is the primary safe boundary.
  *
- * Fenced code blocks that span multiple lines are the one edge case —
- * opening fence in one flush, closing in another — handled by the stray
- * `` ``` `` cleanup in `stripMarkdown` step 14 so leftover fence markers
- * don't leak into phonemes.
+ *   2. Sentence-level flush from the partial (newline-less) tail. If the
+ *      tail is not inside a fenced code block AND doesn't start with a
+ *      block-level marker (header, list item, blockquote, table, fence),
+ *      we look for `[.!?]+\s+` and emit the prefix. This is what
+ *      progressive playback for ordinary prose without paragraph breaks
+ *      depends on — without it, a single LLM paragraph would buffer
+ *      until `finalize()` and time-to-first-audio would balloon.
+ *
+ *   3. End-of-stream `flush()`. Any remaining tail is stripped and
+ *      emitted (unless we're still inside an unclosed fenced code block,
+ *      in which case the partial code is discarded — consistent with
+ *      `dropCodeBlocks`).
+ *
+ * Fenced code blocks (` ``` ` / ` ~~~ `) are tracked across pushes when
+ * `dropCodeBlocks` is true (default): an opening fence at line start
+ * enters drop mode, a closing fence exits it. Lines between are silently
+ * discarded so the TTS doesn't read code aloud.
  */
 export interface MarkdownStreamBuffer {
   push(text: string): string;
   flush(): string;
 }
 
+// A line that opens or closes a fenced code block. CommonMark allows a
+// language tag after the fence (` ```js `) and optional leading/trailing
+// whitespace; we accept both.
+const FENCE_LINE_RE = /^[ \t]*(?:```|~~~)/;
+
+// Block-level constructs whose `stripMarkdown` rules expect a complete
+// line. If the partial (newline-less) buffer starts with one of these,
+// we defer the sentence-level flush — emitting `# Hea` as `Hea.` would
+// be wrong, so we wait for the closing `\n`.
+const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
+
 export function createMarkdownStreamBuffer(
   options: StripMarkdownOptions = {},
 ): MarkdownStreamBuffer {
+  const opts = {...DEFAULTS, ...options};
   let buffer = '';
+  let inFence = false;
+
+  // Walk `text` line-by-line; drop everything inside fenced code blocks
+  // when `dropCodeBlocks` is true. Mutates `inFence` so fence state
+  // carries across pushes (the whole reason this isn't part of
+  // `stripMarkdown` itself).
+  function filterFences(text: string): string {
+    if (!opts.dropCodeBlocks) return text;
+    // `text` always ends with `\n` here (it's the up-through-last-newline
+    // slice). split('\n') therefore gives us a trailing empty string;
+    // keeping it preserves the trailing newline through the join.
+    const lines = text.split('\n');
+    const out: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (i === lines.length - 1 && line === '') {
+        out.push('');
+        continue;
+      }
+      if (inFence) {
+        if (FENCE_LINE_RE.test(line)) inFence = false;
+        continue;
+      }
+      if (FENCE_LINE_RE.test(line)) {
+        inFence = true;
+        continue;
+      }
+      out.push(line);
+    }
+    return out.join('\n');
+  }
+
   return {
     push(text: string): string {
       buffer += text;
+      let emit = '';
+
+      // 1. Flush content up through the last newline.
       const lastNl = buffer.lastIndexOf('\n');
-      if (lastNl === -1) return '';
-      const complete = buffer.slice(0, lastNl + 1);
-      buffer = buffer.slice(lastNl + 1);
-      const stripped = stripMarkdown(complete, options);
-      // Reattach a trailing newline so `StreamingChunker`'s SENTENCE_END_RE
-      // (which requires whitespace after `.!?`) can still find boundaries.
-      // `stripMarkdown` ends with `.trim()` and would otherwise glue this
-      // batch's last char to the next batch's first.
-      return stripped ? stripped + '\n' : '';
+      if (lastNl >= 0) {
+        const complete = buffer.slice(0, lastNl + 1);
+        buffer = buffer.slice(lastNl + 1);
+        const visible = filterFences(complete);
+        if (visible.trim()) {
+          const stripped = stripMarkdown(visible, opts);
+          if (stripped) emit += stripped + '\n';
+        }
+      }
+
+      // 2. Sentence-level flush of the partial (newline-less) tail.
+      // Skip when we're inside a fenced block (content gets dropped on
+      // the next newline anyway) or when the tail begins with a block-
+      // level construct that needs its whole line to strip correctly.
+      // Loop so a single push containing multiple sentences emits them
+      // all rather than just the first.
+      while (!inFence && buffer && !BLOCK_START_RE.test(buffer)) {
+        const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
+        if (!sentMatch) break;
+        const sentence = sentMatch[1]! + sentMatch[2]!;
+        buffer = buffer.slice(sentence.length);
+        const stripped = stripMarkdown(sentence, opts);
+        // Append a single space so `StreamingChunker`'s SENTENCE_END_RE
+        // (which requires whitespace after `.!?`) finds a boundary even
+        // though `stripMarkdown` trims its output.
+        if (stripped) emit += stripped + ' ';
+      }
+
+      return emit;
     },
     flush(): string {
+      // Stream ended inside a fenced code block — discard partial code,
+      // consistent with `dropCodeBlocks`. Reset state so the buffer can
+      // be reused for a fresh stream.
+      if (inFence) {
+        buffer = '';
+        inFence = false;
+        return '';
+      }
       if (!buffer) return '';
-      const out = stripMarkdown(buffer, options);
+      const out = stripMarkdown(buffer, opts);
       buffer = '';
       return out;
     },

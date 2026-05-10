@@ -333,18 +333,71 @@ describe('createMarkdownStreamBuffer', () => {
     expect(buf.flush()).toBe('bold end');
   });
 
-  test('stray unbalanced ``` across flushes leaves content intact', () => {
+  test('balanced fenced code block split across pushes is dropped', () => {
     const buf = createMarkdownStreamBuffer();
     let out = '';
     out += buf.push('```js\n');
     out += buf.push('console.log(1);\n');
-    // Stream ends before closing fence — stray-fence cleanup removes the
-    // backtick runs but preserves the code content so TTS reads it (better
-    // than gibberish). Language tag `js` on the fence line survives as a
-    // stray word — acceptable for an unclosed block.
+    out += buf.push('```\n');
+    out += buf.push('after.\n');
     out += buf.flush();
+    // dropCodeBlocks is true by default — the entire fenced block (open
+    // fence, contents, close fence) is suppressed; only the after-fence
+    // text reaches the chunker.
     expect(out).not.toMatch(/```/);
-    expect(out).toContain('console.log(1);');
+    expect(out).not.toContain('console.log');
+    expect(out).not.toContain('js');
+    expect(out).toContain('after.');
+  });
+
+  test('unclosed fenced code block discards code content on flush', () => {
+    const buf = createMarkdownStreamBuffer();
+    let out = '';
+    out += buf.push('```js\n');
+    out += buf.push('console.log(1);\n');
+    out += buf.flush();
+    // Stream ended without a closing fence — drop the partial code.
+    // Reading half-stripped JavaScript out loud is worse than silence.
+    expect(out).not.toContain('console.log');
+    expect(out).not.toMatch(/```/);
+  });
+
+  test('progressive sentence flush without newlines (R2 fix)', () => {
+    const buf = createMarkdownStreamBuffer();
+    // Plain prose with sentence boundaries but no newlines — the common
+    // LLM-streaming shape. Must emit the first sentence as soon as its
+    // terminator + whitespace arrives, NOT wait for `flush()`.
+    let out = buf.push('Hello world. ');
+    expect(out).toBe('Hello world. ');
+    out = buf.push('Next. ');
+    expect(out).toBe('Next. ');
+    out = buf.push('Last.');
+    // No trailing whitespace after `Last.` — buffered until flush.
+    expect(out).toBe('');
+    expect(buf.flush()).toBe('Last.');
+  });
+
+  test('block-level start defers sentence-level flush', () => {
+    const buf = createMarkdownStreamBuffer();
+    // `### He` looks like a partial header. Even though there's no
+    // sentence terminator yet, we must NOT try to emit it via the
+    // sentence path — wait for the line to complete.
+    expect(buf.push('### Header text')).toBe('');
+    // Adding sentence punctuation in the same line still defers — the
+    // line starts with `###` and stripping needs the whole line to
+    // produce `Header text.`.
+    expect(buf.push(' is here.')).toBe('');
+    expect(buf.push('\n')).toBe('Header text is here.\n');
+  });
+
+  test('paragraph with inline emphasis flushes by sentence', () => {
+    const buf = createMarkdownStreamBuffer();
+    // `**bold**` is matched + closed within the partial buffer before
+    // the sentence terminator, so the prefix `A **bold** word.` strips
+    // cleanly without waiting for newline.
+    const out = buf.push('A **bold** word. Next sentence. ');
+    expect(out).toContain('A bold word.');
+    expect(out).toContain('Next sentence.');
   });
 });
 

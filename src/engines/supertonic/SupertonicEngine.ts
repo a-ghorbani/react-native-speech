@@ -42,6 +42,10 @@ import {TextChunker, type TextChunk} from '../../utils/TextChunker';
 import {SUPERTONIC_CONSTANTS} from './constants';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {
+  stripMarkdown,
+  createMarkdownStreamBuffer,
+} from '../../utils/stripMarkdown';
 
 const log = createComponentLogger('Supertonic', 'Engine');
 
@@ -224,6 +228,12 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
     const voiceStylePromise = this.styleLoader.getVoiceStyle(voiceId);
 
+    const stripMd = options?.stripMarkdown !== false;
+    // When stripping is enabled, buffer incoming text and strip BEFORE
+    // StreamingChunker sees it so structural markdown becomes sentence
+    // boundaries the chunker recognizes (mirrors Kokoro/Kitten).
+    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
+
     const volumeAdjust =
       options?.volume !== undefined && options.volume !== 1.0
         ? (buf: AudioBuffer) => {
@@ -284,8 +294,21 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     };
 
     return {
-      append: (text: string) => session.append(text),
-      finalize: wrapFinalize,
+      append: (text: string) => {
+        if (mdBuffer) {
+          const emit = mdBuffer.push(text);
+          if (emit) session.append(emit);
+        } else {
+          session.append(text);
+        }
+      },
+      finalize: async () => {
+        if (mdBuffer) {
+          const tail = mdBuffer.flush();
+          if (tail) session.append(tail);
+        }
+        return wrapFinalize();
+      },
       cancel: wrapCancel,
     };
   }
@@ -339,9 +362,15 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // Load voice style
     const voiceStyle = await this.styleLoader.getVoiceStyle(voiceId);
 
+    // Strip markdown so structural markers (`---`, `###`, table rows)
+    // become sentence breaks the chunker recognizes. Default on; set
+    // `stripMarkdown: false` to opt out.
+    const cleanText =
+      options?.stripMarkdown === false ? text : stripMarkdown(text);
+
     // Chunk text by sentences
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const chunks = TextChunker.chunkBySentences(text, maxChunkSize);
+    const chunks = TextChunker.chunkBySentences(cleanText, maxChunkSize);
 
     log.debug(`Split into ${chunks.length} chunks`);
 

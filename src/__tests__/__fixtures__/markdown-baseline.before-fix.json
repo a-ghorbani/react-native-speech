@@ -4,7 +4,7 @@
     "sampleLength": 1934,
     "stripMarkdownApplied": false,
     "dictEntries": 124374,
-    "dictPath": "/Users/aghorbani/codes/phonemizer-dicts/en-us.tsv",
+    "dictPath": "en-us.tsv",
     "kokoroStreamMaxChunkSize": 100,
     "kittenStreamMaxChunkSize": 500,
     "generator": "scripts/capture-markdown-baseline.mjs"

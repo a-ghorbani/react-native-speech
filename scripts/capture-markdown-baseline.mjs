@@ -41,7 +41,7 @@ import {
   existsSync,
   statSync,
 } from 'node:fs';
-import {dirname, resolve} from 'node:path';
+import {basename, dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 globalThis.require = createRequire(import.meta.url);
@@ -337,7 +337,10 @@ const baseline = {
     sampleLength: MARKDOWN_SAMPLE.length,
     stripMarkdownApplied: STRIP,
     dictEntries: Object.keys(dictMap).length,
-    dictPath: TSV_PATH,
+    // Sanitized to basename: committed fixtures must not leak the
+    // developer's filesystem layout. Reproducibility is anchored by the
+    // entry count, not the absolute path.
+    dictPath: basename(TSV_PATH),
     kokoroStreamMaxChunkSize: 100,
     kittenStreamMaxChunkSize: 500,
     generator: 'scripts/capture-markdown-baseline.mjs',
