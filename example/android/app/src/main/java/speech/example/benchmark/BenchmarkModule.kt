@@ -25,11 +25,24 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
   private var memorySampleCount: Int = 0
   @Volatile private var isMemoryPolling = false
 
+  /**
+   * Total PSS (proportional set size) of the current process, in MB.
+   *
+   * Matches what Android Studio's memory profiler shows and what lmkd uses
+   * for low-memory kills. Includes mmap'd model files, JVM/ART heap, and
+   * a fair share of shared pages — unlike [Debug.getNativeHeapAllocatedSize]
+   * which only covers the C/C++ malloc heap and misses the mmap'd ONNX
+   * weights entirely.
+   *
+   * Backed by /proc/self/smaps_rollup on Linux 4.14+ (Android 9+), so the
+   * call is cheap enough for ~100 ms polling on modern devices.
+   */
+  private fun footprintMB(): Double = Debug.getPss() / 1024.0
+
   @ReactMethod
   fun getMemoryStats(promise: Promise) {
     try {
-      val nativeHeapAllocated = Debug.getNativeHeapAllocatedSize() / (1024.0 * 1024.0)
-      val nativeHeapFree = Debug.getNativeHeapFreeSize() / (1024.0 * 1024.0)
+      val footprint = footprintMB()
 
       val activityManager = reactApplicationContext
         .getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -39,9 +52,11 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
       val totalMemMB = memoryInfo.totalMem / (1024.0 * 1024.0)
       val availMemMB = memoryInfo.availMem / (1024.0 * 1024.0)
 
+      // Key names kept for JSON/schema backward compat; the value is now
+      // total PSS (profiler-equivalent), not malloc heap size.
       val result = Arguments.createMap().apply {
-        putDouble("nativeHeapAllocatedMB", nativeHeapAllocated)
-        putDouble("nativeHeapFreeMB", nativeHeapFree)
+        putDouble("nativeHeapAllocatedMB", footprint)
+        putDouble("nativeHeapFreeMB", 0.0)
         putDouble("totalMemoryMB", totalMemMB)
         putDouble("availableMemoryMB", availMemMB)
       }
@@ -88,9 +103,9 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
     memoryPollingExecutor = Executors.newSingleThreadScheduledExecutor()
     memoryPollingFuture = memoryPollingExecutor?.scheduleAtFixedRate({
       try {
-        val heapMB = Debug.getNativeHeapAllocatedSize() / (1024.0 * 1024.0)
-        if (heapMB > peakNativeHeapMB) {
-          peakNativeHeapMB = heapMB
+        val mb = footprintMB()
+        if (mb > peakNativeHeapMB) {
+          peakNativeHeapMB = mb
         }
         memorySampleCount++
       } catch (_: Exception) {}
