@@ -23,7 +23,6 @@ import type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ExecutionProvider,
-  ExecutionProviderPreset,
   ReleaseResult,
   ReleaseError,
   OnnxInferenceSession,
@@ -86,62 +85,23 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
 
 /**
- * Resolve execution provider preset or array to ONNX Runtime format
- * Returns the executionProviders array for InferenceSession.create()
+ * Default execution providers when the caller doesn't specify any.
+ *
+ *   - iOS: CoreML (Metal/ANE) with sensible flags, xnnpack second, bare
+ *     CPU last.
+ *   - Android: xnnpack + CPU. NNAPI was removed (deprecated in Android
+ *     15) and there is no other public GPU/NPU EP exposed by
+ *     `onnxruntime-react-native`.
  */
-function resolveExecutionProviders(
-  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): ExecutionProvider[] {
-  // If not specified, use 'auto' preset
-  if (!config) {
-    config = 'auto';
+function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios') {
+    return [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ];
   }
-
-  // Handle preset strings
-  if (typeof config === 'string') {
-    const isIOS = Platform.OS === 'ios';
-
-    switch (config) {
-      case 'auto':
-        // iOS: CoreML first (Metal/ANE) with sensible flag defaults,
-        // xnnpack second, bare cpu as last-resort.
-        // Android: xnnpack + cpu. NNAPI was removed (Android's NNAPI OS
-        // API is deprecated as of Android 15) and there is no other
-        // public GPU/NPU EP exposed by `onnxruntime-react-native`.
-        if (isIOS) {
-          return [
-            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-            'xnnpack',
-            'cpu',
-          ];
-        }
-        return ['xnnpack', 'cpu'];
-
-      case 'cpu':
-        // CPU-only execution. On Android, prefer xnnpack with bare CPU
-        // as fallback — the bare ONNX CPU EP produces silent
-        // (zero-amplitude) audio for some Kokoro ops on Android while
-        // reporting normal-looking buffers and inference times. xnnpack
-        // is still CPU-only (no NPU/GPU) and handles those ops
-        // correctly. iOS bare CPU is verified working.
-        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
-
-      case 'gpu':
-        // iOS: CoreML alone (no xnnpack intermediate) so the model
-        // lands on Metal/ANE where it can.
-        // Android: no GPU/NPU EP available — same as 'auto'.
-        if (isIOS) {
-          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
-        }
-        return ['xnnpack', 'cpu'];
-
-      default:
-        return ['cpu'];
-    }
-  }
-
-  // Handle array of providers - pass through as-is
-  return config;
+  return ['xnnpack', 'cpu'];
 }
 
 export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
@@ -903,10 +863,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const {InferenceSession} = getOnnxRuntime();
 
     try {
-      // Resolve execution providers from config
-      const executionProviders = resolveExecutionProviders(
-        this.config?.executionProviders,
-      );
+      const executionProviders =
+        this.config?.executionProviders ?? getDefaultExecutionProviders();
 
       log.debug(
         `Loading model with providers: ${JSON.stringify(executionProviders)}`,

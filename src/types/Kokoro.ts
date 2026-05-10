@@ -90,31 +90,25 @@ export interface KokoroConfig {
    */
   maxChunkSize?: number;
   /**
-   * Execution providers for ONNX Runtime inference
-   * Controls hardware acceleration (GPU, ANE on iOS; NNAPI on Android)
+   * Execution providers for ONNX Runtime inference, in fallback order.
+   * Each entry is either a string EP name (`'coreml'` | `'xnnpack'` | `'cpu'`)
+   * or an options object (e.g. `{name: 'coreml', coreMlFlags}`). The first
+   * EP that loads the model wins; later entries are tried if earlier ones
+   * fail.
    *
-   * Can be:
-   * - A preset string: 'auto' | 'cpu' | 'gpu' | 'ane'
-   * - An array of execution providers with fallback order
-   *
-   * Default: 'auto' (CoreML with GPU on iOS, NNAPI on Android, with CPU fallback)
-   *
-   * @example
-   * // Use automatic platform-specific acceleration
-   * executionProviders: 'auto'
+   * If omitted, the engine uses a sensible platform default:
+   *   - iOS: `[{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'xnnpack', 'cpu']`
+   *   - Android: `['xnnpack', 'cpu']` (no NNAPI — deprecated in Android 15;
+   *     no GPU/NPU EP is exposed by `onnxruntime-react-native`).
    *
    * @example
-   * // Force CPU-only execution
-   * executionProviders: 'cpu'
-   *
-   * @example
-   * // Custom provider configuration with CoreML options
+   * // CoreML with custom flags, fallback to CPU
    * executionProviders: [
-   *   { name: 'coreml', useCPUAndGPU: true, enableOnSubgraph: true },
-   *   'cpu'
+   *   {name: 'coreml', coreMlFlags: CoreMlFlag.ENABLE_ON_SUBGRAPH | CoreMlFlag.USE_CPU_AND_GPU},
+   *   'cpu',
    * ]
    */
-  executionProviders?: ExecutionProviderPreset | ExecutionProvider[];
+  executionProviders?: ExecutionProvider[];
 }
 
 export interface TokenizerConfig {
@@ -212,14 +206,3 @@ export type ExecutionProvider =
   | 'coreml'
   | 'xnnpack'
   | 'cpu';
-
-/**
- * Preset execution provider configurations for common use cases.
- *
- * On Android, `'auto'` and `'gpu'` both resolve to `['xnnpack', 'cpu']`
- * since NNAPI is no longer used and there is no other GPU EP exposed.
- */
-export type ExecutionProviderPreset =
-  | 'auto' // CoreML+xnnpack on iOS, xnnpack on Android. Best default.
-  | 'cpu' // bare CPU on iOS, xnnpack+cpu on Android (bare-CPU bug workaround)
-  | 'gpu'; // CoreML on iOS; same as 'auto' on Android

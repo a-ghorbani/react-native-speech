@@ -16,7 +16,6 @@ import type {
   SupertonicVoiceStyle,
   AudioBuffer,
   ExecutionProvider,
-  ExecutionProviderPreset,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensorConstructor,
@@ -65,46 +64,18 @@ function ensureONNXRuntime(): void {
 }
 
 /**
- * Resolve execution provider preset to ONNX Runtime format
+ * Default execution providers when the caller doesn't specify any.
+ * See `KokoroEngine.getDefaultExecutionProviders` for the full rationale.
  */
-function resolveExecutionProviders(
-  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): ExecutionProvider[] {
-  if (!config) {
-    config = 'auto';
+function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios') {
+    return [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ];
   }
-
-  if (typeof config === 'string') {
-    const isIOS = Platform.OS === 'ios';
-
-    // See KokoroEngine.resolveExecutionProviders for the full rationale.
-    // Mirrored here so all neural engines pick the same EP defaults.
-    switch (config) {
-      case 'auto':
-        if (isIOS) {
-          return [
-            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-            'xnnpack',
-            'cpu',
-          ];
-        }
-        return ['xnnpack', 'cpu'];
-
-      case 'cpu':
-        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
-
-      case 'gpu':
-        if (isIOS) {
-          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
-        }
-        return ['xnnpack', 'cpu'];
-
-      default:
-        return ['cpu'];
-    }
-  }
-
-  return config;
+  return ['xnnpack', 'cpu'];
 }
 
 /**
@@ -200,9 +171,8 @@ export class SupertonicInference {
   async initialize(config: SupertonicConfig): Promise<void> {
     ensureONNXRuntime();
 
-    const executionProviders = resolveExecutionProviders(
-      config.executionProviders,
-    );
+    const executionProviders =
+      config.executionProviders ?? getDefaultExecutionProviders();
 
     log.info(
       'Loading models with execution providers:',

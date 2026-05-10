@@ -139,7 +139,8 @@ export async function runBenchmark(
     iterations: config.iterations,
     warmupIterations: warmupCount,
     textLength: config.testPhrase.length,
-    provider: config.provider,
+    provider: config.providerLabel,
+    providers: config.providers,
   });
 
   for (let ei = 0; ei < config.engines.length; ei++) {
@@ -212,7 +213,7 @@ export async function runBenchmark(
         ...initConfig,
         silentMode: 'obey',
         ducking: false,
-        executionProviders: config.provider,
+        executionProviders: config.providers,
       } as Parameters<typeof Speech.initialize>[0]);
 
       const initMs = performance.now() - initStart;

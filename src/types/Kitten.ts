@@ -13,7 +13,7 @@
  */
 
 import type {SynthesisOptions} from './Engine';
-import type {ExecutionProvider, ExecutionProviderPreset} from './Kokoro';
+import type {ExecutionProvider} from './Kokoro';
 
 export type KittenLanguage = 'en';
 
@@ -72,8 +72,9 @@ export interface KittenConfig {
    */
   maxChunkSize?: number;
   /**
-   * Execution providers for ONNX Runtime inference.
-   * Default: 'auto' (CoreML on iOS, NNAPI on Android, with CPU fallback)
+   * Execution providers for ONNX Runtime inference, in fallback order.
+   * Defaults to CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android when
+   * omitted. See `KokoroConfig.executionProviders` for full semantics.
    */
-  executionProviders?: ExecutionProviderPreset | ExecutionProvider[];
+  executionProviders?: ExecutionProvider[];
 }

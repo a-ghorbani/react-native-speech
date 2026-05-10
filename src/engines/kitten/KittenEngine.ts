@@ -23,7 +23,6 @@ import type {
   ReleaseResult,
   ReleaseError,
   ExecutionProvider,
-  ExecutionProviderPreset,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensor,
@@ -94,46 +93,18 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 }
 
 /**
- * Resolve execution provider preset to ONNX Runtime format
+ * Default execution providers when the caller doesn't specify any.
+ * See `KokoroEngine.getDefaultExecutionProviders` for the full rationale.
  */
-function resolveExecutionProviders(
-  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): ExecutionProvider[] {
-  if (!config) {
-    config = 'auto';
+function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios') {
+    return [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ];
   }
-
-  if (typeof config === 'string') {
-    const isIOS = Platform.OS === 'ios';
-
-    // See KokoroEngine.resolveExecutionProviders for the full rationale.
-    // Same approach: NNAPI dropped on Android (deprecated in Android 15);
-    // CoreML uses numeric `coreMlFlags` since the high-level option fields
-    // aren't honored by the React Native bridge; bare CPU on Android is
-    // shadowed by xnnpack to dodge the silent-audio bug.
-    switch (config) {
-      case 'auto':
-        if (isIOS) {
-          return [
-            {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-            'xnnpack',
-            'cpu',
-          ];
-        }
-        return ['xnnpack', 'cpu'];
-      case 'cpu':
-        return Platform.OS === 'android' ? ['xnnpack', 'cpu'] : ['cpu'];
-      case 'gpu':
-        if (isIOS) {
-          return [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'];
-        }
-        return ['xnnpack', 'cpu'];
-      default:
-        return ['cpu'];
-    }
-  }
-
-  return config;
+  return ['xnnpack', 'cpu'];
 }
 
 export class KittenEngine implements TTSEngineInterface<KittenConfig> {
@@ -925,9 +896,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     const {InferenceSession} = getOnnxRuntime();
 
     try {
-      const executionProviders = resolveExecutionProviders(
-        this.config?.executionProviders,
-      );
+      const executionProviders =
+        this.config?.executionProviders ?? getDefaultExecutionProviders();
 
       log.debug(
         `Loading model with providers: ${JSON.stringify(executionProviders)}`,

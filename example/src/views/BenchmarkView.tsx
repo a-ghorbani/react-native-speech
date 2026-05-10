@@ -21,8 +21,44 @@ import {
   type BenchmarkProgress,
   type EngineTestConfig,
 } from '../benchmark';
-import type {ExecutionProviderPreset} from '@pocketpalai/react-native-speech';
+import type {ExecutionProvider} from '@pocketpalai/react-native-speech';
+import {DEFAULT_COREML_FLAGS} from '@pocketpalai/react-native-speech';
 import {C, MONO} from '../styles/cyber';
+
+/**
+ * Benchmark EP scenarios. Each scenario has a label (for the UI and
+ * reports) and a concrete `ExecutionProvider[]` that gets passed straight
+ * to `Speech.initialize`. Scenarios are platform-specific because each
+ * platform exposes a different set of EPs.
+ */
+type EpScenario = {key: string; label: string; providers: ExecutionProvider[]};
+
+const IOS_SCENARIOS: EpScenario[] = [
+  {
+    key: 'auto',
+    label: 'AUTO',
+    providers: [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ],
+  },
+  {
+    key: 'coreml',
+    label: 'COREML',
+    providers: [{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'cpu'],
+  },
+  {key: 'cpu', label: 'CPU', providers: ['cpu']},
+];
+
+const ANDROID_SCENARIOS: EpScenario[] = [
+  {key: 'auto', label: 'AUTO', providers: ['xnnpack', 'cpu']},
+  {key: 'xnnpack', label: 'XNNPACK', providers: ['xnnpack']},
+  {key: 'cpu', label: 'CPU', providers: ['cpu']},
+];
+
+const EP_SCENARIOS: EpScenario[] =
+  Platform.OS === 'ios' ? IOS_SCENARIOS : ANDROID_SCENARIOS;
 
 const TEST_PHRASE =
   'The quick brown fox jumps over the lazy dog. ' +
@@ -46,8 +82,9 @@ const BenchmarkView: React.FC = () => {
   );
   const [iterations, setIterations] = React.useState(3);
   const [warmupIterations, setWarmupIterations] = React.useState(1);
-  const [provider, setProvider] =
-    React.useState<ExecutionProviderPreset>('auto');
+  const [scenarioKey, setScenarioKey] = React.useState<string>(
+    EP_SCENARIOS[0]!.key,
+  );
   const [isRunning, setIsRunning] = React.useState(false);
   const [progress, setProgress] = React.useState<BenchmarkProgress | null>(
     null,
@@ -171,11 +208,14 @@ const BenchmarkView: React.FC = () => {
       });
     }
 
+    const scenario =
+      EP_SCENARIOS.find(s => s.key === scenarioKey) ?? EP_SCENARIOS[0]!;
     const benchConfig: BenchmarkConfig = {
       engines: engineConfigs,
       iterations,
       testPhrase: TEST_PHRASE,
-      provider,
+      providerLabel: scenario.label,
+      providers: scenario.providers,
       warmupIterations,
     };
 
@@ -283,30 +323,21 @@ const BenchmarkView: React.FC = () => {
 
             <Text style={styles.sectionTitle}>{'// EXEC_PROVIDER'}</Text>
             <View style={styles.row}>
-              {(
-                [
-                  {key: 'auto', label: 'AUTO'},
-                  {
-                    key: 'gpu',
-                    label: Platform.OS === 'ios' ? 'COREML' : 'GPU',
-                  },
-                  {key: 'cpu', label: 'CPU'},
-                ] as const
-              ).map(p => (
+              {EP_SCENARIOS.map(s => (
                 <TouchableOpacity
-                  key={p.key}
+                  key={s.key}
                   style={[
                     styles.optionBtn,
-                    provider === p.key && styles.optionBtnActive,
+                    scenarioKey === s.key && styles.optionBtnActive,
                   ]}
-                  onPress={() => setProvider(p.key)}
+                  onPress={() => setScenarioKey(s.key)}
                   disabled={isRunning}>
                   <Text
                     style={[
                       styles.optionText,
-                      provider === p.key && styles.optionTextActive,
+                      scenarioKey === s.key && styles.optionTextActive,
                     ]}>
-                    {p.label}
+                    {s.label}
                   </Text>
                 </TouchableOpacity>
               ))}

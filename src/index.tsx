@@ -72,7 +72,6 @@ export type {
   SupportedLanguage,
   // Execution provider types for hardware acceleration
   ExecutionProvider,
-  ExecutionProviderPreset,
   CoreMLExecutionProviderOption,
   XNNPackExecutionProviderOption,
   CPUExecutionProviderOption,

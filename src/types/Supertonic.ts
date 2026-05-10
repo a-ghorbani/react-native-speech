@@ -9,7 +9,7 @@
  */
 
 import type {SynthesisOptions} from './Engine';
-import type {ExecutionProvider, ExecutionProviderPreset} from './Kokoro';
+import type {ExecutionProvider} from './Kokoro';
 
 export type SupertonicLanguage = 'en'; // Currently only English
 
@@ -65,10 +65,11 @@ export interface SupertonicConfig extends SupertonicModelPaths {
   /** Maximum chunk size in characters for streaming synthesis */
   maxChunkSize?: number;
   /**
-   * Execution provider preference for ONNX Runtime
-   * Can be a preset string or array of specific providers
+   * Execution providers for ONNX Runtime inference, in fallback order.
+   * Defaults to CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android when
+   * omitted. See `KokoroConfig.executionProviders` for full semantics.
    */
-  executionProviders?: ExecutionProviderPreset | ExecutionProvider[];
+  executionProviders?: ExecutionProvider[];
 }
 
 export interface SupertonicModelInfo {

@@ -1,7 +1,7 @@
 import type {
   TTSEngine,
   SynthesisOptions,
-  ExecutionProviderPreset,
+  ExecutionProvider,
 } from '@pocketpalai/react-native-speech';
 
 export interface EngineTestConfig {
@@ -17,7 +17,10 @@ export interface BenchmarkConfig {
   engines: EngineTestConfig[];
   iterations: number;
   testPhrase: string;
-  provider: ExecutionProviderPreset;
+  /** Label for the EP scenario being measured (e.g. 'AUTO', 'COREML', 'CPU') */
+  providerLabel: string;
+  /** Concrete execution-provider array passed to `Speech.initialize` */
+  providers: ExecutionProvider[];
   /** Number of warm-up iterations to discard (default 1) */
   warmupIterations?: number;
 }
