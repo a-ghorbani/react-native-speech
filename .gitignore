@@ -96,4 +96,4 @@ package-lock.json
 
 # Agent/IDE specs
 .agents/
-
+.claude/
