@@ -73,7 +73,18 @@ interface InstalledEngine {
   defaultVoice: string;
 }
 
-const BenchmarkView: React.FC = () => {
+interface BenchmarkViewProps {
+  /**
+   * Whether the benchmark tab is currently visible. Used to rescan
+   * installed models when the user switches back from the SYS tab where
+   * downloads / deletions happen — without this, the model list freezes
+   * at app-launch state because App.tsx keeps all tabs mounted under
+   * `display: none`.
+   */
+  visible: boolean;
+}
+
+const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
   const [installedEngines, setInstalledEngines] = React.useState<
     InstalledEngine[]
   >([]);
@@ -94,8 +105,17 @@ const BenchmarkView: React.FC = () => {
   const [isScanning, setIsScanning] = React.useState(true);
 
   React.useEffect(() => {
-    scanModels();
-  }, []);
+    // Rescan on mount and whenever the tab becomes visible. Skip while a
+    // benchmark run is in progress so we don't yank the engine list out
+    // from under it.
+    if (visible && !isRunning) {
+      scanModels();
+    }
+    // `isRunning` intentionally omitted from deps — we don't want to
+    // re-scan the instant a run finishes; the next tab-focus will pick
+    // up any changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const scanModels = async () => {
     setIsScanning(true);
