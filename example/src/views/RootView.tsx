@@ -19,7 +19,9 @@ import Speech, {
   type HighlightedSegmentArgs,
   type HighlightedSegmentProps,
   type ChunkProgressEvent,
-  type ExecutionProviderPreset,
+  type ExecutionProvider,
+  CoreMlFlag,
+  DEFAULT_COREML_FLAGS,
   TTSEngine,
 } from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
@@ -46,6 +48,86 @@ const DEFAULT_TEXT =
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
+
+// Acceleration EP picker state. Per-platform candidate set; cpu is
+// always appended as the last fallback so users can't fully disable it.
+type AccelEpName = 'coreml' | 'xnnpack';
+
+interface AccelState {
+  selected: ReadonlySet<AccelEpName>;
+  /**
+   * CoreML flag bitmask (iOS only). Bit-OR of `CoreMlFlag` constants.
+   * Ignored on Android.
+   */
+  coreMlFlags: number;
+}
+
+const ACCEL_DEFAULT: AccelState =
+  Platform.OS === 'ios'
+    ? {
+        selected: new Set<AccelEpName>(['coreml', 'xnnpack']),
+        coreMlFlags: DEFAULT_COREML_FLAGS,
+      }
+    : {
+        selected: new Set<AccelEpName>(['xnnpack']),
+        coreMlFlags: 0,
+      };
+
+/**
+ * Translate the multi-select acceleration state into the array form
+ * `Speech.initialize({executionProviders})` expects. CPU is always the
+ * last fallback so the runtime has a guaranteed catch-all.
+ */
+function accelToProviders(state: AccelState): ExecutionProvider[] {
+  const out: ExecutionProvider[] = [];
+  if (state.selected.has('coreml') && Platform.OS === 'ios') {
+    out.push({name: 'coreml', coreMlFlags: state.coreMlFlags});
+  }
+  if (state.selected.has('xnnpack')) {
+    out.push('xnnpack');
+  }
+  out.push('cpu');
+  return out;
+}
+
+interface CoreMlFlagOption {
+  flag: number;
+  label: string;
+  hint: string;
+}
+
+const COREML_FLAG_OPTIONS: CoreMlFlagOption[] = [
+  {
+    flag: CoreMlFlag.ENABLE_ON_SUBGRAPH,
+    label: 'Subgraph',
+    hint: 'Run CoreML on subgraphs (broader op coverage).',
+  },
+  {
+    flag: CoreMlFlag.USE_CPU_AND_GPU,
+    label: 'CPU + GPU',
+    hint: 'Allow Metal GPU. Default; off forces CPU/ANE only.',
+  },
+  {
+    flag: CoreMlFlag.USE_CPU_ONLY,
+    label: 'CPU only',
+    hint: 'Disables GPU/ANE. Useful for debugging.',
+  },
+  {
+    flag: CoreMlFlag.ONLY_ENABLE_DEVICE_WITH_ANE,
+    label: 'ANE only',
+    hint: 'Skip CoreML on devices without Apple Neural Engine.',
+  },
+  {
+    flag: CoreMlFlag.CREATE_MLPROGRAM,
+    label: 'MLProgram',
+    hint: 'Newer ML format (iOS 15+). Often faster on recent devices.',
+  },
+  {
+    flag: CoreMlFlag.ONLY_ALLOW_STATIC_INPUT_SHAPES,
+    label: 'Static shapes',
+    hint: 'Only run CoreML on subgraphs with fixed input shapes.',
+  },
+];
 
 const RootView: React.FC = () => {
   const themedStyles = React.useMemo(
@@ -136,9 +218,11 @@ const RootView: React.FC = () => {
   const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
   const [kittenModels, setKittenModels] = React.useState<any[]>([]);
 
-  // Execution provider selection for hardware acceleration
-  const [selectedProvider, setSelectedProvider] =
-    React.useState<ExecutionProviderPreset>('auto');
+  // Execution provider selection for hardware acceleration. Multi-select
+  // per platform; CPU is always appended as the final fallback.
+  const [accel, setAccel] = React.useState<AccelState>(ACCEL_DEFAULT);
+  const [showAccelDetails, setShowAccelDetails] = React.useState(false);
+  const providers = React.useMemo(() => accelToProviders(accel), [accel]);
 
   // Model release state
   const [isReleasing, setIsReleasing] = React.useState<boolean>(false);
@@ -168,7 +252,10 @@ const RootView: React.FC = () => {
 
   // Initialize engine when selection changes
   const initializeEngine = React.useCallback(
-    async (engine: TTSEngine, provider: ExecutionProviderPreset = 'auto') => {
+    async (
+      engine: TTSEngine,
+      provider: ExecutionProvider[] = accelToProviders(ACCEL_DEFAULT),
+    ) => {
       try {
         setIsInitializing(true);
         setEngineReady(false);
@@ -318,9 +405,9 @@ const RootView: React.FC = () => {
   );
 
   React.useEffect(() => {
-    initializeEngine(selectedEngine, selectedProvider);
+    initializeEngine(selectedEngine, providers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEngine, selectedProvider]);
+  }, [selectedEngine, providers]);
 
   // Load voices when engine is ready
   const loadVoices = React.useCallback(async () => {
@@ -475,8 +562,8 @@ const RootView: React.FC = () => {
 
   // Reload: re-initialize the currently selected engine
   const onReloadPress = React.useCallback(() => {
-    initializeEngine(selectedEngine, selectedProvider);
-  }, [initializeEngine, selectedEngine, selectedProvider]);
+    initializeEngine(selectedEngine, providers);
+  }, [initializeEngine, selectedEngine, providers]);
 
   const onStartPress = React.useCallback(async () => {
     // Set started immediately so Stop is available during synthesis
@@ -524,7 +611,7 @@ const RootView: React.FC = () => {
 
         // If Kokoro is selected, reinitialize
         if (selectedEngine === TTSEngine.KOKORO) {
-          await initializeEngine(TTSEngine.KOKORO, selectedProvider);
+          await initializeEngine(TTSEngine.KOKORO, providers);
         }
       } catch (err) {
         Alert.alert(
@@ -537,7 +624,7 @@ const RootView: React.FC = () => {
         setDownloadProgress(0);
       }
     },
-    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
+    [loadInstalledModels, selectedEngine, providers, initializeEngine],
   );
 
   const downloadSupertonicModel = React.useCallback(
@@ -561,7 +648,7 @@ const RootView: React.FC = () => {
 
         // If Supertonic is selected, reinitialize
         if (selectedEngine === TTSEngine.SUPERTONIC) {
-          await initializeEngine(TTSEngine.SUPERTONIC, selectedProvider);
+          await initializeEngine(TTSEngine.SUPERTONIC, providers);
         }
       } catch (err) {
         Alert.alert(
@@ -574,7 +661,7 @@ const RootView: React.FC = () => {
         setDownloadProgress(0);
       }
     },
-    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
+    [loadInstalledModels, selectedEngine, providers, initializeEngine],
   );
 
   const downloadKittenModel = React.useCallback(
@@ -595,7 +682,7 @@ const RootView: React.FC = () => {
 
         // If Kitten is selected, reinitialize
         if (selectedEngine === TTSEngine.KITTEN) {
-          await initializeEngine(TTSEngine.KITTEN, selectedProvider);
+          await initializeEngine(TTSEngine.KITTEN, providers);
         }
       } catch (err) {
         Alert.alert(
@@ -608,7 +695,7 @@ const RootView: React.FC = () => {
         setDownloadProgress(0);
       }
     },
-    [loadInstalledModels, selectedEngine, selectedProvider, initializeEngine],
+    [loadInstalledModels, selectedEngine, providers, initializeEngine],
   );
 
   const deleteModel = React.useCallback(
@@ -980,7 +1067,7 @@ const RootView: React.FC = () => {
                                   if (selectedEngine === TTSEngine.SUPERTONIC) {
                                     initializeEngine(
                                       TTSEngine.SUPERTONIC,
-                                      selectedProvider,
+                                      providers,
                                     );
                                   }
                                 }}
@@ -1160,7 +1247,7 @@ const RootView: React.FC = () => {
                                   if (selectedEngine === TTSEngine.KITTEN) {
                                     initializeEngine(
                                       TTSEngine.KITTEN,
-                                      selectedProvider,
+                                      providers,
                                     );
                                   }
                                 }}
@@ -1435,42 +1522,119 @@ const RootView: React.FC = () => {
         {/* Acceleration (neural only) */}
         {selectedEngine !== TTSEngine.OS_NATIVE && (
           <View style={styles.accelerationSection}>
-            <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-              Acceleration
-            </Text>
+            <View style={styles.accelHeaderRow}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                Acceleration providers
+              </Text>
+              <Text style={[styles.accelOrderText, themedStyles.textSecondary]}>
+                CPU is always the last fallback
+              </Text>
+            </View>
             <View style={styles.accelerationButtons}>
-              {[
-                {key: 'auto', label: 'Auto'},
-                {key: 'gpu', label: Platform.OS === 'ios' ? 'Metal' : 'GPU'},
-                {key: 'cpu', label: 'CPU'},
-              ].map(item => {
-                const isProviderSelected = selectedProvider === item.key;
+              {(Platform.OS === 'ios'
+                ? [
+                    {key: 'coreml' as const, label: 'CoreML'},
+                    {key: 'xnnpack' as const, label: 'XNNPACK'},
+                  ]
+                : [{key: 'xnnpack' as const, label: 'XNNPACK'}]
+              ).map(item => {
+                const isOn = accel.selected.has(item.key);
                 return (
                   <TouchableOpacity
                     key={item.key}
                     style={[
                       styles.accelBtn,
-                      isProviderSelected
+                      isOn
                         ? themedStyles.btnSelected
                         : themedStyles.btnUnselected,
                     ]}
-                    onPress={() =>
-                      setSelectedProvider(item.key as ExecutionProviderPreset)
-                    }
+                    onPress={() => {
+                      const next = new Set(accel.selected);
+                      if (isOn) {
+                        next.delete(item.key);
+                      } else {
+                        next.add(item.key);
+                      }
+                      setAccel({...accel, selected: next});
+                    }}
                     disabled={isInitializing || isStarted}>
                     <Text
                       style={[
                         styles.accelBtnText,
-                        isProviderSelected
+                        isOn
                           ? themedStyles.textWhite
                           : themedStyles.textPrimary,
                       ]}>
+                      {isOn ? '☑ ' : '☐ '}
                       {item.label}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
+            {Platform.OS === 'android' && (
+              <Text style={[styles.accelHelpText, themedStyles.textSecondary]}>
+                NNAPI was dropped — Android's Neural Networks API was deprecated
+                in Android 15.
+              </Text>
+            )}
+
+            {/* CoreML flag sub-options (iOS + CoreML selected) */}
+            {Platform.OS === 'ios' && accel.selected.has('coreml') && (
+              <View style={styles.accelDetailsBlock}>
+                <TouchableOpacity
+                  onPress={() => setShowAccelDetails(s => !s)}
+                  disabled={isInitializing || isStarted}>
+                  <Text
+                    style={[
+                      styles.accelDetailsToggle,
+                      themedStyles.textSecondary,
+                    ]}>
+                    {showAccelDetails ? '▼' : '▶'} CoreML flags
+                  </Text>
+                </TouchableOpacity>
+                {showAccelDetails && (
+                  <View style={styles.accelDetails}>
+                    {COREML_FLAG_OPTIONS.map(opt => {
+                      // eslint-disable-next-line no-bitwise
+                      const isOn = (accel.coreMlFlags & opt.flag) !== 0;
+                      return (
+                        <TouchableOpacity
+                          key={opt.flag}
+                          style={styles.accelFlagRow}
+                          onPress={() =>
+                            setAccel({
+                              ...accel,
+                              coreMlFlags: isOn
+                                ? // eslint-disable-next-line no-bitwise
+                                  accel.coreMlFlags & ~opt.flag
+                                : // eslint-disable-next-line no-bitwise
+                                  accel.coreMlFlags | opt.flag,
+                            })
+                          }
+                          disabled={isInitializing || isStarted}>
+                          <Text
+                            style={[
+                              styles.accelFlagLabel,
+                              themedStyles.textPrimary,
+                            ]}>
+                            {isOn ? '☑ ' : '☐ '}
+                            {opt.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.accelFlagHint,
+                              themedStyles.textSecondary,
+                            ]}>
+                            {opt.hint}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         )}
 
@@ -1984,6 +2148,53 @@ const styles = StyleSheet.create({
   accelBtnText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  accelHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+  },
+  accelOrderText: {
+    fontSize: 9,
+    fontFamily: MONO,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  accelHelpText: {
+    fontSize: 10,
+    fontFamily: MONO,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  accelDetailsBlock: {
+    marginTop: 10,
+  },
+  accelDetailsToggle: {
+    fontSize: 10,
+    fontFamily: MONO,
+    fontWeight: '700',
+    letterSpacing: 1,
+    paddingVertical: 4,
+  },
+  accelDetails: {
+    marginTop: 4,
+    paddingLeft: 6,
+    borderLeftWidth: 2,
+    borderLeftColor: C.muted,
+  },
+  accelFlagRow: {
+    paddingVertical: 4,
+  },
+  accelFlagLabel: {
+    fontSize: 12,
+    fontFamily: MONO,
+    fontWeight: '600',
+  },
+  accelFlagHint: {
+    fontSize: 10,
+    fontFamily: MONO,
+    marginLeft: 18,
+    marginTop: 1,
   },
   // Voice Section
   voiceSection: {

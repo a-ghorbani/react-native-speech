@@ -280,4 +280,177 @@ describe('EngineStreamSession', () => {
     await expect(session.finalize()).resolves.toBeUndefined();
     expect(synthesizeChunk).not.toHaveBeenCalled();
   });
+
+  // ─────────────────────────────────────────────────────────────────
+  // Empty-buffer resilience
+  //
+  // Engines may legitimately return an empty AudioBuffer for chunks with
+  // no synthesizable content (e.g. Kitten skips a chunk that tokenizes
+  // to only framing tokens, which crashes its BERT expand op). The
+  // session must skip those and continue, NOT terminate. The pre-fix
+  // version of `prefetchNext` returned null on `samples.length === 0`,
+  // which made the main loop end the whole stream after the first such
+  // chunk. These tests pin the new skip-and-continue contract.
+  // ─────────────────────────────────────────────────────────────────
+
+  function emptyBuffer(): AudioBuffer {
+    return {
+      samples: new Float32Array(0),
+      sampleRate: 24000,
+      channels: 1,
+      duration: 0,
+    };
+  }
+
+  test('mid-stream empty audio is skipped, subsequent chunks still synthesize and play', async () => {
+    const {synthesizeChunk, calls} = makeControllableSynth();
+    const {playAudio, plays} = makeControllablePlayer();
+    const stop = jest.fn(async () => {});
+
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: stop,
+      maxChunkSize: 400,
+    });
+
+    // Three sentence chunks — middle one will produce empty audio (the
+    // bug pattern: an isolated `.` from a stripped horizontal rule).
+    session.append('First sentence. ');
+    session.append('. '); // → empty audio from engine
+    session.append('Third sentence.');
+    const finalizePromise = session.finalize();
+    await flushMicrotasks();
+
+    // First chunk: synthesizes and plays normally.
+    expect(calls.length).toBeGreaterThanOrEqual(1);
+    expect(calls[0]!.text).toBe('First sentence. ');
+    calls[0]!.resolve(makeAudioBuffer(calls[0]!.text));
+    await flushMicrotasks();
+
+    // Begins playing first chunk; in parallel, prefetches the second.
+    expect(plays.length).toBeGreaterThanOrEqual(1);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[1]!.text).toBe('. ');
+
+    // Engine returns empty buffer for the no-content chunk. Session must
+    // NOT terminate — it must pull the third chunk and synthesize that.
+    calls[1]!.resolve(emptyBuffer());
+    await flushMicrotasks();
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls[2]!.text).toBe('Third sentence.');
+    calls[2]!.resolve(makeAudioBuffer(calls[2]!.text));
+    await flushMicrotasks();
+
+    // First chunk play finishes → loop should advance to third chunk.
+    plays[0]!.resolve();
+    await flushMicrotasks();
+    expect(plays.length).toBe(2);
+    plays[1]!.resolve();
+    await flushMicrotasks();
+
+    await expect(finalizePromise).resolves.toBeUndefined();
+    // Skipped chunk did NOT trigger playback.
+    expect(plays).toHaveLength(2);
+  });
+
+  test('first chunk empty: session skips bootstrap empties and synthesizes the next', async () => {
+    const {synthesizeChunk, calls} = makeControllableSynth();
+    const {playAudio, plays} = makeControllablePlayer();
+    const stop = jest.fn(async () => {});
+
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: stop,
+      maxChunkSize: 400,
+    });
+
+    // Bug pattern: stripped hrule arrives FIRST, so the bootstrap chunk
+    // is a `.\n`. Pre-fix code terminated the session at line 132 on
+    // `currentAudio.samples.length === 0`. New behavior: pull next.
+    session.append('. ');
+    session.append('Real content here.');
+    const finalizePromise = session.finalize();
+    await flushMicrotasks();
+
+    expect(calls[0]!.text).toBe('. ');
+    calls[0]!.resolve(emptyBuffer());
+    await flushMicrotasks();
+
+    // Should not have played anything yet (bootstrap was empty), but
+    // MUST have moved on to the next chunk.
+    expect(plays).toHaveLength(0);
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[1]!.text).toBe('Real content here.');
+    calls[1]!.resolve(makeAudioBuffer(calls[1]!.text));
+    await flushMicrotasks();
+
+    expect(plays).toHaveLength(1);
+    plays[0]!.resolve();
+    await flushMicrotasks();
+
+    await expect(finalizePromise).resolves.toBeUndefined();
+  });
+
+  test('all chunks empty: session ends cleanly without firing playback', async () => {
+    const {synthesizeChunk, calls} = makeControllableSynth();
+    const {playAudio, plays} = makeControllablePlayer();
+    const stop = jest.fn(async () => {});
+
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: stop,
+      maxChunkSize: 400,
+    });
+
+    session.append('. ');
+    session.append('? ');
+    const finalizePromise = session.finalize();
+    await flushMicrotasks();
+
+    // Resolve every synth call as empty.
+    for (const c of calls) c.resolve(emptyBuffer());
+    await flushMicrotasks();
+    // The remainder (`? ` after finalize) may take an additional pass —
+    // resolve any new calls until drained.
+    for (let i = 0; i < 4; i++) {
+      for (const c of calls) {
+        // Promise might already be settled; resolve idempotently.
+        c.resolve(emptyBuffer());
+      }
+      await flushMicrotasks();
+    }
+
+    await expect(finalizePromise).resolves.toBeUndefined();
+    expect(plays).toHaveLength(0);
+  });
+
+  test('error during synth surfaces through finalize even with prior empty chunks', async () => {
+    // Empty-buffer skipping must not swallow real errors. If a later
+    // chunk genuinely throws, the session should still surface it.
+    const {synthesizeChunk, calls} = makeControllableSynth();
+    const {playAudio} = makeControllablePlayer();
+    const stop = jest.fn(async () => {});
+
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: stop,
+      maxChunkSize: 400,
+    });
+
+    session.append('. '); // empty
+    session.append('boom. ');
+    const finalizePromise = session.finalize();
+    await flushMicrotasks();
+
+    calls[0]!.resolve(emptyBuffer());
+    await flushMicrotasks();
+    calls[1]!.reject(new Error('synthesis exploded'));
+    await flushMicrotasks();
+
+    await expect(finalizePromise).rejects.toThrow('synthesis exploded');
+  });
 });

@@ -92,6 +92,16 @@ export interface SynthesisOptions {
    * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
    */
   silentMode?: 'obey' | 'respect' | 'ignore';
+  /**
+   * If `true` (default), markdown syntax (`**bold**`, headers, tables, code
+   * fences, lists, links, etc.) is stripped before phonemization so the
+   * TTS doesn't read asterisks / pipes / hashes aloud. Set `false` to pass
+   * text through verbatim — useful when consumer has already cleaned the
+   * input or when preserving source-text offsets for highlighting.
+   * @platform neural-engines
+   * @default true
+   */
+  stripMarkdown?: boolean;
 }
 
 /**
@@ -197,8 +207,8 @@ export interface ProgressEvent {
 }
 
 /**
- * Event emitted when a new chunk (sentence) starts being spoken
- * Used by neural TTS engines that process text in chunks
+ * Event emitted when a new chunk (sentence) starts being spoken.
+ * Used by neural TTS engines that process text in chunks.
  */
 export interface ChunkProgressEvent {
   /** Utterance ID */
@@ -209,11 +219,23 @@ export interface ChunkProgressEvent {
   totalChunks: number;
   /** The text content of the current chunk */
   chunkText: string;
-  /** Position range in the original text */
+  /**
+   * Character range of the chunk.
+   *
+   * - When `SynthesisOptions.stripMarkdown` is `true` (the default for
+   *   neural engines), this range refers to the **post-strip** text —
+   *   i.e. positions in the markdown-cleaned input that the engine
+   *   chunked, NOT the consumer's original input. Highlighting the
+   *   original input directly will be misaligned wherever stripping
+   *   removed or rewrote characters (e.g. `### Header` → `Header.`).
+   * - When `stripMarkdown` is `false`, the range refers to the original
+   *   text the consumer passed in.
+   *
+   * Pass `stripMarkdown: false` if you need stable original-text offsets
+   * for highlighting and have already cleaned the markdown yourself.
+   */
   textRange: {
-    /** Start position in original text */
     start: number;
-    /** End position in original text */
     end: number;
   };
   /** Overall progress percentage (0-100) */
@@ -252,16 +274,28 @@ export interface SpeechStreamOptions extends SynthesisOptions {
 
 /**
  * Progress event emitted by a `SpeechStream` as each chunk starts
- * playing. Offsets are relative to the **total text appended to the
- * stream so far** — not to any single batch — so consumers can
- * highlight ranges directly in the accumulated LLM output.
+ * playing.
+ *
+ * Offsets are relative to the **total text appended to the stream so
+ * far** (sum of all `append()` arguments, in order). Whether they map
+ * one-to-one to the consumer's input depends on `stripMarkdown`:
+ *
+ * - With `stripMarkdown: true` (default for neural engines), markdown
+ *   is stripped from the appended text before chunking, so the range
+ *   refers to the post-strip stream — not the consumer's original
+ *   appends. Highlighting the original input directly will drift
+ *   wherever stripping removed or rewrote characters.
+ * - With `stripMarkdown: false`, the range maps directly to the
+ *   accumulated original text. Use this if you need stable original-
+ *   text offsets for highlighting and have already cleaned the
+ *   markdown yourself.
  */
 export interface StreamProgressEvent {
   /** Text of the chunk currently being spoken. */
   chunkText: string;
   /**
-   * Absolute character range within the consumer's accumulated text
-   * (sum of all `append()` arguments, in order). Monotonically
+   * Absolute character range within the accumulated stream text. See
+   * the parent docstring for stripMarkdown semantics. Monotonically
    * non-decreasing across a stream's lifetime.
    */
   streamRange: {start: number; end: number};

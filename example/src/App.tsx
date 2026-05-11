@@ -43,7 +43,7 @@ function AppContent() {
           styles.tabContent,
           tab === 'benchmark' ? styles.tabVisible : styles.tabHidden,
         ]}>
-        <BenchmarkView />
+        <BenchmarkView visible={tab === 'benchmark'} />
       </View>
       <View style={[styles.tabBar, {paddingBottom: insets.bottom || 6}]}>
         {TABS.map(t => {

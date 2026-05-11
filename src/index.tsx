@@ -72,12 +72,11 @@ export type {
   SupportedLanguage,
   // Execution provider types for hardware acceleration
   ExecutionProvider,
-  ExecutionProviderPreset,
   CoreMLExecutionProviderOption,
-  NNAPIExecutionProviderOption,
   XNNPackExecutionProviderOption,
   CPUExecutionProviderOption,
 } from './types';
+export {CoreMlFlag, DEFAULT_COREML_FLAGS} from './types';
 
 // Export Supertonic types
 export type {

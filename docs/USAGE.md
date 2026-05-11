@@ -573,7 +573,7 @@ Install the optional peer:
 npm install onnxruntime-react-native
 ```
 
-All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders` (`'auto' | 'cpu' | 'gpu' | 'ane'`, or an explicit array). Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
+All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
 ### Kokoro
 

@@ -19,6 +19,7 @@ import {createComponentLogger} from '../utils/logger';
 import type {DictSource} from './DictSource';
 
 const log = createComponentLogger('TTS', 'HansPhonemizer');
+const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : true;
 
 // --- hans00/phonemize lazy loader ---
 
@@ -35,10 +36,14 @@ let hans00Loaded = false;
 /**
  * Lazy-load hans00/phonemize. Returns null if unavailable.
  *
- * Three failure modes are handled gracefully (warn + return null) so the
+ * Four failure modes are handled gracefully (warn + return null) so the
  * phonemizer can fall back to dict-only spelling instead of crashing
  * synthesis:
  *
+ *   0. Hermes debug runtime: skip the load proactively. Even though the
+ *      `require()` is wrapped in try/catch, Metro reports the module load
+ *      error to ExceptionsManager before control returns here, which causes
+ *      a redbox. We avoid the require entirely in this runtime.
  *   1. `require()` throws SyntaxError("Error encoding bytecode") — Hermes
  *      debug mode can't bytecode-encode the 4.3MB en-g2p dictionary.
  *      Subsequent requires return undefined silently in Metro, so (2) also
@@ -53,6 +58,20 @@ let hans00Loaded = false;
 function getHans00(): Hans00 | null {
   if (hans00Loaded) return hans00Lib;
   hans00Loaded = true;
+  const isHermesDebug =
+    isDev &&
+    typeof globalThis !== 'undefined' &&
+    (globalThis as {HermesInternal?: unknown}).HermesInternal != null;
+  if (isHermesDebug) {
+    log.warn(
+      'Skipping phonemize load on Hermes debug: Metro reports the known ' +
+        'en-g2p bytecode-encoding failure to ExceptionsManager before our ' +
+        'try/catch can absorb it. OOV short tokens will spell out via dict; ' +
+        'longer OOV words will pass through. Use a release build for full ' +
+        'G2P coverage.',
+    );
+    return null;
+  }
   try {
     const required = require('phonemize');
     if (!required || typeof required.toIPA !== 'function') {

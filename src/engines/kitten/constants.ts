@@ -18,8 +18,31 @@ export const KITTEN_CONSTANTS = {
   CHANNELS: 1,
 
   // Synthesis limits
-  /** Default maximum chunk size in characters for text splitting */
-  DEFAULT_MAX_CHUNK_SIZE: 400,
+  /**
+   * Default maximum chunk size in characters for text splitting.
+   *
+   * Sized to keep the typical IPA expansion (~2-2.5x for English) under
+   * MAX_PHONEME_TOKENS. Worst-case content (numbers spelled out as
+   * "forty-seven", heavy diphthong words) can run at 3.4x and still hit
+   * the cap on a 200-char chunk, in which case the engine skips that
+   * chunk rather than crash. Lower this if you regularly hit the
+   * "skipping oversized chunk" warning.
+   */
+  DEFAULT_MAX_CHUNK_SIZE: 200,
+  /**
+   * Maximum phoneme tokens per chunk (input_ids dimension).
+   *
+   * Kitten's BERT positional embeddings cap out at 512 tokens. Beyond
+   * that, the `/bert/Expand` op fails with "invalid expand shape" and
+   * the synthesis throws. In practice English IPA expansion runs at
+   * ~2-2.5x the source character count for typical prose, but worst-
+   * case content (numbers spelled out, heavy diphthongs) can hit 3.4x.
+   *
+   * 480 leaves ~6% headroom under 512 for framing tokens (pad+eos+pad).
+   * Pair with DEFAULT_MAX_CHUNK_SIZE = 200 so typical chunks stay well
+   * under the cap; the cap is a safety net for unusual inputs.
+   */
+  MAX_PHONEME_TOKENS: 480,
 
   // Tokenizer
   /** Boundary/pad token ID (the '$' character, index 0) */

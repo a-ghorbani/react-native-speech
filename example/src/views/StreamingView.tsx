@@ -15,19 +15,65 @@ import Speech, {
 } from '@pocketpalai/react-native-speech';
 import {C, MONO} from '../styles/cyber';
 
-const SAMPLE_TEXT =
-  "Hello! How can I help you today? I am here to help. Let's walk " +
-  'through a quick example together. Streaming tokens from a language ' +
-  'model should sound smooth, not like three independent utterances ' +
-  'separated by awkward pauses. With the new streaming API, short ' +
-  'bursts still speak quickly, and longer text gets batched for more ' +
-  'natural prosody.';
+const SAMPLE_TEXT = `# The Highly Scientific Guide to Procrastination
+
+A **rigorous study** of how to accomplish absolutely nothing — *productively*. Conducted by experts (me) over many decades (since lunch).
+
+---
+
+## Why Procrastinate?
+
+Procrastination is a **noble pursuit** practiced by some of history's greatest minds, including:
+
+- Aristotle, probably.
+- That one coworker who never replies to email.
+- Most cats, professionally.
+- You, right now, instead of doing the thing.
+
+> "Why do today what you can put off until tomorrow, when tomorrow you can put it off until next week?" — *Anonymous, definitely not me*.
+
+---
+
+### The Four Classical Techniques
+
+1. **The Tab Cascade**: open forty-seven browser tabs to "research" a topic. Close the laptop. Forget the topic.
+2. **The Productive Detour**: decide to tidy your desk before starting work. Three hours later, your entire apartment is reorganized.
+3. **The Power Nap Spiral**: lie down for a quick twenty minutes. Wake up four hours later, deeply confused about the date.
+4. **The Snack Quest**: walk to the kitchen. Stare into the fridge. Walk back. Repeat as needed.
+
+---
+
+## Procrastinator Skill Levels
+
+| Level | Title | Behavior |
+|-------|--------------|--------------------------------------------------------|
+| One | Rookie | Checks email instead of working. |
+| Two | Amateur | Watches exactly one cat video, then a second, then nine. |
+| Three | Intermediate | Alphabetizes the bookshelf for "clarity." |
+| Four | Advanced | Learns the ukulele to avoid a single deadline. |
+| Five | Grand Master | Writes elaborate guides about procrastination. |
+
+---
+
+### Warning Signs
+
+You may be procrastinating if:
+
+- You've brewed **three pots of coffee** before ten in the morning and produced zero results.
+- Your to-do list now has its own to-do list.
+- You are reading this guide right now, instead of the thing you are supposed to be doing.
+
+> *"I will start first thing tomorrow"* — every Sunday evening, forever.
+
+---
+
+Remember: tomorrow is the busiest day of the week. Now go make another snack. You have earned it.`;
 
 type Rate = {label: string; tokensPerSec: number};
 const RATES: Rate[] = [
+  {label: '1 tok/s', tokensPerSec: 1},
   {label: '5 tok/s', tokensPerSec: 5},
   {label: '20 tok/s', tokensPerSec: 20},
-  {label: '80 tok/s', tokensPerSec: 80},
 ];
 
 function tokenize(text: string): string[] {

@@ -184,3 +184,142 @@ describe('KittenEngine - successful initialize() & lifecycle', () => {
     expect(result.errors).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Streaming guard for no-content chunks
+//
+// Kitten's BERT expand op crashes on near-empty inputs ("invalid expand
+// shape"). When the markdown stream buffer flushes an isolated horizontal
+// rule as `.\n`, StreamingChunker can emit a 2-char chunk that hits this
+// crash. KittenEngine.synthesizeTextChunk must short-circuit those chunks
+// to an empty AudioBuffer BEFORE invoking ONNX so the model is never fed
+// garbage. The session layer is responsible for skipping the empty buffer
+// and pulling the next chunk (covered in EngineStreamSession.test.ts).
+// ─────────────────────────────────────────────────────────────────────────
+describe('KittenEngine - streaming guards no-content chunks', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+  });
+
+  // We only need to verify that ONNX inference is NEVER triggered for
+  // these chunks. Anything else (audio playback, finalize) is bonus
+  // because those are session/player concerns covered elsewhere.
+  test.each([
+    ['lone period', '.'],
+    ['period + space', '. '],
+    ['period + newline (the actual hrule artifact)', '.\n'],
+    ['whitespace only', '   '],
+    ['punctuation only', '!?,.'],
+  ])('skips ONNX inference for chunk of %s', async (_label, chunk) => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append(chunk);
+    await handle.finalize();
+
+    // The guard must short-circuit before ONNX. If a future change
+    // accidentally removes it, this test fires loudly with the same
+    // "invalid expand shape" symptom we'd see on device.
+    expect(mockSessionRun).not.toHaveBeenCalled();
+  });
+
+  test('oversized splittable chunk is broken down and each piece synthesized', async () => {
+    // Real text with clauses — splitOversizedSource splits on `,`/`;`/`:`.
+    // Each piece should fit under MAX_PHONEME_TOKENS individually.
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(2400), dims: [1, 2400]},
+    });
+
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    // Build 600+ chars of clauseable text (well over the 480 token cap).
+    // Each clause is ~50 chars, fits comfortably under the cap.
+    const longText = Array.from(
+      {length: 14},
+      (_, i) => `clause number ${i} with some real content`,
+    ).join(', ');
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append(longText + '. ');
+    await handle.finalize();
+
+    // The engine recurses: original chunk hits the cap, gets split, each
+    // piece is synthesized. So mockSessionRun fires multiple times for
+    // ONE input chunk — the user hears the entire content instead of
+    // dropping the chunk on the floor.
+    expect(mockSessionRun.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  test('truly unsplittable oversized chunk is dropped (no infinite recursion)', async () => {
+    // A single 600-char "word" (no whitespace, no clause punctuation)
+    // can't be split. The recursion must terminate by returning empty
+    // rather than looping forever on the same input.
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append('a'.repeat(600) + '. ');
+    await handle.finalize();
+
+    // ONNX never invoked for an unsplittable oversized chunk — the
+    // engine drops it rather than crash on the BERT expand op.
+    expect(mockSessionRun).not.toHaveBeenCalled();
+  });
+
+  test('oversized chunk in middle of stream: session continues past it', async () => {
+    // The on-device crash pattern, post-fix: an oversized chunk used to
+    // throw and end the session. Now it gets split-and-synthesized; if
+    // even that fails (unsplittable), it returns empty and the session
+    // skips to the next chunk. Either way, "Short end" must play.
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(2400), dims: [1, 2400]},
+    });
+
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append('Short start. ');
+    handle.append('a'.repeat(600) + '. '); // unsplittable oversized → drop
+    handle.append('Short end. ');
+    await handle.finalize();
+
+    // Two short chunks synthesize normally (1 ONNX run each); the
+    // oversized middle is unsplittable so it's dropped (0 ONNX runs).
+    // Pre-fix behavior: the oversized chunk would throw, the session
+    // would end, and "Short end" would never play.
+    expect(mockSessionRun).toHaveBeenCalledTimes(2);
+  });
+
+  test('content chunk after a no-content chunk still synthesizes', async () => {
+    // Verifies the engine doesn't get "stuck" after a skipped chunk —
+    // EngineStreamSession should pull the next one and the guard should
+    // not fire for it. mockSessionRun returns a fake waveform.
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(2400), dims: [1, 2400]},
+    });
+
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    // No-content chunk first (would have crashed pre-fix), then real
+    // content. Use ` Hello world. ` so the chunker treats them as
+    // separate sentences.
+    handle.append('. ');
+    handle.append('Hello world. ');
+    await handle.finalize();
+
+    // ONNX ran for the content chunk — at least once. Pre-fix, the
+    // session would have ended at the empty bootstrap and the content
+    // chunk would never have been synthesized.
+    expect(mockSessionRun).toHaveBeenCalled();
+  });
+});

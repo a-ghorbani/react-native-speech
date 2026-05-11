@@ -16,11 +16,11 @@ import type {
   SupertonicVoiceStyle,
   AudioBuffer,
   ExecutionProvider,
-  ExecutionProviderPreset,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensorConstructor,
 } from '../../types';
+import {DEFAULT_COREML_FLAGS} from '../../types';
 import {
   createTextMask,
   createLatentMask,
@@ -64,59 +64,18 @@ function ensureONNXRuntime(): void {
 }
 
 /**
- * Resolve execution provider preset to ONNX Runtime format
+ * Default execution providers when the caller doesn't specify any.
+ * See `KokoroEngine.getDefaultExecutionProviders` for the full rationale.
  */
-function resolveExecutionProviders(
-  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): ExecutionProvider[] {
-  if (!config) {
-    config = 'auto';
+function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios') {
+    return [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ];
   }
-
-  if (typeof config === 'string') {
-    const isIOS = Platform.OS === 'ios';
-
-    switch (config) {
-      case 'auto':
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'xnnpack',
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'xnnpack', 'cpu'];
-        }
-
-      case 'cpu':
-        return ['cpu'];
-
-      case 'gpu':
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'cpu'];
-        }
-
-      default:
-        return ['cpu'];
-    }
-  }
-
-  return config;
+  return ['xnnpack', 'cpu'];
 }
 
 /**
@@ -212,9 +171,8 @@ export class SupertonicInference {
   async initialize(config: SupertonicConfig): Promise<void> {
     ensureONNXRuntime();
 
-    const executionProviders = resolveExecutionProviders(
-      config.executionProviders,
-    );
+    const executionProviders =
+      config.executionProviders ?? getDefaultExecutionProviders();
 
     log.info(
       'Loading models with execution providers:',

@@ -23,7 +23,6 @@ import type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ExecutionProvider,
-  ExecutionProviderPreset,
   ReleaseResult,
   ReleaseError,
   OnnxInferenceSession,
@@ -34,10 +33,15 @@ import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
+import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
 import {loadNativeDict} from '../../phonemization';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {
+  stripMarkdown,
+  createMarkdownStreamBuffer,
+} from '../../utils/stripMarkdown';
 import {KOKORO_CONSTANTS} from './constants';
 
 const log = createComponentLogger('Kokoro', 'Engine');
@@ -81,67 +85,23 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
 
 /**
- * Resolve execution provider preset or array to ONNX Runtime format
- * Returns the executionProviders array for InferenceSession.create()
+ * Default execution providers when the caller doesn't specify any.
+ *
+ *   - iOS: CoreML (Metal/ANE) with sensible flags, xnnpack second, bare
+ *     CPU last.
+ *   - Android: xnnpack + CPU. NNAPI was removed (deprecated in Android
+ *     15) and there is no other public GPU/NPU EP exposed by
+ *     `onnxruntime-react-native`.
  */
-function resolveExecutionProviders(
-  config: ExecutionProviderPreset | ExecutionProvider[] | undefined,
-): ExecutionProvider[] {
-  // If not specified, use 'auto' preset
-  if (!config) {
-    config = 'auto';
+function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios') {
+    return [
+      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
+      'xnnpack',
+      'cpu',
+    ];
   }
-
-  // Handle preset strings
-  if (typeof config === 'string') {
-    const isIOS = Platform.OS === 'ios';
-
-    switch (config) {
-      case 'auto':
-        // Platform-specific defaults with hardware acceleration
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'xnnpack',
-            'cpu',
-          ];
-        } else {
-          // Android
-          return ['nnapi', 'xnnpack', 'cpu'];
-        }
-
-      case 'cpu':
-        // Force CPU-only execution
-        return ['cpu'];
-
-      case 'gpu':
-        // Prefer GPU acceleration
-        if (isIOS) {
-          return [
-            {
-              name: 'coreml',
-              useCPUOnly: false,
-              useCPUAndGPU: true,
-              enableOnSubgraph: true,
-            },
-            'cpu',
-          ];
-        } else {
-          return ['nnapi', 'cpu'];
-        }
-
-      default:
-        return ['cpu'];
-    }
-  }
-
-  // Handle array of providers - pass through as-is
-  return config;
+  return ['xnnpack', 'cpu'];
 }
 
 export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
@@ -331,6 +291,13 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const language = this.getLanguageFromVoice(voiceId);
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
+    const stripMd = options?.stripMarkdown !== false;
+    // When stripping is enabled, buffer incoming text by complete lines and
+    // strip BEFORE StreamingChunker sees it — so hrules / headers / table
+    // rows get converted into sentence boundaries the chunker recognizes.
+    // Stripping inside synthesizeChunk (post-chunker) would only catch
+    // inline markers; structural breaks would be lost.
+    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.synthesizeTextChunk(text, voiceId, language, options),
@@ -375,8 +342,21 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     };
 
     return {
-      append: (text: string) => session.append(text),
-      finalize: wrapFinalize,
+      append: (text: string) => {
+        if (mdBuffer) {
+          const emit = mdBuffer.push(text);
+          if (emit) session.append(emit);
+        } else {
+          session.append(text);
+        }
+      },
+      finalize: async () => {
+        if (mdBuffer) {
+          const tail = mdBuffer.flush();
+          if (tail) session.append(tail);
+        }
+        return wrapFinalize();
+      },
       cancel: wrapCancel,
     };
   }
@@ -426,10 +406,16 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
+    // Strip markdown syntax before chunking so structural markers (`---`,
+    // `###`, table rows) get converted into sentence breaks the chunker
+    // recognizes. Default on; consumer can opt out via options.
+    const cleanText =
+      options?.stripMarkdown === false ? text : stripMarkdown(text);
+
     // Chunk text by sentences for streaming playback
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
     const chunks = this.normalizer.chunkBySentencesWithMetadata(
-      text,
+      cleanText,
       maxChunkSize,
     );
 
@@ -877,10 +863,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const {InferenceSession} = getOnnxRuntime();
 
     try {
-      // Resolve execution providers from config
-      const executionProviders = resolveExecutionProviders(
-        this.config?.executionProviders,
-      );
+      const executionProviders =
+        this.config?.executionProviders ?? getDefaultExecutionProviders();
 
       log.debug(
         `Loading model with providers: ${JSON.stringify(executionProviders)}`,
