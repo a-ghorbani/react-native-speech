@@ -420,8 +420,8 @@ RCT_EXPORT_MODULE();
       category = AVAudioSessionCategoryAmbient;
     } else if ([silentMode isEqualToString:@"ignore"]) {
       category = AVAudioSessionCategoryPlayback;
-    } else { // obey
-      category = AVAudioSessionCategorySoloAmbient;
+    } else { // obey: TTS should be heard by default
+      category = AVAudioSessionCategoryPlayback;
     }
   }
 

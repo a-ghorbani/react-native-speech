@@ -35,28 +35,24 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 // Minimal mock for hans00/phonemize — only hit for OOV words.
-jest.mock(
-  'phonemize',
-  () => ({
-    toIPA: jest.fn((word: string, _opts?: {stripStress?: boolean}) => {
-      const map: Record<string, string> = {
-        floofulous: 'ˈfluːfələs',
-        zoomy: 'ˈzuːmi',
-        // Echo cases — simulates lowercased acronyms hans00 doesn't recognize.
-        ml: 'ml',
-        xlm: 'xlm',
-        // Single letters — what the acronym fallback queries when spelling out.
-        // Mock lowercases input before lookup, so 'M'/'L'/'X' all hit these.
-        m: 'ɛm',
-        l: 'ɛl',
-        x: 'ɛks',
-      };
-      const key = word.toLowerCase();
-      return map[key] ?? `ˈ${key}`;
-    }),
+jest.mock('phonemize', () => ({
+  toIPA: jest.fn((word: string, _opts?: {stripStress?: boolean}) => {
+    const map: Record<string, string> = {
+      floofulous: 'ˈfluːfələs',
+      zoomy: 'ˈzuːmi',
+      // Echo cases — simulates lowercased acronyms hans00 doesn't recognize.
+      ml: 'ml',
+      xlm: 'xlm',
+      // Single letters — what the acronym fallback queries when spelling out.
+      // Mock lowercases input before lookup, so 'M'/'L'/'X' all hit these.
+      m: 'ɛm',
+      l: 'ɛl',
+      x: 'ɛks',
+    };
+    const key = word.toLowerCase();
+    return map[key] ?? `ˈ${key}`;
   }),
-  {virtual: true},
-);
+}));
 
 const hans00Mock = require('phonemize') as {toIPA: jest.Mock};
 

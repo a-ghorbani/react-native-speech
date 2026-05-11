@@ -41,7 +41,7 @@ export interface VoiceOptions {
    * This option is ignored if `ducking` is `true`.
    * @platform iOS
    *
-   * - `obey`: (Default) Does not change the app's audio session. Speech follows the system default.
+   * - `obey`: (Default) Speech plays through the device's silent switch using the Playback audio category. Use `respect` to honor the ringer switch.
    * - `respect`: Speech will be silenced by the ringer switch. Use for non-critical audio.
    * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
    */
@@ -122,7 +122,7 @@ export interface AudioPlayerConfig {
    * Determines how speech audio interacts with the device's silent (ringer) switch.
    * @platform iOS
    *
-   * - `obey`: (Default) Does not change the app's audio session. Speech follows the system default.
+   * - `obey`: (Default) Speech plays through the device's silent switch using the Playback audio category. Use `respect` to honor the ringer switch.
    * - `respect`: Speech will be silenced by the ringer switch. Use for non-critical audio.
    * - `ignore`: Speech will play even if the ringer is off. Use for critical audio when ducking is not desired.
    */
