@@ -70,7 +70,11 @@ PERFETTO_CONFIG=$(mktemp)
 
 cleanup() {
   kill "$LOGCAT_PID" 2>/dev/null || true
-  adb shell "kill \$(cat /tmp/perfetto_bench_pid 2>/dev/null) 2>/dev/null; rm -f /tmp/perfetto_bench_pid" 2>/dev/null || true
+  # PERFETTO_PID is the on-device pid printed by `perfetto --background`.
+  # Kill it best-effort in case the main flow didn't get a chance to stop it.
+  if [ -n "${PERFETTO_PID:-}" ]; then
+    adb shell "kill $PERFETTO_PID 2>/dev/null" 2>/dev/null || true
+  fi
   rm -f "$LOGCAT_FILE" "$QUERY_FILE" "$PERFETTO_CONFIG"
   if [ -d "$TRACE_DIR" ] && [ -f "$LOCAL_TRACE" ]; then
     echo "Trace file retained at: $LOCAL_TRACE"
@@ -158,24 +162,23 @@ data_sources {
 duration_ms: $((DURATION * 1000))
 PERFCFG
 
-  # Push config to device and start recording
-  adb push "$PERFETTO_CONFIG" /data/local/tmp/perfetto_config.pbtx 2>/dev/null
+  # Push config to device. Android 14+ tightened /data/local/tmp perms;
+  # perfetto explicitly tells you to use /data/misc/perfetto-configs/ —
+  # that path is guaranteed readable by the perfetto cmd at all times.
+  DEVICE_CONFIG="/data/misc/perfetto-configs/perfetto_config.pbtx"
+  adb push "$PERFETTO_CONFIG" "$DEVICE_CONFIG" 2>/dev/null
 
   echo "Starting Perfetto recording..."
-  adb shell "nohup perfetto \
-    --config /data/local/tmp/perfetto_config.pbtx \
-    --out $DEVICE_TRACE \
-    </dev/null >/dev/null 2>&1 &
-    echo \$! > /tmp/perfetto_bench_pid" 2>/dev/null
-
-  sleep 1
-
-  PERFETTO_PID=$(adb shell "cat /tmp/perfetto_bench_pid 2>/dev/null" 2>/dev/null || echo "")
-  if [ -n "$PERFETTO_PID" ]; then
+  # --background detaches cleanly and prints the device PID to stdout
+  # (the previous `nohup ... &` pattern dies on newer Android when the
+  # adb shell exits, even with nohup).
+  PERFETTO_PID=$(adb shell "perfetto --txt -c $DEVICE_CONFIG -o $DEVICE_TRACE --background" 2>/dev/null | tr -d '\r' | head -1)
+  if [ -n "$PERFETTO_PID" ] && [[ "$PERFETTO_PID" =~ ^[0-9]+$ ]]; then
     echo "Perfetto recording started (device PID: $PERFETTO_PID)"
   else
-    echo "WARNING: Could not start Perfetto recording."
+    echo "WARNING: Could not start Perfetto recording. Got: '$PERFETTO_PID'"
     HAS_PERFETTO=false
+    PERFETTO_PID=""
   fi
 fi
 
@@ -190,9 +193,11 @@ trap 'COLLECTING=false' INT TERM
 
 ELAPSED=0
 while $COLLECTING; do
-  # Check if perfetto is still running
+  # Check if perfetto is still running. `kill -0` returns 1 on some
+  # Android shells regardless of whether the PID exists, so use the
+  # /proc/$PID directory check instead — it's always reliable.
   if $HAS_PERFETTO && [ -n "${PERFETTO_PID:-}" ]; then
-    if ! adb shell "kill -0 $PERFETTO_PID 2>/dev/null" 2>/dev/null; then
+    if ! adb shell "[ -d /proc/$PERFETTO_PID ]" 2>/dev/null; then
       echo "Perfetto recording finished (duration limit reached)."
       break
     fi
@@ -229,7 +234,7 @@ if $HAS_PERFETTO && [ -n "${PERFETTO_PID:-}" ]; then
     echo "Trace pulled: $TRACE_SIZE"
 
     # Clean up device trace
-    adb shell "rm -f $DEVICE_TRACE /data/local/tmp/perfetto_config.pbtx /tmp/perfetto_bench_pid" 2>/dev/null || true
+    adb shell "rm -f $DEVICE_TRACE $DEVICE_CONFIG" 2>/dev/null || true
   else
     echo "WARNING: Could not pull trace from device."
     HAS_PERFETTO=false
