@@ -234,6 +234,8 @@ const RootView: React.FC = () => {
   // Supertonic synthesis options
   const [speed, setSpeed] = React.useState<number>(1.0);
   const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
+  const [supertonicLanguage, setSupertonicLanguage] =
+    React.useState<string>('en');
 
   // Release current engine before switching
   const releaseCurrentEngine = React.useCallback(async () => {
@@ -574,6 +576,7 @@ const RootView: React.FC = () => {
         await Speech.speak(spokenText, selectedVoice || undefined, {
           speed,
           inferenceSteps,
+          language: supertonicLanguage,
         });
       } else {
         await Speech.speak(spokenText, selectedVoice || undefined);
@@ -585,7 +588,14 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
-  }, [selectedVoice, selectedEngine, speed, inferenceSteps, spokenText]);
+  }, [
+    selectedVoice,
+    selectedEngine,
+    speed,
+    inferenceSteps,
+    supertonicLanguage,
+    spokenText,
+  ]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -1733,6 +1743,50 @@ const RootView: React.FC = () => {
                 })}
               </View>
             </View>
+
+            {/* Language — list comes from the active Supertonic model variant.
+                v1 → just 'en'; v2 → 5 langs; v3 → 31 langs. */}
+            {(() => {
+              const langs = supertonicModelManager.getSupportedLanguages();
+              if (langs.length <= 1) return null;
+              return (
+                <View style={styles.controlGroup}>
+                  <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                    Language: {supertonicLanguage.toUpperCase()}
+                  </Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.controlBtns}>
+                    {langs.map(lang => {
+                      const isSelected = supertonicLanguage === lang;
+                      return (
+                        <TouchableOpacity
+                          key={lang}
+                          style={[
+                            styles.controlBtn,
+                            isSelected
+                              ? themedStyles.btnSelected
+                              : themedStyles.btnUnselected,
+                          ]}
+                          onPress={() => setSupertonicLanguage(lang)}
+                          disabled={isStarted}>
+                          <Text
+                            style={[
+                              styles.controlBtnText,
+                              isSelected
+                                ? themedStyles.textWhite
+                                : themedStyles.textPrimary,
+                            ]}>
+                            {lang.toUpperCase()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              );
+            })()}
           </View>
         )}
       </View>

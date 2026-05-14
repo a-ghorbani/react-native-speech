@@ -11,7 +11,51 @@
 import type {SynthesisOptions} from './Engine';
 import type {ExecutionProvider} from './Kokoro';
 
-export type SupertonicLanguage = 'en'; // Currently only English
+/**
+ * Languages Supertonic can synthesize.
+ *
+ * Coverage depends on the loaded model version:
+ * - v1: `'en'` only.
+ * - v2: `'en' | 'ko' | 'es' | 'pt' | 'fr'`.
+ * - v3: all 31 codes below.
+ *
+ * The engine doesn't verify the requested language against the loaded
+ * model — pass a code the model wasn't trained on and you'll get
+ * intelligible audio for the wrong locale (or noise). The example app's
+ * `SupertonicModelManager` knows the per-version subset.
+ */
+export type SupertonicLanguage =
+  | 'en'
+  | 'ko'
+  | 'ja'
+  | 'ar'
+  | 'bg'
+  | 'cs'
+  | 'da'
+  | 'de'
+  | 'el'
+  | 'es'
+  | 'et'
+  | 'fi'
+  | 'fr'
+  | 'hi'
+  | 'hr'
+  | 'hu'
+  | 'id'
+  | 'it'
+  | 'lt'
+  | 'lv'
+  | 'nl'
+  | 'pl'
+  | 'pt'
+  | 'ro'
+  | 'ru'
+  | 'sk'
+  | 'sl'
+  | 'sv'
+  | 'tr'
+  | 'uk'
+  | 'vi';
 
 /**
  * Number of diffusion steps for vector estimation
@@ -20,14 +64,12 @@ export type SupertonicLanguage = 'en'; // Currently only English
 export type InferenceSteps = 1 | 2 | 3 | 4 | 5 | 10 | 20 | 50;
 
 export interface SupertonicVoice {
-  /** Voice identifier (e.g., 'af_heart', 'am_adam') */
+  /** Voice identifier (e.g., 'F1', 'M2') */
   id: string;
   /** Human-readable name */
   name: string;
   /** Voice description */
   description?: string;
-  /** Language code */
-  language: SupertonicLanguage;
   /** Gender (f = female, m = male) */
   gender?: 'f' | 'm';
 }
@@ -39,6 +81,17 @@ export interface SupertonicSynthesisOptions extends SynthesisOptions {
   speed?: number;
   /** Number of diffusion inference steps (default: 5) */
   inferenceSteps?: InferenceSteps;
+  /**
+   * Language code for the input text. Determines the `<lang>...</lang>`
+   * tag wrapped around text before tokenization.
+   *
+   * - v1 model: only `'en'` is meaningful; other values are ignored.
+   * - v2 model: `'en' | 'ko' | 'es' | 'pt' | 'fr'`.
+   * - v3 model: any of the 31 supported codes (see `SupertonicLanguage`).
+   *
+   * Defaults to `'en'`.
+   */
+  language?: SupertonicLanguage;
 }
 
 /**

@@ -47,12 +47,47 @@ export const SUPERTONIC_CONSTANTS = {
   /** Expected size of style_ttl tensor [50, 256] = 12800 elements */
   STYLE_TTL_SIZE: 12800,
 
-  // Supported languages (v2 multilingual models)
-  AVAILABLE_LANGS: ['en', 'ko', 'es', 'pt', 'fr'] as const,
+  // Supported languages — superset across all model versions.
+  // v1 supports only 'en'; v2 supports 5 (en, ko, es, pt, fr); v3 supports all 31.
+  // The engine doesn't enforce per-version subsets — it just wraps text in
+  // `<lang>...</lang>` and lets the model handle it.
+  AVAILABLE_LANGS: [
+    'en',
+    'ko',
+    'ja',
+    'ar',
+    'bg',
+    'cs',
+    'da',
+    'de',
+    'el',
+    'es',
+    'et',
+    'fi',
+    'fr',
+    'hi',
+    'hr',
+    'hu',
+    'id',
+    'it',
+    'lt',
+    'lv',
+    'nl',
+    'pl',
+    'pt',
+    'ro',
+    'ru',
+    'sk',
+    'sl',
+    'sv',
+    'tr',
+    'uk',
+    'vi',
+  ] as const,
 } as const;
 
 /**
- * Type for supported language codes in Supertonic v2
+ * Type for supported language codes (superset across all Supertonic versions)
  */
 export type SupportedLanguage =
   (typeof SUPERTONIC_CONSTANTS.AVAILABLE_LANGS)[number];

@@ -224,6 +224,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     const inferenceSteps =
       options?.inferenceSteps || this.defaultInferenceSteps;
     const speed = options?.speed ?? 1.0;
+    const language = options?.language ?? 'en';
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
     const voiceStylePromise = this.styleLoader.getVoiceStyle(voiceId);
@@ -250,7 +251,13 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: async (text: string) => {
         const voiceStyle = await voiceStylePromise;
-        return this.synthesizeChunk(text, voiceStyle, inferenceSteps, speed);
+        return this.synthesizeChunk(
+          text,
+          voiceStyle,
+          inferenceSteps,
+          speed,
+          language,
+        );
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
@@ -354,9 +361,10 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     const inferenceSteps =
       options?.inferenceSteps || this.defaultInferenceSteps;
     const speed = options?.speed ?? 1.0;
+    const language = options?.language ?? 'en';
 
     log.debug(
-      `Synthesis start: text="${text.substring(0, 50)}...", voice=${voiceId}, steps=${inferenceSteps}, speed=${speed}`,
+      `Synthesis start: text="${text.substring(0, 50)}...", voice=${voiceId}, lang=${language}, steps=${inferenceSteps}, speed=${speed}`,
     );
 
     // Load voice style
@@ -410,7 +418,13 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
           nextAudioPromise = null;
         } else {
           audioBuffer = await this.raceWithStop(
-            this.synthesizeChunk(chunk.text, voiceStyle, inferenceSteps, speed),
+            this.synthesizeChunk(
+              chunk.text,
+              voiceStyle,
+              inferenceSteps,
+              speed,
+              language,
+            ),
             stopSignal,
           );
         }
@@ -442,6 +456,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
           voiceStyle,
           inferenceSteps,
           speed,
+          language,
         );
       }
 
@@ -480,9 +495,11 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     voiceStyle: SupertonicVoiceStyle,
     inferenceSteps: number,
     speed: number,
+    language: string,
   ): Promise<AudioBuffer> {
-    // Normalize text
-    const normalized = this.unicodeProcessor.normalize(text);
+    // Normalize text — wraps with <lang>...</lang> when the loaded model
+    // supports language tags (v2/v3 indexers contain `<` / `>`).
+    const normalized = this.unicodeProcessor.normalize(text, language);
 
     // Check stop before expensive inference
     if (this.stopRequested) {
