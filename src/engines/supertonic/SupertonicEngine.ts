@@ -235,16 +235,25 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // boundaries the chunker recognizes (mirrors Kokoro/Kitten).
     const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
 
-    const volumeAdjust =
-      options?.volume !== undefined && options.volume !== 1.0
+    // Compose volume adjust + onAudioChunk into a single postProcess hook.
+    // Order matters: volume first (so the captured buffer reflects what
+    // the speaker plays), then the caller's audio observer.
+    const onAudioChunk = options?.onAudioChunk;
+    const volume = options?.volume;
+    const needsVolume = volume !== undefined && volume !== 1.0;
+    const postProcess =
+      needsVolume || onAudioChunk
         ? (buf: AudioBuffer) => {
-            const v = Math.max(0, Math.min(1, options.volume!));
-            for (let i = 0; i < buf.samples.length; i++) {
-              const s = buf.samples[i];
-              if (s !== undefined) {
-                buf.samples[i] = Math.max(-1, Math.min(1, s * v));
+            if (needsVolume) {
+              const v = Math.max(0, Math.min(1, volume!));
+              for (let i = 0; i < buf.samples.length; i++) {
+                const s = buf.samples[i];
+                if (s !== undefined) {
+                  buf.samples[i] = Math.max(-1, Math.min(1, s * v));
+                }
               }
             }
+            onAudioChunk?.(buf);
           }
         : undefined;
 
@@ -266,7 +275,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
       },
-      postProcess: volumeAdjust,
+      postProcess,
       onChunkProgress: this.chunkProgressCallback
         ? event => this.emitChunkProgress(event)
         : undefined,
@@ -470,6 +479,17 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
             const adjusted = sample * clampedVolume;
             audioBuffer.samples[i] = Math.max(-1, Math.min(1, adjusted));
           }
+        }
+      }
+
+      // Hand the chunk to the caller's audio observer (e.g. WAV capture)
+      // after volume but before playback so what they see matches what
+      // the speaker hears. Errors here shouldn't break synthesis.
+      if (options?.onAudioChunk) {
+        try {
+          options.onAudioChunk(audioBuffer);
+        } catch (e) {
+          log.warn('onAudioChunk threw; continuing synthesis:', e);
         }
       }
 

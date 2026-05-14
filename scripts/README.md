@@ -112,3 +112,23 @@ language usually settles it. If you need reproducible numbers, seed
 **Adding a new language:** put a short native-orthography sentence in
 `scripts/lib/multilingual-test-sentences.ts`. The harness picks it up
 on the next run.
+
+**Capturing on-device audio for the same round-trip:** the example app
+has a "Save WAV" toggle in the Supertonic controls. When on, every
+synthesized chunk is captured via the engine's `onAudioChunk` option
+and written to `DocumentDirectoryPath/supertonic-<lang>-<voice>-<ts>.wav`
+once Speak completes. The file is identical-format to what this
+harness produces (16-bit PCM mono @ 44.1kHz), so you can pull it off
+the simulator/device and feed it directly to `whisper-cli`:
+
+```bash
+# iOS Simulator
+xcrun simctl get_app_container booted <bundle-id> data
+# Android emulator
+adb shell run-as <pkg> cp files/<file>.wav /sdcard/Download/
+
+whisper-cli -m scripts/.cache/whisper/ggml-large-v3.bin -l <lang> -f <file>.wav
+```
+
+Use this to catch drift between the Node harness and the real
+on-device synthesis path.

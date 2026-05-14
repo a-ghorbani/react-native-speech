@@ -102,6 +102,19 @@ export interface SynthesisOptions {
    * @default true
    */
   stripMarkdown?: boolean;
+  /**
+   * Called for each synthesized audio chunk after any volume adjustment
+   * and before playback. Useful for capturing audio offline — e.g. saving
+   * a WAV for ASR round-trip verification or sharing a bug-report clip.
+   *
+   * The callback runs synchronously on the synthesis thread, so keep it
+   * fast (push the buffer onto an array and process later). The engine
+   * may reuse the underlying sample buffer after the callback returns —
+   * copy `samples` if you need to retain it past this tick.
+   *
+   * @platform neural-engines
+   */
+  onAudioChunk?: (buffer: AudioBuffer) => void;
 }
 
 /**

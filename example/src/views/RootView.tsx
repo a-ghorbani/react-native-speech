@@ -16,6 +16,7 @@ import {
 import type {AppStateStatus} from 'react-native';
 import Speech, {
   HighlightedText,
+  type AudioBuffer,
   type HighlightedSegmentArgs,
   type HighlightedSegmentProps,
   type ChunkProgressEvent,
@@ -37,6 +38,7 @@ import {
   kittenModelManager,
   type KittenVersion,
 } from '../utils/KittenModelManager';
+import {saveChunksAsWav} from '../utils/wavWriter';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
@@ -236,6 +238,11 @@ const RootView: React.FC = () => {
   const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
   const [supertonicLanguage, setSupertonicLanguage] =
     React.useState<string>('en');
+  // When true, accumulate audio chunks during synthesis and write a WAV
+  // to the app's Documents directory once Speak completes. Lets the user
+  // capture on-device output for offline verification (the Node harness
+  // runs the same ASR round-trip against these files).
+  const [saveWav, setSaveWav] = React.useState<boolean>(false);
 
   // Release current engine before switching
   const releaseCurrentEngine = React.useCallback(async () => {
@@ -571,12 +578,28 @@ const RootView: React.FC = () => {
     // Set started immediately so Stop is available during synthesis
     // (neural engines take time to synthesize the first chunk before audio starts)
     setIsStarted(true);
+
+    // Audio capture buffer for the optional Save WAV path. Copy each
+    // chunk's samples because the engine may reuse the source buffer.
+    const captured: AudioBuffer[] = [];
+    const captureChunk = saveWav
+      ? (buf: AudioBuffer) => {
+          captured.push({
+            samples: new Float32Array(buf.samples),
+            sampleRate: buf.sampleRate,
+            channels: buf.channels,
+            duration: buf.duration,
+          });
+        }
+      : undefined;
+
     try {
       if (selectedEngine === TTSEngine.SUPERTONIC) {
         await Speech.speak(spokenText, selectedVoice || undefined, {
           speed,
           inferenceSteps,
           language: supertonicLanguage,
+          onAudioChunk: captureChunk,
         });
       } else {
         await Speech.speak(spokenText, selectedVoice || undefined);
@@ -588,6 +611,23 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
+
+    if (saveWav && captured.length > 0) {
+      try {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `supertonic-${supertonicLanguage}-${selectedVoice || 'voice'}-${ts}.wav`;
+        const result = await saveChunksAsWav(captured, filename);
+        Alert.alert(
+          'Saved WAV',
+          `${result.path}\n\n${(result.bytes / 1024).toFixed(0)} KB · ${result.durationSec.toFixed(2)}s @ ${result.sampleRate} Hz`,
+        );
+      } catch (err) {
+        Alert.alert(
+          'Save failed',
+          err instanceof Error ? err.message : 'Unknown error',
+        );
+      }
+    }
   }, [
     selectedVoice,
     selectedEngine,
@@ -595,6 +635,7 @@ const RootView: React.FC = () => {
     inferenceSteps,
     supertonicLanguage,
     spokenText,
+    saveWav,
   ]);
 
   const onHighlightedPress = React.useCallback(
@@ -1787,6 +1828,36 @@ const RootView: React.FC = () => {
                 </View>
               );
             })()}
+
+            {/* Save WAV — captures audio to Documents on next Speak.
+                Useful for round-tripping on-device output through the
+                Node verification harness in scripts/. */}
+            <View style={styles.controlGroup}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                Save WAV: {saveWav ? 'ON' : 'OFF'}
+              </Text>
+              <View style={styles.controlBtns}>
+                <TouchableOpacity
+                  style={[
+                    styles.controlBtn,
+                    saveWav
+                      ? themedStyles.btnSelectedGreen
+                      : themedStyles.btnUnselected,
+                  ]}
+                  onPress={() => setSaveWav(v => !v)}
+                  disabled={isStarted}>
+                  <Text
+                    style={[
+                      styles.controlBtnText,
+                      saveWav
+                        ? themedStyles.textWhite
+                        : themedStyles.textPrimary,
+                    ]}>
+                    {saveWav ? '✓ Capture' : 'Capture'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         )}
       </View>
