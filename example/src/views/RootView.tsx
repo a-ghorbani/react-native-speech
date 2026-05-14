@@ -39,14 +39,15 @@ import {
   type KittenVersion,
 } from '../utils/KittenModelManager';
 import {saveChunksAsWav} from '../utils/wavWriter';
+import {
+  ENGLISH_DEFAULT_TEXT,
+  SAMPLE_TEXT,
+  SAMPLE_TEXT_SET,
+} from '../utils/sampleText';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
-const DEFAULT_TEXT =
-  'Welcome! This is a quick demo of on-device neural text-to-speech. ' +
-  'Everything you hear is synthesized locally — no internet, no cloud ' +
-  'API, just the model running on your phone. Switch voices above to ' +
-  'hear the difference.';
+const DEFAULT_TEXT = ENGLISH_DEFAULT_TEXT;
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
@@ -190,7 +191,7 @@ const RootView: React.FC = () => {
   );
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
-  const [spokenText] = React.useState<string>(DEFAULT_TEXT);
+  const [spokenText, setSpokenText] = React.useState<string>(DEFAULT_TEXT);
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
@@ -461,6 +462,18 @@ const RootView: React.FC = () => {
   React.useEffect(() => {
     loadVoices();
   }, [loadVoices]);
+
+  // Auto-swap the speak text to match the picked Supertonic language —
+  // but only when the current text is one of the unedited samples. If
+  // the user has typed/pasted their own text, leave it alone.
+  React.useEffect(() => {
+    if (selectedEngine !== TTSEngine.SUPERTONIC) return;
+    if (!SAMPLE_TEXT_SET.has(spokenText)) return;
+    const next = SAMPLE_TEXT[supertonicLanguage];
+    if (next && next !== spokenText) {
+      setSpokenText(next);
+    }
+  }, [selectedEngine, supertonicLanguage, spokenText]);
 
   // Load installed models
   const loadInstalledModels = React.useCallback(async () => {
