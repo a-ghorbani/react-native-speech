@@ -367,35 +367,22 @@ export class StyleLoader {
   }
 
   /**
-   * Get all available voice IDs
+   * Get all available voice IDs.
    *
-   * @param language - Optional language filter (currently only 'en' supported)
-   * @returns Array of voice IDs
+   * Supertonic voices are language-agnostic — the same speaker embedding
+   * works across every language the loaded model supports. The `language`
+   * parameter is accepted for `TTSEngineInterface` compatibility and
+   * ignored.
    */
-  getVoiceIds(language?: string): string[] {
-    const voices = Array.from(this.voiceMetadata.values());
-
-    if (language) {
-      return voices.filter(v => v.language === language).map(v => v.id);
-    }
-
-    return voices.map(v => v.id);
+  getVoiceIds(_language?: string): string[] {
+    return Array.from(this.voiceMetadata.values()).map(v => v.id);
   }
 
   /**
-   * Get all voices with metadata
-   *
-   * @param language - Optional language filter
-   * @returns Array of voice objects with metadata
+   * Get all voices with metadata. See `getVoiceIds` re: language.
    */
-  getVoices(language?: string): SupertonicVoice[] {
-    const voices = Array.from(this.voiceMetadata.values());
-
-    if (language) {
-      return voices.filter(v => v.language === language);
-    }
-
-    return voices;
+  getVoices(_language?: string): SupertonicVoice[] {
+    return Array.from(this.voiceMetadata.values());
   }
 
   /**
@@ -452,7 +439,6 @@ export class StyleLoader {
       return {
         id: voiceId,
         name: officialData.name,
-        language: 'en',
         gender: officialData.gender,
         description: officialData.description,
       };
@@ -473,7 +459,6 @@ export class StyleLoader {
       return {
         id: voiceId,
         name,
-        language: 'en',
         gender,
         description: `Supertonic ${genderName.toLowerCase()} voice ${voiceNumber}`,
       };
@@ -482,7 +467,6 @@ export class StyleLoader {
     return {
       id: voiceId,
       name,
-      language: 'en',
       gender,
       description: `Supertonic ${gender === 'f' ? 'female' : 'male'} voice`,
     };

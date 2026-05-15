@@ -16,6 +16,7 @@ import {
 import type {AppStateStatus} from 'react-native';
 import Speech, {
   HighlightedText,
+  type AudioBuffer,
   type HighlightedSegmentArgs,
   type HighlightedSegmentProps,
   type ChunkProgressEvent,
@@ -37,14 +38,16 @@ import {
   kittenModelManager,
   type KittenVersion,
 } from '../utils/KittenModelManager';
+import {saveChunksAsWav} from '../utils/wavWriter';
+import {
+  ENGLISH_DEFAULT_TEXT,
+  SAMPLE_TEXT,
+  SAMPLE_TEXT_SET,
+} from '../utils/sampleText';
 
 const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 
-const DEFAULT_TEXT =
-  'Welcome! This is a quick demo of on-device neural text-to-speech. ' +
-  'Everything you hear is synthesized locally — no internet, no cloud ' +
-  'API, just the model running on your phone. Switch voices above to ' +
-  'hear the difference.';
+const DEFAULT_TEXT = ENGLISH_DEFAULT_TEXT;
 
 // Model Manager Tab Type
 type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
@@ -188,7 +191,7 @@ const RootView: React.FC = () => {
   );
   const [isPaused, setIsPaused] = React.useState<boolean>(false);
   const [isStarted, setIsStarted] = React.useState<boolean>(false);
-  const [spokenText] = React.useState<string>(DEFAULT_TEXT);
+  const [spokenText, setSpokenText] = React.useState<string>(DEFAULT_TEXT);
   const [highlights, setHighlights] = React.useState<
     Array<HighlightedSegmentProps>
   >([]);
@@ -234,6 +237,18 @@ const RootView: React.FC = () => {
   // Supertonic synthesis options
   const [speed, setSpeed] = React.useState<number>(1.0);
   const [inferenceSteps, setInferenceSteps] = React.useState<number>(5);
+  const [supertonicLanguage, setSupertonicLanguage] =
+    React.useState<string>('en');
+  // When true, accumulate audio chunks during synthesis and write a WAV
+  // to the app's Documents directory once Speak completes. Lets the user
+  // capture on-device output for offline verification (the Node harness
+  // runs the same ASR round-trip against these files).
+  const [saveWav, setSaveWav] = React.useState<boolean>(false);
+  // Which Supertonic setting is open in the dropdown modal (null = closed).
+  // Single modal services all three dropdowns; content is keyed by this.
+  const [openPicker, setOpenPicker] = React.useState<
+    'speed' | 'quality' | 'language' | null
+  >(null);
 
   // Release current engine before switching
   const releaseCurrentEngine = React.useCallback(async () => {
@@ -453,6 +468,18 @@ const RootView: React.FC = () => {
     loadVoices();
   }, [loadVoices]);
 
+  // Auto-swap the speak text to match the picked Supertonic language —
+  // but only when the current text is one of the unedited samples. If
+  // the user has typed/pasted their own text, leave it alone.
+  React.useEffect(() => {
+    if (selectedEngine !== TTSEngine.SUPERTONIC) return;
+    if (!SAMPLE_TEXT_SET.has(spokenText)) return;
+    const next = SAMPLE_TEXT[supertonicLanguage];
+    if (next && next !== spokenText) {
+      setSpokenText(next);
+    }
+  }, [selectedEngine, supertonicLanguage, spokenText]);
+
   // Load installed models
   const loadInstalledModels = React.useCallback(async () => {
     await kokoroModelManager.scanInstalledModels();
@@ -569,11 +596,28 @@ const RootView: React.FC = () => {
     // Set started immediately so Stop is available during synthesis
     // (neural engines take time to synthesize the first chunk before audio starts)
     setIsStarted(true);
+
+    // Audio capture buffer for the optional Save WAV path. Copy each
+    // chunk's samples because the engine may reuse the source buffer.
+    const captured: AudioBuffer[] = [];
+    const captureChunk = saveWav
+      ? (buf: AudioBuffer) => {
+          captured.push({
+            samples: new Float32Array(buf.samples),
+            sampleRate: buf.sampleRate,
+            channels: buf.channels,
+            duration: buf.duration,
+          });
+        }
+      : undefined;
+
     try {
       if (selectedEngine === TTSEngine.SUPERTONIC) {
         await Speech.speak(spokenText, selectedVoice || undefined, {
           speed,
           inferenceSteps,
+          language: supertonicLanguage,
+          onAudioChunk: captureChunk,
         });
       } else {
         await Speech.speak(spokenText, selectedVoice || undefined);
@@ -585,7 +629,32 @@ const RootView: React.FC = () => {
       setHighlights([]);
       setCurrentChunk(null);
     }
-  }, [selectedVoice, selectedEngine, speed, inferenceSteps, spokenText]);
+
+    if (saveWav && captured.length > 0) {
+      try {
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const filename = `supertonic-${supertonicLanguage}-${selectedVoice || 'voice'}-${ts}.wav`;
+        const result = await saveChunksAsWav(captured, filename);
+        Alert.alert(
+          'Saved WAV',
+          `${result.path}\n\n${(result.bytes / 1024).toFixed(0)} KB · ${result.durationSec.toFixed(2)}s @ ${result.sampleRate} Hz`,
+        );
+      } catch (err) {
+        Alert.alert(
+          'Save failed',
+          err instanceof Error ? err.message : 'Unknown error',
+        );
+      }
+    }
+  }, [
+    selectedVoice,
+    selectedEngine,
+    speed,
+    inferenceSteps,
+    supertonicLanguage,
+    spokenText,
+    saveWav,
+  ]);
 
   const onHighlightedPress = React.useCallback(
     ({text, start, end}: HighlightedSegmentArgs) =>
@@ -1416,349 +1485,484 @@ const RootView: React.FC = () => {
         </View>
       </Modal>
 
-      {/* ==================== ENGINE SELECTOR ==================== */}
-      <View style={[styles.engineSelector, themedStyles.bgCard]}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, themedStyles.textPrimary]}>
-            ENGINE_SELECT
-          </Text>
-          {/* Only show Manage Models for neural engines */}
-          {selectedEngine !== TTSEngine.OS_NATIVE && (
-            <TouchableOpacity
-              style={styles.manageBtn}
-              onPress={() => {
-                if (selectedEngine === TTSEngine.KOKORO) {
-                  setModelManagerTab('kokoro');
-                } else if (selectedEngine === TTSEngine.SUPERTONIC) {
-                  setModelManagerTab('supertonic');
-                } else if (selectedEngine === TTSEngine.KITTEN) {
-                  setModelManagerTab('kitten');
-                }
-                setShowModelManager(true);
-              }}>
-              <Text style={styles.manageBtnText}>Manage Models</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.engineButtons}>
-          {[
-            {engine: TTSEngine.KITTEN, label: 'Kitten'},
-            {engine: TTSEngine.KOKORO, label: 'Kokoro'},
-            {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
-            {engine: TTSEngine.OS_NATIVE, label: 'System'},
-          ].map(item => {
-            const isEngineSelected = selectedEngine === item.engine;
-            return (
+      {/* ==================== SETTING PICKER MODAL ====================
+          Single modal services the Speed / Quality / Lang dropdowns —
+          which one is open is keyed by `openPicker`. */}
+      <Modal
+        visible={openPicker !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOpenPicker(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, themedStyles.bgCardSecondary]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, themedStyles.textPrimary]}>
+                {openPicker === 'speed'
+                  ? 'Speed'
+                  : openPicker === 'quality'
+                    ? 'Quality (diffusion steps)'
+                    : openPicker === 'language'
+                      ? 'Language'
+                      : ''}
+              </Text>
               <TouchableOpacity
-                key={item.engine}
-                style={[
-                  styles.engineBtn,
-                  isEngineSelected
-                    ? themedStyles.btnSelected
-                    : themedStyles.btnUnselected,
-                ]}
-                onPress={() => setSelectedEngine(item.engine)}
-                disabled={isInitializing || isStarted}>
+                onPress={() => setOpenPicker(null)}
+                style={styles.closeIcon}>
                 <Text
-                  style={[
-                    styles.engineBtnText,
-                    isEngineSelected
-                      ? themedStyles.textWhite
-                      : themedStyles.textPrimary,
-                  ]}>
-                  {item.label}
+                  style={[styles.closeIconText, themedStyles.textSecondary]}>
+                  ×
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Status + Load/Unload */}
-        <View style={styles.statusRow}>
-          {isInitializing || isReleasing ? (
-            <View style={styles.statusLoading}>
-              <ActivityIndicator size="small" color={C.cyan} />
-              <Text style={[styles.statusText, themedStyles.textSecondary]}>
-                {isReleasing
-                  ? '> releasing resources...'
-                  : '> loading model...'}
-              </Text>
             </View>
-          ) : (
-            <Text
-              style={[
-                styles.statusText,
-                engineReady
-                  ? themedStyles.statusReady
-                  : themedStyles.statusNotReady,
-              ]}>
-              {engineReady ? '[ONLINE]' : '[OFFLINE]'}
+            <ScrollView style={styles.voiceList}>
+              {(() => {
+                if (openPicker === 'speed') {
+                  return [1.0, 1.25, 1.5, 1.75, 2.0].map(s => {
+                    const isSel = speed === s;
+                    return (
+                      <Pressable
+                        key={s}
+                        style={[
+                          styles.voiceItem,
+                          isSel
+                            ? themedStyles.voiceItemSelected
+                            : themedStyles.voiceItemUnselected,
+                        ]}
+                        onPress={() => {
+                          setSpeed(s);
+                          setOpenPicker(null);
+                        }}>
+                        <Text
+                          style={[styles.voiceName, themedStyles.textPrimary]}>
+                          {s.toFixed(2)}x
+                        </Text>
+                        {isSel && <Text style={styles.checkmark}>✓</Text>}
+                      </Pressable>
+                    );
+                  });
+                }
+                if (openPicker === 'quality') {
+                  return [2, 3, 5, 8, 12, 16].map(steps => {
+                    const isSel = inferenceSteps === steps;
+                    return (
+                      <Pressable
+                        key={steps}
+                        style={[
+                          styles.voiceItem,
+                          isSel
+                            ? themedStyles.voiceItemSelected
+                            : themedStyles.voiceItemUnselected,
+                        ]}
+                        onPress={() => {
+                          setInferenceSteps(steps);
+                          setOpenPicker(null);
+                        }}>
+                        <Text
+                          style={[styles.voiceName, themedStyles.textPrimary]}>
+                          {steps} steps
+                        </Text>
+                        {isSel && <Text style={styles.checkmark}>✓</Text>}
+                      </Pressable>
+                    );
+                  });
+                }
+                if (openPicker === 'language') {
+                  return supertonicModelManager
+                    .getSupportedLanguages()
+                    .map(lang => {
+                      const isSel = supertonicLanguage === lang;
+                      return (
+                        <Pressable
+                          key={lang}
+                          style={[
+                            styles.voiceItem,
+                            isSel
+                              ? themedStyles.voiceItemSelected
+                              : themedStyles.voiceItemUnselected,
+                          ]}
+                          onPress={() => {
+                            setSupertonicLanguage(lang);
+                            setOpenPicker(null);
+                          }}>
+                          <Text
+                            style={[
+                              styles.voiceName,
+                              themedStyles.textPrimary,
+                            ]}>
+                            {lang.toUpperCase()}
+                          </Text>
+                          {isSel && <Text style={styles.checkmark}>✓</Text>}
+                        </Pressable>
+                      );
+                    });
+                }
+                return null;
+              })()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Scrollable settings + content. The Run/Kill control bar stays
+          pinned below — keep it always-tappable. flexGrow:1 lets the
+          spoken-text area still expand to fill on tall screens. */}
+      <ScrollView
+        style={gs.flex}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled">
+        {/* ==================== ENGINE SELECTOR ==================== */}
+        <View style={[styles.engineSelector, themedStyles.bgCard]}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, themedStyles.textPrimary]}>
+              ENGINE_SELECT
             </Text>
-          )}
-
-          {/* Load/Unload for neural engines */}
-          {selectedEngine !== TTSEngine.OS_NATIVE && (
-            <View style={styles.loadUnloadButtons}>
-              {engineReady ? (
-                <TouchableOpacity
-                  style={styles.unloadBtn}
-                  onPress={onUnloadPress}
-                  disabled={isStarted || isReleasing || isInitializing}>
-                  <Text style={styles.unloadBtnText}>RELEASE</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.loadBtn}
-                  onPress={onReloadPress}
-                  disabled={isInitializing || isReleasing}>
-                  <Text style={styles.loadBtnText}>INIT</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </View>
-
-        {/* Acceleration (neural only) */}
-        {selectedEngine !== TTSEngine.OS_NATIVE && (
-          <View style={styles.accelerationSection}>
-            <View style={styles.accelHeaderRow}>
-              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-                Acceleration providers
-              </Text>
-              <Text style={[styles.accelOrderText, themedStyles.textSecondary]}>
-                CPU is always the last fallback
-              </Text>
-            </View>
-            <View style={styles.accelerationButtons}>
-              {(Platform.OS === 'ios'
-                ? [
-                    {key: 'coreml' as const, label: 'CoreML'},
-                    {key: 'xnnpack' as const, label: 'XNNPACK'},
-                  ]
-                : [{key: 'xnnpack' as const, label: 'XNNPACK'}]
-              ).map(item => {
-                const isOn = accel.selected.has(item.key);
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[
-                      styles.accelBtn,
-                      isOn
-                        ? themedStyles.btnSelected
-                        : themedStyles.btnUnselected,
-                    ]}
-                    onPress={() => {
-                      const next = new Set(accel.selected);
-                      if (isOn) {
-                        next.delete(item.key);
-                      } else {
-                        next.add(item.key);
-                      }
-                      setAccel({...accel, selected: next});
-                    }}
-                    disabled={isInitializing || isStarted}>
-                    <Text
-                      style={[
-                        styles.accelBtnText,
-                        isOn
-                          ? themedStyles.textWhite
-                          : themedStyles.textPrimary,
-                      ]}>
-                      {isOn ? '☑ ' : '☐ '}
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            {Platform.OS === 'android' && (
-              <Text style={[styles.accelHelpText, themedStyles.textSecondary]}>
-                NNAPI was dropped — Android's Neural Networks API was deprecated
-                in Android 15.
-              </Text>
+            {/* Only show Manage Models for neural engines */}
+            {selectedEngine !== TTSEngine.OS_NATIVE && (
+              <TouchableOpacity
+                style={styles.manageBtn}
+                onPress={() => {
+                  if (selectedEngine === TTSEngine.KOKORO) {
+                    setModelManagerTab('kokoro');
+                  } else if (selectedEngine === TTSEngine.SUPERTONIC) {
+                    setModelManagerTab('supertonic');
+                  } else if (selectedEngine === TTSEngine.KITTEN) {
+                    setModelManagerTab('kitten');
+                  }
+                  setShowModelManager(true);
+                }}>
+                <Text style={styles.manageBtnText}>Manage Models</Text>
+              </TouchableOpacity>
             )}
+          </View>
 
-            {/* CoreML flag sub-options (iOS + CoreML selected) */}
-            {Platform.OS === 'ios' && accel.selected.has('coreml') && (
-              <View style={styles.accelDetailsBlock}>
+          <View style={styles.engineButtons}>
+            {[
+              {engine: TTSEngine.KITTEN, label: 'Kitten'},
+              {engine: TTSEngine.KOKORO, label: 'Kokoro'},
+              {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
+              {engine: TTSEngine.OS_NATIVE, label: 'System'},
+            ].map(item => {
+              const isEngineSelected = selectedEngine === item.engine;
+              return (
                 <TouchableOpacity
-                  onPress={() => setShowAccelDetails(s => !s)}
+                  key={item.engine}
+                  style={[
+                    styles.engineBtn,
+                    isEngineSelected
+                      ? themedStyles.btnSelected
+                      : themedStyles.btnUnselected,
+                  ]}
+                  onPress={() => setSelectedEngine(item.engine)}
                   disabled={isInitializing || isStarted}>
                   <Text
                     style={[
-                      styles.accelDetailsToggle,
-                      themedStyles.textSecondary,
+                      styles.engineBtnText,
+                      isEngineSelected
+                        ? themedStyles.textWhite
+                        : themedStyles.textPrimary,
                     ]}>
-                    {showAccelDetails ? '▼' : '▶'} CoreML flags
+                    {item.label}
                   </Text>
                 </TouchableOpacity>
-                {showAccelDetails && (
-                  <View style={styles.accelDetails}>
-                    {COREML_FLAG_OPTIONS.map(opt => {
-                      // eslint-disable-next-line no-bitwise
-                      const isOn = (accel.coreMlFlags & opt.flag) !== 0;
-                      return (
-                        <TouchableOpacity
-                          key={opt.flag}
-                          style={styles.accelFlagRow}
-                          onPress={() =>
-                            setAccel({
-                              ...accel,
-                              coreMlFlags: isOn
-                                ? // eslint-disable-next-line no-bitwise
-                                  accel.coreMlFlags & ~opt.flag
-                                : // eslint-disable-next-line no-bitwise
-                                  accel.coreMlFlags | opt.flag,
-                            })
-                          }
-                          disabled={isInitializing || isStarted}>
-                          <Text
-                            style={[
-                              styles.accelFlagLabel,
-                              themedStyles.textPrimary,
-                            ]}>
-                            {isOn ? '☑ ' : '☐ '}
-                            {opt.label}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.accelFlagHint,
-                              themedStyles.textSecondary,
-                            ]}>
-                            {opt.hint}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+              );
+            })}
+          </View>
+
+          {/* Status + Load/Unload */}
+          <View style={styles.statusRow}>
+            {isInitializing || isReleasing ? (
+              <View style={styles.statusLoading}>
+                <ActivityIndicator size="small" color={C.cyan} />
+                <Text style={[styles.statusText, themedStyles.textSecondary]}>
+                  {isReleasing
+                    ? '> releasing resources...'
+                    : '> loading model...'}
+                </Text>
+              </View>
+            ) : (
+              <Text
+                style={[
+                  styles.statusText,
+                  engineReady
+                    ? themedStyles.statusReady
+                    : themedStyles.statusNotReady,
+                ]}>
+                {engineReady ? '[ONLINE]' : '[OFFLINE]'}
+              </Text>
+            )}
+
+            {/* Load/Unload for neural engines */}
+            {selectedEngine !== TTSEngine.OS_NATIVE && (
+              <View style={styles.loadUnloadButtons}>
+                {engineReady ? (
+                  <TouchableOpacity
+                    style={styles.unloadBtn}
+                    onPress={onUnloadPress}
+                    disabled={isStarted || isReleasing || isInitializing}>
+                    <Text style={styles.unloadBtnText}>RELEASE</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.loadBtn}
+                    onPress={onReloadPress}
+                    disabled={isInitializing || isReleasing}>
+                    <Text style={styles.loadBtnText}>INIT</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             )}
           </View>
-        )}
 
-        {/* Voice selector */}
-        {engineReady && (
-          <View style={styles.voiceSection}>
-            <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-              Voice
-            </Text>
-            <TouchableOpacity
-              style={[styles.voiceSelector, themedStyles.bgInput]}
-              onPress={() => setShowVoicePicker(true)}
-              disabled={availableVoices.length === 0}>
-              <Text
-                style={[styles.voiceSelectorText, themedStyles.textPrimary]}
-                numberOfLines={1}>
-                {selectedVoice
-                  ? availableVoices.find(v => v.id === selectedVoice)?.name ||
-                    'Select'
-                  : 'Select Voice'}
-              </Text>
-              <Text style={[styles.dropdownArrow, themedStyles.textSecondary]}>
-                ▼
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Supertonic controls */}
-        {engineReady && selectedEngine === TTSEngine.SUPERTONIC && (
-          <View style={styles.supertonicControls}>
-            {/* Speed */}
-            <View style={styles.controlGroup}>
-              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-                Speed: {speed.toFixed(2)}x
-              </Text>
-              <View style={styles.controlBtns}>
-                {[1.0, 1.25, 1.5, 1.75, 2.0].map(s => {
-                  const isSpeedSelected = speed === s;
+          {/* Acceleration (neural only) */}
+          {selectedEngine !== TTSEngine.OS_NATIVE && (
+            <View style={styles.accelerationSection}>
+              <View style={styles.accelHeaderRow}>
+                <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                  Acceleration providers
+                </Text>
+                <Text
+                  style={[styles.accelOrderText, themedStyles.textSecondary]}>
+                  CPU is always the last fallback
+                </Text>
+              </View>
+              <View style={styles.accelerationButtons}>
+                {(Platform.OS === 'ios'
+                  ? [
+                      {key: 'coreml' as const, label: 'CoreML'},
+                      {key: 'xnnpack' as const, label: 'XNNPACK'},
+                    ]
+                  : [{key: 'xnnpack' as const, label: 'XNNPACK'}]
+                ).map(item => {
+                  const isOn = accel.selected.has(item.key);
                   return (
                     <TouchableOpacity
-                      key={s}
+                      key={item.key}
                       style={[
-                        styles.controlBtn,
-                        isSpeedSelected
+                        styles.accelBtn,
+                        isOn
                           ? themedStyles.btnSelected
                           : themedStyles.btnUnselected,
                       ]}
-                      onPress={() => setSpeed(s)}
-                      disabled={isStarted}>
+                      onPress={() => {
+                        const next = new Set(accel.selected);
+                        if (isOn) {
+                          next.delete(item.key);
+                        } else {
+                          next.add(item.key);
+                        }
+                        setAccel({...accel, selected: next});
+                      }}
+                      disabled={isInitializing || isStarted}>
                       <Text
                         style={[
-                          styles.controlBtnText,
-                          isSpeedSelected
+                          styles.accelBtnText,
+                          isOn
                             ? themedStyles.textWhite
                             : themedStyles.textPrimary,
                         ]}>
-                        {s}x
+                        {isOn ? '☑ ' : '☐ '}
+                        {item.label}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
-            </View>
+              {Platform.OS === 'android' && (
+                <Text
+                  style={[styles.accelHelpText, themedStyles.textSecondary]}>
+                  NNAPI was dropped — Android's Neural Networks API was
+                  deprecated in Android 15.
+                </Text>
+              )}
 
-            {/* Quality */}
-            <View style={styles.controlGroup}>
-              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-                Quality: {inferenceSteps} steps
-              </Text>
-              <View style={styles.controlBtns}>
-                {[2, 3, 5, 8, 12, 16].map(steps => {
-                  const isStepsSelected = inferenceSteps === steps;
-                  return (
-                    <TouchableOpacity
-                      key={steps}
+              {/* CoreML flag sub-options (iOS + CoreML selected) */}
+              {Platform.OS === 'ios' && accel.selected.has('coreml') && (
+                <View style={styles.accelDetailsBlock}>
+                  <TouchableOpacity
+                    onPress={() => setShowAccelDetails(s => !s)}
+                    disabled={isInitializing || isStarted}>
+                    <Text
                       style={[
-                        styles.controlBtn,
-                        isStepsSelected
-                          ? themedStyles.btnSelectedGreen
-                          : themedStyles.btnUnselected,
-                      ]}
-                      onPress={() => setInferenceSteps(steps)}
-                      disabled={isStarted}>
-                      <Text
-                        style={[
-                          styles.controlBtnText,
-                          isStepsSelected
-                            ? themedStyles.textWhite
-                            : themedStyles.textPrimary,
-                        ]}>
-                        {steps}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                        styles.accelDetailsToggle,
+                        themedStyles.textSecondary,
+                      ]}>
+                      {showAccelDetails ? '▼' : '▶'} CoreML flags
+                    </Text>
+                  </TouchableOpacity>
+                  {showAccelDetails && (
+                    <View style={styles.accelDetails}>
+                      {COREML_FLAG_OPTIONS.map(opt => {
+                        // eslint-disable-next-line no-bitwise
+                        const isOn = (accel.coreMlFlags & opt.flag) !== 0;
+                        return (
+                          <TouchableOpacity
+                            key={opt.flag}
+                            style={styles.accelFlagRow}
+                            onPress={() =>
+                              setAccel({
+                                ...accel,
+                                coreMlFlags: isOn
+                                  ? // eslint-disable-next-line no-bitwise
+                                    accel.coreMlFlags & ~opt.flag
+                                  : // eslint-disable-next-line no-bitwise
+                                    accel.coreMlFlags | opt.flag,
+                              })
+                            }
+                            disabled={isInitializing || isStarted}>
+                            <Text
+                              style={[
+                                styles.accelFlagLabel,
+                                themedStyles.textPrimary,
+                              ]}>
+                              {isOn ? '☑ ' : '☐ '}
+                              {opt.label}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.accelFlagHint,
+                                themedStyles.textSecondary,
+                              ]}>
+                              {opt.hint}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
-          </View>
-        )}
-      </View>
+          )}
 
-      {/* Chunk Progress — always mounted to avoid layout shift */}
-      <View style={styles.chunkProgress}>
-        {currentChunk && isStarted ? (
-          <Text style={[styles.chunkLabel, themedStyles.textSecondary]}>
-            CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]{' '}
-            <Text style={themedStyles.statusAccent}>
-              {currentChunk.progress}%
+          {/* Voice selector */}
+          {engineReady && (
+            <View style={styles.voiceSection}>
+              <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                Voice
+              </Text>
+              <TouchableOpacity
+                style={[styles.voiceSelector, themedStyles.bgInput]}
+                onPress={() => setShowVoicePicker(true)}
+                disabled={availableVoices.length === 0}>
+                <Text
+                  style={[styles.voiceSelectorText, themedStyles.textPrimary]}
+                  numberOfLines={1}>
+                  {selectedVoice
+                    ? availableVoices.find(v => v.id === selectedVoice)?.name ||
+                      'Select'
+                    : 'Select Voice'}
+                </Text>
+                <Text
+                  style={[styles.dropdownArrow, themedStyles.textSecondary]}>
+                  ▼
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Supertonic controls — compact pill row. Each pill opens a
+            modal picker (Speed / Quality / Lang) or toggles (Save WAV).
+            Lang pill is hidden when the active model has only 1 language. */}
+          {engineReady && selectedEngine === TTSEngine.SUPERTONIC && (
+            <View style={styles.supertonicRow}>
+              <TouchableOpacity
+                style={[styles.settingPill, themedStyles.bgCard]}
+                onPress={() => setOpenPicker('speed')}
+                disabled={isStarted}>
+                <Text
+                  style={[styles.settingPillLabel, themedStyles.textSecondary]}>
+                  Speed
+                </Text>
+                <Text
+                  style={[styles.settingPillValue, themedStyles.textPrimary]}>
+                  {speed.toFixed(2)}x ▾
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.settingPill, themedStyles.bgCard]}
+                onPress={() => setOpenPicker('quality')}
+                disabled={isStarted}>
+                <Text
+                  style={[styles.settingPillLabel, themedStyles.textSecondary]}>
+                  Quality
+                </Text>
+                <Text
+                  style={[styles.settingPillValue, themedStyles.textPrimary]}>
+                  {inferenceSteps} steps ▾
+                </Text>
+              </TouchableOpacity>
+
+              {supertonicModelManager.getSupportedLanguages().length > 1 && (
+                <TouchableOpacity
+                  style={[styles.settingPill, themedStyles.bgCard]}
+                  onPress={() => setOpenPicker('language')}
+                  disabled={isStarted}>
+                  <Text
+                    style={[
+                      styles.settingPillLabel,
+                      themedStyles.textSecondary,
+                    ]}>
+                    Lang
+                  </Text>
+                  <Text
+                    style={[styles.settingPillValue, themedStyles.textPrimary]}>
+                    {supertonicLanguage.toUpperCase()} ▾
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.settingPill,
+                  saveWav ? themedStyles.btnSelectedGreen : themedStyles.bgCard,
+                ]}
+                onPress={() => setSaveWav(v => !v)}
+                disabled={isStarted}>
+                <Text
+                  style={[
+                    styles.settingPillLabel,
+                    saveWav
+                      ? themedStyles.textWhite
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Save WAV
+                </Text>
+                <Text
+                  style={[
+                    styles.settingPillValue,
+                    saveWav ? themedStyles.textWhite : themedStyles.textPrimary,
+                  ]}>
+                  {saveWav ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Chunk Progress — always mounted to avoid layout shift */}
+        <View style={styles.chunkProgress}>
+          {currentChunk && isStarted ? (
+            <Text style={[styles.chunkLabel, themedStyles.textSecondary]}>
+              CHUNK [{currentChunk.chunkIndex + 1}/{currentChunk.totalChunks}]{' '}
+              <Text style={themedStyles.statusAccent}>
+                {currentChunk.progress}%
+              </Text>
             </Text>
-          </Text>
-        ) : null}
-      </View>
+          ) : null}
+        </View>
 
-      {/* Main Content */}
-      <View style={gs.flex}>
-        <HighlightedText
-          text={spokenText}
-          highlights={highlights}
-          highlightedStyle={styles.highlighted}
-          onHighlightedPress={onHighlightedPress}
-          style={[gs.paragraph, themedStyles.textPrimary]}
-        />
-      </View>
+        {/* Main Content */}
+        <View style={gs.flex}>
+          <HighlightedText
+            text={spokenText}
+            highlights={highlights}
+            highlightedStyle={styles.highlighted}
+            onHighlightedPress={onHighlightedPress}
+            style={[gs.paragraph, themedStyles.textPrimary]}
+          />
+        </View>
+      </ScrollView>
 
       {/* Controls */}
       <View style={styles.controlBar}>
@@ -2213,24 +2417,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   // Supertonic Controls
-  supertonicControls: {
-    marginTop: 14,
-    gap: 12,
+  // ScrollView around settings + content — keeps Run/Kill pinned.
+  scrollContent: {
+    flexGrow: 1,
   },
-  controlGroup: {},
-  controlBtns: {
+  supertonicRow: {
+    marginTop: 12,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
   },
-  controlBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    minWidth: 44,
+  settingPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
   },
-  controlBtnText: {
+  settingPillLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  settingPillValue: {
     fontSize: 13,
     fontWeight: '600',
   },

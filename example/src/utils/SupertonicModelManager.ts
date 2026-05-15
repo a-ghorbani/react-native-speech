@@ -17,7 +17,7 @@ import type {SupertonicConfig} from '@pocketpalai/react-native-speech';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 
 // Model version types
-export type SupertonicVersion = 'v1' | 'v2';
+export type SupertonicVersion = 'v1' | 'v2' | 'v3';
 
 // Model information
 export interface SupertonicModelInfo {
@@ -65,6 +65,48 @@ const MODEL_VARIANTS: Record<SupertonicVersion, ModelVariantConfig> = {
     voices: ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'],
     languages: ['en', 'ko', 'es', 'pt', 'fr'],
     description: 'Multilingual (EN, KO, ES, PT, FR), OnnxSlim optimized',
+  },
+  v3: {
+    repo: 'Supertone/supertonic-3',
+    // ~398MB ONNX total per HF tree (duration_predictor + text_encoder
+    // + vector_estimator + vocoder); voice_styles add ~3MB more.
+    estimatedSize: 401 * 1024 * 1024,
+    voices: ['F1', 'F2', 'F3', 'F4', 'F5', 'M1', 'M2', 'M3', 'M4', 'M5'],
+    // 31 languages — superset of v2.
+    languages: [
+      'en',
+      'ko',
+      'ja',
+      'ar',
+      'bg',
+      'cs',
+      'da',
+      'de',
+      'el',
+      'es',
+      'et',
+      'fi',
+      'fr',
+      'hi',
+      'hr',
+      'hu',
+      'id',
+      'it',
+      'lt',
+      'lv',
+      'nl',
+      'pl',
+      'pt',
+      'ro',
+      'ru',
+      'sk',
+      'sl',
+      'sv',
+      'tr',
+      'uk',
+      'vi',
+    ],
+    description: 'Multilingual (31 langs), v2-compatible 4-model pipeline',
   },
 };
 
@@ -150,7 +192,12 @@ export class SupertonicModelManager {
       Platform.OS === 'ios' ? RNFS.MainBundlePath : 'file:///android_asset';
 
     const modelVersion = version || this.activeVersion;
-    const subfolder = modelVersion === 'v2' ? 'supertonic-2' : 'supertonic';
+    const subfolder =
+      modelVersion === 'v3'
+        ? 'supertonic-3'
+        : modelVersion === 'v2'
+          ? 'supertonic-2'
+          : 'supertonic';
 
     return {
       durationPredictorPath: `${basePath}/${subfolder}/duration_predictor.onnx`,
@@ -435,14 +482,16 @@ export class SupertonicModelManager {
    * Scan for all installed models on startup
    */
   async scanInstalledModel(): Promise<void> {
-    // Check both v1 and v2
     await Promise.all([
       this.checkModelInstallation('v1'),
       this.checkModelInstallation('v2'),
+      this.checkModelInstallation('v3'),
     ]);
 
-    // Set active version to first installed, prefer v2
-    if (this.installedModels.has('v2')) {
+    // Prefer the newest installed: v3 > v2 > v1
+    if (this.installedModels.has('v3')) {
+      this.activeVersion = 'v3';
+    } else if (this.installedModels.has('v2')) {
       this.activeVersion = 'v2';
     } else if (this.installedModels.has('v1')) {
       this.activeVersion = 'v1';
