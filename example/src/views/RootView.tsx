@@ -41,6 +41,7 @@ import {
 import {saveChunksAsWav} from '../utils/wavWriter';
 import {
   ENGLISH_DEFAULT_TEXT,
+  IPA_SAMPLE_TEXT,
   SAMPLE_TEXT,
   SAMPLE_TEXT_SET,
 } from '../utils/sampleText';
@@ -244,6 +245,10 @@ const RootView: React.FC = () => {
   // capture on-device output for offline verification (the Node harness
   // runs the same ASR round-trip against these files).
   const [saveWav, setSaveWav] = React.useState<boolean>(false);
+  // When true, the input is sent as pre-phonemized IPA via
+  // Speech.speak({ phonemes }), short-circuiting the engine's g2p.
+  // Only meaningful for the IPA engines (Kokoro, Kitten).
+  const [phonemeMode, setPhonemeMode] = React.useState<boolean>(false);
   // Which Supertonic setting is open in the dropdown modal (null = closed).
   // Single modal services all three dropdowns; content is keyed by this.
   const [openPicker, setOpenPicker] = React.useState<
@@ -620,7 +625,10 @@ const RootView: React.FC = () => {
           onAudioChunk: captureChunk,
         });
       } else {
-        await Speech.speak(spokenText, selectedVoice || undefined);
+        // Phoneme mode (Kokoro/Kitten only) feeds IPA directly,
+        // skipping g2p. Plain string keeps the normal text pipeline.
+        const input = phonemeMode ? {phonemes: spokenText} : spokenText;
+        await Speech.speak(input, selectedVoice || undefined);
       }
     } finally {
       // Speech finished or was stopped — ensure we reset
@@ -654,6 +662,7 @@ const RootView: React.FC = () => {
     supertonicLanguage,
     spokenText,
     saveWav,
+    phonemeMode,
   ]);
 
   const onHighlightedPress = React.useCallback(
@@ -1938,6 +1947,55 @@ const RootView: React.FC = () => {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* IPA Input toggle — Kokoro/Kitten only (the IPA engines).
+            When ON, the input is sent as pre-phonemized IPA via
+            Speech.speak({ phonemes }), short-circuiting g2p. */}
+          {engineReady &&
+            (selectedEngine === TTSEngine.KOKORO ||
+              selectedEngine === TTSEngine.KITTEN) && (
+              <View style={styles.supertonicRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.settingPill,
+                    phonemeMode
+                      ? themedStyles.btnSelectedGreen
+                      : themedStyles.bgCard,
+                  ]}
+                  onPress={() => {
+                    setPhonemeMode(v => {
+                      const next = !v;
+                      // Swap the displayed/spoken text so there's valid
+                      // IPA to feed without typing. Restoring the English
+                      // default re-enters the normal text pipeline.
+                      setSpokenText(
+                        next ? IPA_SAMPLE_TEXT : ENGLISH_DEFAULT_TEXT,
+                      );
+                      return next;
+                    });
+                  }}
+                  disabled={isStarted}>
+                  <Text
+                    style={[
+                      styles.settingPillLabel,
+                      phonemeMode
+                        ? themedStyles.textWhite
+                        : themedStyles.textSecondary,
+                    ]}>
+                    IPA Input
+                  </Text>
+                  <Text
+                    style={[
+                      styles.settingPillValue,
+                      phonemeMode
+                        ? themedStyles.textWhite
+                        : themedStyles.textPrimary,
+                    ]}>
+                    {phonemeMode ? 'ON' : 'OFF'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
         </View>
 
         {/* Chunk Progress — always mounted to avoid layout shift */}

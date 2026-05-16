@@ -56,6 +56,8 @@ export type {
   EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
+  SpeechInput,
+  PhonemeInput,
   EngineStatus,
   ChunkProgressEvent,
   ChunkProgressCallback,

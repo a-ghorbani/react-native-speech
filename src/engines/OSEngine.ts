@@ -11,8 +11,10 @@ import type {
   TTSEngineInterface,
   AudioBuffer,
   SynthesisOptions,
+  SpeechInput,
   ReleaseResult,
 } from '../types';
+import {isPhonemeInput} from '../types';
 
 export class OSEngine implements TTSEngineInterface<void> {
   readonly name: TTSEngine = 'os-native' as TTSEngine;
@@ -38,9 +40,17 @@ export class OSEngine implements TTSEngineInterface<void> {
    * This method will trigger playback and resolve when complete
    */
   async synthesize(
-    text: string,
+    input: SpeechInput,
     options?: SynthesisOptions,
   ): Promise<AudioBuffer | void> {
+    if (isPhonemeInput(input)) {
+      throw new Error(
+        'OS engine has no phoneme path; phoneme input requires the ' +
+          'Kokoro or Kitten engine.',
+      );
+    }
+    const text = input;
+
     if (options) {
       // Use speakWithOptions if options provided
       await NativeSpeech.speakWithOptions(text, {

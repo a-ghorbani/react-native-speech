@@ -323,3 +323,76 @@ describe('KittenEngine - streaming guards no-content chunks', () => {
     expect(mockSessionRun).toHaveBeenCalled();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phoneme input (g2p short-circuit)
+//
+// `synthesize({ phonemes })` must feed the IPA straight to the tokenizer:
+// the phonemizer is never invoked, the string is a single chunk (no
+// sentence splitting), and ONNX still runs. Text input keeps running g2p.
+// ─────────────────────────────────────────────────────────────────────────
+describe('KittenEngine - phoneme input bypasses g2p', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(2400), dims: [1, 2400]},
+    });
+  });
+
+  it('does not call the phonemizer and still runs ONNX', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const spy = jest.spyOn(
+      (e as unknown as {phonemizer: {phonemize: () => Promise<string>}})
+        .phonemizer,
+      'phonemize',
+    );
+    mockSessionRun.mockClear();
+
+    await e.synthesize(
+      {phonemes: 'həˈloʊ wˈɜːld'},
+      {voiceId: 'expr-voice-2-f'},
+    );
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(mockSessionRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats the IPA as a single chunk (no sentence splitting on ".")', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    mockSessionRun.mockClear();
+
+    // Periods in IPA must NOT trigger sentence chunking — one ONNX run.
+    await e.synthesize(
+      {phonemes: 'fˈɜːst. sˈɛkənd. θˈɜːd.'},
+      {voiceId: 'expr-voice-2-f'},
+    );
+
+    expect(mockSessionRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects empty phoneme input', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    await expect(
+      e.synthesize({phonemes: '   '}, {voiceId: 'expr-voice-2-f'}),
+    ).rejects.toThrow(/Input cannot be empty/);
+  });
+
+  it('still runs g2p for plain text input (unchanged behaviour)', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const spy = jest.spyOn(
+      (e as unknown as {phonemizer: {phonemize: () => Promise<string>}})
+        .phonemizer,
+      'phonemize',
+    );
+    mockSessionRun.mockClear();
+
+    await e.synthesize('hello world', {voiceId: 'expr-voice-2-f'});
+
+    expect(spy).toHaveBeenCalled();
+  });
+});

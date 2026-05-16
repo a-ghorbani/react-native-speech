@@ -33,6 +33,8 @@ import type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ReleaseResult,
+  SpeechInput,
+  PhonemeInput,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
   StreamProgressEvent,
@@ -194,15 +196,24 @@ export default class Speech {
   }
 
   /**
-   * Speak text using the currently initialized engine
-   * @param text - Text to synthesize
+   * Speak text — or pre-phonemized IPA — using the current engine.
+   *
+   * @param input - Either a text string (runs the full pipeline,
+   *   including g2p) or `{ phonemes }` to feed IPA directly and
+   *   short-circuit g2p. Phoneme input is supported only by the IPA
+   *   neural engines (Kokoro, Kitten); the OS and Supertonic engines
+   *   reject it with a clear error.
    * @param voiceId - Voice identifier (engine-specific)
    * @param options - Synthesis options
    * @example
+   * // Text (unchanged behaviour — g2p runs)
    * await Speech.speak('Hello world', 'af_bella', { speed: 1.0 });
+   *
+   * // Pre-phonemized IPA — skips the engine's g2p
+   * await Speech.speak({ phonemes: 'həˈloʊ wˈɜːld' }, 'af_bella');
    */
   public static async speak(
-    text: string,
+    input: SpeechInput,
     voiceId?: string,
     options?: SynthesisOptions,
   ): Promise<void> {
@@ -215,7 +226,7 @@ export default class Speech {
     }
 
     const engineInstance = engineManager.getEngine(engine);
-    await engineInstance.synthesize(text, {
+    await engineInstance.synthesize(input, {
       voiceId,
       ...options,
     });
@@ -613,6 +624,8 @@ export type {
   ChunkProgressEvent,
   ChunkProgressCallback,
   ReleaseResult,
+  SpeechInput,
+  PhonemeInput,
   ISpeechStream as SpeechStream,
   SpeechStreamOptions,
   StreamProgressEvent,
