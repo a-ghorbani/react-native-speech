@@ -28,7 +28,9 @@ import type {
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensorConstructor,
+  SpeechInput,
 } from '../../types';
+import {isPhonemeInput} from '../../types';
 import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
@@ -250,21 +252,22 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
    * This maintains the unified API - synthesize() now plays audio for neural engines
    */
   async synthesize(
-    text: string,
+    input: SpeechInput,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer | void> {
     if (!this.isInitialized || !this.session) {
       throw new Error('Kokoro engine not initialized');
     }
 
-    if (!text || text.trim().length === 0) {
-      throw new Error('Text cannot be empty');
+    const inputStr = isPhonemeInput(input) ? input.phonemes : input;
+    if (!inputStr || inputStr.trim().length === 0) {
+      throw new Error('Input cannot be empty');
     }
 
     // Track synthesis state for safe resource release
     this.isSynthesizing = true;
     try {
-      return await this.doSynthesize(text, options);
+      return await this.doSynthesize(input, options);
     } finally {
       this.isSynthesizing = false;
       // Resolve any pending waitForSynthesisComplete() calls
@@ -386,9 +389,14 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
    * Internal synthesis implementation
    */
   private async doSynthesize(
-    text: string,
+    input: SpeechInput,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer | void> {
+    // Phoneme input short-circuits g2p: no markdown strip, no
+    // normalization, no sentence chunking. The IPA is treated as a
+    // single unit and fed straight to the tokenizer.
+    const raw = isPhonemeInput(input);
+    const text = raw ? input.phonemes : input;
     // Reset stop flag and generate new utterance ID
     this.stopRequested = false;
     this.stopSignalResolver = null;
@@ -406,18 +414,27 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
-    // Strip markdown syntax before chunking so structural markers (`---`,
-    // `###`, table rows) get converted into sentence breaks the chunker
-    // recognizes. Default on; consumer can opt out via options.
-    const cleanText =
-      options?.stripMarkdown === false ? text : stripMarkdown(text);
-
-    // Chunk text by sentences for streaming playback
+    // Chunk text by sentences for streaming playback. Phoneme input is
+    // never sentence-chunked — IPA has no reliable sentence structure to
+    // split on, so the supplied string is one chunk (the model
+    // token-limit warning below still applies).
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const chunks = this.normalizer.chunkBySentencesWithMetadata(
-      cleanText,
-      maxChunkSize,
-    );
+    let chunks: TextChunk[];
+    if (raw) {
+      chunks = [
+        {text, originalText: text, startIndex: 0, endIndex: text.length},
+      ];
+    } else {
+      // Strip markdown syntax before chunking so structural markers
+      // (`---`, `###`, table rows) get converted into sentence breaks the
+      // chunker recognizes. Default on; consumer can opt out via options.
+      const cleanText =
+        options?.stripMarkdown === false ? text : stripMarkdown(text);
+      chunks = this.normalizer.chunkBySentencesWithMetadata(
+        cleanText,
+        maxChunkSize,
+      );
+    }
 
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
@@ -459,7 +476,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         nextAudioPromise = null;
       } else {
         audioBuffer = await this.raceWithStop(
-          this.synthesizeTextChunk(chunk.text, voiceId, language, options),
+          this.synthesizeTextChunk(chunk.text, voiceId, language, options, raw),
           stopSignal,
         );
       }
@@ -484,6 +501,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
           voiceId,
           language,
           options,
+          raw,
         );
       }
 
@@ -510,22 +528,30 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     voiceId: string,
     language: string,
     options?: KokoroSynthesisOptions,
+    raw = false,
   ): Promise<AudioBuffer> {
-    // Normalize chunk text
-    const normalized = this.normalizer.normalize(chunkText);
+    // For phoneme input, the chunk IS the IPA — skip normalization and
+    // g2p entirely and tokenize it directly. For text input, run the
+    // full normalize → phonemize pipeline as before.
+    let phonemes: string;
+    if (raw) {
+      phonemes = chunkText;
+    } else {
+      const normalized = this.normalizer.normalize(chunkText);
 
-    // Check stop between pipeline steps
-    if (this.stopRequested) {
-      return {
-        samples: new Float32Array(0),
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        duration: 0,
-      };
+      // Check stop between pipeline steps
+      if (this.stopRequested) {
+        return {
+          samples: new Float32Array(0),
+          sampleRate: SAMPLE_RATE,
+          channels: 1,
+          duration: 0,
+        };
+      }
+
+      // Phonemize (convert text to phonemes)
+      phonemes = await this.phonemizer.phonemize(normalized, language);
     }
-
-    // Phonemize (convert text to phonemes)
-    const phonemes = await this.phonemizer.phonemize(normalized, language);
 
     // Check stop after phonemization (can be slow)
     if (this.stopRequested) {

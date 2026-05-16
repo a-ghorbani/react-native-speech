@@ -27,7 +27,9 @@ import type {
   OnnxInferenceSessionConstructor,
   OnnxTensor,
   OnnxTensorConstructor,
+  SpeechInput,
 } from '../../types';
+import {isPhonemeInput} from '../../types';
 import type {KittenConfig, KittenSynthesisOptions} from '../../types/Kitten';
 import {IPATokenizer} from './IPATokenizer';
 import {VoiceLoader} from './VoiceLoader';
@@ -240,20 +242,21 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
    * Automatically chunks long text by sentences.
    */
   async synthesize(
-    text: string,
+    input: SpeechInput,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer | void> {
     if (!this.isInitialized || !this.session) {
       throw new Error('Kitten engine not initialized');
     }
 
-    if (!text || text.trim().length === 0) {
-      throw new Error('Text cannot be empty');
+    const inputStr = isPhonemeInput(input) ? input.phonemes : input;
+    if (!inputStr || inputStr.trim().length === 0) {
+      throw new Error('Input cannot be empty');
     }
 
     this.isSynthesizing = true;
     try {
-      return await this.doSynthesize(text, options);
+      return await this.doSynthesize(input, options);
     } finally {
       this.isSynthesizing = false;
       if (this.synthesisCompleteResolver) {
@@ -379,9 +382,13 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
    * Internal synthesis implementation with pipelined chunking
    */
   private async doSynthesize(
-    text: string,
+    input: SpeechInput,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer | void> {
+    // Phoneme input short-circuits g2p: no markdown strip, no
+    // preprocessing, no sentence chunking. The IPA is a single unit.
+    const raw = isPhonemeInput(input);
+    const text = raw ? input.phonemes : input;
     this.stopRequested = false;
     this.stopSignalResolver = null;
     this.currentUtteranceId = Date.now();
@@ -395,28 +402,39 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       `Synthesis start: voice=${voiceId}, text="${text.substring(0, 50)}..."`,
     );
 
-    // Strip markdown first (default on) so structural markers become
-    // sentence breaks the chunker can split on. Consumers who wire
-    // HighlightedText to original-input offsets can opt out via
-    // `stripMarkdown: false` — note that textRange indices then track the
-    // original string, which is not the case when stripping is active.
-    const sourceText =
-      options?.stripMarkdown === false ? text : stripMarkdown(text);
-
-    // Chunk the ORIGINAL text first (so textRange indices match what the
-    // consumer passed to speak and stay aligned with HighlightedText), then
-    // preprocess each chunk before phonemization. Preprocessor operations
-    // (contraction expansion, number/unit expansion, etc.) are per-token and
-    // sentence-independent, so per-chunk preprocessing is equivalent to
-    // preprocessing the whole string — without the position drift that
-    // whole-text normalization introduces.
+    // Phoneme input is never sentence-chunked or preprocessed — the IPA
+    // is fed as one unit (the token-cap split below still guards the
+    // model limit). Text input keeps the existing strip → chunk →
+    // per-chunk preprocess pipeline.
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-    const sentenceChunks = chunkTextWithPositions(sourceText, maxChunkSize);
-    const chunks = sentenceChunks.map(c => ({
-      text: this.preprocessor.process(c.text),
-      startIndex: c.startIndex,
-      endIndex: c.endIndex,
-    }));
+    let chunks: Array<{text: string; startIndex: number; endIndex: number}>;
+    if (raw) {
+      chunks = [{text, startIndex: 0, endIndex: text.length}];
+    } else {
+      // Strip markdown first (default on) so structural markers become
+      // sentence breaks the chunker can split on. Consumers who wire
+      // HighlightedText to original-input offsets can opt out via
+      // `stripMarkdown: false` — note that textRange indices then track
+      // the original string, which is not the case when stripping is
+      // active.
+      const sourceText =
+        options?.stripMarkdown === false ? text : stripMarkdown(text);
+
+      // Chunk the ORIGINAL text first (so textRange indices match what
+      // the consumer passed to speak and stay aligned with
+      // HighlightedText), then preprocess each chunk before
+      // phonemization. Preprocessor operations (contraction expansion,
+      // number/unit expansion, etc.) are per-token and
+      // sentence-independent, so per-chunk preprocessing is equivalent
+      // to preprocessing the whole string — without the position drift
+      // that whole-text normalization introduces.
+      const sentenceChunks = chunkTextWithPositions(sourceText, maxChunkSize);
+      chunks = sentenceChunks.map(c => ({
+        text: this.preprocessor.process(c.text),
+        startIndex: c.startIndex,
+        endIndex: c.endIndex,
+      }));
+    }
 
     log.debug(`Text chunked into ${chunks.length} chunks`);
 
@@ -452,7 +470,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           nextAudioPromise = null;
         } else {
           audioBuffer = await this.raceWithStop(
-            this.synthesizeTextChunk(chunk.text, voiceId, options),
+            this.synthesizeTextChunk(chunk.text, voiceId, options, raw),
             stopSignal,
           );
         }
@@ -480,6 +498,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           nextChunk.text,
           voiceId,
           options,
+          raw,
         );
       }
 
@@ -504,6 +523,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     chunkStr: string,
     voiceId: string,
     options?: KittenSynthesisOptions,
+    raw = false,
   ): Promise<AudioBuffer> {
     const emptyBuffer = (): AudioBuffer => ({
       samples: new Float32Array(0),
@@ -532,8 +552,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         return emptyBuffer();
       }
 
-      // 1. Phonemize (GPL-free JS phonemizer, IPA mode)
-      const phonemes = await this.phonemizeText(chunkStr);
+      // 1. Phonemize (GPL-free JS phonemizer, IPA mode). For phoneme
+      //    input the chunk already IS IPA — skip g2p and tokenize it.
+      const phonemes = raw ? chunkStr : await this.phonemizeText(chunkStr);
       log.debug(
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
@@ -587,6 +608,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
             piece,
             voiceId,
             options,
+            raw,
           );
           if (subAudio.samples.length > 0) subBuffers.push(subAudio);
         }

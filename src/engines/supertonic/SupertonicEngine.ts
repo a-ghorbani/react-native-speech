@@ -28,7 +28,9 @@ import type {
   ChunkProgressCallback,
   ReleaseResult,
   ReleaseError,
+  SpeechInput,
 } from '../../types';
+import {isPhonemeInput} from '../../types';
 import {SupertonicInference} from './SupertonicInference';
 import {
   StyleLoader,
@@ -183,12 +185,20 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
    * Automatically chunks long text by sentences for better performance
    */
   async synthesize(
-    text: string,
+    input: SpeechInput,
     options?: SupertonicSynthesisOptions,
   ): Promise<AudioBuffer | void> {
     if (!this.isInitialized) {
       throw new Error('Supertonic engine not initialized');
     }
+
+    if (isPhonemeInput(input)) {
+      throw new Error(
+        'Supertonic engine has no phoneme path; phoneme input requires ' +
+          'the Kokoro or Kitten engine.',
+      );
+    }
+    const text = input;
 
     if (!text || text.trim().length === 0) {
       throw new Error('Text cannot be empty');
