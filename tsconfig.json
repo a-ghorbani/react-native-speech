@@ -1,4 +1,9 @@
 {
+  // scripts/experiments is gitignored local scratch — keep it out of the
+  // program so `yarn typecheck` / the pre-commit hook don't fail on it.
+  // Specifying `exclude` drops tsc's defaults, so node_modules (and the
+  // lib build output) must be listed explicitly.
+  "exclude": ["node_modules", "lib", "scripts/experiments"],
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
