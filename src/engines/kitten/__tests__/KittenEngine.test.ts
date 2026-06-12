@@ -378,7 +378,7 @@ describe('KittenEngine - phoneme input bypasses g2p', () => {
     await e.initialize(validConfig);
     await expect(
       e.synthesize({phonemes: '   '}, {voiceId: 'expr-voice-2-f'}),
-    ).rejects.toThrow(/Input cannot be empty/);
+    ).rejects.toThrow(/Phonemes cannot be empty/);
   });
 
   it('still runs g2p for plain text input (unchanged behaviour)', async () => {

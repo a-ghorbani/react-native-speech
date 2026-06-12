@@ -147,10 +147,17 @@ export type SpeechInput = string | PhonemeInput;
 
 /**
  * Narrows a `SpeechInput` to `PhonemeInput`. A plain string is text;
- * an object carrying a `phonemes` field is pre-phonemized IPA.
+ * an object carrying an own string `phonemes` field is pre-phonemized
+ * IPA. Inherited or non-string `phonemes` (possible from untyped JS
+ * callers) is not treated as phoneme input.
  */
 export function isPhonemeInput(input: SpeechInput): input is PhonemeInput {
-  return typeof input === 'object' && input !== null && 'phonemes' in input;
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    Object.prototype.hasOwnProperty.call(input, 'phonemes') &&
+    typeof (input as PhonemeInput).phonemes === 'string'
+  );
 }
 
 /**

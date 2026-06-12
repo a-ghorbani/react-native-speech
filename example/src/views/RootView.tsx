@@ -1661,7 +1661,21 @@ const RootView: React.FC = () => {
                       ? themedStyles.btnSelected
                       : themedStyles.btnUnselected,
                   ]}
-                  onPress={() => setSelectedEngine(item.engine)}
+                  onPress={() => {
+                    // Leaving Kokoro/Kitten hides the IPA toggle, so drop
+                    // phoneme mode (and restore the English sample) —
+                    // otherwise speak() would still send { phonemes } to
+                    // an engine without a phoneme path.
+                    if (
+                      phonemeMode &&
+                      item.engine !== TTSEngine.KOKORO &&
+                      item.engine !== TTSEngine.KITTEN
+                    ) {
+                      setPhonemeMode(false);
+                      setSpokenText(ENGLISH_DEFAULT_TEXT);
+                    }
+                    setSelectedEngine(item.engine);
+                  }}
                   disabled={isInitializing || isStarted}>
                   <Text
                     style={[

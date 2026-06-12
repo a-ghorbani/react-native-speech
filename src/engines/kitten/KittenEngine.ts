@@ -249,9 +249,14 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       throw new Error('Kitten engine not initialized');
     }
 
-    const inputStr = isPhonemeInput(input) ? input.phonemes : input;
+    const isPhonemes = isPhonemeInput(input);
+    const inputStr = isPhonemes ? input.phonemes : input;
     if (!inputStr || inputStr.trim().length === 0) {
-      throw new Error('Input cannot be empty');
+      // The text-path message predates phoneme input and is observable
+      // behaviour (and matches Supertonic) — keep it unchanged.
+      throw new Error(
+        isPhonemes ? 'Phonemes cannot be empty' : 'Text cannot be empty',
+      );
     }
 
     this.isSynthesizing = true;
