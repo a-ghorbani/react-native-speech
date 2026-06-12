@@ -91,10 +91,14 @@ benchmarks/latest/
 benchmarks/baseline/
 benchmarks/benchmark-*
 benchmark-trace-table.csv
+benchmark-android-trace-*.json
 
 # Local dev caches (downloaded models, harness outputs)
 scripts/.cache/
 scripts/out/
+
+# Local experiment scratch (excluded from tsc via tsconfig "exclude")
+scripts/experiments/
 
 # npm (project uses yarn)
 package-lock.json
