@@ -173,4 +173,12 @@ describe('SupertonicEngine - successful initialize() & lifecycle', () => {
     expect(result.success).toBe(true);
     expect(result.errors).toEqual([]);
   });
+
+  it('rejects phoneme input — no IPA-in path on Supertonic', async () => {
+    const e = new SupertonicEngine();
+    await e.initialize(validConfig);
+    await expect(
+      e.synthesize({phonemes: 'həˈloʊ'}, {voiceId: 'default'}),
+    ).rejects.toThrow(/phoneme input requires the Kokoro or Kitten engine/);
+  });
 });

@@ -118,6 +118,49 @@ export interface SynthesisOptions {
 }
 
 /**
+ * Phoneme input: the caller supplies IPA directly, so the engine skips
+ * its grapheme-domain stages (markdown stripping, text normalization /
+ * preprocessing, and g2p phonemization) and tokenizes the string as-is.
+ *
+ * Only the IPA-pipeline neural engines (Kokoro, Kitten) accept this.
+ * The OS and Supertonic engines have no IPA-in path and reject it with
+ * a clear error.
+ *
+ * Unlike text input, a phoneme string is NOT sentence-chunked — pass
+ * one already-segmented utterance per call. The engine still applies
+ * its model token-limit safety net (Kitten splits oversized input;
+ * Kokoro warns).
+ */
+export interface PhonemeInput {
+  /** IPA phoneme string, tokenized directly without g2p. */
+  phonemes: string;
+}
+
+/**
+ * Input accepted by `Speech.speak` / `TTSEngineInterface.synthesize`.
+ *
+ * - `string` — text; runs the engine's full pipeline (g2p included).
+ *   Behaviour is identical to before phoneme input existed.
+ * - `PhonemeInput` — pre-phonemized IPA; short-circuits g2p.
+ */
+export type SpeechInput = string | PhonemeInput;
+
+/**
+ * Narrows a `SpeechInput` to `PhonemeInput`. A plain string is text;
+ * an object carrying an own string `phonemes` field is pre-phonemized
+ * IPA. Inherited or non-string `phonemes` (possible from untyped JS
+ * callers) is not treated as phoneme input.
+ */
+export function isPhonemeInput(input: SpeechInput): input is PhonemeInput {
+  return (
+    typeof input === 'object' &&
+    input !== null &&
+    Object.prototype.hasOwnProperty.call(input, 'phonemes') &&
+    typeof (input as PhonemeInput).phonemes === 'string'
+  );
+}
+
+/**
  * Error details for a failed release operation on a specific component
  */
 export interface ReleaseError {
@@ -166,9 +209,15 @@ export interface TTSEngineInterface<TConfig = void> {
   /** Check if engine is ready to use */
   isReady(): Promise<boolean>;
 
-  /** Synthesize text to audio */
+  /**
+   * Synthesize text — or pre-phonemized IPA — to audio.
+   *
+   * Passing a plain `string` runs the full pipeline (text input,
+   * unchanged behaviour). Passing a `PhonemeInput` short-circuits g2p
+   * on the IPA engines; engines without an IPA-in path reject it.
+   */
   synthesize(
-    text: string,
+    input: SpeechInput,
     options?: SynthesisOptions,
   ): Promise<AudioBuffer | void>;
 
@@ -246,6 +295,9 @@ export interface ChunkProgressEvent {
    *
    * Pass `stripMarkdown: false` if you need stable original-text offsets
    * for highlighting and have already cleaned the markdown yourself.
+   *
+   * For `PhonemeInput`, the range indexes the supplied IPA string (a
+   * single chunk spanning the whole input), not any original text.
    */
   textRange: {
     start: number;

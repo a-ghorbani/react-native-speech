@@ -21,6 +21,17 @@ export const ENGLISH_DEFAULT_TEXT =
   'API, just the model running on your phone. Switch voices above to ' +
   'hear the difference.';
 
+/**
+ * Pre-phonemized IPA used to exercise the phoneme-input path
+ * (`Speech.speak({ phonemes })`) from the example app. This is the
+ * American-English IPA for a short welcome line — feeding it directly
+ * skips the engine's g2p. Only the IPA engines (Kokoro, Kitten) accept
+ * phoneme input; the OS and Supertonic engines reject it.
+ */
+export const IPA_SAMPLE_TEXT =
+  'wˈɛlkəm! ðɪs ɪz ɐ kwˈɪk dˈɛmoʊ ʌv ɑnˈdɪvaɪs nˈʊɹəl tˈɛkst tə spˈiːtʃ, ' +
+  'fˈɛd æz ˌaɪpˈiːˈeɪ fəˈniːmz dɚˈɛktli.';
+
 export const SAMPLE_TEXT: Record<string, string> = {
   en: ENGLISH_DEFAULT_TEXT,
   ko: '환영합니다! 이것은 기기에서 실행되는 신경망 음성 합성의 간단한 데모입니다. 들리는 모든 음성은 로컬에서 합성됩니다 — 인터넷도, 클라우드 API도 없이 휴대전화에서 실행되는 모델만 사용합니다. 위에서 다른 음성을 선택해 차이를 들어보세요.',

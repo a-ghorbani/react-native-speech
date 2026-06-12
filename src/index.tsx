@@ -50,12 +50,18 @@ export type {
 // Export TTSEngine enum (as value, not type)
 export {TTSEngine} from './types';
 
+// Runtime guard for SpeechInput — exported so consumers (especially
+// untyped JS callers) can branch on input kind without deep imports.
+export {isPhonemeInput} from './types';
+
 // Export engine types
 export type {
   TTSEngineInterface,
   EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
+  SpeechInput,
+  PhonemeInput,
   EngineStatus,
   ChunkProgressEvent,
   ChunkProgressCallback,
