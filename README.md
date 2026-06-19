@@ -101,6 +101,13 @@ await Speech.initialize({
 });
 await Speech.speak('Hello from Supertonic.', 'F1');
 
+// Supertonic is multilingual on the v3 model (Supertone/supertonic-3):
+// 31 languages plus 'na' for language-agnostic synthesis. Pass a code via
+// `language` (v1 = en only; v2 = en/ko/es/pt/fr; v3 = all 31 + na). Voices
+// are language-agnostic — any voice works with any language.
+await Speech.speak('Bonjour le monde.', 'F1', {language: 'fr'});
+await Speech.speak('Mixed-language text, just works.', 'M2', {language: 'na'});
+
 // Kitten
 await Speech.initialize({
   engine: TTSEngine.KITTEN,

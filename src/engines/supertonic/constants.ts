@@ -48,10 +48,13 @@ export const SUPERTONIC_CONSTANTS = {
   STYLE_TTL_SIZE: 12800,
 
   // Supported languages — superset across all model versions.
-  // v1 supports only 'en'; v2 supports 5 (en, ko, es, pt, fr); v3 supports all 31.
-  // The engine doesn't enforce per-version subsets — it just wraps text in
-  // `<lang>...</lang>` and lets the model handle it.
+  // v1 supports only 'en'; v2 supports 5 (en, ko, es, pt, fr); v3 supports
+  // all 31 below plus 'na' (language-agnostic). The engine doesn't enforce
+  // per-version subsets — it just wraps text in `<lang>...</lang>` and lets
+  // the model handle it. `'na'` produces a `<na>...</na>` tag (matching
+  // upstream `helper.py`), which only the v3 model was trained on.
   AVAILABLE_LANGS: [
+    'na',
     'en',
     'ko',
     'ja',
