@@ -1,0 +1,39 @@
+name: Release
+on:
+  push:
+    branches: [main]
+
+# Never run two releases at once; don't cancel a release mid-publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # push the version commit + tag, create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip the bot's own "chore: release x.y.z" commit so we don't loop.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release') }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0          # full history + tags for the changelog
+          persist-credentials: true
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Configure npm auth
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn release-it --ci   # NOT `yarn release` — that hardcodes --only-version (interactive)
