@@ -28,12 +28,20 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
+      # Trusted publishing (OIDC) needs npm >= 11.5.1; the Node in .nvmrc
+      # bundles npm 10.x, which can't do the OIDC token exchange.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # --npm.skipChecks skips release-it's pre-flight `npm whoami`/collaborator
+      # check, which fails under trusted publishing (no token in CI). The real
+      # auth + provenance happen inside `npm publish` via OIDC.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: yarn release-it --ci
+        run: yarn release-it --ci --npm.skipChecks
