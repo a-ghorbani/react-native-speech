@@ -17,7 +17,14 @@ import type {ExecutionProvider} from './Kokoro';
  * Coverage depends on the loaded model version:
  * - v1: `'en'` only.
  * - v2: `'en' | 'ko' | 'es' | 'pt' | 'fr'`.
- * - v3: all 31 codes below.
+ * - v3: all 31 codes below, plus `'na'`.
+ *
+ * `'na'` is Supertonic's language-agnostic mode: the engine wraps text in
+ * a `<na>...</na>` tag (mirroring upstream `_preprocess_text`, where
+ * `text = f"<{lang}>" + text + f"</{lang}>"`) and the v3 model infers the
+ * handling from the input itself rather than from an explicit locale. Use
+ * it when the input language is unknown or mixed. Only the v3 model was
+ * trained on the `<na>` tag — passing `'na'` to v1/v2 yields degraded audio.
  *
  * The engine doesn't verify the requested language against the loaded
  * model — pass a code the model wasn't trained on and you'll get
@@ -25,6 +32,7 @@ import type {ExecutionProvider} from './Kokoro';
  * `SupertonicModelManager` knows the per-version subset.
  */
 export type SupertonicLanguage =
+  | 'na'
   | 'en'
   | 'ko'
   | 'ja'
@@ -87,9 +95,11 @@ export interface SupertonicSynthesisOptions extends SynthesisOptions {
    *
    * - v1 model: only `'en'` is meaningful; other values are ignored.
    * - v2 model: `'en' | 'ko' | 'es' | 'pt' | 'fr'`.
-   * - v3 model: any of the 31 supported codes (see `SupertonicLanguage`).
+   * - v3 model: any of the 31 supported codes, plus `'na'` for
+   *   language-agnostic synthesis (see `SupertonicLanguage`).
    *
-   * Defaults to `'en'`.
+   * Defaults to `'en'`. For the v3 model, pass `'na'` to let the model
+   * infer handling from the input when the language is unknown or mixed.
    */
   language?: SupertonicLanguage;
 }
