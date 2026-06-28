@@ -17,7 +17,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     # Skip the bot's own "chore: release x.y.z" commit so we don't loop.
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release') }}
+    # Quoted because the `: ` inside 'chore: release' otherwise makes YAML
+    # parse this as a nested mapping → workflow startup_failure.
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release') }}"
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
