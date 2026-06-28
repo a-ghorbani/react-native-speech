@@ -1,8 +1,15 @@
 name: Release
 
+# Auto-release on push to main is intentionally DISABLED: `main` is a
+# protected branch and the Actions bot can't push release-it's version
+# commit/tag (npm publish succeeds first, then the git push is rejected,
+# leaving npm/git inconsistent). Re-enable the `push` trigger below once
+# the bot is granted a branch-protection bypass (or we move to a
+# release-PR flow). Until then this only runs when triggered manually.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
 
 # Never run two releases at once; don't cancel a release mid-publish.
 concurrency:
