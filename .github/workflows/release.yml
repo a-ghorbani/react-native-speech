@@ -38,9 +38,10 @@ jobs:
         uses: ./.github/actions/setup
 
       # Trusted publishing (OIDC) needs npm >= 11.5.1; the Node in .nvmrc
-      # bundles npm 10.x, which can't do the OIDC token exchange.
+      # bundles npm 10.x, which can't do the OIDC token exchange. Pinned to 11:
+      # npm 12 requires Node >= 22.22.2, newer than .nvmrc.
       - name: Upgrade npm for trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@^11.5.1
 
       - name: Configure git identity
         run: |
