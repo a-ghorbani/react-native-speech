@@ -707,7 +707,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
    override fun openVoiceDataInstaller(promise: Promise) {
     try {
-      val activity = currentActivity
+      val activity = reactApplicationContext.currentActivity
       if (activity == null) {
         promise.reject("ACTIVITY_UNAVAILABLE", "The current activity is not available to launch the installer.")
         return
