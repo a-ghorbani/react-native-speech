@@ -68,6 +68,7 @@ export type {
   SpeechStream,
   SpeechStreamOptions,
   StreamProgressEvent,
+  FirstChunkMode,
 } from './types';
 
 // Export Kokoro types
@@ -112,6 +113,15 @@ export type {
 
 // Export components
 export {default as HighlightedText} from './components/HighlightedText';
+
+// Streaming markdown stripper — lets consumers strip markdown themselves
+// (with `stripMarkdown: false` on the stream) so `streamRange` offsets
+// map onto the exact text they appended.
+export {createMarkdownStreamBuffer} from './utils/stripMarkdown';
+export type {
+  MarkdownStreamBuffer,
+  StripMarkdownOptions,
+} from './utils/stripMarkdown';
 
 // Export engines for advanced usage.
 // These are part of the public API but their shape is not covered by

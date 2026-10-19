@@ -1,4 +1,4 @@
-import {StreamingChunker} from '../StreamingChunker';
+import {StreamingChunker, findFirstClauseEnd} from '../StreamingChunker';
 import {createMarkdownStreamBuffer} from '../../utils/stripMarkdown';
 
 async function flushMicrotasks() {
@@ -296,5 +296,95 @@ End.`;
     expect(joined).toContain('---');
     // No `.\n`-only chunk in the unstripped path.
     expect(chunks.every(t => /[\p{L}\p{N}-]/u.test(t))).toBe(true);
+  });
+});
+
+describe('findFirstClauseEnd', () => {
+  test('returns -1 when no boundary has arrived', () => {
+    expect(findFirstClauseEnd('Well, I think')).toBe(-1);
+  });
+
+  test('ignores clause marks before the minimum word count', () => {
+    expect(findFirstClauseEnd('Well, yes, ')).toBe(-1);
+  });
+
+  test('ends at the first clause mark after 3 words', () => {
+    const text = 'Sure thing friend, here it is. ';
+    expect(text.slice(0, findFirstClauseEnd(text))).toBe('Sure thing friend, ');
+  });
+
+  test('prefers an earlier sentence end', () => {
+    const text = 'Hi. Then more words, here. ';
+    expect(text.slice(0, findFirstClauseEnd(text))).toBe('Hi. ');
+  });
+
+  test('caps at 12 complete words without punctuation', () => {
+    const words = Array.from({length: 14}, (_, i) => `w${i}`).join(' ') + ' ';
+    const end = findFirstClauseEnd(words);
+    expect(words.slice(0, end).trim().split(/\s+/)).toHaveLength(12);
+  });
+
+  test('accepts em dash, semicolon and colon', () => {
+    for (const mark of ['—', ';', ':']) {
+      const text = `one two three${mark} four. `;
+      expect(text.slice(0, findFirstClauseEnd(text))).toBe(
+        `one two three${mark} `,
+      );
+    }
+  });
+});
+
+describe("StreamingChunker firstChunk: 'clause'", () => {
+  const text = 'Sure thing friend, here it is, and more. Second sentence, ok. ';
+
+  test('default mode waits for the sentence end', async () => {
+    const chunker = new StreamingChunker();
+    chunker.append('Sure thing friend, here it is');
+    expect(chunker.tryPeek()).toBeUndefined();
+  });
+
+  test('first chunk flushes at a clause, later chunks at sentences', async () => {
+    const chunker = new StreamingChunker(400, 'clause');
+    chunker.append(text);
+    chunker.finalize();
+
+    const c1 = await chunker.getNextChunk();
+    expect(c1!.text).toBe('Sure thing friend, ');
+    expect(c1!.startIndex).toBe(0);
+    expect(c1!.endIndex).toBe(19);
+
+    const c2 = await chunker.getNextChunk();
+    expect(c2!.text).toBe('here it is, and more. Second sentence, ok. ');
+    expect(c2!.startIndex).toBe(19);
+    expect(c2!.endIndex).toBe(text.length);
+
+    expect(await chunker.getNextChunk()).toBeNull();
+  });
+
+  test('wakes a blocked consumer as soon as the clause arrives', async () => {
+    const chunker = new StreamingChunker(400, 'clause');
+    const pending = chunker.getNextChunk();
+    chunker.append('Sure thing');
+    await flushMicrotasks();
+    chunker.append(' friend, here');
+    const chunk = await pending;
+    expect(chunk!.text).toBe('Sure thing friend, ');
+  });
+
+  test('a finalized remainder counts as the first chunk', async () => {
+    const chunker = new StreamingChunker(400, 'clause');
+    chunker.append('Hi');
+    chunker.finalize();
+    expect((await chunker.getNextChunk())!.text).toBe('Hi');
+    expect(await chunker.getNextChunk()).toBeNull();
+  });
+
+  test('markdown buffer + chunker keep the early first clause', async () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    const chunker = new StreamingChunker(400, 'clause');
+    chunker.append(md.push('Sure thing friend, here it is'));
+    const first = chunker.tryPeek();
+    expect(first).toBeTruthy();
+    expect((first as {text: string}).text).toBe('Sure thing friend, ');
   });
 });

@@ -303,7 +303,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     // See KokoroEngine.synthesizeStream for the rationale: strip markdown
     // BEFORE StreamingChunker (via the line-buffered md stream buffer) so
     // structural markers become chunk boundaries.
-    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
+    const mdBuffer = stripMd
+      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
         const processed = this.preprocessor.process(text);
@@ -312,14 +314,15 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
+      firstChunk: options?.firstChunk,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
       },
       postProcess: volumeAdjust,
-      onChunkProgress: this.chunkProgressCallback
-        ? event => this.emitChunkProgress(event)
-        : undefined,
+      // Always bind: listeners may subscribe after the stream starts, and
+      // emitChunkProgress already no-ops when no callback is set.
+      onChunkProgress: event => this.emitChunkProgress(event),
     });
 
     this.activeStreamSession = session;

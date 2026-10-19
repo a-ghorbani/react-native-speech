@@ -775,3 +775,39 @@ describe('createMarkdownStreamBuffer: boundary invariance', () => {
     expect(buf.flush()).toBe('');
   });
 });
+
+describe("createMarkdownStreamBuffer: firstChunk 'clause'", () => {
+  test('default holds the first clause until a sentence end', () => {
+    const md = createMarkdownStreamBuffer();
+    expect(md.push('Sure thing friend, here it is')).toBe('');
+  });
+
+  test('releases the first clause early, then sentences only', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('Sure thing friend, here it is')).toBe(
+      'Sure thing friend, ',
+    );
+    // Second clause is held until the sentence completes.
+    expect(md.push(', and more')).toBe('');
+    expect(md.push('. Next')).toBe('here it is, and more. ');
+    expect(md.flush()).toBe('Next');
+  });
+
+  test('does not cut through an open inline marker', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('This is **really, very')).toBe('');
+    expect(md.push(' bold** text. ')).toBe('This is really, very bold text. ');
+  });
+
+  test('does not release a clause from a partial block line', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('# Big heading, with words')).toBe('');
+  });
+
+  test('flush() re-arms the early clause for a reused buffer', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    md.push('One two three, four');
+    md.flush();
+    expect(md.push('Five six seven, eight')).toBe('Five six seven, ');
+  });
+});

@@ -12,6 +12,7 @@
  * accumulated buffer.
  */
 
+import type {FirstChunkMode} from '../types';
 import type {TextChunk} from '../utils/TextChunker';
 
 /**
@@ -21,17 +22,79 @@ import type {TextChunk} from '../utils/TextChunker';
  */
 const SENTENCE_END_RE = /(?:[.!?]+\s+|[。！？]+\s*)/g;
 
+/** Clause boundary (ASCII + CJK) used for `firstChunk: 'clause'`. */
+const CLAUSE_END_RE = /(?:[,;:—–]\s+|[，；：、]\s*)/g;
+const WORD_RE = /\S+\s+/g;
+/** Minimum words before a clause boundary may end the first chunk. */
+const CLAUSE_MIN_WORDS = 3;
+/** Upper bound on first-chunk words when no boundary has appeared. */
+const CLAUSE_MAX_WORDS = 12;
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/**
+ * End offset of the first clause in `text`: the earliest of a sentence
+ * end, a clause boundary after at least `CLAUSE_MIN_WORDS` words, or
+ * `CLAUSE_MAX_WORDS` complete words. Returns -1 when none is present yet.
+ */
+export function findFirstClauseEnd(text: string): number {
+  let end = -1;
+  const sentence = new RegExp(SENTENCE_END_RE.source).exec(text);
+  if (sentence) {
+    end = sentence.index + sentence[0].length;
+  }
+
+  const clauseRe = new RegExp(CLAUSE_END_RE.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = clauseRe.exec(text)) !== null) {
+    if (end !== -1 && m.index >= end) {
+      break;
+    }
+    if (countWords(text.slice(0, m.index + 1)) >= CLAUSE_MIN_WORDS) {
+      end = m.index + m[0].length;
+      break;
+    }
+  }
+
+  const wordRe = new RegExp(WORD_RE.source, 'g');
+  let words = 0;
+  while ((m = wordRe.exec(text)) !== null) {
+    words++;
+    if (words === CLAUSE_MAX_WORDS) {
+      const wordEnd = m.index + m[0].length;
+      if (end === -1 || wordEnd < end) {
+        end = wordEnd;
+      }
+      break;
+    }
+  }
+
+  if (end > 0 && text.slice(0, end).trim().length === 0) {
+    return -1;
+  }
+  return end;
+}
+
 export class StreamingChunker {
   private buffer = '';
   private absoluteOffset = 0;
   private finalized = false;
   private cancelled = false;
   private maxChunkSize: number;
+  private firstChunk: FirstChunkMode;
+  private firstTaken = false;
 
   private waiter: ((chunk: TextChunk | null) => void) | null = null;
 
-  constructor(maxChunkSize: number = 400) {
+  constructor(
+    maxChunkSize: number = 400,
+    firstChunk: FirstChunkMode = 'sentence',
+  ) {
     this.maxChunkSize = maxChunkSize;
+    this.firstChunk = firstChunk;
   }
 
   append(text: string): void {
@@ -126,10 +189,41 @@ export class StreamingChunker {
   }
 
   /**
+   * Extract the next ready chunk. With `firstChunk: 'clause'` the first
+   * chunk may end at a clause boundary; every later chunk is sentence-
+   * bounded.
+   */
+  private extractReadyChunk(): TextChunk | null {
+    const chunk =
+      this.firstChunk === 'clause' && !this.firstTaken
+        ? this.extractFirstClause()
+        : this.extractSentences();
+    if (chunk) {
+      this.firstTaken = true;
+    }
+    return chunk;
+  }
+
+  private extractFirstClause(): TextChunk | null {
+    const end = findFirstClauseEnd(this.buffer);
+    if (end <= 0) {
+      return null;
+    }
+    const chunk: TextChunk = {
+      text: this.buffer.slice(0, end),
+      startIndex: this.absoluteOffset,
+      endIndex: this.absoluteOffset + end,
+    };
+    this.buffer = this.buffer.slice(end);
+    this.absoluteOffset += end;
+    return chunk;
+  }
+
+  /**
    * Extract complete sentence(s) from the front of the buffer, up to
    * `maxChunkSize`. Returns null if no sentence boundary is found.
    */
-  private extractReadyChunk(): TextChunk | null {
+  private extractSentences(): TextChunk | null {
     const re = new RegExp(SENTENCE_END_RE.source, 'g');
     let m: RegExpExecArray | null;
     let lastGoodEnd = -1;
@@ -172,6 +266,7 @@ export class StreamingChunker {
       this.buffer = '';
       return null;
     }
+    this.firstTaken = true;
     const chunk: TextChunk = {
       text: this.buffer,
       startIndex: this.absoluteOffset,

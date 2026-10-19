@@ -437,7 +437,14 @@ export default class Speech {
    */
   public static onChunkProgress(callback: ChunkProgressCallback): () => void {
     Speech.setChunkProgressCallback(callback);
-    return () => Speech.setChunkProgressCallback(null);
+    // There is a single callback slot, so only clear it if it still holds
+    // this callback — a late unsubscribe from a previous stream must not
+    // wipe the listener a newer stream installed.
+    return () => {
+      if (pendingChunkProgressCallback === callback) {
+        Speech.setChunkProgressCallback(null);
+      }
+    };
   }
 
   // ============================================================

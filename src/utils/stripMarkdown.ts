@@ -21,6 +21,9 @@
  * contents aren't mis-parsed), then block structure, then inline.
  */
 
+import type {FirstChunkMode} from '../types';
+import {findFirstClauseEnd} from '../engines/StreamingChunker';
+
 /**
  * Options for markdown stripping. All default to sensible TTS behavior.
  */
@@ -31,10 +34,17 @@ export interface StripMarkdownOptions {
    * code is unreadable out loud, so dropping is usually better.
    */
   dropCodeBlocks?: boolean;
+  /**
+   * Stream buffer only. `'clause'` lets the first emitted piece of a
+   * stream end at a clause boundary (see `SynthesisOptions.firstChunk`)
+   * instead of waiting for a full sentence. Ignored by `stripMarkdown`.
+   */
+  firstChunk?: FirstChunkMode;
 }
 
 const DEFAULTS: Required<StripMarkdownOptions> = {
   dropCodeBlocks: true,
+  firstChunk: 'sentence',
 };
 
 /**
@@ -290,12 +300,20 @@ const FENCE_LINE_RE = /^[ \t]*(?:```|~~~)/;
 // be wrong, so we wait for the closing `\n`.
 const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 
+// Inline markers that may span a clause cut (`**bold, text**`, links,
+// code spans). An early clause flush is skipped when the prefix holds
+// one, so the stripper never sees half of a pair.
+const INLINE_MARKER_RE = /[*_`[\]<]/;
+
 export function createMarkdownStreamBuffer(
   options: StripMarkdownOptions = {},
 ): MarkdownStreamBuffer {
   const opts = {...DEFAULTS, ...options};
   let buffer = '';
   let inFence = false;
+  // Whether anything has been emitted since the stream started; gates
+  // the one-time early clause flush.
+  let emitted = false;
 
   // Walk `text` line-by-line; drop everything inside fenced code blocks
   // when `dropCodeBlocks` is true. Mutates `inFence` so fence state
@@ -351,10 +369,23 @@ export function createMarkdownStreamBuffer(
       // Loop so a single push containing multiple sentences emits them
       // all rather than just the first.
       while (!inFence && buffer && !BLOCK_START_RE.test(buffer)) {
-        const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
-        if (!sentMatch) break;
-        const sentence = sentMatch[1]! + sentMatch[2]!;
-        buffer = buffer.slice(sentence.length);
+        let cut = -1;
+        if (opts.firstChunk === 'clause' && !emitted && !emit) {
+          const clauseEnd = findFirstClauseEnd(buffer);
+          if (
+            clauseEnd > 0 &&
+            !INLINE_MARKER_RE.test(buffer.slice(0, clauseEnd))
+          ) {
+            cut = clauseEnd;
+          }
+        }
+        if (cut <= 0) {
+          const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
+          if (!sentMatch) break;
+          cut = sentMatch[1]!.length + sentMatch[2]!.length;
+        }
+        const sentence = buffer.slice(0, cut);
+        buffer = buffer.slice(cut);
         const stripped = stripMarkdown(sentence, opts);
         // Append a single space so `StreamingChunker`'s SENTENCE_END_RE
         // (which requires whitespace after `.!?`) finds a boundary even
@@ -362,12 +393,14 @@ export function createMarkdownStreamBuffer(
         if (stripped) emit += stripped + ' ';
       }
 
+      if (emit) emitted = true;
       return emit;
     },
     flush(): string {
       // Stream ended inside a fenced code block — discard partial code,
       // consistent with `dropCodeBlocks`. Reset state so the buffer can
       // be reused for a fresh stream.
+      emitted = false;
       if (inFence) {
         buffer = '';
         inFence = false;
