@@ -3,14 +3,13 @@ require "json"
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
 # Phonon (opt-in native TTS engine): Podfile `ENV['RN_SPEECH_PHONON'] = '1'`.
-# Until phonon.lock.json carries a published iOS sha256, the flag falls back
-# to off with a warning unless ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] points at
-# a local PhononCore.xcframework (dev override).
-phonon_lock = JSON.parse(File.read(File.join(__dir__, "phonon.lock.json")))
+# ios/phonon/fetch.rb resolves the binary (docs/phonon/DESIGN.md §3.3). Until
+# phonon.lock.json carries a published iOS sha256, the flag falls back to off
+# with a warning, unless ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] points at a local
+# PhononCore.xcframework (or its release zip): the dev override.
+require File.join(__dir__, "ios", "phonon", "fetch.rb")
 phonon_requested = ENV['RN_SPEECH_PHONON'] == '1'
-phonon_local = ENV['RN_SPEECH_PHONON_XCFRAMEWORK'].to_s
-phonon = phonon_requested &&
-  (!phonon_local.empty? || phonon_lock["binaries"]["ios"]["sha256"] != "PLACEHOLDER")
+phonon = phonon_requested && RNSpeechPhonon.lock_ready?(__dir__)
 if phonon_requested && !phonon
   Pod::UI.warn "[RNSpeech] RN_SPEECH_PHONON=1 but phonon.lock.json has no published iOS " \
     "binaries yet (sha256 PLACEHOLDER). Building WITHOUT Phonon. Set " \
@@ -40,14 +39,13 @@ Pod::Spec.new do |s|
   frameworks = ["AVFoundation", "AudioToolbox"]
 
   if phonon
-    # ios/phonon/fetch.rb: lock -> cache -> sha256 -> copy (or the local override).
-    fetch_rb = File.join(__dir__, "ios", "phonon", "fetch.rb")
-    raise "[RNSpeech] Phonon is enabled but ios/phonon/fetch.rb is missing" unless File.exist?(fetch_rb)
-    require fetch_rb
+    # lock -> cache -> sha256 -> copy (or the local override), see ios/phonon/fetch.rb.
     RNSpeechPhonon.ensure_xcframework!(__dir__)
     s.vendored_frameworks = "ios/phonon/PhononCore.xcframework"
     frameworks += ["CoreML", "CoreVideo"]
     preprocessor_definitions << 'RN_SPEECH_PHONON=1'
+    # Stringified in RNSpeechPhonon.mm (libraryVersion, capability-store key).
+    preprocessor_definitions << "RN_SPEECH_PHONON_VERSION=#{RNSpeechPhonon.library_version(__dir__)}"
   else
     # Flag off: no Phonon sources, binary or framework links.
     excludes += ["ios/phonon/**/*", "cpp/phonon/**/*"]

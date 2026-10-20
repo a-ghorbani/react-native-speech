@@ -85,6 +85,15 @@ export RN_SPEECH_PHONON_XCFRAMEWORK=$PWD/scripts/out/phonon/ios/PhononCore.xcfra
 (cd example/ios && pod install)
 ```
 
+`ios/phonon/fetch.rb` (run by the podspec at `pod install`) copies the framework into
+`ios/phonon/PhononCore.xcframework` (git-ignored, never packed) and skips the copy while a stamp
+says nothing changed. `RN_SPEECH_PHONON_XCFRAMEWORK` takes the framework directory or a release
+zip; it is not sha-checked and reports `libraryVersion` as `<version>+local`. Without it, the
+release asset from `phonon.lock.json` is downloaded once into `RN_SPEECH_PHONON_CACHE` (default
+`~/Library/Caches/rnspeech-phonon`) and must match the pinned sha256, else `pod install` fails
+and nothing is installed. `RN_SPEECH_PHONON_RELEASE_URL` replaces the release base URL (mirrors;
+`file://` works). Host tests for both, and for the podspec branches: `scripts/test-phonon-ios.sh`.
+
 To try the download path against local zips instead, `update-lock.sh --sums
 scripts/out/phonon/dist/SHA256SUMS --only android` writes their hashes into the lock (do not
 commit that; the publish job opens the real lock PR). Then

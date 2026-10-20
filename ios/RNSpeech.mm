@@ -3,13 +3,27 @@
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
 #import <unistd.h>
+#if RN_SPEECH_PHONON
+#import <React/RCTInvalidating.h>
+#import "phonon/RNSpeechPhonon.h"
+#include "phonon/PhononIosPolicy.h"
+#include <cmath>
+#endif
 
 using namespace JS::NativeSpeech;
+
+#if RN_SPEECH_PHONON
+@interface RNSpeech () <RCTInvalidating>
+@end
+#endif
 
 @implementation RNSpeech
 {
   BOOL isDucking;
   NSDictionary *defaultOptions;
+#if RN_SPEECH_PHONON
+  RNSpeechPhonon *_phonon;
+#endif
 }
 
 RCT_EXPORT_MODULE();
@@ -56,6 +70,10 @@ RCT_EXPORT_MODULE();
     _isAudioDucking = NO;
     _currentAudioUtteranceId = 0;
     _audioQueue = dispatch_queue_create("com.speech.neuralaudioplayer", DISPATCH_QUEUE_SERIAL);
+#if RN_SPEECH_PHONON
+    // Bridges onto the process-wide Phonon core; this module's promises only.
+    _phonon = [[RNSpeechPhonon alloc] init];
+#endif
 
     // Initialize trace instrumentation (no-op if RN_SPEECH_TRACE is not defined)
     RNSpeechTraceInit();
@@ -503,85 +521,118 @@ RCT_EXPORT_MODULE();
       const int16_t *int16Samples = (const int16_t *)decodedData.bytes;
       NSUInteger sampleCount = decodedData.length / sizeof(int16_t);
 
-      float *float32Samples = (float *)malloc(sampleCount * sizeof(float));
-      if (!float32Samples) {
+      NSMutableData *floatData = [NSMutableData dataWithLength:sampleCount * sizeof(float)];
+      if (!floatData) {
         reject(@"audio_error", @"Failed to allocate memory for audio conversion", nil);
         return;
       }
+      float *float32Samples = (float *)floatData.mutableBytes;
 
       // Convert Int16 to Float32 (normalize to -1.0 to 1.0)
       for (NSUInteger i = 0; i < sampleCount; i++) {
         float32Samples[i] = int16Samples[i] / 32768.0f;
       }
 
-      // Create audio format
-      AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
-                                                                                   channels:(AVAudioChannelCount)channels];
-
-      // Create audio buffer
-      AVAudioPCMBuffer *pcmBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
-                                                                   frameCapacity:(AVAudioFrameCount)sampleCount];
-      pcmBuffer.frameLength = (AVAudioFrameCount)sampleCount;
-
-      // Copy samples to buffer
-      memcpy(pcmBuffer.floatChannelData[0], float32Samples, sampleCount * sizeof(float));
-      free(float32Samples);
-
-      // Configure audio session
-      self->_isAudioDucking = ducking;
-
-      [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
-
-      // Connect player node to engine output
-      [self->_audioEngine connect:self->_playerNode
-                               to:self->_audioEngine.mainMixerNode
-                           format:audioFormat];
-
-      // Start audio engine
-      NSError *error = nil;
-      if (!self->_audioEngine.isRunning) {
-        [self->_audioEngine startAndReturnError:&error];
-        if (error) {
-          reject(@"audio_error", [NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
-          return;
-        }
-      }
-
-      self->_isAudioPlaying = YES;
-      self->_isAudioPaused = NO;
-
-      // Emit onStart event
-      [self emitOnStart:[self getAudioEventData]];
-
-      // Schedule buffer for playback
-      // We need to resolve the promise when playback completes, not when it starts
-      // This allows sequential chunk playback to work correctly
-      __weak RNSpeech *weakSelf = self;
-      [self->_playerNode scheduleBuffer:pcmBuffer
-                         atTime:nil
-                        options:AVAudioPlayerNodeBufferInterrupts
-              completionHandler:^{
-        RNSpeech *strongSelf = weakSelf;
-        if (strongSelf) {
-          dispatch_async(strongSelf->_audioQueue, ^{
-            strongSelf->_isAudioPlaying = NO;
-            [strongSelf deactivateAudioSession];
-            RNSpeechTraceEnd(traceHandle, "playAudio");
-            [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
-            // Resolve promise when playback is complete
-            resolve(nil);
-          });
-        }
-      }];
-
-      // Start playback
-      [self->_playerNode play];
+      [self playFloatSamplesOnAudioQueue:floatData
+                              sampleRate:sampleRate
+                                channels:channels
+                                 ducking:ducking
+                              silentMode:silentMode
+                             traceHandle:traceHandle
+                               traceName:"playAudio"
+                                 resolve:resolve
+                                  reject:reject];
     }
     @catch (NSException *exception) {
       RNSpeechTraceEnd(traceHandle, "playAudio");
       reject(@"audio_error", exception.reason, nil);
     }
   });
+}
+
+// Shared playback entry point of the base64 int16 path (playAudio) and the native Phonon
+// buffer path (phononPlayBuffer): float32 samples, already scaled. Must run on _audioQueue,
+// after the caller stopped the current playback and bumped the utterance id. Resolves when
+// playback completes (or is interrupted), so chunks play back to back.
+- (void)playFloatSamplesOnAudioQueue:(NSData *)floatSamples
+                          sampleRate:(double)sampleRate
+                            channels:(NSInteger)channels
+                             ducking:(BOOL)ducking
+                          silentMode:(NSString *)silentMode
+                         traceHandle:(RNSpeechTraceHandle)traceHandle
+                           traceName:(const char *)traceName
+                             resolve:(RCTPromiseResolveBlock)resolve
+                              reject:(RCTPromiseRejectBlock)reject {
+  NSUInteger sampleCount = floatSamples.length / sizeof(float);
+
+  // Create audio format
+  AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
+                                                                               channels:(AVAudioChannelCount)channels];
+
+  // Create audio buffer
+  AVAudioPCMBuffer *pcmBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
+                                                               frameCapacity:(AVAudioFrameCount)sampleCount];
+  if (!pcmBuffer) {
+    // Zero samples (or an unusable format): nothing to schedule.
+    RNSpeechTraceEnd(traceHandle, traceName);
+    reject(@"audio_error", @"Failed to create audio buffer", nil);
+    return;
+  }
+  pcmBuffer.frameLength = (AVAudioFrameCount)sampleCount;
+
+  // Copy samples to buffer
+  memcpy(pcmBuffer.floatChannelData[0], floatSamples.bytes, sampleCount * sizeof(float));
+
+  // Configure audio session
+  self->_isAudioDucking = ducking;
+
+  [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
+
+  // Connect player node to engine output
+  [self->_audioEngine connect:self->_playerNode
+                           to:self->_audioEngine.mainMixerNode
+                       format:audioFormat];
+
+  // Start audio engine
+  NSError *error = nil;
+  if (!self->_audioEngine.isRunning) {
+    [self->_audioEngine startAndReturnError:&error];
+    if (error) {
+      RNSpeechTraceEnd(traceHandle, traceName);
+      reject(@"audio_error", [NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
+      return;
+    }
+  }
+
+  self->_isAudioPlaying = YES;
+  self->_isAudioPaused = NO;
+
+  // Emit onStart event
+  [self emitOnStart:[self getAudioEventData]];
+
+  // Schedule buffer for playback
+  // We need to resolve the promise when playback completes, not when it starts
+  // This allows sequential chunk playback to work correctly
+  __weak RNSpeech *weakSelf = self;
+  [self->_playerNode scheduleBuffer:pcmBuffer
+                     atTime:nil
+                    options:AVAudioPlayerNodeBufferInterrupts
+          completionHandler:^{
+    RNSpeech *strongSelf = weakSelf;
+    if (strongSelf) {
+      dispatch_async(strongSelf->_audioQueue, ^{
+        strongSelf->_isAudioPlaying = NO;
+        [strongSelf deactivateAudioSession];
+        RNSpeechTraceEnd(traceHandle, traceName);
+        [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
+        // Resolve promise when playback is complete
+        resolve(nil);
+      });
+    }
+  }];
+
+  // Start playback
+  [self->_playerNode play];
 }
 
 - (void)stopAudio:(RCTPromiseResolveBlock)resolve
@@ -762,6 +813,143 @@ static NSString *RNSpeechPhononStubAbi(void) {
     @"lastIssuedId": @(0),
     @"cancelWatermark": @(0),
   });
+}
+#else // RN_SPEECH_PHONON
+// Flag on: everything goes through ios/phonon/RNSpeechPhonon onto the shared core
+// (cpp/phonon). Sync methods only touch atomics; ptts work runs on the Phonon worker.
+
+// JS numbers arrive as doubles; ids are small positive integers. NaN/inf -> 0 (never issued).
+static int64_t RNSpeechPhononId(double v) {
+  return std::isfinite(v) ? (int64_t)std::llround(v) : 0;
+}
+
+- (void)phononGetSupport:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  resolve([RNSpeechPhonon supportInfo]);
+}
+
+- (void)phononNeedsCompile:(NSString *)modelDir
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject {
+  resolve(@([RNSpeechPhonon needsCompile:modelDir]));
+}
+
+- (void)phononCreate:(NSString *)modelDir
+             options:(JS::NativeSpeech::PhononLoadOptions &)options
+             resolve:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject {
+  // options is a reference into the call's arguments: read it before going async.
+  NSString *language = options.language() ?: @"en";
+  NSString *computeUnit = options.computeUnit() ?: @"neuralEngine";
+  [_phonon createWithModelDir:modelDir
+                     language:language
+                  computeUnit:computeUnit
+                      resolve:resolve
+                       reject:reject];
+}
+
+- (NSNumber *)phononAllocRequestId {
+  return @((double)[_phonon allocRequestId]);
+}
+
+- (void)phononSynthesize:(double)handleId
+               requestId:(double)requestId
+                    text:(NSString *)text
+                   voice:(NSString *)voice
+                language:(NSString *)language
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_phonon synthesizeWithHandle:RNSpeechPhononId(handleId)
+                      requestId:RNSpeechPhononId(requestId)
+                           text:text ?: @""
+                          voice:voice ?: @""
+                       language:language ?: @""
+                        resolve:resolve
+                         reject:reject];
+}
+
+- (NSNumber *)phononCancel:(double)upToRequestId {
+  return @([_phonon cancelUpTo:RNSpeechPhononId(upToRequestId)]);
+}
+
+- (NSNumber *)phononCancelAll {
+  return @([_phonon cancelAll]);
+}
+
+- (void)phononPlayBuffer:(double)bufferId
+                  config:(JS::NativeSpeech::PhononPlayConfig &)config
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  double sampleRate = config.sampleRate();
+  NSInteger channels = MAX((NSInteger)config.channels(), (NSInteger)1);
+  BOOL ducking = config.ducking().value_or(false);
+  NSString *silentMode = config.silentMode() ?: @"obey";
+  // Volume is applied natively (no JS copy of the PCM): clamped to [0, 1] like OS TTS.
+  std::optional<double> volume = config.volume();
+  float gain = rnspeech::phonon::ios::playback_gain(volume.value_or(1.0), volume.has_value());
+
+  // Taken (moved out of the store) now, on the calling thread: the buffer is consumed even if
+  // playback is later interrupted, and an unknown id rejects at once.
+  int64_t bid = RNSpeechPhononId(bufferId);
+  NSData *samples = [_phonon takeBuffer:bid gain:gain];
+  if (samples == nil) {
+    reject(@"PHONON_INVALID_BUFFER",
+           [NSString stringWithFormat:@"unknown Phonon buffer %lld", (long long)bid], nil);
+    return;
+  }
+  dispatch_async(_audioQueue, ^{
+    RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("phononPlayBuffer",
+        [NSString stringWithFormat:@"bufferId=%lld samples=%lu", (long long)bid,
+                                   (unsigned long)(samples.length / sizeof(float))]);
+    @try {
+      // Stop any current playback
+      [self cleanupAudio];
+
+      // Increment utterance ID
+      self->_currentAudioUtteranceId++;
+
+      [self playFloatSamplesOnAudioQueue:samples
+                              sampleRate:sampleRate
+                                channels:channels
+                                 ducking:ducking
+                              silentMode:silentMode
+                             traceHandle:traceHandle
+                               traceName:"phononPlayBuffer"
+                                 resolve:resolve
+                                  reject:reject];
+    }
+    @catch (NSException *exception) {
+      RNSpeechTraceEnd(traceHandle, "phononPlayBuffer");
+      reject(@"PHONON_INTERNAL", exception.reason, nil);
+    }
+  });
+}
+
+- (void)phononCopyBuffer:(double)bufferId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  [_phonon copyBuffer:RNSpeechPhononId(bufferId) resolve:resolve reject:reject];
+}
+
+- (NSNumber *)phononReleaseBuffer:(double)bufferId {
+  return @([_phonon releaseBuffer:RNSpeechPhononId(bufferId)]);
+}
+
+- (void)phononDestroy:(double)handleId
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject {
+  [_phonon destroyHandle:RNSpeechPhononId(handleId) resolve:resolve reject:reject];
+}
+
+- (void)phononGetDiagnostics:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject {
+  resolve([_phonon diagnostics]);
+}
+
+// RN reload / teardown: cancel everything and drop this module's pending promises, without
+// destroying the handle or waiting for the synth thread (DESIGN.md §1.5).
+- (void)invalidate {
+  [_phonon invalidate];
 }
 #endif // !RN_SPEECH_PHONON
 
