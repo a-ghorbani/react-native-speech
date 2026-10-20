@@ -24,6 +24,7 @@ jest.mock('../NativeSpeech', () => ({
 jest.mock('../NativeAudioPlayer', () => ({
   __esModule: true,
   default: new Proxy({}, {get: () => () => undefined}),
+  onAudioInterruption: jest.fn(() => ({remove: jest.fn()})),
 }));
 
 // Mock onnxruntime-react-native at module-eval time so the engine
@@ -44,6 +45,8 @@ import Speech, {
   KittenEngine,
   OSEngine,
   TTSEngine,
+  onAudioInterruption,
+  createMarkdownStreamBuffer,
 } from '../index';
 
 describe('public API surface', () => {
@@ -63,6 +66,16 @@ describe('public API surface', () => {
     expect(typeof SupertonicEngine).toBe('function');
     expect(typeof KittenEngine).toBe('function');
     expect(typeof OSEngine).toBe('function');
+  });
+
+  it('exports onAudioInterruption', () => {
+    expect(typeof onAudioInterruption).toBe('function');
+    const sub = onAudioInterruption(() => {});
+    expect(typeof sub.remove).toBe('function');
+  });
+
+  it('exports createMarkdownStreamBuffer', () => {
+    expect(typeof createMarkdownStreamBuffer).toBe('function');
   });
 
   it('exports TTSEngine enum/values', () => {

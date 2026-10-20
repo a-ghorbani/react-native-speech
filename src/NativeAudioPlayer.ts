@@ -24,4 +24,11 @@ export const NativeNeuralAudioPlayer = {
   onAudioInterruption: TurboSpeech.onAudioInterruption,
 };
 
+/**
+ * Subscribe to OS-level audio interruptions (iOS `AVAudioSession`,
+ * Android audio focus), e.g. an incoming call. Returns a subscription;
+ * call `remove()` on it to stop listening.
+ */
+export const onAudioInterruption = TurboSpeech.onAudioInterruption;
+
 export default NativeNeuralAudioPlayer;

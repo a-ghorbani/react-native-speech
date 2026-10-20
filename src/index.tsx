@@ -114,6 +114,10 @@ export type {
 // Export components
 export {default as HighlightedText} from './components/HighlightedText';
 
+// OS audio interruptions (calls, other media, audio focus loss).
+export {onAudioInterruption} from './NativeAudioPlayer';
+export type {AudioInterruptionProps} from './NativeAudioPlayer';
+
 // Streaming markdown stripper — lets consumers strip markdown themselves
 // (with `stripMarkdown: false` on the stream) so `streamRange` offsets
 // map onto the exact text they appended.

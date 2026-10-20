@@ -687,9 +687,15 @@ Speech.addChunkProgressListener(event => {
 All engines forward OS-level audio interruptions (iOS `AVAudioSession`, Android `AudioFocus`) as a JS event:
 
 ```ts
-Speech.addAudioInterruptionListener(event => {
-  // event.type, event.hint, event.reason
+import {onAudioInterruption} from '@pocketpalai/react-native-speech';
+
+const subscription = onAudioInterruption(event => {
+  // event.type: 'began' | 'ended'
+  // event.shouldResume: on 'ended', whether the OS suggests resuming
 });
+
+// Later:
+subscription.remove();
 ```
 
 ### Release / cleanup
