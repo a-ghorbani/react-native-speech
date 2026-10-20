@@ -15,6 +15,7 @@ import Speech, {
   type FirstChunkMode,
 } from '@pocketpalai/react-native-speech';
 import {C, MONO} from '../styles/cyber';
+import SelfTestPanel from './SelfTestPanel';
 
 const SAMPLE_TEXT = `# The Highly Scientific Guide to Procrastination
 
@@ -224,6 +225,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled">
+        <SelfTestPanel />
         <Text style={styles.title}>STREAM_INPUT</Text>
         <Text style={styles.subtitle}>
           Feeds text one token at a time into{' '}
