@@ -1,0 +1,37 @@
+# Select ${ENGINE} on the SYS tab and wait until it is initialized.
+# Downloads the Kitten nano-int8 model (~24 MB) when it is missing; other
+# engines must already have a model installed on the device.
+appId: speech.example
+---
+- tapOn: '.*SYS'
+# The app auto-initializes the default engine (Kitten) on launch; wait for
+# that to settle so the engine tap below isn't ignored mid-initialization.
+- extendedWaitUntil:
+    visible: '\[ONLINE\]|\[OFFLINE\]|Kitten Model Required'
+    timeout: 120000
+- runFlow:
+    when:
+      visible: 'Kitten Model Required'
+      true: ${ENGINE !== 'Kitten'}
+    commands:
+      - tapOn: 'LATER'
+- tapOn: ${ENGINE}
+- runFlow:
+    when:
+      visible: 'Kitten Model Required'
+    commands:
+      - tapOn: 'DOWNLOAD'
+      - tapOn: 'nano-int8'
+      - extendedWaitUntil:
+          visible: 'Kitten TTS nano-int8 downloaded!'
+          timeout: 600000
+      - tapOn: 'OK'
+      - back
+- runFlow:
+    when:
+      visible: 'INIT'
+    commands:
+      - tapOn: 'INIT'
+- extendedWaitUntil:
+    visible: '\[ONLINE\]'
+    timeout: 180000

@@ -1,0 +1,9 @@
+# Entry point: fresh app launch, initialize ${ENGINE}, run the self-test.
+# Pass ENGINE with `maestro test --env ENGINE=Kitten` (scripts/e2e-android.sh
+# does). Don't add an `env:` default here: it overrides the CLI value.
+appId: speech.example
+---
+- launchApp:
+    stopApp: true
+- runFlow: engine.yaml
+- runFlow: selftest.yaml
