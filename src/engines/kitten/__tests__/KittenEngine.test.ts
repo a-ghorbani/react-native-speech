@@ -63,6 +63,7 @@ jest.mock('../../../utils/AssetLoader', () => ({
 }));
 
 import {KittenEngine} from '../KittenEngine';
+import {SpeechStreamImpl} from '../../SpeechStream';
 import type {KittenConfig} from '../../../types/Kitten';
 import type {TTSEngine} from '../../../types';
 
@@ -394,5 +395,52 @@ describe('KittenEngine - phoneme input bypasses g2p', () => {
     await e.synthesize('hello world', {voiceId: 'expr-voice-2-f'});
 
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Late progress subscription
+//
+// SpeechStreamImpl creates the engine stream in its constructor, so an
+// `onProgress()` listener is usually attached after synthesizeStream()
+// ran. The engine must still forward chunk progress to it.
+// ─────────────────────────────────────────────────────────────────────────
+describe('KittenEngine - late progress subscription', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+    mockSessionRun.mockResolvedValue({
+      // Long enough to survive the engine's fixed tail trim.
+      waveform: {data: new Float32Array(24000).fill(0.5), dims: [1, 24000]},
+    });
+  });
+
+  test('onProgress added after stream creation receives streamRange events', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+
+    const stream = new SpeechStreamImpl({
+      synthesize: jest.fn(async () => {}),
+      stop: jest.fn(async () => {}),
+      subscribeProgress: cb => {
+        e.setChunkProgressCallback(cb);
+        return () => e.setChunkProgressCallback(null);
+      },
+      engineStreamFactory: opts =>
+        e.synthesizeStream({voiceId: 'expr-voice-2-f', ...opts}),
+      options: {stripMarkdown: false},
+    });
+
+    const ranges: Array<{start: number; end: number}> = [];
+    stream.onProgress(ev => ranges.push(ev.streamRange));
+
+    stream.append('Hello world. ');
+    stream.append('Second one. ');
+    await stream.finalize();
+
+    expect(ranges).toEqual([
+      {start: 0, end: 13},
+      {start: 13, end: 25},
+    ]);
   });
 });

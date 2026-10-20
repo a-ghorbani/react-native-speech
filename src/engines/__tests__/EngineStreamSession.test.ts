@@ -453,4 +453,34 @@ describe('EngineStreamSession', () => {
 
     await expect(finalizePromise).rejects.toThrow('synthesis exploded');
   });
+
+  test("firstChunk: 'clause' synthesizes the first clause before the sentence ends", async () => {
+    const synthesizeChunk = jest.fn(async (text: string) =>
+      makeAudioBuffer(text),
+    );
+    const {playAudio, plays} = makeControllablePlayer();
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: jest.fn(async () => {}),
+      maxChunkSize: 400,
+      firstChunk: 'clause',
+    });
+
+    session.append('Sure thing friend, here it');
+    await flushMicrotasks();
+    expect(synthesizeChunk).toHaveBeenCalledWith('Sure thing friend, ');
+
+    session.append(' is. ');
+    const done = session.finalize();
+    for (let i = 0; i < 5; i++) {
+      await flushMicrotasks();
+      plays.forEach(p => p.resolve());
+    }
+    await done;
+    expect(synthesizeChunk.mock.calls.map(c => c[0])).toEqual([
+      'Sure thing friend, ',
+      'here it is. ',
+    ]);
+  });
 });

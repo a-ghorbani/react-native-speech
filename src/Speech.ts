@@ -59,8 +59,26 @@ let kokoroEngine: KokoroEngine | null = null;
 let supertonicEngine: SupertonicEngine | null = null;
 let kittenEngine: KittenEngine | null = null;
 
-// Store pending chunk progress callback (set before engine is initialized)
-let pendingChunkProgressCallback: ChunkProgressCallback | null = null;
+// Chunk progress fan-out. Engines get `dispatchChunkProgress` once at
+// init; it forwards to the `setChunkProgressCallback` slot and to every
+// `onChunkProgress` subscription. Subscriptions are wrapper objects so the
+// same callback can be subscribed twice and each unsubscribe removes only
+// its own entry.
+let chunkProgressCallback: ChunkProgressCallback | null = null;
+const chunkProgressSubscriptions = new Set<{
+  callback: ChunkProgressCallback;
+}>();
+
+function dispatchChunkProgress(event: ChunkProgressEvent): void {
+  chunkProgressCallback?.(event);
+  for (const sub of [...chunkProgressSubscriptions]) {
+    try {
+      sub.callback(event);
+    } catch (err) {
+      log.warn('chunk progress listener threw:', err);
+    }
+  }
+}
 
 /**
  * Default synthesis-option fields that can also be provided at init time
@@ -140,10 +158,7 @@ export default class Speech {
       }
       engineManager.setDefaultEngine(engine);
 
-      // Apply pending chunk progress callback if one was set before initialization
-      if (pendingChunkProgressCallback) {
-        kokoroEngine.setChunkProgressCallback(pendingChunkProgressCallback);
-      }
+      kokoroEngine.setChunkProgressCallback(dispatchChunkProgress);
     } else if (engine === 'supertonic') {
       if (!supertonicEngine) {
         supertonicEngine = new SupertonicEngine();
@@ -163,10 +178,7 @@ export default class Speech {
       }
       engineManager.setDefaultEngine(engine);
 
-      // Apply pending chunk progress callback if one was set before initialization
-      if (pendingChunkProgressCallback) {
-        supertonicEngine.setChunkProgressCallback(pendingChunkProgressCallback);
-      }
+      supertonicEngine.setChunkProgressCallback(dispatchChunkProgress);
     } else if (engine === 'kitten') {
       if (!kittenEngine) {
         kittenEngine = new KittenEngine();
@@ -183,9 +195,7 @@ export default class Speech {
       }
       engineManager.setDefaultEngine(engine);
 
-      if (pendingChunkProgressCallback) {
-        kittenEngine.setChunkProgressCallback(pendingChunkProgressCallback);
-      }
+      kittenEngine.setChunkProgressCallback(dispatchChunkProgress);
     } else if (engine === 'os-native') {
       // OS engine is already initialized
       await engineManager.initializeEngine(engine);
@@ -406,24 +416,15 @@ export default class Speech {
   public static setChunkProgressCallback(
     callback: ChunkProgressCallback | null,
   ): void {
-    // Store the callback for later if engine not yet initialized
-    pendingChunkProgressCallback = callback;
-
-    // Apply immediately if engines are already initialized
-    if (kokoroEngine) {
-      kokoroEngine.setChunkProgressCallback(callback);
-    }
-    if (supertonicEngine) {
-      supertonicEngine.setChunkProgressCallback(callback);
-    }
-    if (kittenEngine) {
-      kittenEngine.setChunkProgressCallback(callback);
-    }
+    // Single replaceable slot; independent of onChunkProgress listeners.
+    chunkProgressCallback = callback;
   }
 
   /**
-   * Convenience method to add a chunk progress listener
-   * Returns an unsubscribe function
+   * Add a chunk progress listener. Listeners stack: each call adds one,
+   * alongside any `setChunkProgressCallback` callback and other
+   * listeners (including the ones `SpeechStream.onProgress` installs).
+   * Returns a function that removes this listener only.
    *
    * @param callback - Function to call on chunk progress
    * @returns Function to unsubscribe the listener
@@ -436,8 +437,11 @@ export default class Speech {
    * unsubscribe();
    */
   public static onChunkProgress(callback: ChunkProgressCallback): () => void {
-    Speech.setChunkProgressCallback(callback);
-    return () => Speech.setChunkProgressCallback(null);
+    const sub = {callback};
+    chunkProgressSubscriptions.add(sub);
+    return () => {
+      chunkProgressSubscriptions.delete(sub);
+    };
   }
 
   // ============================================================

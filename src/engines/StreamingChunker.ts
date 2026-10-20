@@ -12,14 +12,11 @@
  * accumulated buffer.
  */
 
+import type {FirstChunkMode} from '../types';
 import type {TextChunk} from '../utils/TextChunker';
+import {SENTENCE_END_RE, findFirstClauseEnd} from '../utils/firstClause';
 
-/**
- * Sentence-boundary regex — matches ASCII punct + trailing whitespace,
- * or CJK punct optionally followed by whitespace. Same rules as
- * SpeechStream's `SENTENCE_END_RE`.
- */
-const SENTENCE_END_RE = /(?:[.!?]+\s+|[。！？]+\s*)/g;
+export {findFirstClauseEnd} from '../utils/firstClause';
 
 export class StreamingChunker {
   private buffer = '';
@@ -27,11 +24,17 @@ export class StreamingChunker {
   private finalized = false;
   private cancelled = false;
   private maxChunkSize: number;
+  private firstChunk: FirstChunkMode;
+  private firstTaken = false;
 
   private waiter: ((chunk: TextChunk | null) => void) | null = null;
 
-  constructor(maxChunkSize: number = 400) {
+  constructor(
+    maxChunkSize: number = 400,
+    firstChunk: FirstChunkMode = 'sentence',
+  ) {
     this.maxChunkSize = maxChunkSize;
+    this.firstChunk = firstChunk;
   }
 
   append(text: string): void {
@@ -126,10 +129,41 @@ export class StreamingChunker {
   }
 
   /**
+   * Extract the next ready chunk. With `firstChunk: 'clause'` the first
+   * chunk may end at a clause boundary; every later chunk is sentence-
+   * bounded.
+   */
+  private extractReadyChunk(): TextChunk | null {
+    const chunk =
+      this.firstChunk === 'clause' && !this.firstTaken
+        ? this.extractFirstClause()
+        : this.extractSentences();
+    if (chunk) {
+      this.firstTaken = true;
+    }
+    return chunk;
+  }
+
+  private extractFirstClause(): TextChunk | null {
+    const end = findFirstClauseEnd(this.buffer);
+    if (end <= 0) {
+      return null;
+    }
+    const chunk: TextChunk = {
+      text: this.buffer.slice(0, end),
+      startIndex: this.absoluteOffset,
+      endIndex: this.absoluteOffset + end,
+    };
+    this.buffer = this.buffer.slice(end);
+    this.absoluteOffset += end;
+    return chunk;
+  }
+
+  /**
    * Extract complete sentence(s) from the front of the buffer, up to
    * `maxChunkSize`. Returns null if no sentence boundary is found.
    */
-  private extractReadyChunk(): TextChunk | null {
+  private extractSentences(): TextChunk | null {
     const re = new RegExp(SENTENCE_END_RE.source, 'g');
     let m: RegExpExecArray | null;
     let lastGoodEnd = -1;

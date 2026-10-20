@@ -243,7 +243,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // When stripping is enabled, buffer incoming text and strip BEFORE
     // StreamingChunker sees it so structural markdown becomes sentence
     // boundaries the chunker recognizes (mirrors Kokoro/Kitten).
-    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
+    const mdBuffer = stripMd
+      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      : null;
 
     // Compose volume adjust + onAudioChunk into a single postProcess hook.
     // Order matters: volume first (so the captured buffer reflects what
@@ -281,14 +283,15 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
+      firstChunk: options?.firstChunk,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
       },
       postProcess,
-      onChunkProgress: this.chunkProgressCallback
-        ? event => this.emitChunkProgress(event)
-        : undefined,
+      // Always bind: listeners may subscribe after the stream starts, and
+      // emitChunkProgress already no-ops when no callback is set.
+      onChunkProgress: event => this.emitChunkProgress(event),
     });
 
     this.activeStreamSession = session;

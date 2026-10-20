@@ -1,4 +1,5 @@
 import {stripMarkdown, createMarkdownStreamBuffer} from '../stripMarkdown';
+import {StreamingChunker} from '../../engines/StreamingChunker';
 
 describe('stripMarkdown', () => {
   describe('emphasis', () => {
@@ -773,5 +774,124 @@ describe('createMarkdownStreamBuffer: boundary invariance', () => {
   test('flush without push', () => {
     const buf = createMarkdownStreamBuffer();
     expect(buf.flush()).toBe('');
+  });
+});
+
+describe("createMarkdownStreamBuffer: firstChunk 'clause'", () => {
+  test('default holds the first clause until a sentence end', () => {
+    const md = createMarkdownStreamBuffer();
+    expect(md.push('Sure thing friend, here it is')).toBe('');
+  });
+
+  test('releases the first clause early, then sentences only', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('Sure thing friend, here it is')).toBe(
+      'Sure thing friend, ',
+    );
+    // Second clause is held until the sentence completes.
+    expect(md.push(', and more')).toBe('');
+    expect(md.push('. Next')).toBe('here it is, and more. ');
+    expect(md.flush()).toBe('Next');
+  });
+
+  test('does not cut through an open inline marker', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('This is **really, very')).toBe('');
+    expect(md.push(' bold** text. ')).toBe('This is really, very bold text. ');
+  });
+
+  test('does not release a clause from a partial block line', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('# Big heading, with words')).toBe('');
+  });
+
+  test('does not cut before a list-like remainder', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    // Cutting after "follows: " would leave "1. do this..." held back as
+    // a block line; it must emit like the default mode instead.
+    expect(md.push('Steps are as follows: 1. do this. Then that. ')).toBe(
+      createMarkdownStreamBuffer().push(
+        'Steps are as follows: 1. do this. Then that. ',
+      ),
+    );
+  });
+
+  test('keeps the early clause after a boundary-less first line', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('Okay\n')).toBe('Okay\n');
+    expect(md.push('Sure thing friend, here')).toBe('Sure thing friend, ');
+  });
+
+  test('flush() re-arms the early clause for a reused buffer', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    md.push('One two three, four');
+    md.flush();
+    expect(md.push('Five six seven, eight')).toBe('Five six seven, ');
+  });
+});
+
+describe('createMarkdownStreamBuffer: mid-line continuations', () => {
+  function run(mode: 'sentence' | 'clause', pushes: string[]): string {
+    const md = createMarkdownStreamBuffer({firstChunk: mode});
+    return pushes.map(p => md.push(p)).join('') + md.flush();
+  }
+
+  test.each(['sentence', 'clause'] as const)(
+    '%s: a leading minus after a mid-line cut is kept',
+    mode => {
+      expect(
+        run(mode, ['The math is simple: ', '- 5 is a negative value.']),
+      ).toContain('- 5 is a negative value.');
+      expect(run(mode, ['It is done. ', '- 5 is a negative value.'])).toContain(
+        '- 5 is a negative value.',
+      );
+    },
+  );
+
+  test.each(['sentence', 'clause'] as const)(
+    '%s: a leading > after a mid-line cut is kept',
+    mode => {
+      expect(
+        run(mode, ['The rule is simple: ', '> 3 means bigger.']),
+      ).toContain('> 3 means bigger.');
+    },
+  );
+
+  test('continuation through a newline flush is kept', () => {
+    expect(
+      run('sentence', ['It is done. ', '- 5 is negative.\nNext line. ']),
+    ).toBe('It is done. - 5 is negative.\nNext line. ');
+  });
+
+  test('real block lines after a newline are still stripped', () => {
+    expect(
+      run('clause', ['Intro, then more text.\n', '- item one\n']),
+    ).not.toContain('- item');
+  });
+
+  test('no continuation marker leaks into the output', () => {
+    const out = run('clause', [
+      'The math is simple: ',
+      '- 5 is negative. ',
+      'Done.',
+    ]);
+    expect(out).not.toContain('\u2060');
+  });
+});
+
+describe("createMarkdownStreamBuffer: firstChunk 'clause' tables and lines", () => {
+  test('pipe-less table rows are not cut early', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    const out = md.push('Status | one two three, four |') + md.flush();
+    expect(out).toBe('Status, one two three, four.');
+  });
+
+  test('words across a boundary-less line count toward the clause', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    const chunker = new StreamingChunker(400, 'clause');
+    chunker.append(md.push('one two\n'));
+    chunker.append(md.push('three, four'));
+    const first = chunker.tryPeek();
+    expect(first && (first as {text: string}).text).toBe('one two\nthree, ');
   });
 });

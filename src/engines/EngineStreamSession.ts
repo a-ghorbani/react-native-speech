@@ -17,7 +17,7 @@
  * adaptive batcher there.
  */
 
-import type {AudioBuffer, ChunkProgressEvent} from '../types';
+import type {AudioBuffer, ChunkProgressEvent, FirstChunkMode} from '../types';
 import type {PlaybackOptions} from './NeuralAudioPlayer';
 import {StreamingChunker} from './StreamingChunker';
 import {createComponentLogger} from '../utils/logger';
@@ -29,6 +29,7 @@ export interface EngineStreamSessionConfig {
   playAudio: (buffer: AudioBuffer, options?: PlaybackOptions) => Promise<void>;
   stopPlayback: () => Promise<void>;
   maxChunkSize: number;
+  firstChunk?: FirstChunkMode;
   playbackOptions?: PlaybackOptions;
   postProcess?: (buffer: AudioBuffer) => void;
   onChunkProgress?: (event: ChunkProgressEvent) => void;
@@ -53,7 +54,7 @@ export class EngineStreamSession implements EngineStreamHandle {
 
   constructor(config: EngineStreamSessionConfig) {
     this.config = config;
-    this.chunker = new StreamingChunker(config.maxChunkSize);
+    this.chunker = new StreamingChunker(config.maxChunkSize, config.firstChunk);
     this.loopPromise = this.runLoop();
   }
 

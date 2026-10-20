@@ -12,8 +12,10 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import Speech, {
   TTSEngine,
   type SpeechStream,
+  type FirstChunkMode,
 } from '@pocketpalai/react-native-speech';
 import {C, MONO} from '../styles/cyber';
+import SelfTestPanel from './SelfTestPanel';
 
 const SAMPLE_TEXT = `# The Highly Scientific Guide to Procrastination
 
@@ -76,6 +78,8 @@ const RATES: Rate[] = [
   {label: '20 tok/s', tokensPerSec: 20},
 ];
 
+const FIRST_CHUNK_MODES: FirstChunkMode[] = ['sentence', 'clause'];
+
 function tokenize(text: string): string[] {
   return text.match(/\S+\s*|\s+/g) ?? [text];
 }
@@ -87,6 +91,9 @@ interface StreamingViewProps {
 const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   const [text, setText] = React.useState(SAMPLE_TEXT);
   const [rate, setRate] = React.useState<Rate>(RATES[1]!);
+  const [firstChunk, setFirstChunk] =
+    React.useState<FirstChunkMode>('sentence');
+  const [firstAudioMs, setFirstAudioMs] = React.useState<number | null>(null);
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [streamedChars, setStreamedChars] = React.useState(0);
   const [engineName, setEngineName] = React.useState<TTSEngine>(
@@ -145,6 +152,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     setErrorMsg(null);
     cancelledRef.current = false;
     setStreamedChars(0);
+    setFirstAudioMs(null);
     setIsStreaming(true);
 
     const tokens = tokenize(text);
@@ -152,11 +160,29 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
 
     const stream = Speech.createSpeechStream(selectedVoice || undefined, {
       targetChars: 300,
+      firstChunk,
       onError: err => {
         setErrorMsg(err.message);
       },
     });
     streamRef.current = stream;
+
+    // Time from the first append to the first chunk starting playback.
+    // Subscribed after creation on purpose: exercises late listeners.
+    const startTs = Date.now();
+    let chunkCount = 0;
+    stream.onProgress(event => {
+      const ms = Date.now() - startTs;
+      if (chunkCount === 0) {
+        setFirstAudioMs(ms);
+      }
+      console.log(
+        `[StreamDemo] chunk=${chunkCount} firstChunk=${firstChunk} ` +
+          `t+${ms}ms range=${event.streamRange.start}-${event.streamRange.end} ` +
+          `text=${JSON.stringify(event.chunkText)}`,
+      );
+      chunkCount++;
+    });
 
     try {
       let pos = 0;
@@ -176,7 +202,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       streamRef.current = null;
       setIsStreaming(false);
     }
-  }, [isStreaming, rate, text, selectedVoice]);
+  }, [isStreaming, rate, text, selectedVoice, firstChunk]);
 
   const stopStreaming = React.useCallback(async () => {
     cancelledRef.current = true;
@@ -199,6 +225,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled">
+        <SelfTestPanel />
         <Text style={styles.title}>STREAM_INPUT</Text>
         <Text style={styles.subtitle}>
           Feeds text one token at a time into{' '}
@@ -290,6 +317,37 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
             );
           })}
         </View>
+
+        <Text style={styles.sectionLabel}>{'// FIRST_CHUNK'}</Text>
+        <View style={styles.rateRow}>
+          {FIRST_CHUNK_MODES.map(mode => {
+            const selected = mode === firstChunk;
+            return (
+              <TouchableOpacity
+                key={mode}
+                disabled={isStreaming}
+                onPress={() => setFirstChunk(mode)}
+                style={[
+                  styles.rateBtn,
+                  selected && styles.rateBtnSelected,
+                  isStreaming && styles.rateBtnDisabled,
+                ]}>
+                <Text
+                  style={[
+                    styles.rateBtnText,
+                    selected && styles.rateBtnTextSelected,
+                  ]}>
+                  {mode}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {firstAudioMs !== null && (
+          <Text style={styles.helpText}>
+            {'> '}first audio after {firstAudioMs}ms
+          </Text>
+        )}
 
         <View style={styles.actionRow}>
           <TouchableOpacity

@@ -305,20 +305,23 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // rows get converted into sentence boundaries the chunker recognizes.
     // Stripping inside synthesizeChunk (post-chunker) would only catch
     // inline markers; structural breaks would be lost.
-    const mdBuffer = stripMd ? createMarkdownStreamBuffer() : null;
+    const mdBuffer = stripMd
+      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.synthesizeTextChunk(text, voiceId, language, options),
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
+      firstChunk: options?.firstChunk,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
       },
-      onChunkProgress: this.chunkProgressCallback
-        ? event => this.emitChunkProgress(event)
-        : undefined,
+      // Always bind: listeners may subscribe after the stream starts, and
+      // emitChunkProgress already no-ops when no callback is set.
+      onChunkProgress: event => this.emitChunkProgress(event),
     });
 
     this.activeStreamSession = session;

@@ -58,6 +58,12 @@ export interface AudioBuffer {
   duration: number;
 }
 
+/**
+ * Where a stream's first chunk may end. `'sentence'` waits for `.!?`;
+ * `'clause'` also accepts a clause boundary for lower time-to-first-audio.
+ */
+export type FirstChunkMode = 'sentence' | 'clause';
+
 export interface SynthesisOptions {
   /** Voice identifier (engine-specific) */
   voiceId?: string;
@@ -102,6 +108,16 @@ export interface SynthesisOptions {
    * @default true
    */
   stripMarkdown?: boolean;
+  /**
+   * Streaming only. With `'clause'`, the first chunk flushes at the
+   * earliest of a sentence end, a `, ; : —` boundary after at least 3
+   * words, a `，；：、` boundary after at least 4 CJK characters, or 12
+   * complete words, so audio starts sooner. Later chunks keep sentence
+   * boundaries. Ignored by the OS engine.
+   * @platform neural-engines
+   * @default 'sentence'
+   */
+  firstChunk?: FirstChunkMode;
   /**
    * Called for each synthesized audio chunk after any volume adjustment
    * and before playback. Useful for capturing audio offline — e.g. saving

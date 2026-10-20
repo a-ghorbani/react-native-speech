@@ -149,6 +149,34 @@ stream.onProgress(event => {
 });
 ```
 
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : —` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+
+```ts
+const stream = Speech.createSpeechStream('af_bella', {firstChunk: 'clause'});
+```
+
+If you need `streamRange` to index into your own text exactly, strip markdown yourself with the exported `createMarkdownStreamBuffer()` and pass `stripMarkdown: false`:
+
+```ts
+import {createMarkdownStreamBuffer} from '@pocketpalai/react-native-speech';
+
+const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+const stream = Speech.createSpeechStream('af_bella', {
+  stripMarkdown: false,
+  firstChunk: 'clause',
+});
+let spoken = ''; // what streamRange offsets index into
+for await (const token of llmTokenStream) {
+  const clean = md.push(token);
+  spoken += clean;
+  stream.append(clean);
+}
+const tail = md.flush();
+spoken += tail;
+stream.append(tail);
+await stream.finalize();
+```
+
 Works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 
 ## Architecture (short)
