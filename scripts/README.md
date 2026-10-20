@@ -18,6 +18,8 @@ Utility scripts for development, benchmarking, and asset preparation.
   Both `.tsv` (input) and `.bin` (output) live in that directory; push
   back to HuggingFace from there.
 - `convert-kitten-voices.py` — Convert Kitten TTS voice embeddings.
+- `phonon/` — Build, repackage and verify the Phonon native binaries
+  (`libptts_ffi.so`, `PhononCore.xcframework`); see `phonon/README.md`.
 
 ## Benchmarking
 

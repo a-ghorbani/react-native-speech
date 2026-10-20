@@ -1,0 +1,2 @@
+# Lets `source "$HERE/x.sh"` resolve when shellcheck runs from any directory.
+source-path=SCRIPTDIR

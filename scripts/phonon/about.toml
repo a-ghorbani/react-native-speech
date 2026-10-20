@@ -1,0 +1,24 @@
+# cargo-about config for the notices shipped in the phonon-android / phonon-ios zips and
+# docs/phonon/THIRD_PARTY_NOTICES.md (scripts/phonon/gen-notices.sh). A crate under any other
+# license fails generation; that is deliberate: a new license needs a human look first.
+accepted = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+]
+# Shipped targets only; gen-notices.sh passes them explicitly per zip.
+targets = [
+  "aarch64-linux-android",
+  "x86_64-linux-android",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
+]
+# Build and dev dependencies are not in the binary.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
