@@ -199,5 +199,8 @@
   },
   "dependencies": {
     "phonemize": "^1.1.0"
+  },
+  "resolutions": {
+    "release-it@^17.10.0": "patch:release-it@npm%3A17.11.0#./.yarn/patches/release-it-npm-17.11.0-12200f7ccb.patch"
   }
 }

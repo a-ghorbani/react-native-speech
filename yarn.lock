@@ -10700,7 +10700,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"release-it@npm:^17.10.0":
+"release-it@npm:17.11.0":
   version: 17.11.0
   resolution: "release-it@npm:17.11.0"
   dependencies:
@@ -10731,6 +10731,40 @@ __metadata:
   bin:
     release-it: bin/release-it.js
   checksum: 0f1e43e23e4144901af9ffbc9ad9b4ab689198ee268d4c8c6b33e798c35c208f7d133a8a57ce95c67e12db4c1e752913e4af92d3dc31bdb9467be808f7b04729
+  languageName: node
+  linkType: hard
+
+"release-it@patch:release-it@npm%3A17.11.0#./.yarn/patches/release-it-npm-17.11.0-12200f7ccb.patch::locator=%40pocketpalai%2Freact-native-speech%40workspace%3A.":
+  version: 17.11.0
+  resolution: "release-it@patch:release-it@npm%3A17.11.0#./.yarn/patches/release-it-npm-17.11.0-12200f7ccb.patch::version=17.11.0&hash=cdba2c&locator=%40pocketpalai%2Freact-native-speech%40workspace%3A."
+  dependencies:
+    "@iarna/toml": 2.2.5
+    "@octokit/rest": 20.1.1
+    async-retry: 1.3.3
+    chalk: 5.4.1
+    ci-info: ^4.1.0
+    cosmiconfig: 9.0.0
+    execa: 8.0.0
+    git-url-parse: 14.0.0
+    globby: 14.0.2
+    inquirer: 9.3.2
+    issue-parser: 7.0.1
+    lodash: 4.17.21
+    mime-types: 2.1.35
+    new-github-release-url: 2.0.0
+    open: 10.1.0
+    ora: 8.1.1
+    os-name: 5.1.0
+    proxy-agent: 6.5.0
+    semver: 7.6.3
+    shelljs: 0.8.5
+    update-notifier: 7.3.1
+    url-join: 5.0.0
+    wildcard-match: 5.1.4
+    yargs-parser: 21.1.1
+  bin:
+    release-it: bin/release-it.js
+  checksum: ea35646c92b6ee7f658b8000cd157b6a0272f7eee2863d8342634d0bd0890f8c2cf05b50d403a9b7c2360f3240c9dbcc4b934b8ec047108e3017d08b04f6f0f7
   languageName: node
   linkType: hard
 
