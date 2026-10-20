@@ -427,6 +427,9 @@ export interface SpeechStream {
    * Use this instead of `Speech.onChunkProgress` when you need to
    * highlight text in the accumulated consumer buffer — batch-local
    * offsets from `Speech.onChunkProgress` would not map there.
+   *
+   * Neural engines only: the OS engine emits no chunk progress, so no
+   * events fire for streams on it.
    */
   onProgress(cb: (event: StreamProgressEvent) => void): () => void;
 }
