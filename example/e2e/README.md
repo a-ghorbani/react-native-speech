@@ -29,4 +29,6 @@ Results go to `e2e-artifacts/`: JUnit reports, screenshots, `logcat.txt` and `se
 
 The `e2e-android` job in `.github/workflows/ci.yml` builds an x86_64 release APK and runs the Kitten flow on an API 34 emulator.
 
+It runs with `XNNPACK=off`, because ONNX Runtime crashes when it creates a session with the XNNPACK provider on the x86_64 emulator. Real arm64 devices run with XNNPACK on.
+
 The CI flow can't cover audio interruptions (the **INTERRUPT** button) or listening quality. Check those on a device.
