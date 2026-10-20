@@ -6,6 +6,9 @@
 #   ENGINE: Kitten (default), Kokoro, Supertonic. Kitten's model is
 #   downloaded if missing; other engines need a model already installed.
 #
+# Env: KITTEN_VARIANT (model to download, default nano-int8),
+#      XNNPACK (on|off, default on).
+#
 # Uses $ANDROID_SERIAL when several devices are connected. Extra Maestro
 # options go in $MAESTRO_ARGS, e.g. MAESTRO_ARGS=--no-reinstall-driver on
 # phones that ask to confirm every USB install (MIUI). Writes Maestro
@@ -50,6 +53,8 @@ for engine in "${ENGINES[@]}"; do
   # shellcheck disable=SC2086 # MAESTRO_ARGS is intentionally word-split
   if ! maestro test ${MAESTRO_DEVICE[@]+"${MAESTRO_DEVICE[@]}"} ${MAESTRO_ARGS:-} \
     --env ENGINE="$engine" \
+    --env KITTEN_VARIANT="${KITTEN_VARIANT:-nano-int8}" \
+    --env XNNPACK="${XNNPACK:-on}" \
     --format JUNIT --output "$OUT/report-$engine.xml" \
     --test-output-dir "$OUT/$engine" \
     example/e2e/run.yaml; then

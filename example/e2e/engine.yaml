@@ -1,6 +1,7 @@
 # Select ${ENGINE} on the SYS tab and wait until it is initialized.
-# Downloads the Kitten nano-int8 model (~24 MB) when it is missing; other
+# Downloads the Kitten ${KITTEN_VARIANT} model when it is missing; other
 # engines must already have a model installed on the device.
+# ${XNNPACK} is 'on' or 'off' (CPU provider only).
 appId: speech.example
 ---
 # The app opens on the SYS tab and auto-initializes the default engine
@@ -12,9 +13,16 @@ appId: speech.example
 - runFlow:
     when:
       visible: 'Kitten Model Required'
-      true: ${ENGINE !== 'Kitten'}
+      true: ${ENGINE !== 'Kitten' || XNNPACK === 'off'}
     commands:
       - tapOn: 'LATER'
+# XNNPACK=off: initialize with the CPU provider only.
+- runFlow:
+    when:
+      visible: '☑ XNNPACK'
+      true: ${XNNPACK === 'off'}
+    commands:
+      - tapOn: '☑ XNNPACK'
 # With the prompt open (Kitten requested, model missing) the download
 # below handles it; otherwise select the engine.
 - runFlow:
@@ -30,12 +38,12 @@ appId: speech.example
       - tapOn: 'DOWNLOAD'
       # Small screens (the CI emulator) can have the card below the fold.
       - scrollUntilVisible:
-          element: 'nano-int8'
+          element: ${KITTEN_VARIANT}
           direction: DOWN
           timeout: 20000
-      - tapOn: 'nano-int8'
+      - tapOn: ${KITTEN_VARIANT}
       - extendedWaitUntil:
-          visible: 'Kitten TTS nano-int8 downloaded!'
+          visible: 'Kitten TTS ${KITTEN_VARIANT} downloaded!'
           timeout: 600000
       - tapOn: 'OK'
       - back

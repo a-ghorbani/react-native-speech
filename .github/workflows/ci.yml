@@ -122,8 +122,16 @@ jobs:
     # by the flow from Hugging Face.
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {variant: nano-int8, xnnpack: 'off'}
+          - {variant: micro, xnnpack: 'on'}
 
     env:
+      KITTEN_VARIANT: ${{ matrix.variant }}
+      XNNPACK: ${{ matrix.xnnpack }}
       MAESTRO_VERSION: 2.11.0
       MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a
       MAESTRO_CLI_NO_ANALYTICS: 1
@@ -189,7 +197,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: e2e-android
+          name: e2e-android-${{ matrix.variant }}-xnnpack-${{ matrix.xnnpack }}
           path: e2e-artifacts/
           if-no-files-found: ignore
 
