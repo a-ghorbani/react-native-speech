@@ -9,9 +9,14 @@
  * than playback).
  *
  * Used by all neural engines via dependency injection:
- *   - `synthesizeChunk(text) → AudioBuffer`
- *   - `playAudio(buffer) → void`  (resolves when audio finishes)
- *   - `onStop()` — abort native playback
+ *   - `synthesizeChunk(text) → TAudio`  (`AudioBuffer` by default)
+ *   - `playAudio(audio) → void`  (resolves when audio finishes)
+ *   - `stopPlayback()` — abort native playback
+ *
+ * Engines whose audio lives natively (Phonon passes buffer ids, not
+ * samples) use the optional hooks: `hasAudio` decides whether a chunk
+ * produced audio, `discard` releases audio that will never be played,
+ * and `onCancel` aborts native synthesis synchronously on cancel.
  *
  * OS engine does not use this — SpeechStream falls back to the
  * adaptive batcher there.
@@ -24,15 +29,38 @@ import {createComponentLogger} from '../utils/logger';
 
 const log = createComponentLogger('EngineStream', 'Engine');
 
-export interface EngineStreamSessionConfig {
-  synthesizeChunk: (text: string) => Promise<AudioBuffer>;
-  playAudio: (buffer: AudioBuffer, options?: PlaybackOptions) => Promise<void>;
+export interface EngineStreamSessionConfig<TAudio = AudioBuffer> {
+  synthesizeChunk: (text: string) => Promise<TAudio>;
+  playAudio: (audio: TAudio, options?: PlaybackOptions) => Promise<void>;
   stopPlayback: () => Promise<void>;
   maxChunkSize: number;
   firstChunk?: FirstChunkMode;
   playbackOptions?: PlaybackOptions;
-  postProcess?: (buffer: AudioBuffer) => void;
+  postProcess?: (audio: TAudio) => void;
   onChunkProgress?: (event: ChunkProgressEvent) => void;
+  /**
+   * Whether a synthesized chunk has audio to play. Chunks without audio
+   * are skipped (and passed to `discard`). Default: `samples.length > 0`.
+   */
+  hasAudio?: (audio: TAudio) => boolean;
+  /**
+   * Called exactly once for every synthesized chunk that will never be
+   * played: results that arrive after `cancel()`, skipped no-audio
+   * chunks, and a prefetched chunk left over when the loop ends early.
+   * Never called for a chunk that was handed to `playAudio`.
+   */
+  discard?: (audio: TAudio) => void;
+  /**
+   * Called synchronously at the start of `cancel()`, before
+   * `stopPlayback`, so the engine can abort native synthesis.
+   */
+  onCancel?: () => void;
+}
+
+type ChunkInfo = {text: string; startIndex: number; endIndex: number};
+
+function defaultHasAudio(audio: unknown): boolean {
+  return (audio as AudioBuffer).samples.length > 0;
 }
 
 export interface EngineStreamHandle {
@@ -41,9 +69,12 @@ export interface EngineStreamHandle {
   cancel(): Promise<void>;
 }
 
-export class EngineStreamSession implements EngineStreamHandle {
+export class EngineStreamSession<
+  TAudio = AudioBuffer,
+> implements EngineStreamHandle {
   private readonly chunker: StreamingChunker;
-  private readonly config: EngineStreamSessionConfig;
+  private readonly config: EngineStreamSessionConfig<TAudio>;
+  private readonly hasAudio: (audio: TAudio) => boolean;
   private readonly loopPromise: Promise<void>;
   private cancelled = false;
   private stopSignalResolver: (() => void) | null = null;
@@ -52,8 +83,9 @@ export class EngineStreamSession implements EngineStreamHandle {
   private chunkCount = 0;
   private lastChunkEndTs: number | null = null;
 
-  constructor(config: EngineStreamSessionConfig) {
+  constructor(config: EngineStreamSessionConfig<TAudio>) {
     this.config = config;
+    this.hasAudio = config.hasAudio ?? defaultHasAudio;
     this.chunker = new StreamingChunker(config.maxChunkSize, config.firstChunk);
     this.loopPromise = this.runLoop();
   }
@@ -78,6 +110,13 @@ export class EngineStreamSession implements EngineStreamHandle {
       return;
     }
     this.cancelled = true;
+    if (this.config.onCancel) {
+      try {
+        this.config.onCancel();
+      } catch (err) {
+        log.warn('onCancel failed during cancel:', err);
+      }
+    }
     this.chunker.cancel();
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
@@ -93,6 +132,31 @@ export class EngineStreamSession implements EngineStreamHandle {
 
   private rel(): number {
     return Date.now() - this.sessionStartTs;
+  }
+
+  private discard(audio: TAudio): void {
+    if (!this.config.discard) {
+      return;
+    }
+    try {
+      this.config.discard(audio);
+    } catch (err) {
+      log.warn('discard failed:', err);
+    }
+  }
+
+  /** Discard whatever a pending prefetch eventually yields. */
+  private discardPrefetch(
+    prefetch: Promise<{chunk: ChunkInfo; audio: TAudio} | null>,
+  ): void {
+    prefetch.then(
+      next => {
+        if (next) {
+          this.discard(next.audio);
+        }
+      },
+      () => {},
+    );
   }
 
   private createStopSignal(): Promise<null> {
@@ -112,6 +176,13 @@ export class EngineStreamSession implements EngineStreamHandle {
     const {synthesizeChunk, playAudio, playbackOptions, postProcess} =
       this.config;
     const stopSignal = this.createStopSignal();
+    // Audio not yet handed to playAudio, and a prefetch not yet consumed:
+    // both are discarded if the loop ends early (cancel or error).
+    let currentAudio: TAudio | null = null;
+    let prefetchPromise: Promise<{
+      chunk: ChunkInfo;
+      audio: TAudio;
+    } | null> | null = null;
 
     log.info(`stream session started, t+0ms`);
 
@@ -124,11 +195,11 @@ export class EngineStreamSession implements EngineStreamHandle {
         synthesizeChunk,
         stopSignal,
       );
-      if (!bootstrap || this.cancelled) {
+      if (!bootstrap) {
         return;
       }
       let currentChunk = bootstrap.chunk;
-      let currentAudio: AudioBuffer = bootstrap.audio;
+      currentAudio = bootstrap.audio;
       let chunkIdx = 0;
 
       // Main loop: play current chunk while synthesizing next.
@@ -149,8 +220,10 @@ export class EngineStreamSession implements EngineStreamHandle {
             `, offset=${currentChunk.startIndex}, t+${this.rel()}ms`,
         );
 
+        const audio: TAudio = currentAudio!;
+
         if (postProcess) {
-          postProcess(currentAudio!);
+          postProcess(audio);
         }
 
         this.emitProgress(currentChunk, chunkIdx);
@@ -158,16 +231,15 @@ export class EngineStreamSession implements EngineStreamHandle {
         // Start fetching + synthesizing next chunk in background. Skips
         // any no-audio chunks until it finds one with audio (or chunker
         // drains).
-        const prefetchPromise = this.fetchNextWithAudio(
-          synthesizeChunk,
-          stopSignal,
-        );
+        prefetchPromise = this.fetchNextWithAudio(synthesizeChunk, stopSignal);
+        // Rejections are observed when awaited below; this only keeps an
+        // early return from leaving one unhandled.
+        prefetchPromise.catch(() => {});
 
-        // Play current chunk (concurrent with prefetch).
-        await this.raceWithStop(
-          playAudio(currentAudio!, playbackOptions),
-          stopSignal,
-        );
+        // Play current chunk (concurrent with prefetch). From here on the
+        // player owns the audio, so it is never discarded.
+        currentAudio = null;
+        await this.raceWithStop(playAudio(audio, playbackOptions), stopSignal);
 
         if (this.cancelled) {
           return;
@@ -179,8 +251,10 @@ export class EngineStreamSession implements EngineStreamHandle {
         );
 
         // Get prefetched result.
-        const next = await prefetchPromise;
-        if (!next || this.cancelled) {
+        const pending = prefetchPromise;
+        prefetchPromise = null;
+        const next = await pending;
+        if (!next) {
           return;
         }
 
@@ -198,6 +272,12 @@ export class EngineStreamSession implements EngineStreamHandle {
       }
       log.error(`stream session error: ${error.message}`);
     } finally {
+      if (currentAudio !== null) {
+        this.discard(currentAudio);
+      }
+      if (prefetchPromise) {
+        this.discardPrefetch(prefetchPromise);
+      }
       log.info(
         `stream session ended: chunks=${this.chunkCount}, elapsed=${this.rel()}ms`,
       );
@@ -216,38 +296,51 @@ export class EngineStreamSession implements EngineStreamHandle {
    * so we keep pulling until we have audio.
    */
   private async fetchNextWithAudio(
-    synthesizeChunk: (text: string) => Promise<AudioBuffer>,
+    synthesizeChunk: (text: string) => Promise<TAudio>,
     stopSignal: Promise<null>,
-  ): Promise<{
-    chunk: {text: string; startIndex: number; endIndex: number};
-    audio: AudioBuffer;
-  } | null> {
+  ): Promise<{chunk: ChunkInfo; audio: TAudio} | null> {
     while (true) {
       const chunk = await this.chunker.getNextChunk();
       if (!chunk || this.cancelled) {
         return null;
       }
-      const audio = await this.raceWithStop(
-        synthesizeChunk(chunk.text),
-        stopSignal,
+      const synth = synthesizeChunk(chunk.text);
+      // Discard on the synth promise itself: if the stop signal wins the
+      // race, the result still arrives later and must be released.
+      // cancel() sets `cancelled` before resolving the stop signal, so a
+      // result that settles after a lost race always sees it.
+      let settled = false;
+      synth.then(
+        result => {
+          if (this.cancelled) {
+            settled = true;
+            this.discard(result);
+          }
+        },
+        () => {},
       );
-      if (!audio || this.cancelled) {
+      const audio = await this.raceWithStop(synth, stopSignal);
+      if (audio === null) {
         return null;
       }
-      if (audio.samples.length === 0) {
+      if (this.cancelled) {
+        if (!settled) {
+          this.discard(audio);
+        }
+        return null;
+      }
+      if (!this.hasAudio(audio)) {
         log.debug(
           `skipping no-audio chunk (${chunk.text.length} chars), pulling next`,
         );
+        this.discard(audio);
         continue;
       }
       return {chunk, audio};
     }
   }
 
-  private emitProgress(
-    chunk: {text: string; startIndex: number; endIndex: number},
-    chunkIndex: number,
-  ): void {
+  private emitProgress(chunk: ChunkInfo, chunkIndex: number): void {
     if (!this.config.onChunkProgress) {
       return;
     }

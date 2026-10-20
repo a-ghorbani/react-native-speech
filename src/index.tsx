@@ -6,6 +6,7 @@
  * - Kokoro Neural TTS (high quality, multi-language)
  * - Supertonic Neural TTS (ultra-fast, lightweight)
  * - Kitten Neural TTS (lightweight StyleTTS 2, English)
+ * - Phonon Neural TTS (native Gradium xn-ptts; opt-in at build time)
  *
  * ## Default usage (recommended for ~95% of apps)
  *
@@ -26,7 +27,7 @@
  * ```
  *
  * Per-engine classes (`KokoroEngine`, `SupertonicEngine`, `KittenEngine`,
- * `OSEngine`) and the `engineManager` singleton are exported for advanced
+ * `PhononEngine`, `OSEngine`) and the `engineManager` singleton are exported for advanced
  * scenarios such as multi-engine orchestration, custom pipelines, or
  * integrating an engine without going through the unified `Speech` API.
  *
@@ -37,6 +38,7 @@
 
 // Export Speech API as default
 export {default} from './Speech';
+export type {EngineSupport} from './Speech';
 
 // Export types from native API
 export type {
@@ -104,6 +106,21 @@ export type {
   KittenBuiltinVoice,
 } from './types';
 
+// Export Phonon types
+export type {
+  PhononVoice,
+  PhononConfig,
+  PhononSynthesisOptions,
+  PhononLanguage,
+  PhononComputeUnit,
+  PhononSupportReason,
+  PhononSupportInfo,
+  PhononLoadResult,
+  PhononDiagnostics,
+} from './types';
+export type {PhononChunkMetrics, PhononErrorCode} from './engines/phonon';
+export {PhononError, PhononUnsupportedError} from './engines/phonon';
+
 // Export component types
 export type {
   HighlightedTextProps,
@@ -142,3 +159,5 @@ export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
 /** @internal Advanced: Kitten neural engine class. */
 export {KittenEngine} from './engines/kitten';
+/** @internal Advanced: Phonon native neural engine class. */
+export {PhononEngine} from './engines/phonon';

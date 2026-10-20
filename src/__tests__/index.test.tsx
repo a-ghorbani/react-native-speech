@@ -43,6 +43,9 @@ import Speech, {
   KokoroEngine,
   SupertonicEngine,
   KittenEngine,
+  PhononEngine,
+  PhononError,
+  PhononUnsupportedError,
   OSEngine,
   TTSEngine,
   onAudioInterruption,
@@ -65,7 +68,20 @@ describe('public API surface', () => {
     expect(typeof KokoroEngine).toBe('function');
     expect(typeof SupertonicEngine).toBe('function');
     expect(typeof KittenEngine).toBe('function');
+    expect(typeof PhononEngine).toBe('function');
     expect(typeof OSEngine).toBe('function');
+  });
+
+  it('exports Phonon support/error helpers', async () => {
+    expect(typeof PhononEngine.getSupport).toBe('function');
+    expect(new PhononUnsupportedError('not-compiled')).toBeInstanceOf(
+      PhononError,
+    );
+    expect(typeof Speech.getEngineSupport).toBe('function');
+    // The NativeSpeech stub has no phonon methods -> not-compiled, no throw.
+    await expect(
+      Speech.getEngineSupport(TTSEngine.PHONON),
+    ).resolves.toMatchObject({supported: false});
   });
 
   it('exports onAudioInterruption', () => {
@@ -89,5 +105,6 @@ describe('public API surface', () => {
     expect(k.name).toBe('kokoro');
     expect(s.name).toBe('supertonic');
     expect(ki.name).toBe('kitten');
+    expect(new PhononEngine().name).toBe('phonon');
   });
 });

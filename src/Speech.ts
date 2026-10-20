@@ -6,6 +6,7 @@
  * - Kokoro (Neural TTS - high quality, multi-language)
  * - Supertonic (Neural TTS - ultra-fast, lightweight)
  * - Kitten (Neural TTS - lightweight StyleTTS 2, English)
+ * - Phonon (Neural TTS - native Gradium xn-ptts, opt-in at build time)
  *
  * @example
  * // Initialize with Kokoro
@@ -29,6 +30,8 @@ import type {
   SupertonicVoice,
   KittenConfig,
   KittenVoice,
+  PhononConfig,
+  PhononVoice,
   SynthesisOptions,
   ChunkProgressEvent,
   ChunkProgressCallback,
@@ -44,6 +47,7 @@ import {OSEngine} from './engines/OSEngine';
 import {KokoroEngine} from './engines/kokoro';
 import {SupertonicEngine} from './engines/supertonic';
 import {KittenEngine} from './engines/kitten';
+import {PhononEngine} from './engines/phonon';
 import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
 import {SpeechStreamImpl} from './engines/SpeechStream';
 import {createComponentLogger} from './utils/logger';
@@ -58,6 +62,7 @@ engineManager.registerEngine(osEngine);
 let kokoroEngine: KokoroEngine | null = null;
 let supertonicEngine: SupertonicEngine | null = null;
 let kittenEngine: KittenEngine | null = null;
+let phononEngine: PhononEngine | null = null;
 
 // Engines get `dispatchChunkProgress` at init; it fans out to the
 // `setChunkProgressCallback` slot and every `onChunkProgress` subscription.
@@ -100,7 +105,19 @@ export type SpeechInitConfig =
   | ({engine: TTSEngine.KOKORO} & KokoroConfig & SpeechInitAudioDefaults)
   | ({engine: TTSEngine.SUPERTONIC} & SupertonicConfig &
       SpeechInitAudioDefaults)
-  | ({engine: TTSEngine.KITTEN} & KittenConfig & SpeechInitAudioDefaults);
+  | ({engine: TTSEngine.KITTEN} & KittenConfig & SpeechInitAudioDefaults)
+  | ({engine: TTSEngine.PHONON} & PhononConfig & SpeechInitAudioDefaults);
+
+/**
+ * Result of `Speech.getEngineSupport`. `reason` is `'ok'` when supported;
+ * for Phonon it is the native probe's reason (e.g. `'not-compiled'`,
+ * `'missing-cpu-features'`).
+ */
+export interface EngineSupport {
+  supported: boolean;
+  reason: string;
+  detail?: string;
+}
 
 export default class Speech {
   /**
@@ -133,11 +150,10 @@ export default class Speech {
     const {engine, ...engineConfig} = config;
 
     log.info(`Initializing engine: ${engine}`);
-    // Store current engine
-    Speech.currentEngine = engine;
-    log.debug(`currentEngine set to: ${Speech.currentEngine}`);
 
-    // Initialize the specific engine
+    // Initialize the specific engine. `currentEngine` is switched only
+    // after the engine initialized successfully, so a failed init keeps
+    // the previous engine usable.
     if (engine === 'kokoro') {
       if (!kokoroEngine) {
         kokoroEngine = new KokoroEngine();
@@ -195,12 +211,76 @@ export default class Speech {
       engineManager.setDefaultEngine(engine);
 
       kittenEngine.setChunkProgressCallback(dispatchChunkProgress);
+    } else if (engine === 'phonon') {
+      if (!phononEngine) {
+        phononEngine = new PhononEngine();
+        engineManager.registerEngine(phononEngine);
+        await engineManager.initializeEngine(
+          engine,
+          engineConfig as PhononConfig,
+        );
+      } else {
+        await engineManager.reinitializeEngine(
+          engine,
+          engineConfig as PhononConfig,
+        );
+      }
+      engineManager.setDefaultEngine(engine);
+
+      phononEngine.setChunkProgressCallback(dispatchChunkProgress);
     } else if (engine === 'os-native') {
       // OS engine is already initialized
       await engineManager.initializeEngine(engine);
       engineManager.setDefaultEngine(engine);
     } else {
       throw new Error(`Unknown engine: ${engine}`);
+    }
+
+    Speech.currentEngine = engine;
+    log.debug(`currentEngine set to: ${Speech.currentEngine}`);
+  }
+
+  /**
+   * Whether an engine can run on this build and device. Never throws
+   * and never loads native engine code: the ONNX and OS engines always
+   * report `{supported: true, reason: 'ok'}`; Phonon runs its cheap
+   * native probe (cached once it resolves).
+   *
+   * @example
+   * const {supported, reason} = await Speech.getEngineSupport(TTSEngine.PHONON);
+   * if (!supported) console.log(`Phonon hidden: ${reason}`);
+   */
+  public static async getEngineSupport(
+    engine: TTSEngine,
+  ): Promise<EngineSupport> {
+    try {
+      switch (engine) {
+        case 'os-native':
+        case 'kokoro':
+        case 'supertonic':
+        case 'kitten':
+          return {supported: true, reason: 'ok'};
+        case 'phonon': {
+          const info = await PhononEngine.getSupport();
+          return {
+            supported: info.supported,
+            reason: info.reason,
+            detail: info.detail,
+          };
+        }
+        default:
+          return {
+            supported: false,
+            reason: 'unknown-engine',
+            detail: String(engine),
+          };
+      }
+    } catch (e) {
+      return {
+        supported: false,
+        reason: 'error',
+        detail: e instanceof Error ? e.message : String(e),
+      };
     }
   }
 
@@ -210,8 +290,8 @@ export default class Speech {
    * @param input - Either a text string (runs the full pipeline,
    *   including g2p) or `{ phonemes }` to feed IPA directly and
    *   short-circuit g2p. Phoneme input is supported only by the IPA
-   *   neural engines (Kokoro, Kitten); the OS and Supertonic engines
-   *   reject it with a clear error.
+   *   neural engines (Kokoro, Kitten); the OS, Supertonic and Phonon
+   *   engines reject it with a clear error.
    * @param voiceId - Voice identifier (engine-specific)
    * @param options - Synthesis options
    * @example
@@ -251,7 +331,7 @@ export default class Speech {
    * subsequent batches are packed up to `targetChars` characters.
    *
    * **Engine support**: designed for the neural engines (Kokoro,
-   * Supertonic, Kitten), where each `speak()` resolves only after the
+   * Supertonic, Kitten, Phonon), where each `speak()` resolves only after the
    * batch finishes playing so the stream can pack large batches while
    * earlier ones play. The OS engine's native `speak()` resolves on
    * dispatch, which makes the adaptive batching effectively a no-op —
@@ -300,6 +380,9 @@ export default class Speech {
     } else if (engine === 'kitten' && kittenEngine) {
       engineStreamFactory = opts =>
         kittenEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
+    } else if (engine === 'phonon' && phononEngine) {
+      engineStreamFactory = opts =>
+        phononEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
     }
 
     return new SpeechStreamImpl({
@@ -338,7 +421,9 @@ export default class Speech {
    */
   public static async getVoicesWithMetadata(
     language?: string,
-  ): Promise<KokoroVoice[] | SupertonicVoice[] | KittenVoice[]> {
+  ): Promise<
+    KokoroVoice[] | SupertonicVoice[] | KittenVoice[] | PhononVoice[]
+  > {
     const engine = Speech.currentEngine;
     log.debug(
       `getVoicesWithMetadata currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, kittenEngine: ${!!kittenEngine}`,
@@ -359,9 +444,14 @@ export default class Speech {
         throw new Error('Kitten engine not initialized');
       }
       return kittenEngine.getVoicesWithMetadata();
+    } else if (engine === 'phonon') {
+      if (!phononEngine) {
+        throw new Error('Phonon engine not initialized');
+      }
+      return phononEngine.getVoicesWithMetadata(language);
     } else {
       throw new Error(
-        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten)',
+        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten, Phonon)',
       );
     }
   }
@@ -502,6 +592,8 @@ export default class Speech {
       supertonicEngine.stop();
     } else if (engine === 'kitten' && kittenEngine) {
       kittenEngine.stop();
+    } else if (engine === 'phonon' && phononEngine) {
+      phononEngine.stop();
     }
 
     // Fire native stops (OS TTS stop is always safe to call)
@@ -544,6 +636,8 @@ export default class Speech {
       return supertonicEngine.release();
     } else if (engine === 'kitten' && kittenEngine) {
       return kittenEngine.release();
+    } else if (engine === 'phonon' && phononEngine) {
+      return phononEngine.release();
     }
 
     // OS engine doesn't need releasing
@@ -561,7 +655,8 @@ export default class Speech {
     if (
       (engine === 'kokoro' && kokoroEngine) ||
       (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'kitten' && kittenEngine)
+      (engine === 'kitten' && kittenEngine) ||
+      (engine === 'phonon' && phononEngine)
     ) {
       return neuralAudioPlayer.pause();
     }
@@ -580,7 +675,8 @@ export default class Speech {
     if (
       (engine === 'kokoro' && kokoroEngine) ||
       (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'kitten' && kittenEngine)
+      (engine === 'kitten' && kittenEngine) ||
+      (engine === 'phonon' && phononEngine)
     ) {
       return neuralAudioPlayer.resume();
     }
@@ -624,6 +720,8 @@ export type {
   SupertonicConfig,
   KittenVoice,
   KittenConfig,
+  PhononVoice,
+  PhononConfig,
   SynthesisOptions,
   ChunkProgressEvent,
   ChunkProgressCallback,

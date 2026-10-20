@@ -8,7 +8,9 @@
 import NativeNeuralAudioPlayer from '../NativeAudioPlayer';
 import type {AudioPlayerConfig} from '../NativeAudioPlayer';
 import type {AudioBuffer} from '../types';
+import type {PhononPlayConfig} from '../NativeSpeech';
 import {float32ToBase64Int16} from '../utils/AudioConverter';
+import NativePhonon from './phonon/NativePhonon';
 
 export interface PlaybackOptions {
   /**
@@ -60,6 +62,43 @@ export class NeuralAudioPlayer {
 
     try {
       await NativeNeuralAudioPlayer.playAudio(base64Audio, config);
+    } finally {
+      this.isCurrentlyPlaying = false;
+    }
+  }
+
+  /**
+   * Play PCM that stays in native memory (Phonon buffer store). The
+   * buffer is consumed by the native side, whatever the outcome.
+   * Keeps `isCurrentlyPlaying` in sync exactly like `play()`, so
+   * `stop()` and `pause()` reach native during the playback.
+   * @param bufferId - Native buffer id from `phononSynthesize`
+   * @param sampleRate - Sample rate of the buffer in Hz
+   * @param options - Playback options plus a native gain (`volume`)
+   */
+  async playBuffer(
+    bufferId: number,
+    sampleRate: number,
+    options?: PlaybackOptions & {volume?: number; channels?: number},
+  ): Promise<void> {
+    const config: PhononPlayConfig = {
+      sampleRate,
+      channels: options?.channels ?? 1,
+    };
+    if (options?.ducking !== undefined) {
+      config.ducking = options.ducking;
+    }
+    if (options?.silentMode !== undefined) {
+      config.silentMode = options.silentMode;
+    }
+    if (options?.volume !== undefined) {
+      config.volume = Math.max(0, Math.min(1, options.volume));
+    }
+
+    this.isCurrentlyPlaying = true;
+
+    try {
+      await NativePhonon.playBuffer(bufferId, config);
     } finally {
       this.isCurrentlyPlaying = false;
     }
