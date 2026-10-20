@@ -31,6 +31,13 @@ class Speech {
   static onResume = eventMock;
   static onStopped = eventMock;
   static onProgress = eventMock;
+  // Phonon is never compiled into the jest mock; every other engine is.
+  static getEngineSupport = engine =>
+    Promise.resolve(
+      engine === 'phonon'
+        ? {supported: false, reason: 'not-compiled', detail: 'jest mock'}
+        : {supported: true, reason: 'ok'},
+    );
 }
 
 const HighlightedText = jestFn(function HighlightedText() {

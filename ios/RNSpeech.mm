@@ -2,6 +2,7 @@
 #import "RNSpeechTrace.h"
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
+#import <unistd.h>
 
 using namespace JS::NativeSpeech;
 
@@ -645,6 +646,124 @@ RCT_EXPORT_MODULE();
 - (NSString *)dictLookup:(NSString *)word {
   return [NativeDictWrapper lookupWord:word];
 }
+
+#pragma mark - Phonon
+
+#if !RN_SPEECH_PHONON
+// Flag-off stubs (pod installed without ENV['RN_SPEECH_PHONON'] = '1').
+// Support resolves `not-compiled`, work methods reject PHONON_NOT_COMPILED,
+// sync methods return 0/NO. No Phonon code or binary is linked.
+
+static NSString *const kPhononNotCompiled = @"PHONON_NOT_COMPILED";
+static NSString *const kPhononNotCompiledMessage =
+    @"Phonon is not compiled into this build (set ENV['RN_SPEECH_PHONON'] = '1' in the Podfile)";
+
+static NSString *RNSpeechPhononStubAbi(void) {
+#if TARGET_OS_SIMULATOR
+#if defined(__x86_64__)
+  return @"ios-x86_64-simulator";
+#else
+  return @"ios-arm64-simulator";
+#endif
+#else
+  return @"ios-arm64";
+#endif
+}
+
+- (void)phononGetSupport:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  static dispatch_once_t logOnce;
+  dispatch_once(&logOnce, ^{
+    RCTLogInfo(@"[Phonon] unsupported: not-compiled");
+  });
+  NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
+  resolve(@{
+    @"supported": @(NO),
+    @"reason": @"not-compiled",
+    @"detail": @"built without RN_SPEECH_PHONON",
+    @"abi": RNSpeechPhononStubAbi(),
+    @"osVersion": [NSString stringWithFormat:@"%ld.%ld.%ld",
+                   (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion],
+    @"libraryVersion": @"",
+    @"isSimulator": @(TARGET_OS_SIMULATOR ? YES : NO),
+    @"pageSize": @((double)getpagesize()),
+  });
+}
+
+- (void)phononNeedsCompile:(NSString *)modelDir
+                   resolve:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject {
+  reject(kPhononNotCompiled, kPhononNotCompiledMessage, nil);
+}
+
+- (void)phononCreate:(NSString *)modelDir
+             options:(JS::NativeSpeech::PhononLoadOptions &)options
+             resolve:(RCTPromiseResolveBlock)resolve
+              reject:(RCTPromiseRejectBlock)reject {
+  reject(kPhononNotCompiled, kPhononNotCompiledMessage, nil);
+}
+
+- (NSNumber *)phononAllocRequestId {
+  return @(0);
+}
+
+- (void)phononSynthesize:(double)handleId
+               requestId:(double)requestId
+                    text:(NSString *)text
+                   voice:(NSString *)voice
+                language:(NSString *)language
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  reject(kPhononNotCompiled, kPhononNotCompiledMessage, nil);
+}
+
+- (NSNumber *)phononCancel:(double)upToRequestId {
+  return @(NO);
+}
+
+- (NSNumber *)phononCancelAll {
+  return @(NO);
+}
+
+- (void)phononPlayBuffer:(double)bufferId
+                  config:(JS::NativeSpeech::PhononPlayConfig &)config
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  reject(kPhononNotCompiled, kPhononNotCompiledMessage, nil);
+}
+
+- (void)phononCopyBuffer:(double)bufferId
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  reject(kPhononNotCompiled, kPhononNotCompiledMessage, nil);
+}
+
+- (NSNumber *)phononReleaseBuffer:(double)bufferId {
+  return @(NO);
+}
+
+- (void)phononDestroy:(double)handleId
+              resolve:(RCTPromiseResolveBlock)resolve
+               reject:(RCTPromiseRejectBlock)reject {
+  resolve(nil);
+}
+
+- (void)phononGetDiagnostics:(RCTPromiseResolveBlock)resolve
+                      reject:(RCTPromiseRejectBlock)reject {
+  resolve(@{
+    @"memKb": @(0),
+    @"peakMemKb": @(0),
+    @"threads": @(0),
+    @"libraryLoaded": @(NO),
+    @"handleOpen": @(NO),
+    @"liveBuffers": @(0),
+    @"orphanBuffers": @(0),
+    @"busy": @"idle",
+    @"lastIssuedId": @(0),
+    @"cancelWatermark": @(0),
+  });
+}
+#endif // !RN_SPEECH_PHONON
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params

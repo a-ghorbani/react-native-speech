@@ -36,6 +36,15 @@ export enum TTSEngine {
    * - Requires 1 ONNX model file + voice embeddings JSON
    */
   KITTEN = 'kitten',
+
+  /**
+   * Use Phonon neural TTS engine (offline, native: Gradium xn-ptts)
+   * - Android: CPU (arm64 with dotprod, or x86_64)
+   * - iOS: Core ML, iOS 18+
+   * - Opt-in at build time; check `Speech.getEngineSupport` first
+   * - Requires model files
+   */
+  PHONON = 'phonon',
 }
 
 export interface EngineStatus {

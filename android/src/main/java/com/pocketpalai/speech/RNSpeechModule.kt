@@ -27,6 +27,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.module.annotations.ReactModule
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import com.pocketpalai.speech.phonon.PhononBridge
 
 @ReactModule(name = RNSpeechModule.NAME)
 class RNSpeechModule(reactContext: ReactApplicationContext) :
@@ -981,8 +982,68 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  // Phonon engine: thin delegations. PhononBridge is the real bridge when
+  // built with RNSpeech_phononEnabled=true, otherwise a not-compiled stub.
+
+  override fun phononGetSupport(promise: Promise) {
+    PhononBridge.getSupport(reactApplicationContext, promise)
+  }
+
+  override fun phononNeedsCompile(modelDir: String, promise: Promise) {
+    PhononBridge.needsCompile(modelDir, promise)
+  }
+
+  override fun phononCreate(modelDir: String, options: ReadableMap, promise: Promise) {
+    PhononBridge.create(reactApplicationContext, modelDir, options, promise)
+  }
+
+  override fun phononAllocRequestId(): Double {
+    return PhononBridge.allocRequestId().toDouble()
+  }
+
+  override fun phononSynthesize(
+    handleId: Double,
+    requestId: Double,
+    text: String,
+    voice: String,
+    language: String,
+    promise: Promise
+  ) {
+    PhononBridge.synthesize(handleId.toLong(), requestId.toLong(), text, voice, language, promise)
+  }
+
+  override fun phononCancel(upToRequestId: Double): Boolean {
+    return PhononBridge.cancelUpTo(upToRequestId.toLong())
+  }
+
+  override fun phononCancelAll(): Boolean {
+    return PhononBridge.cancelAll()
+  }
+
+  override fun phononPlayBuffer(bufferId: Double, config: ReadableMap, promise: Promise) {
+    PhononBridge.playBuffer(bufferId.toLong(), config, promise)
+  }
+
+  override fun phononCopyBuffer(bufferId: Double, promise: Promise) {
+    PhononBridge.copyBuffer(bufferId.toLong(), promise)
+  }
+
+  override fun phononReleaseBuffer(bufferId: Double): Boolean {
+    return PhononBridge.releaseBuffer(bufferId.toLong())
+  }
+
+  override fun phononDestroy(handleId: Double, promise: Promise) {
+    PhononBridge.destroy(handleId.toLong(), promise)
+  }
+
+  override fun phononGetDiagnostics(promise: Promise) {
+    PhononBridge.getDiagnostics(promise)
+  }
+
   override fun invalidate() {
     super.invalidate()
+    // Phonon state is process-wide: cancel only, never destroy or join.
+    PhononBridge.onModuleInvalidated()
     if (::synthesizer.isInitialized) {
       synthesizer.stop()
       synthesizer.shutdown()

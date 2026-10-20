@@ -2,6 +2,21 @@ require "json"
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
+# Phonon (opt-in native TTS engine): Podfile `ENV['RN_SPEECH_PHONON'] = '1'`.
+# Until phonon.lock.json carries a published iOS sha256, the flag falls back
+# to off with a warning unless ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] points at
+# a local PhononCore.xcframework (dev override).
+phonon_lock = JSON.parse(File.read(File.join(__dir__, "phonon.lock.json")))
+phonon_requested = ENV['RN_SPEECH_PHONON'] == '1'
+phonon_local = ENV['RN_SPEECH_PHONON_XCFRAMEWORK'].to_s
+phonon = phonon_requested &&
+  (!phonon_local.empty? || phonon_lock["binaries"]["ios"]["sha256"] != "PLACEHOLDER")
+if phonon_requested && !phonon
+  Pod::UI.warn "[RNSpeech] RN_SPEECH_PHONON=1 but phonon.lock.json has no published iOS " \
+    "binaries yet (sha256 PLACEHOLDER). Building WITHOUT Phonon. Set " \
+    "RN_SPEECH_PHONON_XCFRAMEWORK to a local PhononCore.xcframework to use local binaries."
+end
+
 Pod::Spec.new do |s|
   s.name         = "RNSpeech"
   s.version      = package["version"]
@@ -16,19 +31,38 @@ Pod::Spec.new do |s|
   # Our module sources (iOS Obj-C++ + shared C++ core in cpp/)
   s.source_files = ["ios/**/*.{h,m,mm,cpp}", "cpp/**/*.{h,cpp}"]
   s.public_header_files = ["ios/NativeDictWrapper.h"]
-  s.exclude_files = "ios/generated/**/*"
+  excludes = ["ios/generated/**/*", "ios/phonon/PhononCore.xcframework/**/*"]
+
+  preprocessor_definitions = ['$(inherited)']
+  preprocessor_definitions << 'RN_SPEECH_TRACE=1' if ENV['RN_SPEECH_TRACE'] == '1'
+
+  # Frameworks
+  frameworks = ["AVFoundation", "AudioToolbox"]
+
+  if phonon
+    # ios/phonon/fetch.rb: lock -> cache -> sha256 -> copy (or the local override).
+    fetch_rb = File.join(__dir__, "ios", "phonon", "fetch.rb")
+    raise "[RNSpeech] Phonon is enabled but ios/phonon/fetch.rb is missing" unless File.exist?(fetch_rb)
+    require fetch_rb
+    RNSpeechPhonon.ensure_xcframework!(__dir__)
+    s.vendored_frameworks = "ios/phonon/PhononCore.xcframework"
+    frameworks += ["CoreML", "CoreVideo"]
+    preprocessor_definitions << 'RN_SPEECH_PHONON=1'
+  else
+    # Flag off: no Phonon sources, binary or framework links.
+    excludes += ["ios/phonon/**/*", "cpp/phonon/**/*"]
+  end
+  s.exclude_files = excludes
 
   # Header search paths
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => [
       '"$(PODS_TARGET_SRCROOT)/cpp"'
     ].join(' '),
-    'GCC_PREPROCESSOR_DEFINITIONS' =>
-      ENV['RN_SPEECH_TRACE'] == '1' ? '$(inherited) RN_SPEECH_TRACE=1' : '$(inherited)'
+    'GCC_PREPROCESSOR_DEFINITIONS' => preprocessor_definitions.join(' ')
   }
 
-  # Frameworks
-  s.frameworks = "AVFoundation", "AudioToolbox"
+  s.frameworks = frameworks
 
   install_modules_dependencies(s)
 end

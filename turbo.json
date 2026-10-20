@@ -2,13 +2,20 @@
   "$schema": "https://turbo.build/schema.json",
   "pipeline": {
     "build:android": {
-      "env": ["ORG_GRADLE_PROJECT_newArchEnabled"],
+      "env": [
+        "ORG_GRADLE_PROJECT_newArchEnabled",
+        "ORG_GRADLE_PROJECT_RNSpeech_phononEnabled"
+      ],
       "inputs": [
         "package.json",
+        "phonon.lock.json",
         "android",
         "!android/build",
+        "cpp/**",
+        "scripts/phonon/**",
         "src/*.ts",
         "src/*.tsx",
+        "src/**",
         "example/package.json",
         "example/android",
         "!example/android/.gradle",
@@ -18,13 +25,23 @@
       "outputs": []
     },
     "build:ios": {
-      "env": ["RCT_NEW_ARCH_ENABLED", "RCT_USE_RN_DEP", "RCT_USE_PREBUILT_RNCORE"],
+      "env": [
+        "RCT_NEW_ARCH_ENABLED",
+        "RCT_USE_RN_DEP",
+        "RCT_USE_PREBUILT_RNCORE",
+        "RN_SPEECH_PHONON"
+      ],
       "inputs": [
         "package.json",
+        "phonon.lock.json",
         "*.podspec",
         "ios",
+        "!ios/phonon/PhononCore.xcframework/**",
+        "cpp/**",
+        "scripts/phonon/**",
         "src/*.ts",
         "src/*.tsx",
+        "src/**",
         "example/package.json",
         "example/ios",
         "!example/ios/build",

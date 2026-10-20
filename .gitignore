@@ -83,6 +83,9 @@ lib/
 ios/generated
 android/generated
 
+# Phonon xcframework (copied from the download cache at pod install)
+ios/phonon/PhononCore.xcframework/
+
 # React Native Nitro Modules
 nitrogen/
 

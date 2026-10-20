@@ -25,6 +25,44 @@ def getExtOrIntegerDefault(name) {
   return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["RNSpeech_" + name]).toInteger()
 }
 
+// --- Phonon (opt-in native TTS engine) ---
+// Consumer sets RNSpeech_phononEnabled=true in gradle.properties, or
+// rootProject.ext.RNSpeech_phononEnabled = true (ext.phononEnabled also works).
+// Optional: RNSpeech_phononAbis (default arm64-v8a), RNSpeech_phononLibDir
+// (local jniLibs dir, skips the download), RNSpeech_phononForceReason (debug only).
+def getPhononOption(name) {
+  def extName = "RNSpeech_" + name
+  def value = rootProject.ext.has(extName) ? rootProject.ext.get(extName) : getExtOrDefault(name)
+  return value == null ? null : value.toString().trim()
+}
+
+def phononRequested = (getPhononOption("phononEnabled") ?: "false").toBoolean()
+def phononAbis = (getPhononOption("phononAbis") ?: "arm64-v8a").split(",").collect { it.trim() }.findAll { it }
+def phononLibDir = getPhononOption("phononLibDir") ?: ""
+def phononForceReason = getPhononOption("phononForceReason") ?: ""
+def phononLock = new groovy.json.JsonSlurper().parse(file("../phonon.lock.json"))
+def phononVersion = phononLock.binaries.release.toString().replaceFirst(/^phonon-bin-v/, "")
+def phononEnabled = phononRequested
+if (phononRequested && phononLibDir.isEmpty() && phononLock.binaries.android.sha256 == "PLACEHOLDER") {
+  logger.warn("RNSpeech: RNSpeech_phononEnabled=true but phonon.lock.json has no published " +
+      "Android binaries yet (sha256 PLACEHOLDER). Building WITHOUT Phonon. " +
+      "Set RNSpeech_phononLibDir to a local jniLibs dir to use local binaries.")
+  phononEnabled = false
+}
+if (phononEnabled && !phononLibDir.isEmpty()) {
+  phononVersion = phononVersion + "+local"
+}
+if (phononEnabled && !file("phonon.gradle").exists()) {
+  throw new GradleException("RNSpeech: Phonon is enabled but android/phonon.gradle is missing")
+}
+ext.rnSpeechPhonon = [
+  enabled: phononEnabled,
+  abis: phononAbis,
+  libDir: phononLibDir,
+  version: phononVersion,
+  lock: phononLock,
+]
+
 android {
   namespace "com.pocketpalai.speech"
 
@@ -38,10 +76,14 @@ android {
         project.property('RN_SPEECH_TRACE').toString().toBoolean() : false
     buildConfigField "boolean", "RN_SPEECH_TRACE", traceEnabled.toString()
 
+    buildConfigField "boolean", "RN_SPEECH_PHONON", phononEnabled.toString()
+    buildConfigField "String", "RN_SPEECH_PHONON_ABIS", "\"${phononEnabled ? phononAbis.join(',') : ''}\""
+    buildConfigField "String", "RN_SPEECH_PHONON_VERSION", "\"${phononEnabled ? phononVersion : ''}\""
+
     externalNativeBuild {
       cmake {
         cppFlags "-std=c++17 -fexceptions -frtti"
-        arguments "-DANDROID_STL=c++_shared"
+        arguments "-DANDROID_STL=c++_shared", "-DRN_SPEECH_PHONON=${phononEnabled ? 'ON' : 'OFF'}"
       }
     }
 
@@ -62,9 +104,18 @@ android {
   }
 
   buildTypes {
+    debug {
+      // Debug-only override for evidence runs (forces getSupport to report this reason).
+      buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"${phononForceReason}\""
+    }
     release {
       minifyEnabled false
+      buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"\""
     }
+  }
+
+  testOptions {
+    unitTests.returnDefaultValues = true
   }
 
   lintOptions {
@@ -82,8 +133,17 @@ android {
         "generated/java",
         "generated/jni"
       ]
+      // Flag off: only a stub PhononBridge that reports `not-compiled`.
+      java.srcDirs += phononEnabled ? "src/phonon/java" : "src/phononStub/java"
+    }
+    test {
+      java.srcDirs += phononEnabled ? "src/phononTest/java" : "src/phononStubTest/java"
     }
   }
+}
+
+if (phononEnabled) {
+  apply from: "phonon.gradle"
 }
 
 repositories {
@@ -96,4 +156,5 @@ def kotlin_version = getExtOrDefault("kotlinVersion")
 dependencies {
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  testImplementation "junit:junit:4.13.2"
 }
