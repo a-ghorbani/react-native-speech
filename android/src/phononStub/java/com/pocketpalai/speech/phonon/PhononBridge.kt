@@ -79,7 +79,12 @@ object PhononBridge {
 
   fun cancelAll(): Boolean = false
 
-  fun playBuffer(bufferId: Long, config: ReadableMap, promise: Promise) = reject(promise)
+  fun playBuffer(
+    bufferId: Long,
+    config: ReadableMap,
+    promise: Promise,
+    play: (ByteArray, Int, Boolean) -> Unit
+  ) = reject(promise)
 
   fun copyBuffer(bufferId: Long, promise: Promise) = reject(promise)
 

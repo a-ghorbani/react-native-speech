@@ -87,7 +87,10 @@ export RN_SPEECH_PHONON_XCFRAMEWORK=$PWD/scripts/out/phonon/ios/PhononCore.xcfra
 
 To try the download path against local zips instead, `update-lock.sh --sums
 scripts/out/phonon/dist/SHA256SUMS --only android` writes their hashes into the lock (do not
-commit that; the publish job opens the real lock PR).
+commit that; the publish job opens the real lock PR). Then
+`RNSpeech_phononBaseUrl=file:///abs/path/to/scripts/out/phonon/dist` makes Gradle "download"
+from there (also usable for a mirror); the zip is cached under
+`~/.gradle/caches/rnspeech-phonon/<release>/` and re-verified against the lock on every use.
 
 ## Releasing
 

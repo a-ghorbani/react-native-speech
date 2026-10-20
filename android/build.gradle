@@ -71,6 +71,7 @@ android {
   defaultConfig {
     minSdkVersion getExtOrIntegerDefault("minSdkVersion")
     targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+    consumerProguardFiles "proguard-rules.pro"
 
     def traceEnabled = project.hasProperty('RN_SPEECH_TRACE') ?
         project.property('RN_SPEECH_TRACE').toString().toBoolean() : false
@@ -135,9 +136,13 @@ android {
       ]
       // Flag off: only a stub PhononBridge that reports `not-compiled`.
       java.srcDirs += phononEnabled ? "src/phonon/java" : "src/phononStub/java"
+      // Pure-JVM Phonon policy (probe, HWCAP, threads, capability store): app code only
+      // when enabled, but always unit tested (src/test/java).
+      if (phononEnabled) java.srcDirs += "src/phononPure/java"
     }
     test {
       java.srcDirs += phononEnabled ? "src/phononTest/java" : "src/phononStubTest/java"
+      if (!phononEnabled) java.srcDirs += "src/phononPure/java"
     }
   }
 }

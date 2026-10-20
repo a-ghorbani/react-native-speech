@@ -69,7 +69,7 @@ class PhononBridgeStubTest {
     val calls = listOf<(Promise) -> Unit>(
       { PhononBridge.needsCompile("/models", it) },
       { PhononBridge.synthesize(1, 1, "hi", "", "en", it) },
-      { PhononBridge.playBuffer(1, JavaOnlyMap(), it) },
+      { PhononBridge.playBuffer(1, JavaOnlyMap(), it) { _, _, _ -> error("must not play") } },
       { PhononBridge.copyBuffer(1, it) }
     )
     for (call in calls) {

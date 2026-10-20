@@ -3,6 +3,7 @@ package com.pocketpalai.speech
 import java.util.UUID
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -700,7 +701,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
     selectedEngine = engineName
 
-    invalidate()
+    // OS TTS only: invalidate() is the module's teardown and would also cancel Phonon work,
+    // drop its pending promises and free buffers the live JS runtime still holds, and stop
+    // the neural audio executor.
+    resetSystemTts()
 
     pendingOperations.add(Pair({ promise.resolve(null) }, promise))
     initializeTTS()
@@ -801,97 +805,129 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     val channels = if (config.hasKey("channels")) config.getInt("channels") else 1
     val ducking = if (config.hasKey("ducking")) config.getBoolean("ducking") else false
 
-    audioExecutor.execute {
-      SpeechTrace.beginSection("TTS:playAudio")
-      try {
-        synchronized(audioLock) {
-          // Stop any current playback
-          cleanupAudio()
+    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, ducking, promise)
+  }
 
-          // Increment utterance ID
-          currentAudioUtteranceId++
+  /**
+   * Shared PCM16 playback entry point for the base64 player (playAudio) and Phonon's native
+   * buffers (phononPlayBuffer). [pcm] supplies little-endian Int16 PCM and is invoked on the
+   * audio executor.
+   */
+  private fun playPcm16(
+    pcm: () -> ByteArray,
+    sampleRate: Int,
+    channels: Int,
+    ducking: Boolean,
+    promise: Promise
+  ) {
+    try {
+      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, ducking, promise) }
+    } catch (e: RejectedExecutionException) {
+      // Only after invalidate() shut the executor down.
+      promise.reject("audio_error", "Audio player is shut down", e)
+    }
+  }
 
-          // Decode base64 audio data
-          val decodedBytes = Base64.decode(audioData, Base64.DEFAULT)
+  private fun playPcm16Now(
+    pcm: () -> ByteArray,
+    sampleRate: Int,
+    channels: Int,
+    ducking: Boolean,
+    promise: Promise
+  ) {
+    SpeechTrace.beginSection("TTS:playAudio")
+    try {
+      synchronized(audioLock) {
+        // Stop any current playback
+        cleanupAudio()
 
-          // Convert bytes to Int16 samples, then to bytes for AudioTrack
-          // The data is already Int16 PCM, just need to play it
-          val channelConfig = if (channels == 1) {
-            AudioFormat.CHANNEL_OUT_MONO
-          } else {
-            AudioFormat.CHANNEL_OUT_STEREO
+        // Increment utterance ID
+        currentAudioUtteranceId++
+
+        val decodedBytes = pcm()
+        if (decodedBytes.size < 2) {
+          // Nothing to play: a static track's 0 marker may never be reached.
+          SpeechTrace.endSection()
+          promise.resolve(null)
+          return
+        }
+
+        // The data is already Int16 PCM, just need to play it
+        val channelConfig = if (channels == 1) {
+          AudioFormat.CHANNEL_OUT_MONO
+        } else {
+          AudioFormat.CHANNEL_OUT_STEREO
+        }
+
+        val bufferSize = AudioTrack.getMinBufferSize(
+          sampleRate,
+          channelConfig,
+          AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(decodedBytes.size)
+
+        val audioAttributes = AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+          .build()
+
+        val audioFormat = AudioFormat.Builder()
+          .setSampleRate(sampleRate)
+          .setChannelMask(channelConfig)
+          .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+          .build()
+
+        val track = AudioTrack.Builder()
+          .setAudioAttributes(audioAttributes)
+          .setAudioFormat(audioFormat)
+          .setBufferSizeInBytes(bufferSize)
+          .setTransferMode(AudioTrack.MODE_STATIC)
+          .build()
+
+        audioTrack = track
+
+        // Setup ducking
+        isAudioDuckingState = ducking
+        activateAudioDuckingSession()
+
+        // Acquire audio focus so we get interruption callbacks.
+        neuralFocusManager.requestFocus()
+
+        // Write data to track
+        track.write(decodedBytes, 0, decodedBytes.size)
+
+        // Set notification marker at end
+        track.notificationMarkerPosition = decodedBytes.size / 2 // 2 bytes per sample
+
+        track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+          override fun onMarkerReached(track: AudioTrack?) {
+            synchronized(audioLock) {
+              isAudioPlayingState = false
+              deactivateAudioDuckingSession()
+              neuralFocusManager.abandonFocus()
+              SpeechTrace.endSection()
+              emitOnFinish(getAudioEventData())
+              promise.resolve(null)
+            }
           }
 
-          val bufferSize = AudioTrack.getMinBufferSize(
-            sampleRate,
-            channelConfig,
-            AudioFormat.ENCODING_PCM_16BIT
-          ).coerceAtLeast(decodedBytes.size)
+          override fun onPeriodicNotification(track: AudioTrack?) {
+            // Not used
+          }
+        })
 
-          val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+        isAudioPlayingState = true
+        isAudioPausedState = false
 
-          val audioFormat = AudioFormat.Builder()
-            .setSampleRate(sampleRate)
-            .setChannelMask(channelConfig)
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .build()
+        // Emit start event
+        emitOnStart(getAudioEventData())
 
-          val track = AudioTrack.Builder()
-            .setAudioAttributes(audioAttributes)
-            .setAudioFormat(audioFormat)
-            .setBufferSizeInBytes(bufferSize)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-          audioTrack = track
-
-          // Setup ducking
-          isAudioDuckingState = ducking
-          activateAudioDuckingSession()
-
-          // Acquire audio focus so we get interruption callbacks.
-          neuralFocusManager.requestFocus()
-
-          // Write data to track
-          track.write(decodedBytes, 0, decodedBytes.size)
-
-          // Set notification marker at end
-          track.notificationMarkerPosition = decodedBytes.size / 2 // 2 bytes per sample
-
-          track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(track: AudioTrack?) {
-              synchronized(audioLock) {
-                isAudioPlayingState = false
-                deactivateAudioDuckingSession()
-                neuralFocusManager.abandonFocus()
-                SpeechTrace.endSection()
-                emitOnFinish(getAudioEventData())
-                promise.resolve(null)
-              }
-            }
-
-            override fun onPeriodicNotification(track: AudioTrack?) {
-              // Not used
-            }
-          })
-
-          isAudioPlayingState = true
-          isAudioPausedState = false
-
-          // Emit start event
-          emitOnStart(getAudioEventData())
-
-          // Start playback
-          track.play()
-        }
-      } catch (e: Exception) {
-        SpeechTrace.endSection()
-        cleanupAudio()
-        promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
+        // Start playback
+        track.play()
       }
+    } catch (e: Exception) {
+      SpeechTrace.endSection()
+      cleanupAudio()
+      promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
     }
   }
 
@@ -1021,7 +1057,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   override fun phononPlayBuffer(bufferId: Double, config: ReadableMap, promise: Promise) {
-    PhononBridge.playBuffer(bufferId.toLong(), config, promise)
+    // The bridge takes the buffer and converts it (volume as gain); playback, events and
+    // isAudioPlaying state are the base64 player's.
+    PhononBridge.playBuffer(bufferId.toLong(), config, promise) { pcm, sampleRate, ducking ->
+      playPcm16({ pcm }, sampleRate, 1, ducking, promise)
+    }
   }
 
   override fun phononCopyBuffer(bufferId: Double, promise: Promise) {
@@ -1040,16 +1080,22 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     PhononBridge.getDiagnostics(promise)
   }
 
-  override fun invalidate() {
-    super.invalidate()
-    // Phonon state is process-wide: cancel only, never destroy or join.
-    PhononBridge.onModuleInvalidated()
+  /** Shuts down the OS TTS engine (setEngine re-initializes it on a live module). */
+  private fun resetSystemTts() {
     if (::synthesizer.isInitialized) {
       synthesizer.stop()
       synthesizer.shutdown()
       resetQueueState()
     }
     isInitialized = false
+  }
+
+  override fun invalidate() {
+    super.invalidate()
+    // Real teardown only (never setEngine). Phonon state is process-wide: cancel only,
+    // never destroy or join.
+    PhononBridge.onModuleInvalidated()
+    resetSystemTts()
 
     // Cleanup neural audio player
     cleanupAudio()
