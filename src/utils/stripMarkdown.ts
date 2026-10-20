@@ -305,6 +305,11 @@ const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 // one, so the stripper never sees half of a pair.
 const INLINE_MARKER_RE = /[*_`[\]<]/;
 
+// Prepended while stripping text that continues a line cut mid-way, so
+// line-anchored block rules (`^- `, `^> `, `^# `) don't fire on it.
+// U+2060 WORD JOINER: not whitespace, so `trim()` and `[ \t]*` skip it.
+const CONTINUATION = '\u2060';
+
 export function createMarkdownStreamBuffer(
   options: StripMarkdownOptions = {},
 ): MarkdownStreamBuffer {
@@ -317,6 +322,17 @@ export function createMarkdownStreamBuffer(
   // line like `Okay\n` that has no boundary of its own.
   let firstPending = opts.firstChunk === 'clause';
   let firstEmitted = '';
+  // Whether `buffer` starts at a real line start. False after a mid-line
+  // (sentence or clause) cut: the remainder continues that line, so it
+  // must not be read as a new block (`- 5 is negative` keeps its minus).
+  let atLineStart = true;
+
+  // Strip `text`, treating its first line as a continuation when it does
+  // not start a line.
+  function strip(text: string, continuation: boolean): string {
+    if (!continuation) return stripMarkdown(text, opts);
+    return stripMarkdown(CONTINUATION + text, opts).replace(CONTINUATION, '');
+  }
   function noteEmitted(text: string): void {
     if (!firstPending || !text) return;
     firstEmitted += text;
@@ -330,7 +346,7 @@ export function createMarkdownStreamBuffer(
   // when `dropCodeBlocks` is true. Mutates `inFence` so fence state
   // carries across pushes (the whole reason this isn't part of
   // `stripMarkdown` itself).
-  function filterFences(text: string): string {
+  function filterFences(text: string, continuation: boolean): string {
     if (!opts.dropCodeBlocks) return text;
     // `text` always ends with `\n` here (it's the up-through-last-newline
     // slice). split('\n') therefore gives us a trailing empty string;
@@ -343,11 +359,13 @@ export function createMarkdownStreamBuffer(
         out.push('');
         continue;
       }
+      // A continuation's first line is not at a line start: no fence.
+      const lineStart = !(continuation && i === 0);
       if (inFence) {
-        if (FENCE_LINE_RE.test(line)) inFence = false;
+        if (lineStart && FENCE_LINE_RE.test(line)) inFence = false;
         continue;
       }
-      if (FENCE_LINE_RE.test(line)) {
+      if (lineStart && FENCE_LINE_RE.test(line)) {
         inFence = true;
         continue;
       }
@@ -366,9 +384,11 @@ export function createMarkdownStreamBuffer(
       if (lastNl >= 0) {
         const complete = buffer.slice(0, lastNl + 1);
         buffer = buffer.slice(lastNl + 1);
-        const visible = filterFences(complete);
+        const continuation = !atLineStart;
+        atLineStart = true;
+        const visible = filterFences(complete, continuation);
         if (visible.trim()) {
-          const stripped = stripMarkdown(visible, opts);
+          const stripped = strip(visible, continuation);
           if (stripped) {
             emit += stripped + '\n';
             noteEmitted(stripped + '\n');
@@ -382,17 +402,23 @@ export function createMarkdownStreamBuffer(
       // level construct that needs its whole line to strip correctly.
       // Loop so a single push containing multiple sentences emits them
       // all rather than just the first.
-      while (!inFence && buffer && !BLOCK_START_RE.test(buffer)) {
+      while (
+        !inFence &&
+        buffer &&
+        !(atLineStart && BLOCK_START_RE.test(buffer))
+      ) {
         let cut = -1;
         if (firstPending) {
-          const clauseEnd = findFirstClauseEnd(buffer);
-          // Skip the cut if it would split an inline marker pair, or leave
-          // a remainder that looks like a block line (`1. `, `# `), which
-          // the loop guard would then hold back until the next newline.
+          // Count words already emitted (e.g. a boundary-less first line)
+          // so the cut lands where the downstream chunker would cut.
+          const clauseEnd =
+            findFirstClauseEnd(firstEmitted + buffer) - firstEmitted.length;
+          // Skip the cut if it would split an inline marker pair, or the
+          // line holds a `|` (a table row needs the whole line to strip).
           if (
             clauseEnd > 0 &&
             !INLINE_MARKER_RE.test(buffer.slice(0, clauseEnd)) &&
-            !BLOCK_START_RE.test(buffer.slice(clauseEnd))
+            !buffer.includes('|')
           ) {
             cut = clauseEnd;
           }
@@ -404,7 +430,8 @@ export function createMarkdownStreamBuffer(
         }
         const sentence = buffer.slice(0, cut);
         buffer = buffer.slice(cut);
-        const stripped = stripMarkdown(sentence, opts);
+        const stripped = strip(sentence, !atLineStart);
+        atLineStart = false;
         // Append a single space so `StreamingChunker`'s SENTENCE_END_RE
         // (which requires whitespace after `.!?`) finds a boundary even
         // though `stripMarkdown` trims its output.
@@ -422,13 +449,15 @@ export function createMarkdownStreamBuffer(
       // be reused for a fresh stream.
       firstPending = opts.firstChunk === 'clause';
       firstEmitted = '';
+      const continuation = !atLineStart;
+      atLineStart = true;
       if (inFence) {
         buffer = '';
         inFence = false;
         return '';
       }
       if (!buffer) return '';
-      const out = stripMarkdown(buffer, opts);
+      const out = strip(buffer, continuation);
       buffer = '';
       return out;
     },
