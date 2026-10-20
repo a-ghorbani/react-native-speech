@@ -3,9 +3,9 @@
 # engines must already have a model installed on the device.
 appId: speech.example
 ---
-- tapOn: '.*SYS'
-# The app auto-initializes the default engine (Kitten) on launch; wait for
-# that to settle so the engine tap below isn't ignored mid-initialization.
+# The app opens on the SYS tab and auto-initializes the default engine
+# (Kitten); on a fresh install that shows "Kitten Model Required" over the
+# tabs. Wait for that to settle so the taps below aren't ignored.
 - extendedWaitUntil:
     visible: '\[ONLINE\]|\[OFFLINE\]|Kitten Model Required'
     timeout: 120000
@@ -15,12 +15,24 @@ appId: speech.example
       true: ${ENGINE !== 'Kitten'}
     commands:
       - tapOn: 'LATER'
-- tapOn: ${ENGINE}
+# With the prompt open (Kitten requested, model missing) the download
+# below handles it; otherwise select the engine.
+- runFlow:
+    when:
+      notVisible: 'Kitten Model Required'
+    commands:
+      - tapOn: '.*SYS'
+      - tapOn: ${ENGINE}
 - runFlow:
     when:
       visible: 'Kitten Model Required'
     commands:
       - tapOn: 'DOWNLOAD'
+      # Small screens (the CI emulator) can have the card below the fold.
+      - scrollUntilVisible:
+          element: 'nano-int8'
+          direction: DOWN
+          timeout: 20000
       - tapOn: 'nano-int8'
       - extendedWaitUntil:
           visible: 'Kitten TTS nano-int8 downloaded!'
