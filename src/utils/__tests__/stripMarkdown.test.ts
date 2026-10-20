@@ -804,6 +804,23 @@ describe("createMarkdownStreamBuffer: firstChunk 'clause'", () => {
     expect(md.push('# Big heading, with words')).toBe('');
   });
 
+  test('does not cut before a list-like remainder', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    // Cutting after "follows: " would leave "1. do this..." held back as
+    // a block line; it must emit like the default mode instead.
+    expect(md.push('Steps are as follows: 1. do this. Then that. ')).toBe(
+      createMarkdownStreamBuffer().push(
+        'Steps are as follows: 1. do this. Then that. ',
+      ),
+    );
+  });
+
+  test('keeps the early clause after a boundary-less first line', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('Okay\n')).toBe('Okay\n');
+    expect(md.push('Sure thing friend, here')).toBe('Sure thing friend, ');
+  });
+
   test('flush() re-arms the early clause for a reused buffer', () => {
     const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
     md.push('One two three, four');

@@ -111,8 +111,9 @@ export interface SynthesisOptions {
   /**
    * Streaming only. With `'clause'`, the first chunk flushes at the
    * earliest of a sentence end, a `, ; : —` boundary after at least 3
-   * words, or 12 complete words, so audio starts sooner. Later chunks
-   * keep sentence boundaries.
+   * words, a `，；：、` boundary after at least 4 CJK characters, or 12
+   * complete words, so audio starts sooner. Later chunks keep sentence
+   * boundaries. Ignored by the OS engine.
    * @platform neural-engines
    * @default 'sentence'
    */

@@ -14,69 +14,9 @@
 
 import type {FirstChunkMode} from '../types';
 import type {TextChunk} from '../utils/TextChunker';
+import {SENTENCE_END_RE, findFirstClauseEnd} from '../utils/firstClause';
 
-/**
- * Sentence-boundary regex — matches ASCII punct + trailing whitespace,
- * or CJK punct optionally followed by whitespace. Same rules as
- * SpeechStream's `SENTENCE_END_RE`.
- */
-const SENTENCE_END_RE = /(?:[.!?]+\s+|[。！？]+\s*)/g;
-
-/** Clause boundary (ASCII + CJK) used for `firstChunk: 'clause'`. */
-const CLAUSE_END_RE = /(?:[,;:—–]\s+|[，；：、]\s*)/g;
-const WORD_RE = /\S+\s+/g;
-/** Minimum words before a clause boundary may end the first chunk. */
-const CLAUSE_MIN_WORDS = 3;
-/** Upper bound on first-chunk words when no boundary has appeared. */
-const CLAUSE_MAX_WORDS = 12;
-
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed ? trimmed.split(/\s+/).length : 0;
-}
-
-/**
- * End offset of the first clause in `text`: the earliest of a sentence
- * end, a clause boundary after at least `CLAUSE_MIN_WORDS` words, or
- * `CLAUSE_MAX_WORDS` complete words. Returns -1 when none is present yet.
- */
-export function findFirstClauseEnd(text: string): number {
-  let end = -1;
-  const sentence = new RegExp(SENTENCE_END_RE.source).exec(text);
-  if (sentence) {
-    end = sentence.index + sentence[0].length;
-  }
-
-  const clauseRe = new RegExp(CLAUSE_END_RE.source, 'g');
-  let m: RegExpExecArray | null;
-  while ((m = clauseRe.exec(text)) !== null) {
-    if (end !== -1 && m.index >= end) {
-      break;
-    }
-    if (countWords(text.slice(0, m.index + 1)) >= CLAUSE_MIN_WORDS) {
-      end = m.index + m[0].length;
-      break;
-    }
-  }
-
-  const wordRe = new RegExp(WORD_RE.source, 'g');
-  let words = 0;
-  while ((m = wordRe.exec(text)) !== null) {
-    words++;
-    if (words === CLAUSE_MAX_WORDS) {
-      const wordEnd = m.index + m[0].length;
-      if (end === -1 || wordEnd < end) {
-        end = wordEnd;
-      }
-      break;
-    }
-  }
-
-  if (end > 0 && text.slice(0, end).trim().length === 0) {
-    return -1;
-  }
-  return end;
-}
+export {findFirstClauseEnd} from '../utils/firstClause';
 
 export class StreamingChunker {
   private buffer = '';
@@ -266,7 +206,6 @@ export class StreamingChunker {
       this.buffer = '';
       return null;
     }
-    this.firstTaken = true;
     const chunk: TextChunk = {
       text: this.buffer,
       startIndex: this.absoluteOffset,

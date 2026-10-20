@@ -324,6 +324,25 @@ describe('findFirstClauseEnd', () => {
     expect(words.slice(0, end).trim().split(/\s+/)).toHaveLength(12);
   });
 
+  test('CJK clause marks use a character minimum', () => {
+    const zh = '我觉得，这个方案很好，但是还需要改进';
+    expect(zh.slice(0, findFirstClauseEnd(zh))).toBe('我觉得，这个方案很好，');
+    const ja = '今日は、とても良い天気ですね、本当に';
+    expect(ja.slice(0, findFirstClauseEnd(ja))).toBe(
+      '今日は、とても良い天気ですね、',
+    );
+    expect(findFirstClauseEnd('我，你')).toBe(-1);
+  });
+
+  test('punctuation-only tokens do not count as words', () => {
+    expect(findFirstClauseEnd('   , , , one two')).toBe(-1);
+    const text = '   , , , one two three, four';
+    expect(text.slice(0, findFirstClauseEnd(text))).toBe(
+      '   , , , one two three, ',
+    );
+    expect(findFirstClauseEnd('one two — three')).toBe(-1);
+  });
+
   test('accepts em dash, semicolon and colon', () => {
     for (const mark of ['—', ';', ':']) {
       const text = `one two three${mark} four. `;

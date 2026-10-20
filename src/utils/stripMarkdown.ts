@@ -22,7 +22,7 @@
  */
 
 import type {FirstChunkMode} from '../types';
-import {findFirstClauseEnd} from '../engines/StreamingChunker';
+import {findFirstClauseEnd} from './firstClause';
 
 /**
  * Options for markdown stripping. All default to sensible TTS behavior.
@@ -311,9 +311,20 @@ export function createMarkdownStreamBuffer(
   const opts = {...DEFAULTS, ...options};
   let buffer = '';
   let inFence = false;
-  // Whether anything has been emitted since the stream started; gates
-  // the one-time early clause flush.
-  let emitted = false;
+  // The early clause cut is available until the emitted text contains a
+  // boundary the chunker can cut its first chunk at. Tracking the emitted
+  // text (not just "emitted anything") keeps it available after a leading
+  // line like `Okay\n` that has no boundary of its own.
+  let firstPending = opts.firstChunk === 'clause';
+  let firstEmitted = '';
+  function noteEmitted(text: string): void {
+    if (!firstPending || !text) return;
+    firstEmitted += text;
+    if (findFirstClauseEnd(firstEmitted) > 0) {
+      firstPending = false;
+      firstEmitted = '';
+    }
+  }
 
   // Walk `text` line-by-line; drop everything inside fenced code blocks
   // when `dropCodeBlocks` is true. Mutates `inFence` so fence state
@@ -358,7 +369,10 @@ export function createMarkdownStreamBuffer(
         const visible = filterFences(complete);
         if (visible.trim()) {
           const stripped = stripMarkdown(visible, opts);
-          if (stripped) emit += stripped + '\n';
+          if (stripped) {
+            emit += stripped + '\n';
+            noteEmitted(stripped + '\n');
+          }
         }
       }
 
@@ -370,11 +384,15 @@ export function createMarkdownStreamBuffer(
       // all rather than just the first.
       while (!inFence && buffer && !BLOCK_START_RE.test(buffer)) {
         let cut = -1;
-        if (opts.firstChunk === 'clause' && !emitted && !emit) {
+        if (firstPending) {
           const clauseEnd = findFirstClauseEnd(buffer);
+          // Skip the cut if it would split an inline marker pair, or leave
+          // a remainder that looks like a block line (`1. `, `# `), which
+          // the loop guard would then hold back until the next newline.
           if (
             clauseEnd > 0 &&
-            !INLINE_MARKER_RE.test(buffer.slice(0, clauseEnd))
+            !INLINE_MARKER_RE.test(buffer.slice(0, clauseEnd)) &&
+            !BLOCK_START_RE.test(buffer.slice(clauseEnd))
           ) {
             cut = clauseEnd;
           }
@@ -390,17 +408,20 @@ export function createMarkdownStreamBuffer(
         // Append a single space so `StreamingChunker`'s SENTENCE_END_RE
         // (which requires whitespace after `.!?`) finds a boundary even
         // though `stripMarkdown` trims its output.
-        if (stripped) emit += stripped + ' ';
+        if (stripped) {
+          emit += stripped + ' ';
+          noteEmitted(stripped + ' ');
+        }
       }
 
-      if (emit) emitted = true;
       return emit;
     },
     flush(): string {
       // Stream ended inside a fenced code block — discard partial code,
       // consistent with `dropCodeBlocks`. Reset state so the buffer can
       // be reused for a fresh stream.
-      emitted = false;
+      firstPending = opts.firstChunk === 'clause';
+      firstEmitted = '';
       if (inFence) {
         buffer = '';
         inFence = false;

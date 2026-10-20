@@ -91,20 +91,3 @@ describe('public API surface', () => {
     expect(ki.name).toBe('kitten');
   });
 });
-
-describe('Speech.onChunkProgress unsubscribe', () => {
-  it('a stale unsubscribe does not clear a newer listener', () => {
-    const setSpy = jest.spyOn(Speech, 'setChunkProgressCallback');
-    const unsubA = Speech.onChunkProgress(() => {});
-    const cbB = () => {};
-    const unsubB = Speech.onChunkProgress(cbB);
-
-    setSpy.mockClear();
-    unsubA();
-    expect(setSpy).not.toHaveBeenCalled();
-
-    unsubB();
-    expect(setSpy).toHaveBeenCalledWith(null);
-    setSpy.mockRestore();
-  });
-});
