@@ -689,6 +689,14 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // 1. Signal stop and wait for any ongoing synthesis to complete
     this.stopRequested = true;
 
+    // Cancel an active stream like stop() does. Otherwise its session is
+    // orphaned: once playback is torn down its loop never ends, so the
+    // stream's finalize() stays pending until another stream starts.
+    if (this.activeStreamSession) {
+      await this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
     // 2. Stop audio player first
     try {
       await neuralAudioPlayer.stop();

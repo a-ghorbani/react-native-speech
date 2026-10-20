@@ -861,6 +861,14 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
     this.stopRequested = true;
 
+    // Cancel an active stream like stop() does. Otherwise its session is
+    // orphaned: once playback is torn down its loop never ends, so the
+    // stream's finalize() stays pending until another stream starts.
+    if (this.activeStreamSession) {
+      await this.activeStreamSession.cancel().catch(() => {});
+      this.activeStreamSession = null;
+    }
+
     try {
       await neuralAudioPlayer.stop();
       log.debug('Audio player stopped');

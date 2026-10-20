@@ -182,3 +182,21 @@ describe('SupertonicEngine - successful initialize() & lifecycle', () => {
     ).rejects.toThrow(/phoneme input requires the Kokoro or Kitten engine/);
   });
 });
+
+describe('SupertonicEngine - release() during an active stream', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSessionCreate();
+    configureAssetLoader();
+  });
+
+  test('release() cancels the active stream session', async () => {
+    const e = new SupertonicEngine();
+    await e.initialize(validConfig);
+    const cancel = jest.fn().mockResolvedValue(undefined);
+    (e as any).activeStreamSession = {cancel};
+    await e.release();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect((e as any).activeStreamSession).toBeNull();
+  });
+});
