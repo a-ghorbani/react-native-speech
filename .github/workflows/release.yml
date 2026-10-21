@@ -51,13 +51,6 @@ jobs:
       # --npm.skipChecks skips release-it's pre-flight `npm whoami`/collaborator
       # check, which fails under trusted publishing (no token in CI). The real
       # auth + provenance happen inside `npm publish` via OIDC.
-      #
-      # release-it 17 is patched (.yarn/patches/release-it-*.patch) to pass
-      # `log: {}` instead of `log: null` to Octokit: @octokit/core 5.2.x
-      # crashes on a null logger ("Cannot read properties of null (reading
-      # 'debug')"), which failed the "GitHub create release" step after npm
-      # publish and the git push had already succeeded. Fixed upstream in
-      # release-it 19.x; drop the patch when upgrading.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

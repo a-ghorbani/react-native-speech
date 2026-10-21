@@ -88,7 +88,7 @@
     "@react-native/babel-preset": "0.87.1",
     "@react-native/eslint-config": "^0.78.0",
     "@react-native/jest-preset": "0.87.1",
-    "@release-it/conventional-changelog": "^9.0.2",
+    "@release-it/conventional-changelog": "^10.0.6",
     "@types/jest": "^29.5.5",
     "@types/react": "^19.2.0",
     "commitlint": "^19.6.1",
@@ -102,7 +102,7 @@
     "react": "19.2.3",
     "react-native": "0.87.1",
     "react-native-builder-bob": "^0.40.13",
-    "release-it": "^17.10.0",
+    "release-it": "^19.2.4",
     "turbo": "^1.10.7",
     "typescript": "^5.8.3"
   },
@@ -199,8 +199,5 @@
   },
   "dependencies": {
     "phonemize": "^1.1.0"
-  },
-  "resolutions": {
-    "release-it@^17.10.0": "patch:release-it@npm%3A17.11.0#./.yarn/patches/release-it-npm-17.11.0-12200f7ccb.patch"
   }
 }
