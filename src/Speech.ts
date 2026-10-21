@@ -608,10 +608,10 @@ export default class Speech {
   public static async stop(): Promise<void> {
     const engine = Speech.currentEngine;
 
-    // Set stop flag synchronously — takes effect in synthesis loop immediately
-    // Promise.resolve: a JS add-on's stop() may not return a promise.
-    Promise.resolve(neuralEngine(engine)?.stop()).catch(err =>
-      log.warn(`${engine} stop failed:`, err),
+    // Set stop flag synchronously — takes effect in synthesis loop immediately.
+    // The executor also absorbs an add-on stop() that throws or returns no promise.
+    new Promise<void>(resolve => resolve(neuralEngine(engine)?.stop())).catch(
+      err => log.warn(`${engine} stop failed:`, err),
     );
 
     // Fire native stops (OS TTS stop is always safe to call)

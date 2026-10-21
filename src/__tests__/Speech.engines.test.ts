@@ -248,6 +248,22 @@ describe('Speech.stop with a rejecting engine stop()', () => {
     expect(nativeStop).toHaveBeenCalledTimes(1);
     await Speech.initialize({engine: TTSEngine.OS_NATIVE});
   });
+
+  it('still stops natively when a JS add-on stop() throws synchronously', async () => {
+    const e = fakeEngine('stop-throws', {
+      stop: jest.fn(() => {
+        throw new Error('stop failed');
+      }),
+    });
+    Speech.registerEngine(e as any);
+    await Speech.initialize({engine: 'stop-throws'} as any);
+    const nativeStop = jest.requireMock('../NativeSpeech').default.stop;
+    nativeStop.mockClear();
+    await expect(Speech.stop()).resolves.toBeUndefined();
+    expect(e.stop).toHaveBeenCalledTimes(1);
+    expect(nativeStop).toHaveBeenCalledTimes(1);
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+  });
 });
 
 describe('Speech dispatch to a registered engine', () => {
