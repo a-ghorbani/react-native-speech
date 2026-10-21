@@ -462,19 +462,40 @@ export default class Speech {
   }
 
   /**
-   * Get the current engine name (an add-on's id when one is current;
-   * typed `TTSEngine` for backward compatibility)
+   * @deprecated Use `getCurrentEngineId()`; this returns an add-on's id
+   * typed as `TTSEngine`. To be removed or retyped in 3.0.
    */
   public static getCurrentEngine(): TTSEngine {
     return Speech.currentEngine as TTSEngine;
   }
 
   /**
-   * Get list of registered engines (add-on ids included; typed
-   * `TTSEngine[]` for backward compatibility)
+   * @deprecated Use `getAvailableEngineIds()`; this lists only engines
+   * constructed so far, typed as `TTSEngine[]`. To be removed or retyped
+   * in 3.0.
    */
   public static getAvailableEngines(): TTSEngine[] {
     return engineManager.getAvailableEngines() as TTSEngine[];
+  }
+
+  /**
+   * Id of the current engine. It changes only when `initialize()` resolves.
+   */
+  public static getCurrentEngineId(): EngineId {
+    return Speech.currentEngine;
+  }
+
+  /**
+   * Ids accepted by `initialize()`: every built-in engine, then registered
+   * add-ons in registration order.
+   */
+  public static getAvailableEngineIds(): EngineId[] {
+    return Array.from(
+      new Set<EngineId>([
+        ...builtinIds,
+        ...engineManager.getAvailableEngines(),
+      ]),
+    );
   }
 
   // ============================================================

@@ -351,3 +351,45 @@ describe('built-in engines', () => {
     expect(mockConstructed).toEqual(['kokoro']);
   });
 });
+
+describe('Speech.getCurrentEngineId / getAvailableEngineIds', () => {
+  let isolated!: typeof Speech;
+  beforeEach(() => {
+    jest.isolateModules(() => {
+      isolated = require('../Speech').default;
+    });
+  });
+
+  it('lists every built-in before any is constructed', () => {
+    expect(isolated.getCurrentEngineId()).toBe(TTSEngine.OS_NATIVE);
+    expect(isolated.getAvailableEngineIds()).toEqual(Object.values(TTSEngine));
+  });
+
+  it('includes a registered add-on once, and tracks it as current', async () => {
+    const addon = fakeEngine('addon');
+    isolated.registerEngine(addon as any);
+    await isolated.initialize({engine: TTSEngine.KOKORO} as any);
+    expect(isolated.getAvailableEngineIds()).toEqual([
+      ...Object.values(TTSEngine),
+      'addon',
+    ]);
+    await isolated.initialize({engine: 'addon'} as any);
+    expect(isolated.getCurrentEngineId()).toBe('addon');
+  });
+
+  it('keeps the previous id when initialize rejects', async () => {
+    const addon = fakeEngine('addon');
+    isolated.registerEngine(addon as any);
+    await isolated.initialize({engine: 'addon'} as any);
+    mockInitFail[TTSEngine.KITTEN] = true;
+    await expect(
+      isolated.initialize({engine: TTSEngine.KITTEN} as any),
+    ).rejects.toThrow('init failed');
+    expect(isolated.getCurrentEngineId()).toBe('addon');
+    addon.initialize.mockRejectedValueOnce(new Error('addon init failed'));
+    await expect(isolated.initialize({engine: 'addon'} as any)).rejects.toThrow(
+      'addon init failed',
+    );
+    expect(isolated.getCurrentEngineId()).toBe('addon');
+  });
+});

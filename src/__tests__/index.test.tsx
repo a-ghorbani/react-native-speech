@@ -93,6 +93,8 @@ describe('public API surface', () => {
     expect(typeof Speech.registerEngine).toBe('function');
     expect(typeof Speech.getEngineSupport).toBe('function');
     expect(typeof Speech.resetEngineSupport).toBe('function');
+    expect(typeof Speech.getCurrentEngineId).toBe('function');
+    expect(typeof Speech.getAvailableEngineIds).toBe('function');
   });
 
   it('exports the building blocks engine add-ons import', () => {

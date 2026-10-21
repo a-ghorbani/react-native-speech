@@ -40,6 +40,8 @@ class Speech {
         : {supported: false, reason: 'unknown-engine', detail: String(engine)},
     );
   static resetEngineSupport = () => Promise.resolve(true);
+  static getCurrentEngineId = () => 'os-native';
+  static getAvailableEngineIds = () => [...BUILTIN_ENGINES];
 }
 
 const HighlightedText = jestFn(function HighlightedText() {
