@@ -12,7 +12,7 @@
 // Mock phonemize as an empty object — getHans00 sees `typeof toIPA !==
 // 'function'` and treats it as unavailable. Mirrors the Hermes silent-undef
 // behavior closely enough to exercise our fallback.
-jest.mock('phonemize', () => ({}), {virtual: true});
+jest.mock('phonemize', () => ({}));
 
 jest.mock('../../utils/logger', () => ({
   createComponentLogger: () => ({

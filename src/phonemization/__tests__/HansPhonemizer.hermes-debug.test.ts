@@ -12,15 +12,9 @@
 // with HansPhonemizer.test.ts.
 export {};
 
-jest.mock(
-  'phonemize',
-  () => {
-    throw new Error(
-      'phonemize should not be required on Hermes debug runtimes',
-    );
-  },
-  {virtual: true},
-);
+jest.mock('phonemize', () => {
+  throw new Error('phonemize should not be required on Hermes debug runtimes');
+});
 
 jest.mock('../../utils/logger', () => ({
   createComponentLogger: () => ({

@@ -13,7 +13,7 @@
  * forces both modes to stay in lockstep.
  */
 
-jest.mock('phonemize', () => ({}), {virtual: true});
+jest.mock('phonemize', () => ({}));
 
 jest.mock('../../utils/logger', () => ({
   createComponentLogger: () => ({

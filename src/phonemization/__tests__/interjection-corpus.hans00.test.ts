@@ -57,14 +57,10 @@ function mockRealToIPA(word: string, stripStress: boolean): string {
   return out;
 }
 
-jest.mock(
-  'phonemize',
-  () => ({
-    toIPA: (w: string, opts?: {stripStress?: boolean}) =>
-      mockRealToIPA(w, opts?.stripStress === true),
-  }),
-  {virtual: true},
-);
+jest.mock('phonemize', () => ({
+  toIPA: (w: string, opts?: {stripStress?: boolean}) =>
+    mockRealToIPA(w, opts?.stripStress === true),
+}));
 
 jest.mock('../../utils/logger', () => ({
   createComponentLogger: () => ({
