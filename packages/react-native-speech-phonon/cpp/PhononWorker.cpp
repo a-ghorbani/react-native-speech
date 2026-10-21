@@ -1,4 +1,3 @@
-// PhononWorker.cpp — see PhononWorker.h.
 #include "PhononWorker.h"
 
 #include <cstring>

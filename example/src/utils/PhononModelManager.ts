@@ -13,7 +13,7 @@
  *
  * iOS: the CI-precompiled Core ML bundle (`.mlmodelc`) mirrored unzipped
  * to a palshub HF repo (D1). Its manifest (`path<TAB>size<TAB>sha256`,
- * from scripts/phonon/precompile-coreml.sh) drives a per-file download.
+ * from packages/react-native-speech-phonon/scripts/precompile-coreml.sh) drives a per-file download.
  *
  * Every file is checked against its pinned size and sha256 in a staging
  * directory, which is renamed into place only when complete (atomic
@@ -551,7 +551,7 @@ export class PhononModelManager {
   /**
    * Android: install `variant` from a local folder holding the download's
    * files at their download paths (a device-lab push,
-   * scripts/phonon/stage-android-model.sh). Same per-file size and sha256
+   * packages/react-native-speech-phonon/scripts/stage-android-model.sh). Same per-file size and sha256
    * checks, catalog, install marker and atomic swap as downloadModel; only
    * the transport differs. The source folder is left as it is.
    */

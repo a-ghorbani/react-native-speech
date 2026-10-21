@@ -1,4 +1,3 @@
-// PhononCore.cpp — see PhononCore.h and docs/DESIGN.md §1.4.
 #include "PhononCore.h"
 
 #include <algorithm>

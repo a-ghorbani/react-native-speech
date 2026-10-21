@@ -3,8 +3,8 @@
 `scripts/test-jni-host.sh` builds `android/src/main/cpp/phonon_jni.cpp` (plus
 `cpp/`) as a host shared library against the JDK's JNI headers, with stand-ins for the
 two bionic APIs it uses (`include/`, `fake_android.cpp`), and runs the JVM test
-`android/src/phononTest/java/.../PhononNativeHostTest.kt` against it through the example's
-Gradle wrapper (library built with Phonon enabled).
+`android/src/test/java/.../PhononNativeHostTest.kt` against it through the example's
+Gradle wrapper.
 
 That covers the JNI marshalling (UTF-16 ⇄ UTF-8, result arrays, buffers), the dlopen /
 symbols-missing paths and, with a host `libptts_ffi.so` and a checkpoint folder, real
@@ -20,6 +20,6 @@ PHONON_MODEL_DIR=/path/to/phonon-31m-en \
 ```
 
 Without `PHONON_HOST_LIB` / `PHONON_MODEL_DIR` the tests that need them are skipped (JUnit
-assumptions). The flag-on library build needs local Android binaries
+assumptions). The add-on build needs local Android binaries
 (`RNSpeech_phononLibDir`, default `scripts/out/android/jniLibs`); see
 `scripts/README.md`.
