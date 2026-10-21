@@ -417,6 +417,13 @@ jobs:
       - name: Finalize Android SDK
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+          for v in $ANDROID_NDK_VERSIONS; do
+            for i in 1 2 3; do
+              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
+              [ "$i" = 3 ] && exit 1
+              sleep 10
+            done
+          done
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >>"$GITHUB_ENV"
 
       - name: Cache Gradle
@@ -492,6 +499,13 @@ jobs:
       - name: Finalize Android SDK
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+          for v in $ANDROID_NDK_VERSIONS; do
+            for i in 1 2 3; do
+              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
+              [ "$i" = 3 ] && exit 1
+              sleep 10
+            done
+          done
 
       - name: Cache Gradle
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -605,6 +619,13 @@ jobs:
       - name: Finalize Android SDK
         run: |
           /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+          for v in $ANDROID_NDK_VERSIONS; do
+            for i in 1 2 3; do
+              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
+              [ "$i" = 3 ] && exit 1
+              sleep 10
+            done
+          done
 
       - name: Cache Gradle
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
