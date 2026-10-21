@@ -5,6 +5,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// Only the jest-mock parity suite loads the package entry, which needs the core natives.
+jest.mock('@dr.pogodin/react-native-fs', () => ({}), {virtual: true});
+jest.mock('../../../../src/NativeSpeech', () => ({
+  __esModule: true,
+  default: {getConstants: () => ({maxInputLength: 4000})},
+}));
+jest.mock('../../../../src/NativeAudioPlayer', () => ({
+  __esModule: true,
+  default: {},
+}));
+
 const ROOT = path.resolve(__dirname, '../..');
 const CORE = path.resolve(ROOT, '../..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -98,16 +109,10 @@ describe('RNSpeechPhonon TurboModule spec (codegen schema)', () => {
     }
   });
 
-  it('PhononPlayConfig carries the core player config plus volume', () => {
+  it('PhononPlayConfig carries the core player config plus volume, mono only', () => {
     const props = aliasMap.PhononPlayConfig!.properties.map(p => p.name);
-    expect(props).toEqual(
-      expect.arrayContaining([
-        'sampleRate',
-        'channels',
-        'ducking',
-        'silentMode',
-        'volume',
-      ]),
+    expect(props.sort()).toEqual(
+      ['ducking', 'sampleRate', 'silentMode', 'volume'].sort(),
     );
   });
 
@@ -285,12 +290,150 @@ describe('packaging', () => {
     expect(podspec).not.toContain("ENV['RN_SPEECH_PHONON']");
   });
 
-  it('jest mock reports Phonon as not compiled', async () => {
-    const mock = require('../../jest/index.js');
+  it('playBuffer stays on the TurboModule shared queue and off the main queue', () => {
+    // Ordering with RNSpeech's stopAudio relies on neither module declaring a methodQueue.
+    const ownQueue =
+      /\(dispatch_queue_t\)\s*methodQueue|@synthesize\s+methodQueue/;
+    const mm = read('ios/RNSpeechPhononModule.mm');
+    expect(mm).not.toMatch(ownQueue);
+    expect(
+      fs.readFileSync(path.join(CORE, 'ios/RNSpeech.mm'), 'utf8'),
+    ).not.toMatch(ownQueue);
+    expect(mm).toMatch(
+      /\+ \(BOOL\)requiresMainQueueSetup\s*\{\s*return NO;\s*\}/,
+    );
+  });
+
+  it('playBuffer checks the core output before taking the buffer', () => {
+    const mm = read('ios/RNSpeechPhononModule.mm');
+    const body = mm.slice(mm.indexOf('- (void)playBuffer:'));
+    expect(body.indexOf('[RNSpeechAudioOutput shared]')).toBeGreaterThan(0);
+    expect(body.indexOf('[RNSpeechAudioOutput shared]')).toBeLessThan(
+      body.indexOf('takeBuffer:'),
+    );
+  });
+});
+
+describe('jest mock', () => {
+  const mock = require('../../jest/index.js');
+  const real = require('../index');
+
+  /** Public instance and static members declared on the real PhononEngine. */
+  function publicMembers(): {instance: string[]; statics: string[]} {
+    const ts = require('typescript');
+    const file = path.join(ROOT, 'src/PhononEngine.ts');
+    const sf = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, 'utf8'),
+      ts.ScriptTarget.Latest,
+    );
+    const instance: string[] = [];
+    const statics: string[] = [];
+    ts.forEachChild(sf, (node: any) => {
+      if (!ts.isClassDeclaration(node) || node.name?.text !== 'PhononEngine') {
+        return;
+      }
+      for (const m of node.members) {
+        if (!m.name || ts.isConstructorDeclaration(m)) {
+          continue;
+        }
+        const kinds = (ts.getModifiers?.(m) ?? []).map((x: any) => x.kind);
+        if (
+          kinds.includes(ts.SyntaxKind.PrivateKeyword) ||
+          kinds.includes(ts.SyntaxKind.ProtectedKeyword) ||
+          ts.isPrivateIdentifier(m.name)
+        ) {
+          continue;
+        }
+        const list = kinds.includes(ts.SyntaxKind.StaticKeyword)
+          ? statics
+          : instance;
+        list.push(m.name.text);
+      }
+    });
+    return {instance, statics};
+  }
+
+  it('reports Phonon as not compiled', async () => {
     expect(mock.PHONON).toBe('phonon');
     await expect(new mock.PhononEngine().getSupport()).resolves.toMatchObject({
       supported: false,
       reason: 'not-compiled',
     });
+    await expect(mock.PhononEngine.getDiagnostics()).resolves.toEqual(
+      require('../NativePhonon').NOT_COMPILED_DIAGNOSTICS,
+    );
+  });
+
+  it('exports everything the package exports', () => {
+    const missing = Object.keys(real).filter(k => !(k in mock));
+    expect(missing).toEqual([]);
+    expect(mock.PHONON_CONSTANTS).toEqual(real.PHONON_CONSTANTS);
+    expect(mock.PHONON_LANGUAGES).toEqual(real.PHONON_LANGUAGES);
+  });
+
+  it('mocks every public PhononEngine member', () => {
+    const {instance, statics} = publicMembers();
+    expect(instance).toEqual(
+      expect.arrayContaining(['synthesizeStream', 'getLoadInfo', 'stop']),
+    );
+    const engine = new mock.PhononEngine();
+    expect(instance.filter(k => !(k in engine))).toEqual([]);
+    expect(statics.filter(k => !(k in mock.PhononEngine))).toEqual([]);
+    const handle = engine.synthesizeStream();
+    expect(Object.keys(handle).sort()).toEqual([
+      'append',
+      'cancel',
+      'finalize',
+    ]);
+  });
+
+  it('errors match the real ones', () => {
+    for (const args of [['not-compiled'], ['os-too-old', 'iOS 17.0']]) {
+      const m = new mock.PhononUnsupportedError(...args);
+      const r = new real.PhononUnsupportedError(...args);
+      expect([m.message, m.code, m.reason, m.detail, m.name]).toEqual([
+        r.message,
+        r.code,
+        r.reason,
+        r.detail,
+        r.name,
+      ]);
+    }
+    for (const e of [
+      Object.assign(new Error('x'), {code: 'PHONON_VOICE_NOT_FOUND'}),
+      {code: 'PHONON_NOPE'},
+      'plain',
+    ]) {
+      const m = mock.toPhononError(e);
+      const r = real.toPhononError(e);
+      expect([m.code, m.message, m.nativeCode]).toEqual([
+        r.code,
+        r.message,
+        r.nativeCode,
+      ]);
+      expect(m).toBeInstanceOf(mock.PhononError);
+    }
+  });
+
+  it('helpers match the real ones', () => {
+    const jsonl = [
+      '{"name":"Alba","voice_id":"v1","language":"en","gender":"f"}',
+      'not json',
+      '',
+      '{"name":"Émile","description":"warm"}',
+      '{"filename":"x"}',
+    ].join('\n');
+    expect(mock.parseVoicesJsonl(jsonl)).toEqual(real.parseVoicesJsonl(jsonl));
+    const catalog = real.parseVoicesJsonl(jsonl);
+    const ids = ['alba', 'emile', 'v1', 'other'];
+    expect(mock.buildVoices(ids, catalog, 'fr')).toEqual(
+      real.buildVoices(ids, catalog, 'fr'),
+    );
+    for (const l of ['en-US', 'PT_br', ' de ', '']) {
+      expect(mock.normalizePhononLanguage(l)).toBe(
+        real.normalizePhononLanguage(l),
+      );
+    }
   });
 });
