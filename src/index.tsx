@@ -30,13 +30,15 @@
  * scenarios such as multi-engine orchestration, custom pipelines, or
  * integrating an engine without going through the unified `Speech` API.
  *
- * These exports are tagged `@internal` — they are part of the public
- * surface but their shape may change between minor releases. Pin the
- * library version if you depend on them.
+ * The engine classes and `engineManager` are `@internal`: their shape
+ * may change between minor releases. Building blocks for engine add-ons
+ * live in the experimental `@pocketpalai/react-native-speech/engine-sdk`
+ * subpath; see docs/USAGE.md "Engine add-on API".
  */
 
 // Export Speech API as default
 export {default} from './Speech';
+export type {SpeechInitConfig, CustomEngineConfigs} from './Speech';
 
 // Export types from native API
 export type {
@@ -57,6 +59,8 @@ export {isPhonemeInput} from './types';
 // Export engine types
 export type {
   TTSEngineInterface,
+  EngineId,
+  EngineSupport,
   EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
@@ -69,6 +73,8 @@ export type {
   SpeechStreamOptions,
   StreamProgressEvent,
   FirstChunkMode,
+  ReleaseResult,
+  ReleaseError,
 } from './types';
 
 // Export Kokoro types
@@ -126,11 +132,6 @@ export type {
   MarkdownStreamBuffer,
   StripMarkdownOptions,
 } from './utils/stripMarkdown';
-
-// Export engines for advanced usage.
-// These are part of the public API but their shape is not covered by
-// the same semver guarantees as the default `Speech` API — see the
-// header comment above.
 
 /** @internal Advanced: low-level engine registry. */
 export {engineManager} from './engines/EngineManager';

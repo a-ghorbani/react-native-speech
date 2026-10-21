@@ -2,8 +2,49 @@
 
 ## Unreleased
 
+### Added
+
+- **Engine add-ons.** `Speech.registerEngine(engine)` makes an engine
+  from another package available to `Speech.initialize({engine: id})`;
+  `Speech` dispatches every call through the registry, and the built-in
+  engines register themselves, so existing apps see no change. Add-ons
+  type their init config by extending `CustomEngineConfigs`, and import
+  the building blocks they need (`EngineStreamSession`,
+  `neuralAudioPlayer`, `TextChunker`, ...) from the new
+  `@pocketpalai/react-native-speech/engine-sdk` subpath. Native
+  add-ons play PCM on the shared neural player through
+  `NeuralPcmSink` (Android) and `RNSpeechAudioOutput` (iOS). See
+  [docs/USAGE.md](docs/USAGE.md#engine-add-ons).
+- **`Speech.getEngineSupport(engine)` / `Speech.resetEngineSupport(engine)`**:
+  never throw; report whether an engine can run on this build and
+  device (built-ins always can; add-ons answer through the new optional
+  `TTSEngineInterface.getSupport()` / `resetSupport()`).
+- **`Speech.getCurrentEngineId()` / `Speech.getAvailableEngineIds()`**
+  return `EngineId`s, add-ons included. `getCurrentEngine()` /
+  `getAvailableEngines()` are deprecated (typed `TTSEngine`; to be
+  removed or retyped in 3.0).
+- **Experimental engine SDK**: the `engine-sdk` subpath,
+  `NeuralPcmSink` (Android) and `RNSpeechAudioOutput.h` (iOS) may change
+  in a minor release until a second add-on exists; add-ons should pin a
+  tilde range (`~2.7.0`). See
+  [docs/USAGE.md](docs/USAGE.md#engine-add-on-api).
+
 ### Fixed
 
+- **A rejected `Speech.initialize()` no longer switches the current
+  engine.** The previous engine stays current when the new one fails to
+  initialize (all engines).
+- **Android: neural playback promises settle on stop and replace.** A
+  `playAudio` promise now resolves when its track is stopped or
+  replaced, as on iOS, instead of never settling.
+- **Android: `Speech.setEngine()` no longer shuts down the neural audio
+  executor** (later neural playback failed).
+- **`Speech.stop()` / `pause()` reach overlapping neural playback.** A
+  replaced playback settling no longer marks the player idle while the
+  newer one is still playing.
+- **Multi-channel neural PCM plays correctly.** Android fired `onFinish`
+  only for mono tracks, and iOS played interleaved stereo at double
+  length in one channel.
 - **CamelCase / PascalCase tokens are split before phonemization.**
   `PrismML` → `Prism ML`, `XMLParser` → `XML Parser`, `iOS` → `i OS`.
   Conservative two-rule splitter — `iPhone`, `McDonald`, `JavaScript`,

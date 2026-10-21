@@ -1,0 +1,6 @@
+{
+  "source": "../src/engine-sdk.ts",
+  "main": "../lib/module/engine-sdk.js",
+  "module": "../lib/module/engine-sdk.js",
+  "types": "../lib/typescript/src/engine-sdk.d.ts"
+}

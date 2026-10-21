@@ -15,7 +15,7 @@ Pod::Spec.new do |s|
 
   # Our module sources (iOS Obj-C++ + shared C++ core in cpp/)
   s.source_files = ["ios/**/*.{h,m,mm,cpp}", "cpp/**/*.{h,cpp}"]
-  s.public_header_files = ["ios/NativeDictWrapper.h"]
+  s.public_header_files = ["ios/NativeDictWrapper.h", "ios/RNSpeechAudioOutput.h"]
   # cpp/tests holds host-only harnesses with their own main().
   s.exclude_files = ["ios/generated/**/*", "cpp/tests/**/*"]
 

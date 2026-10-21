@@ -38,6 +38,16 @@ export enum TTSEngine {
   KITTEN = 'kitten',
 }
 
+/** A built-in engine id, or the id an engine add-on registers under. */
+export type EngineId = TTSEngine | (string & {});
+
+/** Result of `Speech.getEngineSupport`; `reason` is `'ok'` when supported. */
+export interface EngineSupport {
+  supported: boolean;
+  reason: string;
+  detail?: string;
+}
+
 export interface EngineStatus {
   /** Whether the engine is initialized and ready to use */
   isReady: boolean;
@@ -212,7 +222,7 @@ export interface EngineStreamHandle {
 
 export interface TTSEngineInterface<TConfig = void> {
   /** Unique engine identifier */
-  readonly name: TTSEngine;
+  readonly name: EngineId;
 
   /**
    * Initialize the engine.
@@ -253,7 +263,10 @@ export interface TTSEngineInterface<TConfig = void> {
   /** Stop any ongoing synthesis */
   stop(): Promise<void>;
 
-  /** Clean up engine resources */
+  /**
+   * Clean up engine resources. Must tolerate an engine whose initialize()
+   * never completed or failed: a retry after a failed init calls destroy().
+   */
   destroy(): Promise<void>;
 
   /**
@@ -271,6 +284,22 @@ export interface TTSEngineInterface<TConfig = void> {
    * await engine.initialize(config);
    */
   release(): Promise<ReleaseResult>;
+
+  /**
+   * Whether the engine can run on this build and device. Optional:
+   * engines without it are always supported. Must not throw or load
+   * the model.
+   */
+  getSupport?(): Promise<EngineSupport>;
+
+  /** Optional: forget a persisted negative `getSupport` result. */
+  resetSupport?(): Promise<boolean>;
+
+  /** Optional: receives Speech's chunk-progress dispatcher at initialize. */
+  setChunkProgressCallback?(callback: ChunkProgressCallback | null): void;
+
+  /** Optional: enables `Speech.getVoicesWithMetadata` for this engine. */
+  getVoicesWithMetadata?(language?: string): unknown[] | Promise<unknown[]>;
 }
 
 export interface ProgressEvent {

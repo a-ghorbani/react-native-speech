@@ -6,6 +6,7 @@
  * - Kokoro (Neural TTS - high quality, multi-language)
  * - Supertonic (Neural TTS - ultra-fast, lightweight)
  * - Kitten (Neural TTS - lightweight StyleTTS 2, English)
+ * - Engine add-ons registered with `Speech.registerEngine`
  *
  * @example
  * // Initialize with Kokoro
@@ -23,6 +24,10 @@ import TurboSpeech from './NativeSpeech';
 import type {VoiceProps, VoiceOptions, EngineProps} from './NativeSpeech';
 import {TTSEngine} from './types';
 import type {
+  EngineId,
+  EngineStreamHandle,
+  EngineSupport,
+  TTSEngineInterface,
   KokoroConfig,
   KokoroVoice,
   SupertonicConfig,
@@ -50,14 +55,51 @@ import {createComponentLogger} from './utils/logger';
 
 const log = createComponentLogger('Speech', 'Api');
 
-// Initialize OS engine
-const osEngine = new OSEngine();
-engineManager.registerEngine(osEngine);
+type AnyEngine = TTSEngineInterface<any>;
 
-// Neural engines will be lazy-loaded
-let kokoroEngine: KokoroEngine | null = null;
-let supertonicEngine: SupertonicEngine | null = null;
-let kittenEngine: KittenEngine | null = null;
+engineManager.registerEngine(new OSEngine());
+
+// Built-in neural engines are constructed on their first initialize().
+const builtinFactories: Record<string, () => AnyEngine> = {
+  [TTSEngine.KOKORO]: () => new KokoroEngine(),
+  [TTSEngine.SUPERTONIC]: () => new SupertonicEngine(),
+  [TTSEngine.KITTEN]: () => new KittenEngine(),
+};
+const builtinDisplayNames: Record<string, string> = {
+  [TTSEngine.KOKORO]: 'Kokoro',
+  [TTSEngine.SUPERTONIC]: 'Supertonic',
+  [TTSEngine.KITTEN]: 'Kitten',
+};
+const builtinIds = new Set<string>(Object.values(TTSEngine));
+
+// Instances Speech has initialized before: a later initialize() goes
+// through reinitializeEngine so new config (e.g. execution providers) applies.
+const initializeAttempted = new WeakSet<AnyEngine>();
+
+// Bumped by every initialize(); only the latest call may switch the engine.
+let initGeneration = 0;
+
+function registeredEngine(id: EngineId): AnyEngine | undefined {
+  return engineManager.hasEngine(id) ? engineManager.getEngine(id) : undefined;
+}
+
+function neuralEngine(id: EngineId): AnyEngine | undefined {
+  return id === TTSEngine.OS_NATIVE ? undefined : registeredEngine(id);
+}
+
+function resolveEngine(id: EngineId): AnyEngine | undefined {
+  const existing = registeredEngine(id);
+  if (existing) {
+    return existing;
+  }
+  const factory = builtinFactories[id];
+  if (!factory) {
+    return undefined;
+  }
+  const created = factory();
+  engineManager.registerEngine(created);
+  return created;
+}
 
 // Engines get `dispatchChunkProgress` at init; it fans out to the
 // `setChunkProgressCallback` slot and every `onChunkProgress` subscription.
@@ -100,7 +142,27 @@ export type SpeechInitConfig =
   | ({engine: TTSEngine.KOKORO} & KokoroConfig & SpeechInitAudioDefaults)
   | ({engine: TTSEngine.SUPERTONIC} & SupertonicConfig &
       SpeechInitAudioDefaults)
-  | ({engine: TTSEngine.KITTEN} & KittenConfig & SpeechInitAudioDefaults);
+  | ({engine: TTSEngine.KITTEN} & KittenConfig & SpeechInitAudioDefaults)
+  | CustomEngineInitConfig;
+
+/**
+ * Init configs of engine add-ons, keyed by engine id. Add-ons extend it
+ * by declaration merging, which adds `{engine: id, ...config}` to
+ * `SpeechInitConfig`:
+ *
+ * @example
+ * declare module '@pocketpalai/react-native-speech' {
+ *   interface CustomEngineConfigs {
+ *     'my-engine': MyEngineConfig;
+ *   }
+ * }
+ */
+export interface CustomEngineConfigs {}
+
+type CustomEngineInitConfig = {
+  [K in keyof CustomEngineConfigs]: {engine: K} & CustomEngineConfigs[K] &
+    SpeechInitAudioDefaults;
+}[keyof CustomEngineConfigs];
 
 export default class Speech {
   /**
@@ -110,10 +172,44 @@ export default class Speech {
     TurboSpeech.getConstants().maxInputLength ?? Number.MAX_VALUE;
 
   // Track current engine
-  private static currentEngine: TTSEngine = 'os-native' as TTSEngine;
+  private static currentEngine: EngineId = TTSEngine.OS_NATIVE;
 
   /**
-   * Initialize Speech with a specific engine
+   * Make an engine add-on available to `Speech.initialize({engine: id})`,
+   * where `id` is `engine.name`. Registering the same instance again is a
+   * no-op; a different instance may replace one that has never been
+   * initialized (`release()` does not lift this).
+   * @throws if `engine.name` is a built-in engine id, or another instance
+   *   under that id has been initialized
+   * @example
+   * Speech.registerEngine(new MyEngine());
+   * await Speech.initialize({engine: 'my-engine', modelPath: '...'});
+   */
+  public static registerEngine<TConfig>(
+    engine: TTSEngineInterface<TConfig>,
+  ): void {
+    const id = engine.name;
+    if (typeof id !== 'string' || id.length === 0) {
+      throw new Error('Engine name must be a non-empty string');
+    }
+    if (builtinIds.has(id)) {
+      throw new Error(`Engine id '${id}' is reserved for a built-in engine`);
+    }
+    const existing = registeredEngine(id);
+    if (existing === engine) {
+      return;
+    }
+    if (existing && engineManager.isEngineInitialized(id)) {
+      throw new Error(`Engine '${id}' is already registered and initialized`);
+    }
+    engineManager.registerEngine(engine);
+  }
+
+  /**
+   * Initialize Speech with a specific engine. The current engine switches
+   * only when the latest call succeeds: a call superseded by a later
+   * `initialize()` (started before this one finished) still resolves, but
+   * does not switch the engine.
    * @param config - Configuration object with engine and engine-specific settings
    * @example
    * // Initialize with Kokoro
@@ -133,74 +229,79 @@ export default class Speech {
     const {engine, ...engineConfig} = config;
 
     log.info(`Initializing engine: ${engine}`);
-    // Store current engine
+
+    const instance = resolveEngine(engine);
+    if (!instance) {
+      throw new Error(`Unknown engine: ${engine}`);
+    }
+    const gen = ++initGeneration;
+    const options = engine === TTSEngine.OS_NATIVE ? undefined : engineConfig;
+    if (initializeAttempted.has(instance) && engine !== TTSEngine.OS_NATIVE) {
+      await engineManager.reinitializeEngine(engine, options);
+    } else {
+      initializeAttempted.add(instance);
+      await engineManager.initializeEngine(engine, options);
+    }
+    instance.setChunkProgressCallback?.(dispatchChunkProgress);
+    if (gen !== initGeneration) {
+      log.debug(`initialize(${engine}) superseded by a later call`);
+      return;
+    }
+    engineManager.setDefaultEngine(engine);
     Speech.currentEngine = engine;
     log.debug(`currentEngine set to: ${Speech.currentEngine}`);
+  }
 
-    // Initialize the specific engine
-    if (engine === 'kokoro') {
-      if (!kokoroEngine) {
-        kokoroEngine = new KokoroEngine();
-        engineManager.registerEngine(kokoroEngine);
-        // First time: use regular initialization
-        await engineManager.initializeEngine(
-          engine,
-          engineConfig as KokoroConfig,
-        );
-      } else {
-        // Already initialized: force re-initialization to apply new config
-        // This is important when switching execution providers (gpu/ane/cpu)
-        await engineManager.reinitializeEngine(
-          engine,
-          engineConfig as KokoroConfig,
-        );
+  /**
+   * Whether an engine can run on this build and device. Never throws and
+   * never loads a model: built-in engines report `{supported: true,
+   * reason: 'ok'}`, registered add-ons answer through their `getSupport()`,
+   * and unregistered ids report `reason: 'unknown-engine'`.
+   *
+   * @example
+   * const {supported, reason} = await Speech.getEngineSupport('my-engine');
+   * if (!supported) console.log(`my-engine hidden: ${reason}`);
+   */
+  public static async getEngineSupport(
+    engine: EngineId,
+  ): Promise<EngineSupport> {
+    try {
+      const instance = registeredEngine(engine);
+      if (instance?.getSupport) {
+        const {supported, reason, detail} = await instance.getSupport();
+        return detail === undefined
+          ? {supported, reason}
+          : {supported, reason, detail};
       }
-      engineManager.setDefaultEngine(engine);
-
-      kokoroEngine.setChunkProgressCallback(dispatchChunkProgress);
-    } else if (engine === 'supertonic') {
-      if (!supertonicEngine) {
-        supertonicEngine = new SupertonicEngine();
-        engineManager.registerEngine(supertonicEngine);
-        // First time: use regular initialization
-        await engineManager.initializeEngine(
-          engine,
-          engineConfig as SupertonicConfig,
-        );
-      } else {
-        // Already initialized: force re-initialization to apply new config
-        // This is important when switching execution providers (gpu/ane/cpu)
-        await engineManager.reinitializeEngine(
-          engine,
-          engineConfig as SupertonicConfig,
-        );
+      if (instance || builtinIds.has(engine)) {
+        return {supported: true, reason: 'ok'};
       }
-      engineManager.setDefaultEngine(engine);
+      return {
+        supported: false,
+        reason: 'unknown-engine',
+        detail: String(engine),
+      };
+    } catch (e) {
+      return {
+        supported: false,
+        reason: 'error',
+        detail: e instanceof Error ? e.message : String(e),
+      };
+    }
+  }
 
-      supertonicEngine.setChunkProgressCallback(dispatchChunkProgress);
-    } else if (engine === 'kitten') {
-      if (!kittenEngine) {
-        kittenEngine = new KittenEngine();
-        engineManager.registerEngine(kittenEngine);
-        await engineManager.initializeEngine(
-          engine,
-          engineConfig as KittenConfig,
-        );
-      } else {
-        await engineManager.reinitializeEngine(
-          engine,
-          engineConfig as KittenConfig,
-        );
-      }
-      engineManager.setDefaultEngine(engine);
-
-      kittenEngine.setChunkProgressCallback(dispatchChunkProgress);
-    } else if (engine === 'os-native') {
-      // OS engine is already initialized
-      await engineManager.initializeEngine(engine);
-      engineManager.setDefaultEngine(engine);
-    } else {
-      throw new Error(`Unknown engine: ${engine}`);
+  /**
+   * Forget an engine's persisted negative support result, so the next
+   * `getEngineSupport` / `initialize` probes again. Resolves `true` for
+   * engines that persist none, and `false` (never throws) if the record
+   * could not be cleared.
+   */
+  public static async resetEngineSupport(engine: EngineId): Promise<boolean> {
+    try {
+      return (await registeredEngine(engine)?.resetSupport?.()) ?? true;
+    } catch (e) {
+      log.warn(`resetEngineSupport(${engine}) failed:`, e);
+      return false;
     }
   }
 
@@ -282,24 +383,15 @@ export default class Speech {
     // expose synthesizeStream(), which eliminates cross-batch gaps by
     // keeping the pipelined synth+play loop alive for the stream's
     // lifetime. OS engine doesn't — fall back to the adaptive batcher.
-    const engine = Speech.currentEngine;
+    const instance = neuralEngine(Speech.currentEngine);
     let engineStreamFactory:
-      | ((opts?: SpeechStreamOptions) => import('./types').EngineStreamHandle)
+      | ((opts?: SpeechStreamOptions) => EngineStreamHandle)
       | undefined;
 
     const streamVoiceOpt = voiceId ? {voiceId} : {};
-    if (engine === 'kokoro' && kokoroEngine) {
+    if (instance?.synthesizeStream) {
       engineStreamFactory = opts =>
-        kokoroEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
-    } else if (engine === 'supertonic' && supertonicEngine) {
-      engineStreamFactory = opts =>
-        supertonicEngine!.synthesizeStream({
-          ...streamVoiceOpt,
-          ...opts,
-        } as any);
-    } else if (engine === 'kitten' && kittenEngine) {
-      engineStreamFactory = opts =>
-        kittenEngine!.synthesizeStream({...streamVoiceOpt, ...opts} as any);
+        instance.synthesizeStream!({...streamVoiceOpt, ...opts});
     }
 
     return new SpeechStreamImpl({
@@ -336,34 +428,31 @@ export default class Speech {
    * @param language - Optional language filter
    * @returns Array of voice objects with metadata
    */
-  public static async getVoicesWithMetadata(
-    language?: string,
-  ): Promise<KokoroVoice[] | SupertonicVoice[] | KittenVoice[]> {
+  public static async getVoicesWithMetadata<
+    T = KokoroVoice[] | SupertonicVoice[] | KittenVoice[],
+  >(language?: string): Promise<T> {
     const engine = Speech.currentEngine;
+    const instance = neuralEngine(engine);
     log.debug(
-      `getVoicesWithMetadata currentEngine: ${engine}, kokoroEngine: ${!!kokoroEngine}, supertonicEngine: ${!!supertonicEngine}, kittenEngine: ${!!kittenEngine}`,
+      `getVoicesWithMetadata currentEngine: ${engine}, registered: ${!!instance}`,
     );
 
-    if (engine === 'kokoro') {
-      if (!kokoroEngine) {
-        throw new Error('Kokoro engine not initialized');
-      }
-      return kokoroEngine.getVoicesWithMetadata(language);
-    } else if (engine === 'supertonic') {
-      if (!supertonicEngine) {
-        throw new Error('Supertonic engine not initialized');
-      }
-      return supertonicEngine.getVoicesWithMetadata(language);
-    } else if (engine === 'kitten') {
-      if (!kittenEngine) {
-        throw new Error('Kitten engine not initialized');
-      }
-      return kittenEngine.getVoicesWithMetadata();
-    } else {
+    if (engine !== TTSEngine.OS_NATIVE && !instance) {
+      throw new Error(
+        `${builtinDisplayNames[engine] ?? engine} engine not initialized`,
+      );
+    }
+    if (!instance) {
       throw new Error(
         'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten)',
       );
     }
+    if (!instance.getVoicesWithMetadata) {
+      throw new Error(
+        `Engine '${engine}' does not provide getVoicesWithMetadata()`,
+      );
+    }
+    return (await instance.getVoicesWithMetadata(language)) as T;
   }
 
   /**
@@ -381,17 +470,41 @@ export default class Speech {
   }
 
   /**
-   * Get the current engine name
+   * @deprecated Use `getCurrentEngineId()`; this returns an add-on's id
+   * typed as `TTSEngine`. To be removed or retyped in 3.0.
    */
   public static getCurrentEngine(): TTSEngine {
+    return Speech.currentEngine as TTSEngine;
+  }
+
+  /**
+   * @deprecated Use `getAvailableEngineIds()`; this lists only engines
+   * constructed so far, typed as `TTSEngine[]`. To be removed or retyped
+   * in 3.0.
+   */
+  public static getAvailableEngines(): TTSEngine[] {
+    return engineManager.getAvailableEngines() as TTSEngine[];
+  }
+
+  /**
+   * Id of the current engine. It changes only once the latest `initialize()`
+   * call resolves.
+   */
+  public static getCurrentEngineId(): EngineId {
     return Speech.currentEngine;
   }
 
   /**
-   * Get list of available engines
+   * Ids accepted by `initialize()`: every built-in engine, then registered
+   * add-ons in registration order.
    */
-  public static getAvailableEngines(): TTSEngine[] {
-    return engineManager.getAvailableEngines();
+  public static getAvailableEngineIds(): EngineId[] {
+    return Array.from(
+      new Set<EngineId>([
+        ...builtinIds,
+        ...engineManager.getAvailableEngines(),
+      ]),
+    );
   }
 
   // ============================================================
@@ -495,14 +608,11 @@ export default class Speech {
   public static async stop(): Promise<void> {
     const engine = Speech.currentEngine;
 
-    // Set stop flag synchronously — takes effect in synthesis loop immediately
-    if (engine === 'kokoro' && kokoroEngine) {
-      kokoroEngine.stop();
-    } else if (engine === 'supertonic' && supertonicEngine) {
-      supertonicEngine.stop();
-    } else if (engine === 'kitten' && kittenEngine) {
-      kittenEngine.stop();
-    }
+    // Set stop flag synchronously — takes effect in synthesis loop immediately.
+    // The executor also absorbs an add-on stop() that throws or returns no promise.
+    new Promise<void>(resolve => resolve(neuralEngine(engine)?.stop())).catch(
+      err => log.warn(`${engine} stop failed:`, err),
+    );
 
     // Fire native stops (OS TTS stop is always safe to call)
     await TurboSpeech.stop();
@@ -538,12 +648,9 @@ export default class Speech {
 
     log.info(`Releasing engine: ${engine}`);
 
-    if (engine === 'kokoro' && kokoroEngine) {
-      return kokoroEngine.release();
-    } else if (engine === 'supertonic' && supertonicEngine) {
-      return supertonicEngine.release();
-    } else if (engine === 'kitten' && kittenEngine) {
-      return kittenEngine.release();
+    const instance = neuralEngine(engine);
+    if (instance) {
+      return instance.release();
     }
 
     // OS engine doesn't need releasing
@@ -556,13 +663,7 @@ export default class Speech {
    * For OS native engine, pauses the system synthesizer.
    */
   public static async pause(): Promise<boolean> {
-    const engine = Speech.currentEngine;
-
-    if (
-      (engine === 'kokoro' && kokoroEngine) ||
-      (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'kitten' && kittenEngine)
-    ) {
+    if (neuralEngine(Speech.currentEngine)) {
       return neuralAudioPlayer.pause();
     }
 
@@ -575,13 +676,7 @@ export default class Speech {
    * For OS native engine, resumes the system synthesizer.
    */
   public static async resume(): Promise<boolean> {
-    const engine = Speech.currentEngine;
-
-    if (
-      (engine === 'kokoro' && kokoroEngine) ||
-      (engine === 'supertonic' && supertonicEngine) ||
-      (engine === 'kitten' && kittenEngine)
-    ) {
+    if (neuralEngine(Speech.currentEngine)) {
       return neuralAudioPlayer.resume();
     }
 
@@ -618,6 +713,8 @@ export default class Speech {
 // Re-export types
 export type {
   TTSEngine,
+  EngineId,
+  EngineSupport,
   KokoroVoice,
   KokoroConfig,
   SupertonicVoice,

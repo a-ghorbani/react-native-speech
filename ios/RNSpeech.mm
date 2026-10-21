@@ -2,6 +2,7 @@
 #import "RNSpeechTrace.h"
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
+#import "RNSpeechAudioOutput+Internal.h"
 
 using namespace JS::NativeSpeech;
 
@@ -9,6 +10,8 @@ using namespace JS::NativeSpeech;
 {
   BOOL isDucking;
   NSDictionary *defaultOptions;
+  // Bumped by cleanupAudio; completion handlers of older buffers then only resolve.
+  NSUInteger _playbackGeneration;
 }
 
 RCT_EXPORT_MODULE();
@@ -58,6 +61,8 @@ RCT_EXPORT_MODULE();
 
     // Initialize trace instrumentation (no-op if RN_SPEECH_TRACE is not defined)
     RNSpeechTraceInit();
+
+    [RNSpeechAudioOutput attach:self];
 
     // Setup audio session interruption handling
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -446,6 +451,7 @@ RCT_EXPORT_MODULE();
 }
 
 - (void)cleanupAudio {
+  _playbackGeneration++;
   if (_audioEngine.isRunning) {
     [_audioEngine stop];
   }
@@ -485,6 +491,10 @@ RCT_EXPORT_MODULE();
     RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playAudio",
         [NSString stringWithFormat:@"sampleRate=%f channels=%ld", sampleRate, (long)channels]);
     @try {
+      if (![self ensureSupportedChannels:channels traceHandle:traceHandle traceName:"playAudio" reject:reject]) {
+        return;
+      }
+
       // Stop any current playback
       [self cleanupAudio];
 
@@ -494,93 +504,202 @@ RCT_EXPORT_MODULE();
       // Decode base64 audio data
       NSData *decodedData = [[NSData alloc] initWithBase64EncodedString:audioData options:0];
       if (!decodedData) {
-        reject(@"audio_error", @"Failed to decode base64 audio data", nil);
+        [self abandonPlaybackWithTraceHandle:traceHandle
+                                   traceName:"playAudio"
+                                     resolve:resolve
+                                      reject:reject
+                                     message:@"Failed to decode base64 audio data"
+                                       error:nil];
         return;
       }
 
-      // Convert Int16 PCM to Float32 for AVAudioEngine
-      const int16_t *int16Samples = (const int16_t *)decodedData.bytes;
-      NSUInteger sampleCount = decodedData.length / sizeof(int16_t);
-
-      float *float32Samples = (float *)malloc(sampleCount * sizeof(float));
-      if (!float32Samples) {
-        reject(@"audio_error", @"Failed to allocate memory for audio conversion", nil);
-        return;
-      }
-
-      // Convert Int16 to Float32 (normalize to -1.0 to 1.0)
-      for (NSUInteger i = 0; i < sampleCount; i++) {
-        float32Samples[i] = int16Samples[i] / 32768.0f;
-      }
-
-      // Create audio format
-      AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
-                                                                                   channels:(AVAudioChannelCount)channels];
-
-      // Create audio buffer
-      AVAudioPCMBuffer *pcmBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
-                                                                   frameCapacity:(AVAudioFrameCount)sampleCount];
-      pcmBuffer.frameLength = (AVAudioFrameCount)sampleCount;
-
-      // Copy samples to buffer
-      memcpy(pcmBuffer.floatChannelData[0], float32Samples, sampleCount * sizeof(float));
-      free(float32Samples);
-
-      // Configure audio session
-      self->_isAudioDucking = ducking;
-
-      [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
-
-      // Connect player node to engine output
-      [self->_audioEngine connect:self->_playerNode
-                               to:self->_audioEngine.mainMixerNode
-                           format:audioFormat];
-
-      // Start audio engine
-      NSError *error = nil;
-      if (!self->_audioEngine.isRunning) {
-        [self->_audioEngine startAndReturnError:&error];
-        if (error) {
-          reject(@"audio_error", [NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
-          return;
-        }
-      }
-
-      self->_isAudioPlaying = YES;
-      self->_isAudioPaused = NO;
-
-      // Emit onStart event
-      [self emitOnStart:[self getAudioEventData]];
-
-      // Schedule buffer for playback
-      // We need to resolve the promise when playback completes, not when it starts
-      // This allows sequential chunk playback to work correctly
-      __weak RNSpeech *weakSelf = self;
-      [self->_playerNode scheduleBuffer:pcmBuffer
-                         atTime:nil
-                        options:AVAudioPlayerNodeBufferInterrupts
-              completionHandler:^{
-        RNSpeech *strongSelf = weakSelf;
-        if (strongSelf) {
-          dispatch_async(strongSelf->_audioQueue, ^{
-            strongSelf->_isAudioPlaying = NO;
-            [strongSelf deactivateAudioSession];
-            RNSpeechTraceEnd(traceHandle, "playAudio");
-            [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
-            // Resolve promise when playback is complete
-            resolve(nil);
-          });
+      [self playOnAudioQueueWithSampleCount:decodedData.length / sizeof(int16_t)
+                                 sampleRate:sampleRate
+                                   channels:channels
+                                    ducking:ducking
+                                 silentMode:silentMode
+                                traceHandle:traceHandle
+                                  traceName:"playAudio"
+                                    resolve:resolve
+                                     reject:reject
+                                       fill:^(float *const *dst, NSUInteger frameCount, NSUInteger channelCount) {
+        const int16_t *int16Samples = (const int16_t *)decodedData.bytes;
+        for (NSUInteger ch = 0; ch < channelCount; ch++) {
+          for (NSUInteger f = 0; f < frameCount; f++) {
+            dst[ch][f] = int16Samples[f * channelCount + ch] / 32768.0f;
+          }
         }
       }];
-
-      // Start playback
-      [self->_playerNode play];
     }
     @catch (NSException *exception) {
       RNSpeechTraceEnd(traceHandle, "playAudio");
       reject(@"audio_error", exception.reason, nil);
     }
   });
+}
+
+- (void)playFloatSamples:(NSData *)samples
+              sampleRate:(double)sampleRate
+                channels:(NSInteger)channels
+                 ducking:(BOOL)ducking
+              silentMode:(NSString *)silentMode
+                 resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject {
+  dispatch_async(_audioQueue, ^{
+    RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playPcm",
+        [NSString stringWithFormat:@"samples=%lu", (unsigned long)(samples.length / sizeof(float))]);
+    @try {
+      if (![self ensureSupportedChannels:channels traceHandle:traceHandle traceName:"playPcm" reject:reject]) {
+        return;
+      }
+
+      [self cleanupAudio];
+
+      self->_currentAudioUtteranceId++;
+
+      [self playOnAudioQueueWithSampleCount:samples.length / sizeof(float)
+                                 sampleRate:sampleRate
+                                   channels:channels
+                                    ducking:ducking
+                                 silentMode:silentMode
+                                traceHandle:traceHandle
+                                  traceName:"playPcm"
+                                    resolve:resolve
+                                     reject:reject
+                                       fill:^(float *const *dst, NSUInteger frameCount, NSUInteger channelCount) {
+        const float *interleaved = (const float *)samples.bytes;
+        for (NSUInteger ch = 0; ch < channelCount; ch++) {
+          for (NSUInteger f = 0; f < frameCount; f++) {
+            dst[ch][f] = interleaved[f * channelCount + ch];
+          }
+        }
+      }];
+    }
+    @catch (NSException *exception) {
+      RNSpeechTraceEnd(traceHandle, "playPcm");
+      reject(@"audio_error", exception.reason, nil);
+    }
+  });
+}
+
+// Same rule as Android's pcmFrameBytes. Call before cleanupAudio so a rejection leaves current
+// playback alone.
+- (BOOL)ensureSupportedChannels:(NSInteger)channels
+                    traceHandle:(RNSpeechTraceHandle)traceHandle
+                      traceName:(const char *)traceName
+                         reject:(RCTPromiseRejectBlock)reject {
+  if (channels <= 2) {
+    return YES;
+  }
+  RNSpeechTraceEnd(traceHandle, traceName);
+  reject(@"audio_error", [NSString stringWithFormat:@"Unsupported channel count: %ld", (long)channels], nil);
+  return NO;
+}
+
+// Ends a playback that fails after cleanupAudio, which leaves the session active for the replacement.
+- (void)abandonPlaybackWithTraceHandle:(RNSpeechTraceHandle)traceHandle
+                             traceName:(const char *)traceName
+                               resolve:(RCTPromiseResolveBlock)resolve
+                                reject:(RCTPromiseRejectBlock)reject
+                               message:(NSString *)message
+                                 error:(NSError *)error {
+  [self deactivateAudioSession];
+  RNSpeechTraceEnd(traceHandle, traceName);
+  if (message) {
+    reject(@"audio_error", message, error);
+  } else {
+    resolve(nil);
+  }
+}
+
+// Runs on _audioQueue after the caller's cleanupAudio and utterance-id bump; `fill` deinterleaves into dst.
+// Resolves on completion, stop or replace, so chunks play back to back.
+- (void)playOnAudioQueueWithSampleCount:(NSUInteger)sampleCount
+                             sampleRate:(double)sampleRate
+                               channels:(NSInteger)channels
+                                ducking:(BOOL)ducking
+                             silentMode:(NSString *)silentMode
+                            traceHandle:(RNSpeechTraceHandle)traceHandle
+                              traceName:(const char *)traceName
+                                resolve:(RCTPromiseResolveBlock)resolve
+                                 reject:(RCTPromiseRejectBlock)reject
+                                   fill:(void (NS_NOESCAPE ^)(float *const *dst, NSUInteger frameCount, NSUInteger channelCount))fill {
+  NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
+  NSUInteger frameCount = sampleCount / channelCount;
+  void (^abandon)(NSString *, NSError *) = ^(NSString *message, NSError *error) {
+    [self abandonPlaybackWithTraceHandle:traceHandle
+                               traceName:traceName
+                                 resolve:resolve
+                                  reject:reject
+                                 message:message
+                                   error:error];
+  };
+  if (frameCount == 0) {
+    abandon(nil, nil);
+    return;
+  }
+
+  AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
+                                                                               channels:(AVAudioChannelCount)channelCount];
+
+  AVAudioPCMBuffer *pcmBuffer = audioFormat
+      ? [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
+                                      frameCapacity:(AVAudioFrameCount)frameCount]
+      : nil;
+  if (!pcmBuffer) {
+    abandon(@"Failed to create audio buffer", nil);
+    return;
+  }
+  pcmBuffer.frameLength = (AVAudioFrameCount)frameCount;
+  fill(pcmBuffer.floatChannelData, frameCount, channelCount);
+
+  self->_isAudioDucking = ducking;
+
+  [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
+
+  [self->_audioEngine connect:self->_playerNode
+                           to:self->_audioEngine.mainMixerNode
+                       format:audioFormat];
+
+  NSError *error = nil;
+  if (!self->_audioEngine.isRunning) {
+    [self->_audioEngine startAndReturnError:&error];
+    if (error) {
+      abandon([NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
+      return;
+    }
+  }
+
+  self->_isAudioPlaying = YES;
+  self->_isAudioPaused = NO;
+
+  [self emitOnStart:[self getAudioEventData]];
+
+  NSUInteger generation = self->_playbackGeneration;
+  __weak RNSpeech *weakSelf = self;
+  [self->_playerNode scheduleBuffer:pcmBuffer
+                     atTime:nil
+                    options:AVAudioPlayerNodeBufferInterrupts
+          completionHandler:^{
+    RNSpeech *strongSelf = weakSelf;
+    if (strongSelf) {
+      dispatch_async(strongSelf->_audioQueue, ^{
+        // Also fires when cleanupAudio stops the node; a newer playback or stop then owns the state.
+        if (strongSelf->_playbackGeneration != generation) {
+          RNSpeechTraceEnd(traceHandle, traceName);
+          resolve(nil);
+          return;
+        }
+        strongSelf->_isAudioPlaying = NO;
+        [strongSelf deactivateAudioSession];
+        RNSpeechTraceEnd(traceHandle, traceName);
+        [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
+        resolve(nil);
+      });
+    }
+  }];
+
+  [self->_playerNode play];
 }
 
 - (void)stopAudio:(RCTPromiseResolveBlock)resolve
