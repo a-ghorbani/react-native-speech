@@ -467,12 +467,13 @@ class PhononSessionTest {
   }
 
   @Test
-  fun emptyBufferResolvesAtOnce() {
+  fun emptyBufferGoesToPlayer() {
+    // The player resolves empty PCM itself.
     host.pcm = ByteArray(0)
     val s = FakeSettle()
-    var played = false
-    session.playBuffer(7, 1f, 24000, false, s) { _, _, _ -> played = true }
-    assertEquals(1, s.resolveCount)
-    assertFalse(played)
+    var played = -1
+    session.playBuffer(7, 1f, 24000, false, s) { pcm, _, _ -> played = pcm.size }
+    assertEquals(0, played)
+    assertFalse(s.settled)
   }
 }

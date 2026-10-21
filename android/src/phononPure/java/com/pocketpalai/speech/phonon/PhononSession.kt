@@ -185,10 +185,8 @@ class PhononSession(private val host: Host) {
   }
 
   /**
-   * Takes (consumes) the buffer as PCM16 scaled by [gain] and hands it to [play]
-   * (pcm, sampleRate, ducking), which owns [settle] from then on. The caller reads its config
-   * first, so nothing can throw between the take and [play]. An empty buffer resolves at once:
-   * a static AudioTrack with a 0 marker may never report completion.
+   * Consumes the buffer as PCM16 scaled by [gain] and hands it to [play], which owns [settle]
+   * from then on. The caller reads its config first, so nothing throws between take and play.
    */
   fun playBuffer(
     bufferId: Long,
@@ -201,10 +199,6 @@ class PhononSession(private val host: Host) {
     val pcm = if (host.shimLoaded()) host.takePcm16(bufferId, gain) else null
     if (pcm == null) {
       settle.reject(INVALID_BUFFER, "Unknown Phonon buffer $bufferId")
-      return
-    }
-    if (pcm.isEmpty()) {
-      settle.resolve(null)
       return
     }
     play(pcm, sampleRate, ducking)
