@@ -47,6 +47,10 @@ import Speech, {
   TTSEngine,
   onAudioInterruption,
   createMarkdownStreamBuffer,
+  isPhonemeInput,
+} from '../index';
+import * as root from '../index';
+import {
   EngineStreamSession,
   NeuralAudioPlayer,
   neuralAudioPlayer,
@@ -57,8 +61,8 @@ import Speech, {
   base64ToArrayBuffer,
   loadAssetAsText,
   createComponentLogger,
-  isPhonemeInput,
-} from '../index';
+} from '../engine-sdk';
+import * as engineSdk from '../engine-sdk';
 
 describe('public API surface', () => {
   it('exports a default Speech class', () => {
@@ -97,7 +101,11 @@ describe('public API surface', () => {
     expect(typeof Speech.getAvailableEngineIds).toBe('function');
   });
 
-  it('exports the building blocks engine add-ons import', () => {
+  it('exports isPhonemeInput', () => {
+    expect(typeof isPhonemeInput).toBe('function');
+  });
+
+  it('exports the add-on building blocks from engine-sdk only', () => {
     for (const value of [
       EngineStreamSession,
       NeuralAudioPlayer,
@@ -108,12 +116,14 @@ describe('public API surface', () => {
       base64ToArrayBuffer,
       loadAssetAsText,
       createComponentLogger,
-      isPhonemeInput,
     ]) {
       expect(typeof value).toBe('function');
     }
     expect(neuralAudioPlayer).toBeInstanceOf(NeuralAudioPlayer);
     expect(typeof neuralAudioPlayer.playNative).toBe('function');
+    for (const name of Object.keys(engineSdk)) {
+      expect(root).not.toHaveProperty(name);
+    }
   });
 
   it('exports TTSEngine enum/values', () => {

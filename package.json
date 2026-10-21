@@ -10,6 +10,7 @@
     "src",
     "lib",
     "jest",
+    "engine-sdk",
     "android",
     "ios",
     "cpp",

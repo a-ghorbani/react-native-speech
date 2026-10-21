@@ -10,7 +10,8 @@
   engines register themselves, so existing apps see no change. Add-ons
   type their init config by extending `CustomEngineConfigs`, and import
   the building blocks they need (`EngineStreamSession`,
-  `neuralAudioPlayer`, `TextChunker`, ...) from the package root. Native
+  `neuralAudioPlayer`, `TextChunker`, ...) from the new
+  `@pocketpalai/react-native-speech/engine-sdk` subpath. Native
   add-ons play PCM on the shared neural player through
   `NeuralPcmSink` (Android) and `RNSpeechAudioOutput` (iOS). See
   [docs/USAGE.md](docs/USAGE.md#engine-add-ons).
@@ -22,9 +23,10 @@
   return `EngineId`s, add-ons included. `getCurrentEngine()` /
   `getAvailableEngines()` are deprecated (typed `TTSEngine`; to be
   removed or retyped in 3.0).
-- **The engine add-on API is stable within 2.x**: the add-on building
-  blocks exported from the package root, `NeuralPcmSink` (Android) and
-  `RNSpeechAudioOutput.h` (iOS). See
+- **Experimental engine SDK**: the `engine-sdk` subpath,
+  `NeuralPcmSink` (Android) and `RNSpeechAudioOutput.h` (iOS) may change
+  in a minor release until a second add-on exists; add-ons should pin a
+  tilde range (`~2.7.0`). See
   [docs/USAGE.md](docs/USAGE.md#engine-add-on-api).
 
 ### Fixed

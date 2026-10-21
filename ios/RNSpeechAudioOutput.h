@@ -3,7 +3,11 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/** Process-wide sink onto RNSpeech's neural player, for engine add-ons. Stable within 2.x. */
+/**
+ * Process-wide sink onto RNSpeech's neural player, for engine add-ons.
+ * EXPERIMENTAL: may change in a minor release until a second add-on exists; add-ons should pin a
+ * tilde range (~2.7.0) on the core.
+ */
 @interface RNSpeechAudioOutput : NSObject
 
 /** nil until an RNSpeech module is alive. */

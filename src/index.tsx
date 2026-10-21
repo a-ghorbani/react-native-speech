@@ -31,9 +31,9 @@
  * integrating an engine without going through the unified `Speech` API.
  *
  * The engine classes and `engineManager` are `@internal`: their shape
- * may change between minor releases. The engine add-on API (the building
- * blocks below them) is stable within 2.x; see docs/USAGE.md
- * "Engine add-on API".
+ * may change between minor releases. Building blocks for engine add-ons
+ * live in the experimental `@pocketpalai/react-native-speech/engine-sdk`
+ * subpath; see docs/USAGE.md "Engine add-on API".
  */
 
 // Export Speech API as default
@@ -144,25 +144,5 @@ export {SupertonicEngine} from './engines/supertonic';
 /** @internal Advanced: Kitten neural engine class. */
 export {KittenEngine} from './engines/kitten';
 
-// Engine add-on API, stable within 2.x (docs/USAGE.md "Engine add-on API").
-// Add-ons import it from the package root, never by deep path.
-
-/** Engine add-on API: pipelined synth + play loop for streaming engines. */
-export {EngineStreamSession} from './engines/EngineStreamSession';
-export type {EngineStreamSessionConfig} from './engines/EngineStreamSession';
-/** Engine add-on API: the shared neural audio player. */
-export {
-  NeuralAudioPlayer,
-  neuralAudioPlayer,
-} from './engines/NeuralAudioPlayer';
-export type {PlaybackOptions} from './engines/NeuralAudioPlayer';
-/** Engine add-on API: text chunking used by the neural engines. */
-export {TextChunker} from './utils/TextChunker';
-export type {TextChunk} from './utils/TextChunker';
-export {StreamingChunker} from './engines/StreamingChunker';
-export {findFirstClauseEnd} from './utils/firstClause';
-export {stripMarkdown} from './utils/stripMarkdown';
-/** Engine add-on API: asset and logging helpers. */
-export {base64ToArrayBuffer, loadAssetAsText} from './utils/AssetLoader';
-export {createComponentLogger} from './utils/logger';
+// Return types of TTSEngineInterface.release().
 export type {ReleaseResult, ReleaseError} from './types';

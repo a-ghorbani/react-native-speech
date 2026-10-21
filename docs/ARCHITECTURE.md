@@ -17,7 +17,7 @@ All neural engines implement `TTSEngineInterface<TConfig>`. Config is per-engine
 
 ### Engine registry and add-ons
 
-`Speech` keeps no per-engine code paths: every call resolves the current engine id in `engineManager` and dispatches to the instance. The OS engine is registered at import; Kokoro, Supertonic and Kitten are constructed and registered on their first `initialize()`. Engines from other packages are registered with `Speech.registerEngine(engine)` under `engine.name`, and optional interface members (`synthesizeStream`, `setChunkProgressCallback`, `getVoicesWithMetadata`, `getSupport`, `resetSupport`) are used when present. Usage: [USAGE.md](USAGE.md#engine-add-ons).
+`Speech` keeps no per-engine code paths: every call resolves the current engine id in `engineManager` and dispatches to the instance. The OS engine is registered at import; Kokoro, Supertonic and Kitten are constructed and registered on their first `initialize()`. Engines from other packages are registered with `Speech.registerEngine(engine)` under `engine.name`, and optional interface members (`synthesizeStream`, `setChunkProgressCallback`, `getVoicesWithMetadata`, `getSupport`, `resetSupport`) are used when present. Add-ons take their JS building blocks (`EngineStreamSession`, `neuralAudioPlayer`, chunkers, helpers) from the experimental `@pocketpalai/react-native-speech/engine-sdk` subpath. Usage: [USAGE.md](USAGE.md#engine-add-ons).
 
 Native add-ons keep their own TurboModule but play through the core's neural player, so there is a single player per app and audio focus, ducking, interruptions and `onStart`/`onFinish` stay shared:
 
