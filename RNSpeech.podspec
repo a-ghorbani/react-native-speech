@@ -16,7 +16,8 @@ Pod::Spec.new do |s|
   # Our module sources (iOS Obj-C++ + shared C++ core in cpp/)
   s.source_files = ["ios/**/*.{h,m,mm,cpp}", "cpp/**/*.{h,cpp}"]
   s.public_header_files = ["ios/NativeDictWrapper.h"]
-  s.exclude_files = "ios/generated/**/*"
+  # cpp/tests holds host-only harnesses with their own main().
+  s.exclude_files = ["ios/generated/**/*", "cpp/tests/**/*"]
 
   # Header search paths
   s.pod_target_xcconfig = {

@@ -88,13 +88,11 @@ function makeDict(map: Record<string, string>): DictSource {
 // Stub `phonemize` inside the jest VM with a bridge to the subprocess. This
 // avoids the bundle's `const jest = ...` collision while still exercising
 // real hans00 output for OOV words.
-jest.mock(
-  'phonemize',
-  () => ({
-    toIPA: (w: string, _opts?: {stripStress?: boolean}) => mockRealToIPA(w),
-  }),
-  {virtual: true},
-);
+// Never `{virtual: true}`: jest caches module IDs per worker, so mixing
+// virtual and non-virtual mocks of an installed package leaks across suites.
+jest.mock('phonemize', () => ({
+  toIPA: (w: string, _opts?: {stripStress?: boolean}) => mockRealToIPA(w),
+}));
 
 describe('HansPhonemizer + real hans00 — camelCase regression matrix', () => {
   let phon: HansPhonemizer;
