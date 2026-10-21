@@ -42,7 +42,7 @@ cp -R "$STAGE/jniLibs" "$STAGE/include" "$STAGE/licenses" "$STAGE/BUILDINFO.json
 cp "$NOTICES" "$tree/THIRD_PARTY_NOTICES.md"
 find "$tree" -type d -exec chmod 0755 {} +
 find "$tree" -type f -exec chmod 0644 {} +
-# touch -t reads local time, hence TZ=UTC on both sides; GNU date takes -d @N, BSD date -r N.
+# touch -t reads local time, hence TZ=UTC on both sides.
 if date --version >/dev/null 2>&1; then
   STAMP="$(TZ=UTC date -d "@$EPOCH" +%Y%m%d%H%M.%S)"
 else
@@ -53,8 +53,7 @@ find "$tree" -exec env TZ=UTC touch -h -t "$STAMP" {} +
 rm -f "$OUT_DIR/$ASSET"
 (
   cd "$tree"
-  # -X: no extra fields (uid/gid, extended timestamps); -D: no directory entries. DOS times are
-  # local time, so pin TZ.
+  # -X: no uid/gid or extended timestamps; -D: no directory entries; DOS times are local, so TZ.
   find . -type f | sed 's|^\./||' | LC_ALL=C sort | TZ=UTC zip -X -D -q -9 "$OUT_DIR/$ASSET" -@
 )
 

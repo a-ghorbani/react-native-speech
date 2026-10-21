@@ -1,6 +1,4 @@
-# Tests for ios/phonon/fetch.rb (the pod-install-time binary fetch, DESIGN.md §3.3).
-# Run: ruby test/phonon-ios/fetch_test.rb   (or scripts/test-phonon-ios.sh)
-# Needs: ruby >= 2.7 with minitest, curl and zip/unzip (ditto on macOS).
+# Run: ruby test/phonon-ios/fetch_test.rb (needs ruby >= 2.7, minitest, zip/unzip).
 require 'minitest/autorun'
 require 'digest'
 require 'fileutils'
@@ -47,7 +45,6 @@ class PhononFetchTest < Minitest::Test
     File.write(File.join(@root, 'phonon.lock.json'), JSON.pretty_generate(lock))
   end
 
-  # A fake repackaged framework: Info.plist plus one libptts_ffi.a per slice.
   def make_xcf(dir, sim: 'ios-arm64_x86_64-simulator', headers: false, content: 'lib')
     xcf = File.join(dir, RNSpeechPhonon::XCFRAMEWORK)
     FileUtils.mkdir_p(xcf)
@@ -60,7 +57,6 @@ class PhononFetchTest < Minitest::Test
     xcf
   end
 
-  # Release zip layout: PhononCore.xcframework/ at the root plus licenses.
   def make_zip(name = 'release.zip', **kw)
     stage = File.join(@tmp, "stage-#{name}")
     make_xcf(stage, **kw)
@@ -82,7 +78,6 @@ class PhononFetchTest < Minitest::Test
     RNSpeechPhonon.destination(@root)
   end
 
-  # ---- lock_ready? / version / url ----------------------------------------------------------
 
   def test_placeholder_lock_is_not_ready
     refute RNSpeechPhonon.lock_ready?(@root, env: @env)
@@ -134,7 +129,6 @@ class PhononFetchTest < Minitest::Test
     assert_equal File.join(Dir.home, 'Library', 'Caches', 'rnspeech-phonon'), RNSpeechPhonon.cache_dir({})
   end
 
-  # ---- release download ---------------------------------------------------------------------
 
   def test_release_download_verifies_and_installs
     zip = make_zip
@@ -148,7 +142,7 @@ class PhononFetchTest < Minitest::Test
     assert File.file?(File.join(@cache, 'phonon-bin-v0.4.0-r1', 'phonon-ios-0.4.0-r1.xcframework.zip'))
     refute Dir.exist?("#{dest}.tmp-#{Process.pid}")
 
-    # Second run: cache hit, stamp unchanged -> no download, no copy.
+    # Cache hit, stamp unchanged: no download, no copy.
     calls.clear
     @logs.clear
     RNSpeechPhonon.ensure_xcframework!(@root, env: @env, downloader: file_downloader(zip, calls), log: @log)
@@ -229,7 +223,6 @@ class PhononFetchTest < Minitest::Test
     end
   end
 
-  # ---- local override -----------------------------------------------------------------------
 
   def test_local_directory_override
     xcf = make_xcf(File.join(@tmp, 'local'))
@@ -259,7 +252,6 @@ class PhononFetchTest < Minitest::Test
     assert_raises(RNSpeechPhonon::Error) { RNSpeechPhonon.ensure_xcframework!(@root, env: env, log: @log) }
   end
 
-  # ---- validation ---------------------------------------------------------------------------
 
   def test_validate_requires_slices
     xcf = make_xcf(File.join(@tmp, 'v'))
@@ -290,10 +282,8 @@ class PhononFetchTest < Minitest::Test
     assert_empty RNSpeechPhonon.validate!(make_xcf(File.join(@tmp, 'v')))
   end
 
-  # ---- podspec ------------------------------------------------------------------------------
 
-  # The real lock in the repository is still PLACEHOLDER until WP2 publishes; while it is, the
-  # podspec must turn the flag off (and the version must parse either way).
+  # Holds whether the repository lock is still PLACEHOLDER or published.
   def test_repository_lock_parses
     repo = File.expand_path('../..', __dir__)
     lock = RNSpeechPhonon.lock(repo)

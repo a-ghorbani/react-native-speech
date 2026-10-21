@@ -538,7 +538,6 @@ describe('runPhononSelfTest', () => {
       'S8_init_release',
       'S12_peak_memory',
     ]);
-    // Init got the deep-link knobs.
     expect(mockState.initCalls[0]).toMatchObject({
       engine: 'phonon',
       modelPath: '/docs/phonon/models/31m-en',
@@ -649,14 +648,12 @@ describe('runPhononSelfTest', () => {
     expect(before.chunksPlayedAfterStop).toBe(1);
     expect(before.lateChunks[0].playStartAfterStopMs).toBe(5);
     expect(s6.data!.chunksPlayedAfterStop).toBe(0);
-    // The JS onStart count is recorded alongside.
     expect(s6.data).toHaveProperty('onStartAfterStop');
     expect(s6.detail).toContain('chunksPlayedAfterStop=0+1');
   });
 
   it('S6 stops during playback when first audio comes after 1.0 s', async () => {
-    // A phone whose first chunk takes longer to synthesize than the old
-    // fixed t=1.0 s stop point (WP9: 1.1-2.5 s for LONG_TEXT).
+    // First audio after the old fixed 1.0 s stop point (WP9: 1.1-2.5 s).
     mockState.startDelayMs = 300;
     const params = parseSelfTestUrl(
       'speechexample://selftest/phonon?scenarios=s6&runId=s6slow',
@@ -1027,7 +1024,6 @@ describe('runPhononSelfTest', () => {
         mockState.files.has('/docs/phonon-evidence/.s11-reload-pending.json'),
       ).toBe(false);
       expect(isPhononSelfTestRunning()).toBe(false);
-      // Nothing left to resume.
       expect(await resumePhononSelfTestAfterReload({sleep})).toBeNull();
     });
 

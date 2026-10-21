@@ -1,4 +1,4 @@
-// Host implementations of the two bionic APIs phonon_jni.cpp uses (test/phonon-jni only).
+// Host stand-ins for the bionic APIs phonon_jni.cpp uses.
 #include <cstdarg>
 #include <cstdio>
 

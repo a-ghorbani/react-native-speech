@@ -21,7 +21,7 @@
 namespace rnspeech::phonon {
 
 struct WorkerOptions {
-  std::string name = "phonon-synth";  // pthread name (truncated to 15 chars on Linux)
+  std::string name = "phonon-synth";
   size_t stackBytes = 8u << 20;
 };
 

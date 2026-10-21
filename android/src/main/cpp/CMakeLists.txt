@@ -26,15 +26,12 @@ target_link_libraries(native_dict
 # this one, so we have to set it explicitly regardless of the consumer's AGP.
 target_link_options(native_dict PRIVATE "-Wl,-z,max-page-size=16384")
 
-# --- Phonon JNI shim (opt-in, RNSpeech_phononEnabled) ---
-# librnspeech_phonon.so never links libptts_ffi.so: it dlopen()s it lazily from phononCreate,
-# after the HWCAP gate (docs/phonon/DESIGN.md §2.1). Built only for the 64-bit ABIs listed in
-# RN_SPEECH_PHONON_ABIS (RNSpeech_phononAbis, comma-separated); on any other ABI
-# System.loadLibrary fails and getSupport reports unsupported-abi (or library-missing).
+# Phonon JNI shim (RNSpeech_phononEnabled). Never links libptts_ffi.so; it is dlopen()ed after
+# the HWCAP gate (docs/phonon/DESIGN.md §2.1). Built only for the 64-bit RN_SPEECH_PHONON_ABIS.
 option(RN_SPEECH_PHONON "Build the Phonon JNI shim" OFF)
 set(RN_SPEECH_PHONON_ABIS "arm64-v8a" CACHE STRING "ABIs that package libptts_ffi.so")
 string(REPLACE "," ";" PHONON_ABI_LIST "${RN_SPEECH_PHONON_ABIS}")
-# Checked for every ABI (also so CMake does not warn that 32-bit builds ignore them).
+# Checked for every ABI, which also stops CMake warning that 32-bit builds ignore them.
 if(RN_SPEECH_PHONON AND (NOT RN_SPEECH_PHONON_INCLUDE_DIR OR NOT RN_SPEECH_PHONON_ARM64_FEATURES))
   message(FATAL_ERROR "RN_SPEECH_PHONON needs RN_SPEECH_PHONON_INCLUDE_DIR and "
                       "RN_SPEECH_PHONON_ARM64_FEATURES (set by android/phonon.gradle)")
@@ -48,8 +45,7 @@ if(RN_SPEECH_PHONON AND ANDROID_ABI MATCHES "^(arm64-v8a|x86_64)$" AND ANDROID_A
       phonon/phonon_jni.cpp
   )
 
-  # cpp/phonon first: its ptts.h is the only one compiled against. The include dir only adds
-  # the generated phonon_required_hwcaps.h.
+  # cpp/phonon first so its ptts.h wins; the include dir only adds phonon_required_hwcaps.h.
   target_include_directories(rnspeech_phonon PRIVATE
       ${PHONON_CPP_DIR}
       ${RN_SPEECH_PHONON_INCLUDE_DIR}

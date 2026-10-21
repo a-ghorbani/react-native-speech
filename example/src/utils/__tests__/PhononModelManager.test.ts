@@ -301,7 +301,6 @@ describe('Android install from a local folder', () => {
       mockFs.files.get(`${ANDROID_DIR}/.phonon-installed.json`)!.content!,
     );
     expect(marker.copiedFrom).toBe(SRC);
-    // The source is left in place.
     expect(mockFs.files.has(`${SRC}/model.q8.gguf`)).toBe(true);
   });
 

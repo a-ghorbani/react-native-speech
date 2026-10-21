@@ -1,12 +1,7 @@
 package com.pocketpalai.speech.phonon
 
-/**
- * Turns the shim's flat JNI results into the field maps the TurboModule resolves
- * (src/NativeSpeech.ts PhononLoadResult / PhononSynthResult / PhononDiagnostics). Pure, so
- * the field contract is unit tested; PhononBridge only wraps the maps in WritableMaps.
- */
+/** The shim's flat JNI results as the field maps of src/NativeSpeech.ts. */
 object PhononResults {
-  /** Number of doubles nativeSynthesize writes. */
   const val SYNTH_FIELDS = 11
 
   data class Outcome(val code: String, val message: String, val fields: Map<String, Any>)
@@ -59,12 +54,12 @@ object PhononResults {
     )
   }
 
-  /** Buffer id of a synth result (0 = none). */
+  /** 0 = none. */
   fun bufferId(nums: DoubleArray): Long = nums.getOrElse(1) { 0.0 }.toLong()
 
   data class ProcStatus(val rssKb: Long, val hwmKb: Long, val threads: Long)
 
-  /** VmRSS / VmHWM / Threads from /proc/self/status text; missing fields are 0. */
+  /** Missing fields are 0. */
   fun parseProcStatus(text: String?): ProcStatus {
     var rss = 0L
     var hwm = 0L

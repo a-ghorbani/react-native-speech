@@ -7,9 +7,8 @@
 // Threading:
 //  * allocRequestId / cancel* / isCancelled are lock-free and callable from any thread
 //    (the JS thread calls them synchronously).
-//  * create / synthesize / destroy belong on the synth thread. They are also serialized by an
-//    internal mutex, so misuse cannot race the handle, but a caller must still never run them
-//    on the JS thread.
+//  * create / synthesize / destroy belong on the synth thread (also serialized by an internal
+//    mutex, but never call them on the JS thread).
 //  * The buffer store is mutex protected and callable from any thread.
 #pragma once
 
@@ -46,7 +45,6 @@ const char* err_code(Err err);
 
 enum class Busy { Idle, Loading, Compiling, Speaking };
 
-// "idle" | "loading" | "compiling" | "speaking".
 const char* busy_name(Busy busy);
 
 enum class Platform { Android, Apple };
@@ -69,7 +67,7 @@ std::string upstream_default_voice(Platform platform, const std::vector<std::str
 // positive × 32767, truncation toward zero; NaN → 0.
 void float_to_pcm16(const float* in, size_t n, float gain, int16_t* out) noexcept;
 
-// Monotonic clock in milliseconds (steady_clock), shared by Core timings and platform queues.
+// steady_clock ms; platform queues stamp enqueuedAtMs with it too.
 double monotonic_ms();
 
 struct LoadResult {
@@ -108,7 +106,7 @@ struct CoreDiagnostics {
 struct CoreLimits {
   size_t maxBuffers = 16;
   size_t maxBytes = 96u << 20;
-  // Upper bound for the pre-reserved sink (samples). 30 s of audio.
+  // Pre-reserve cap for the synth sink, in samples (30 s).
   size_t maxReserveSamples = 30 * kSampleRate;
 };
 
@@ -118,7 +116,7 @@ class Core {
   // destroyed, so no exit-time destructor can race the synth thread.
   static Core& get();
 
-  // Independent instances exist for tests only.
+  // Tests only.
   explicit Core(Platform platform = kHostPlatform, CoreLimits limits = CoreLimits());
   ~Core();
   Core(const Core&) = delete;
@@ -154,9 +152,8 @@ class Core {
   // pool). An exception thrown by the hook fails the request with CallbackFailed.
   void setFrameHook(std::function<void()> hook, unsigned everyFrames);
 
-  // Platform-reported phase (iOS sets Compiling before a create that must compile Core ML).
-  // Core only sets its own phases (loading/speaking) while idle, and returns to idle after
-  // each create/synthesize.
+  // Platform-reported phase (iOS: Compiling around a create that compiles Core ML). Core sets
+  // loading/speaking only while idle and resets to idle after each create/synthesize.
   void setBusy(Busy busy);
 
   // ---- buffer store, mutex, any thread ----

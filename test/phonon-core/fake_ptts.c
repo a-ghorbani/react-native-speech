@@ -1,8 +1,3 @@
-/* fake_ptts.c — fake libptts_ffi for the host tests (see fake_ptts.h).
- *
- * Built twice: libfake_ptts.so (all 8 symbols) and libfake_ptts_nosym.so with
- * -DFAKE_PTTS_OMIT_SET_LANGUAGE, for the symbols-missing path.
- */
 #define _POSIX_C_SOURCE 200809L /* clock_gettime under strict -std=c11 */
 #define _DARWIN_C_SOURCE 1      /* ...which macOS otherwise hides */
 #include "fake_ptts.h"

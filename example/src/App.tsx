@@ -28,9 +28,7 @@ function AppContent() {
   const [tab, setTab] = React.useState<Tab>('demo');
   const insets = useSafeAreaInsets();
 
-  // Automated device runs: speechexample://selftest/phonon?runs=5&...
-  // (adb `am start -a android.intent.action.VIEW -d <url>`, or
-  // `xcrun devicectl ... --payload-url <url>` on iOS).
+  // Self-test deep link (adb `am start -d <url>` / devicectl `--payload-url`).
   React.useEffect(() => {
     const handle = (url: string | null | undefined) => {
       const params = url ? parseSelfTestUrl(url) : null;
@@ -43,8 +41,7 @@ function AppContent() {
         console.log(`[SelfTest] SELFTEST_DONE error=${String(err)}`),
       );
     };
-    // A self-test that reloaded the JS context (S11) finishes first; the
-    // initial URL is the same deep link and must not start a new run.
+    // A run that reloaded JS (S11) resumes; its initial URL must not restart it.
     resumePhononSelfTestAfterReload({showTab: setTab})
       .then(resumed => (resumed ? null : Linking.getInitialURL()))
       .then(handle)

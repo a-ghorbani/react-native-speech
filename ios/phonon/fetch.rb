@@ -1,18 +1,12 @@
-# ios/phonon/fetch.rb — puts PhononCore.xcframework where RNSpeech.podspec vendors it from
-# (docs/phonon/DESIGN.md §3.3). Runs at `pod install` time, only when the Podfile sets
-# ENV['RN_SPEECH_PHONON'] = '1'.
+# Puts PhononCore.xcframework where RNSpeech.podspec vendors it from (docs/phonon/DESIGN.md §3.3).
 #
 # Sources, in order:
-#   1. ENV['RN_SPEECH_PHONON_XCFRAMEWORK']: a local PhononCore.xcframework directory, or a
-#      release zip that contains one (dev override; also the path for pnpm / Yarn PnP, whose
-#      read-only stores cannot hold the copy). Not sha-checked: it is the developer's own build.
-#   2. The release asset pinned in phonon.lock.json (binaries.release / binaries.ios), downloaded
-#      once into the cache (ENV['RN_SPEECH_PHONON_CACHE'], default ~/Library/Caches/rnspeech-phonon)
-#      and verified against its sha256 before anything is unpacked.
+#   1. ENV['RN_SPEECH_PHONON_XCFRAMEWORK']: a local xcframework or release zip; not sha-checked.
+#   2. The release asset pinned in phonon.lock.json, cached in ENV['RN_SPEECH_PHONON_CACHE']
+#      (default ~/Library/Caches/rnspeech-phonon) and sha256-verified before unpacking.
 #
-# The framework is then copied to ios/phonon/PhononCore.xcframework (git-ignored, not in the npm
-# package): CocoaPods only vendors paths inside the pod. A stamp file inside the copy makes later
-# `pod install` runs skip the copy when nothing changed.
+# CocoaPods only vendors paths inside the pod, so the framework is copied into ios/phonon
+# (git-ignored); read-only package stores (pnpm, Yarn PnP) cannot take that copy.
 require 'digest'
 require 'fileutils'
 require 'json'
@@ -33,7 +27,7 @@ module RNSpeechPhonon
     JSON.parse(File.read(File.join(root, 'phonon.lock.json')))
   end
 
-  # The local override path ('' and unset are the same: no override).
+  # '' and unset both mean no override.
   def local_override(env = ENV)
     path = env['RN_SPEECH_PHONON_XCFRAMEWORK'].to_s.strip
     path.empty? ? nil : File.expand_path(path)
@@ -43,8 +37,7 @@ module RNSpeechPhonon
     lock.dig('binaries', 'ios', 'sha256').to_s
   end
 
-  # True when a Phonon build is possible: a local override is set, or the lock pins a real sha.
-  # A PLACEHOLDER lock (no release published yet) means "build without Phonon, with a warning".
+  # A local override is set, or the lock pins a real sha (not PLACEHOLDER).
   def lock_ready?(root, env: ENV)
     return true if local_override(env)
 
@@ -55,8 +48,7 @@ module RNSpeechPhonon
     value.match?(/\A[0-9a-f]{64}\z/)
   end
 
-  # '0.4.0-r1' from binaries.release 'phonon-bin-v0.4.0-r1'; '+local' marks the dev override.
-  # Reported to JS as PhononSupportInfo.libraryVersion and part of the capability-store key.
+  # 'phonon-bin-v0.4.0-r1' -> '0.4.0-r1' ('+local' with the override). Part of the capability key.
   def library_version(root, env: ENV)
     release = lock(root).dig('binaries', 'release').to_s
     version = release.sub(/\Aphonon-bin-v/, '')
@@ -66,8 +58,7 @@ module RNSpeechPhonon
     local_override(env) ? "#{version}+local" : version
   end
 
-  # GitHub repository the binaries are released on: binaries.repo in the lock, else the
-  # package.json repository, else the upstream default.
+  # binaries.repo, else the package.json repository, else DEFAULT_REPO.
   def release_repo(root, lock)
     repo = lock.dig('binaries', 'repo').to_s
     return repo unless repo.empty?
@@ -107,7 +98,6 @@ module RNSpeechPhonon
     Digest::SHA256.file(path).hexdigest
   end
 
-  # curl: present on every Mac, follows GitHub's redirect to its object store, honours proxies.
   def curl_download(url, out)
     ok = system('curl', '-fsSL', '--retry', '3', '--connect-timeout', '30', '-o', out, url)
     raise Error, "download failed: #{url}" unless ok
@@ -152,7 +142,6 @@ module RNSpeechPhonon
     warnings
   end
 
-  # Digest of every file in a tree (relative path + content), for the local-override stamp.
   def tree_digest(dir)
     d = Digest::SHA256.new
     Dir.glob('**/*', File::FNM_DOTMATCH, base: dir).sort.each do |rel|
@@ -166,8 +155,7 @@ module RNSpeechPhonon
     d.hexdigest
   end
 
-  # Release path: the zip in the cache, verified, unpacked once per sha. Returns the
-  # PhononCore.xcframework directory inside the cache.
+  # Unpacks once per sha; returns the xcframework path inside the cache.
   def fetch_release(root, lock, env: ENV, downloader: method(:curl_download), log: nil)
     sha = ios_sha(lock)
     raise Error, "phonon.lock.json binaries.ios.sha256 is not a sha256: '#{sha}'" unless sha256?(sha)
@@ -243,8 +231,8 @@ module RNSpeechPhonon
     xcf
   end
 
-  # Copies `src` to `dest` unless dest already carries `stamp`. The copy goes to a temporary
-  # sibling first, so an interrupted run never leaves a half-copied framework behind a valid stamp.
+  # Skips when dest already carries `stamp`; copies via a temp sibling so an interrupted run never
+  # leaves a half copy behind a valid stamp.
   def install_copy(src, dest, stamp)
     stamp_file = File.join(dest, STAMP)
     return false if File.file?(stamp_file) && File.read(stamp_file).strip == stamp

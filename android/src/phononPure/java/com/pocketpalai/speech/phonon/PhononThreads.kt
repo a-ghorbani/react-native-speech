@@ -3,10 +3,8 @@ package com.pocketpalai.speech.phonon
 import java.io.File
 
 /**
- * Worker-thread policy for Phonon on Android (DESIGN.md §1.5). The result becomes
- * RAYON_NUM_THREADS, which sizes both the rayon pool and xn's own spinning pool, once per
- * process (both pools are fixed after the first init). Pure, so the cpufreq layouts of the
- * device matrix are unit tested on the JVM.
+ * Worker-thread policy (DESIGN.md §1.5). The result becomes RAYON_NUM_THREADS, which sizes both
+ * the rayon pool and xn's spinning pool once per process.
  */
 object PhononThreads {
   /** A CPU counts as "big" when its max frequency is at least this share of the highest. */
@@ -17,7 +15,6 @@ object PhononThreads {
   /**
    * @param requested PhononConfig.numThreads; > 0 is honored (clamped to [1, cores]).
    * @param cpuMaxFreqs cpuinfo_max_freq per CPU, or null when sysfs is unreadable.
-   * @param availableProcessors Runtime.availableProcessors().
    */
   fun resolve(requested: Int, cpuMaxFreqs: List<Long>?, availableProcessors: Int): Int {
     val cores = availableProcessors.coerceAtLeast(1)
@@ -29,10 +26,7 @@ object PhononThreads {
     return big.coerceIn(MIN_DEFAULT, MAX_DEFAULT).coerceAtMost(cores)
   }
 
-  /**
-   * Reads <cpuRoot>/cpu<N>/cpufreq/cpuinfo_max_freq for every cpu<N> directory. Returns null
-   * when nothing is readable (SELinux, emulators), so [resolve] falls back to core count.
-   */
+  /** null when nothing is readable (SELinux, emulators), so [resolve] falls back to core count. */
   fun readCpuMaxFreqs(cpuRoot: File = File("/sys/devices/system/cpu")): List<Long>? {
     val dirs = try {
       cpuRoot.listFiles { f -> f.isDirectory && CPU_DIR.matches(f.name) }

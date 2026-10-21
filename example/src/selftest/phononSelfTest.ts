@@ -155,9 +155,8 @@ const STREAM_TEXT =
 const SPEAK_TIMEOUT_MS = 90_000;
 const STOP_AT_MS = 1000;
 /**
- * S6/S9: how far into playback stop()/pause() lands. The first chunk is
- * synthesized whole before it plays (phase 1), so first audio of LONG_TEXT
- * is 1-2.5 s on the WP9 phones and a fixed t=1.0 s point landed before it.
+ * S6/S9: how far into playback stop()/pause() lands, measured from first
+ * audio (1-2.5 s for LONG_TEXT on the WP9 phones, so a fixed time misses).
  */
 const INTO_PLAYBACK_MS = 500;
 /** S6 (a): stop this soon after speak, while the first chunk is synthesizing */
@@ -179,10 +178,6 @@ const THRESHOLDS = {
   gapMs: 150,
   memGrowthMb: 40,
 };
-
-// ============================================================
-// Pure helpers (unit-tested)
-// ============================================================
 
 function intParam(
   value: string | null,
@@ -226,10 +221,7 @@ function defaultRunId(now: Date): string {
   return now.toISOString().replace(/[-:]/g, '').replace(/\..*$/, '');
 }
 
-/**
- * Parse `speechexample://selftest/phonon?...`. Returns null for any other
- * URL, so App can ignore unrelated links.
- */
+/** Parse `speechexample://selftest/phonon?...`; null for any other URL. */
 export function parseSelfTestUrl(
   url: string,
   now: Date = new Date(),
@@ -369,10 +361,6 @@ export function errorCode(e: unknown): string {
   return 'none';
 }
 
-// ============================================================
-// Runtime helpers
-// ============================================================
-
 function realSleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
@@ -452,12 +440,10 @@ export function relevantMapsLines(maps: string): string[] {
 
 /**
  * The process's own mappings (Android; release builds have no run-as).
- * Libraries stored uncompressed in the APK (extractNativeLibs=false, the
- * default) are mapped from base.apk, so their mappings carry the APK's name,
- * not the library's: the name counts are only meaningful for extracted
- * libraries. The full proof is the host's: collect-android-evidence.sh
- * matches the base.apk mapping offsets in maps.txt against the library's
- * stored range inside the APK. Null when /proc is not readable.
+ * Uncompressed APK libraries (extractNativeLibs=false) map under base.apk's
+ * name, so name counts only see extracted libraries; the full proof is
+ * collect-android-evidence.sh matching base.apk offsets in maps.txt.
+ * Null when /proc is not readable.
  */
 async function mapsCheck(): Promise<(MapsCheck & {lines: string[]}) | null> {
   if (Platform.OS !== 'android') {
@@ -482,9 +468,9 @@ interface NativeDevSettingsLike {
 }
 
 /**
- * Reload the JS context. `DevSettings.reload` is a no-op unless `__DEV__`,
- * and the evidence APKs bundle production JS, so call the native module
- * directly: it reloads in debuggable builds and does nothing in release.
+ * Reload the JS context via the native DevSettings module: the JS
+ * `DevSettings.reload` is a no-op outside `__DEV__` (evidence APKs bundle
+ * production JS). Reloads in debuggable builds only.
  */
 function requestReload(reason: string): void {
   const native = TurboModuleRegistry.get(
@@ -524,11 +510,7 @@ class Evidence {
     }
   }
 
-  /**
-   * Android: copy the folder to the app's external files dir, which
-   * `adb pull` reads without run-as (release builds). Returns the copy's
-   * path, or null.
-   */
+  /** Android: copy to the external files dir (`adb pull` needs no run-as). */
   async copyToExternal(runId: string): Promise<string | null> {
     const ext = (RNFS as {ExternalDirectoryPath?: string})
       .ExternalDirectoryPath;
@@ -646,9 +628,8 @@ export interface SelfTestDoneEvent {
 const doneListeners = new Set<(e: SelfTestDoneEvent) => void>();
 
 /**
- * Called after every self-test run (deep link or panel). The run drives
- * `Speech` directly, so a view holding its own selected/initialized
- * engine re-initializes from this (RootView does).
+ * Called after every self-test run. The run drives `Speech` directly, so
+ * views tracking their own engine (RootView) re-initialize from this.
  */
 export function onPhononSelfTestDone(
   listener: (e: SelfTestDoneEvent) => void,
@@ -663,10 +644,6 @@ export function onPhononSelfTestDone(
 export function isPhononSelfTestRunning(): boolean {
   return running;
 }
-
-// ============================================================
-// Runner
-// ============================================================
 
 export async function runPhononSelfTest(
   params: PhononSelfTestParams,
@@ -881,8 +858,7 @@ export async function runPhononSelfTest(
         }
         await wait(300);
       }
-      // S13: CPU over the runs, then over an idle window (worker spin
-      // after the last chunk shows up here).
+      // S13: CPU over the runs, then over an idle window (catches worker spin).
       const cpu1 = await readCpuTicks();
       const wall1 = Date.now();
       await wait(2000);
@@ -1381,15 +1357,11 @@ type StopWhen = 'before-audio' | 'playing';
 /**
  * One S6 trial on `${LONG_TEXT} ${LONG_TEXT}`:
  *  - 'playing': stop at max(1.0 s after speak, INTO_PLAYBACK_MS after the
- *    first onStart), so stop() lands during playback and stop -> onStopped
- *    is measured (§8.3, Appendix E);
- *  - 'before-audio': stop STOP_BEFORE_AUDIO_MS after speak, while the first
- *    chunk is still synthesizing. No audio has started, so no onStopped is
- *    expected (none of the neural engines emits one without an onStart).
- * Both are judged by the engine's own playback timestamps (`playStartTs`
- * of every chunk of the stopped call): a JS `onStart` emitted before
- * stop() can be delivered after it, so the `onStart` count is recorded but
- * not judged.
+ *    first onStart) and measure stop -> onStopped (§8.3, Appendix E);
+ *  - 'before-audio': stop STOP_BEFORE_AUDIO_MS after speak, during
+ *    first-chunk synthesis; no onStopped is expected without an onStart.
+ * Judged by native `playStartTs`, not JS `onStart`, which can be delivered
+ * after stop() even when emitted before it.
  */
 async function stopTrial(
   collector: ChunkCollector,
@@ -1473,9 +1445,9 @@ async function stopTrial(
 }
 
 /**
- * S6: stop during playback (the measured stop -> onStopped, top-level
- * fields) and stop during synthesis of the first chunk (`beforeAudio`);
- * nothing plays after either stop, buffers are freed, the next speak works.
+ * S6: stop during playback (top-level fields) and during first-chunk
+ * synthesis (`beforeAudio`); nothing plays after either, buffers are freed,
+ * the next speak works.
  */
 async function runStop(
   results: SelfTestResult[],
@@ -1486,7 +1458,6 @@ async function runStop(
     const beforeAudio = await stopTrial(collector, 'before-audio');
     const playing = await stopTrial(collector, 'playing');
 
-    // Next speak works.
     let nextOk = false;
     try {
       const t = await timedSpeak(SHORT_TEXT);
@@ -1577,19 +1548,13 @@ async function runInitRelease(
   }
 }
 
-// ============================================================
-// S11 interruptions
-// ============================================================
-
 /**
  * S11 (a): speak, log `S11_BACKGROUND_REQUEST`, and wait for the host to
- * background the app (adb HOME) and bring it back (the same deep link
- * again; a running self-test ignores it). Passes when both transitions were
- * seen, the speak settled without hanging, nothing crashed, and the next
- * speak works. The example app releases the engine when it is backgrounded
- * (RootView), so the run records that and creates it again before the next
- * speak. JS timers pause in the background, so this only waits on AppState
- * events and real time.
+ * background the app and bring it back (re-sending the deep link). Passes
+ * when both transitions were seen, the speak settled, and the next speak
+ * works. RootView releases the engine in the background, so it is created
+ * again first. JS timers pause in the background: waits use AppState and
+ * real time.
  */
 async function runBackground(
   results: SelfTestResult[],
@@ -1683,9 +1648,8 @@ interface PendingReload {
 
 /**
  * S11 (b): start a long speak, persist the run, and reload the JS context
- * mid-synthesis (`DevSettings.reload`). The next JS context finishes the
- * run in resumePhononSelfTestAfterReload. Release builds have no reload:
- * then this records S11_reload as not run and returns.
+ * mid-synthesis; resumePhononSelfTestAfterReload finishes it. Without a
+ * reload (release builds) this records S11_reload as not run.
  */
 async function runReload(
   results: SelfTestResult[],

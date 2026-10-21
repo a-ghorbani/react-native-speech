@@ -2,8 +2,7 @@ const path = require('path');
 
 module.exports = {
   preset: '@react-native/jest-preset',
-  // The library resolves through Metro's monorepo config at runtime; tests
-  // mock it, but jest still needs a path to resolve the mocked module.
+  // Metro resolves the library at runtime; jest needs a path even to mock it.
   moduleNameMapper: {
     '^@pocketpalai/react-native-speech$': path.join(
       __dirname,

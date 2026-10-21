@@ -1,13 +1,11 @@
 // phonon_jni.cpp — JNI shim for com.pocketpalai.speech.phonon.PhononNative.
 //
-// librnspeech_phonon.so: cheap probes (ABI, HWCAP, system properties) plus thin wrappers over
-// rnspeech::phonon::Core (cpp/phonon). It never links libptts_ffi.so; nativeLoadLibrary
-// dlopen()s it, and PhononBridge only calls that from phononCreate after the HWCAP gate, so
-// libptts_ffi's initializers never run on a CPU that lacks its features (DESIGN.md §2.1).
+// Cheap probes (ABI, HWCAP, system properties) plus thin wrappers over rnspeech::phonon::Core.
+// Never links libptts_ffi.so: nativeLoadLibrary dlopen()s it, only from phononCreate after the
+// HWCAP gate, so its initializers never run on a CPU that lacks its features (DESIGN.md §2.1).
 //
-// Every entry point is noexcept towards the JVM: C++ exceptions are caught here and turned
-// into an error code or a neutral value. Strings cross as real UTF-8 / UTF-16 (not JNI's
-// Modified UTF-8), so emoji in text and non-ASCII paths survive.
+// No C++ exception reaches the JVM. Strings are converted as real UTF-8 / UTF-16, not JNI's
+// Modified UTF-8, so emoji and non-ASCII paths survive.
 #include <jni.h>
 #include <android/log.h>
 #include <sys/auxv.h>
@@ -33,8 +31,7 @@ using rnspeech::phonon::Err;
 constexpr bool str_eq(const char* a, const char* b) {
   return *a == *b && (*a == '\0' || str_eq(a + 1, b + 1));
 }
-// The HWCAP gate below is generated from the features libptts_ffi.so was built with; it must
-// be the lock's list (android/phonon.gradle checks the same thing with a clearer message).
+// The generated HWCAP gate must match the lock (phonon.gradle checks it with a clearer message).
 static_assert(str_eq(PHONON_ARM64_FEATURES, RN_SPEECH_PHONON_EXPECTED_FEATURES),
               "phonon_required_hwcaps.h does not match phonon.lock.json arm64Features");
 
@@ -45,8 +42,6 @@ constexpr const char* kAbi = "x86_64";
 #else
 #error "the Phonon shim is only built for arm64-v8a and x86_64"
 #endif
-
-// ---- strings --------------------------------------------------------------------------------
 
 // Releases GetStringChars even when the conversion below throws (bad_alloc).
 class StringChars {
@@ -182,7 +177,6 @@ jobjectArray codeAndMessage(JNIEnv* env, const char* code, const std::string& me
   return toStringArray(env, {code, message});
 }
 
-// Any exception escaping a body ends up here; the JVM never sees a C++ exception.
 const char* kInternal = "PHONON_INTERNAL";
 
 }  // namespace
@@ -375,10 +369,7 @@ Java_com_pocketpalai_speech_phonon_PhononNative_nativeCancelAll(JNIEnv*, jclass)
   Core::get().cancelAll();
 }
 
-// ---- buffer store ---------------------------------------------------------------------------
-
-// Takes (consumes) the buffer and converts it to little-endian PCM16 with `gain`.
-// null if the id is unknown.
+// Consumes the buffer as little-endian PCM16 scaled by `gain`; null if the id is unknown.
 JNIEXPORT jbyteArray JNICALL
 Java_com_pocketpalai_speech_phonon_PhononNative_nativeTakePcm16(JNIEnv* env, jclass,
                                                                 jlong bufferId, jfloat gain) {

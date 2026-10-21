@@ -171,8 +171,7 @@ RCT_EXPORT_METHOD(clearMarkers) {
   [[NSFileManager defaultManager] removeItemAtPath:[self markersFilePath] error:nil];
 }
 
-// Render the key window into a PNG at `path` (self-test evidence, so iOS
-// screenshots can be pulled as files with devicectl).
+// Key window as a PNG at `path` (self-test evidence, pulled with devicectl).
 RCT_EXPORT_METHOD(captureScreen:(NSString *)path
                         resolve:(RCTPromiseResolveBlock)resolve
                          reject:(RCTPromiseRejectBlock)reject) {

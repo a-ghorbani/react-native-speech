@@ -2,20 +2,13 @@
 //  PhononTests.m
 //  SpeechExampleTests
 //
-//  XCTest for the iOS Phonon bridge (docs/phonon/DESIGN.md WP5, §8.1): support / iOS 18
-//  gating, compute-unit mapping, capability store, request ids and cancel, promise dropping
-//  after invalidate, and an optional model smoke test.
+//  XCTest for the iOS Phonon bridge (docs/phonon/DESIGN.md WP5, §8.1).
 //
-//  The bridge lives in the app (libRNSpeech.a) and is reached through the runtime, so this
-//  bundle links none of it: one copy of the process-wide core, the app's. In a flag-off build
-//  (pod installed without RN_SPEECH_PHONON=1) RNSpeechPhonon does not exist and every test
-//  skips, unless RN_SPEECH_PHONON_EXPECTED=1 (scheme environment, or
-//  `TEST_RUNNER_RN_SPEECH_PHONON_EXPECTED=1 xcodebuild test ...`, as the flag-on CI job does):
-//  then a missing bridge fails every test.
+//  The bridge is reached through the runtime, not linked, so the process keeps one copy of the
+//  core (the app's libRNSpeech.a). Flag-off builds skip every test unless
+//  RN_SPEECH_PHONON_EXPECTED=1 (TEST_RUNNER_ prefix via xcodebuild), which makes them fail.
 //
-//  Model smoke: set PHONON_TEST_MODEL_DIR (scheme environment, or
-//  `TEST_RUNNER_PHONON_TEST_MODEL_DIR=<dir> xcodebuild test ...`) to the inner Core ML bundle
-//  folder (the one with bundle.json), e.g. phonon-31m-en-coreml/ copied into the simulator.
+//  Model smoke: PHONON_TEST_MODEL_DIR = the inner Core ML bundle folder (with bundle.json).
 //
 
 #import <XCTest/XCTest.h>

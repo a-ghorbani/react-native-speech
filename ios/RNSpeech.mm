@@ -71,7 +71,6 @@ RCT_EXPORT_MODULE();
     _currentAudioUtteranceId = 0;
     _audioQueue = dispatch_queue_create("com.speech.neuralaudioplayer", DISPATCH_QUEUE_SERIAL);
 #if RN_SPEECH_PHONON
-    // Bridges onto the process-wide Phonon core; this module's promises only.
     _phonon = [[RNSpeechPhonon alloc] init];
 #endif
 
@@ -550,10 +549,8 @@ RCT_EXPORT_MODULE();
   });
 }
 
-// Shared playback entry point of the base64 int16 path (playAudio) and the native Phonon
-// buffer path (phononPlayBuffer): float32 samples, already scaled. Must run on _audioQueue,
-// after the caller stopped the current playback and bumped the utterance id. Resolves when
-// playback completes (or is interrupted), so chunks play back to back.
+// Shared by playAudio and phononPlayBuffer. Runs on _audioQueue after the caller stopped
+// playback and bumped the utterance id; resolves on completion so chunks play back to back.
 - (void)playFloatSamplesOnAudioQueue:(NSData *)floatSamples
                           sampleRate:(double)sampleRate
                             channels:(NSInteger)channels
@@ -565,35 +562,29 @@ RCT_EXPORT_MODULE();
                               reject:(RCTPromiseRejectBlock)reject {
   NSUInteger sampleCount = floatSamples.length / sizeof(float);
 
-  // Create audio format
   AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
                                                                                channels:(AVAudioChannelCount)channels];
 
-  // Create audio buffer
   AVAudioPCMBuffer *pcmBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
                                                                frameCapacity:(AVAudioFrameCount)sampleCount];
   if (!pcmBuffer) {
-    // Zero samples (or an unusable format): nothing to schedule.
+    // Zero samples or unusable format.
     RNSpeechTraceEnd(traceHandle, traceName);
     reject(@"audio_error", @"Failed to create audio buffer", nil);
     return;
   }
   pcmBuffer.frameLength = (AVAudioFrameCount)sampleCount;
 
-  // Copy samples to buffer
   memcpy(pcmBuffer.floatChannelData[0], floatSamples.bytes, sampleCount * sizeof(float));
 
-  // Configure audio session
   self->_isAudioDucking = ducking;
 
   [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
 
-  // Connect player node to engine output
   [self->_audioEngine connect:self->_playerNode
                            to:self->_audioEngine.mainMixerNode
                        format:audioFormat];
 
-  // Start audio engine
   NSError *error = nil;
   if (!self->_audioEngine.isRunning) {
     [self->_audioEngine startAndReturnError:&error];
@@ -607,12 +598,8 @@ RCT_EXPORT_MODULE();
   self->_isAudioPlaying = YES;
   self->_isAudioPaused = NO;
 
-  // Emit onStart event
   [self emitOnStart:[self getAudioEventData]];
 
-  // Schedule buffer for playback
-  // We need to resolve the promise when playback completes, not when it starts
-  // This allows sequential chunk playback to work correctly
   __weak RNSpeech *weakSelf = self;
   [self->_playerNode scheduleBuffer:pcmBuffer
                      atTime:nil
@@ -625,13 +612,11 @@ RCT_EXPORT_MODULE();
         [strongSelf deactivateAudioSession];
         RNSpeechTraceEnd(traceHandle, traceName);
         [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
-        // Resolve promise when playback is complete
         resolve(nil);
       });
     }
   }];
 
-  // Start playback
   [self->_playerNode play];
 }
 
@@ -701,9 +686,7 @@ RCT_EXPORT_MODULE();
 #pragma mark - Phonon
 
 #if !RN_SPEECH_PHONON
-// Flag-off stubs (pod installed without ENV['RN_SPEECH_PHONON'] = '1').
-// Support resolves `not-compiled`, work methods reject PHONON_NOT_COMPILED,
-// sync methods return 0/NO. No Phonon code or binary is linked.
+// Flag-off stubs: support resolves `not-compiled`, async work rejects PHONON_NOT_COMPILED.
 
 static NSString *const kPhononNotCompiled = @"PHONON_NOT_COMPILED";
 static NSString *const kPhononNotCompiledMessage =
@@ -815,16 +798,14 @@ static NSString *RNSpeechPhononStubAbi(void) {
   });
 }
 
-// Nothing is ever recorded without Phonon.
 - (void)phononResetSupport:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject {
   resolve(@(YES));
 }
 #else // RN_SPEECH_PHONON
-// Flag on: everything goes through ios/phonon/RNSpeechPhonon onto the shared core
-// (cpp/phonon). Sync methods only touch atomics; ptts work runs on the Phonon worker.
+// Sync methods only touch atomics; ptts work runs on the Phonon worker.
 
-// JS numbers arrive as doubles; ids are small positive integers. NaN/inf -> 0 (never issued).
+// NaN/inf map to 0, which is never issued.
 static int64_t RNSpeechPhononId(double v) {
   return std::isfinite(v) ? (int64_t)std::llround(v) : 0;
 }
@@ -844,7 +825,7 @@ static int64_t RNSpeechPhononId(double v) {
              options:(JS::NativeSpeech::PhononLoadOptions &)options
              resolve:(RCTPromiseResolveBlock)resolve
               reject:(RCTPromiseRejectBlock)reject {
-  // options is a reference into the call's arguments: read it before going async.
+  // options references the call's arguments: read before going async.
   NSString *language = options.language() ?: @"en";
   NSString *computeUnit = options.computeUnit() ?: @"neuralEngine";
   [_phonon createWithModelDir:modelDir
@@ -890,12 +871,10 @@ static int64_t RNSpeechPhononId(double v) {
   NSInteger channels = MAX((NSInteger)config.channels(), (NSInteger)1);
   BOOL ducking = config.ducking().value_or(false);
   NSString *silentMode = config.silentMode() ?: @"obey";
-  // Volume is applied natively (no JS copy of the PCM): clamped to [0, 1] like OS TTS.
   std::optional<double> volume = config.volume();
   float gain = rnspeech::phonon::ios::playback_gain(volume.value_or(1.0), volume.has_value());
 
-  // Taken (moved out of the store) now, on the calling thread: the buffer is consumed even if
-  // playback is later interrupted, and an unknown id rejects at once.
+  // Taken on the calling thread: consumed even if playback is interrupted; unknown ids reject now.
   int64_t bid = RNSpeechPhononId(bufferId);
   NSData *samples = [_phonon takeBuffer:bid gain:gain];
   if (samples == nil) {
@@ -908,10 +887,8 @@ static int64_t RNSpeechPhononId(double v) {
         [NSString stringWithFormat:@"bufferId=%lld samples=%lu", (long long)bid,
                                    (unsigned long)(samples.length / sizeof(float))]);
     @try {
-      // Stop any current playback
       [self cleanupAudio];
 
-      // Increment utterance ID
       self->_currentAudioUtteranceId++;
 
       [self playFloatSamplesOnAudioQueue:samples
@@ -952,14 +929,13 @@ static int64_t RNSpeechPhononId(double v) {
   resolve([_phonon diagnostics]);
 }
 
-// Speech.resetEngineSupport: +supportInfo is not cached on iOS, so clearing the file is enough.
+// +supportInfo is not cached on iOS, so clearing the record is enough.
 - (void)phononResetSupport:(RCTPromiseResolveBlock)resolve
                     reject:(RCTPromiseRejectBlock)reject {
   resolve(@([RNSpeechPhonon clearCapabilityRecord]));
 }
 
-// RN reload / teardown: cancel everything and drop this module's pending promises, without
-// destroying the handle or waiting for the synth thread (DESIGN.md §1.5).
+// Cancels and drops this module's promises without destroying the handle (DESIGN.md §1.5).
 - (void)invalidate {
   [_phonon invalidate];
 }

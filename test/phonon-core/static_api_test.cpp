@@ -1,5 +1,4 @@
-// static_api_test.cpp — the iOS binding path (RN_SPEECH_PHONON_STATIC_API=1): ptts_* are linked
-// in (here: fake_ptts.c compiled into the binary) and bound without dlopen.
+// iOS binding path (RN_SPEECH_PHONON_STATIC_API=1): fake_ptts.c linked in, bound without dlopen.
 #include <string>
 
 #include "PhononApi.h"

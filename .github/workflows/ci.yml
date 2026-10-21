@@ -291,12 +291,9 @@ jobs:
         run: |
           yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
 
-  # ---------------------------------------------------------------------------------------------
-  # Phonon (docs/phonon/DESIGN.md §4.2). The flag-on jobs need libptts_ffi.so: once
-  # phonon.lock.json pins a published release, Gradle downloads it (sha256-checked) like a
-  # consumer build; while the lock still says PLACEHOLDER, this job builds it from the pinned
-  # upstream commit (cached on the build inputs) and the flag-on jobs pass it as
-  # RNSpeech_phononLibDir, the local override.
+  # Phonon (docs/phonon/DESIGN.md §4.2). With a published release in the lock, Gradle downloads
+  # libptts_ffi.so like a consumer build; while the lock says PLACEHOLDER, this job builds it from
+  # the pinned upstream commit and the flag-on jobs pass it as RNSpeech_phononLibDir.
   phonon-android-libs:
     runs-on: ubuntu-24.04
     outputs:
@@ -494,9 +491,8 @@ jobs:
           fi
           echo "PHONON_FLAGS=$flags" >>"$GITHUB_ENV"
 
-      # The library (FetchPhononTask included) must store and reuse the configuration cache. The
-      # example app as a whole cannot: onnxruntime-react-native's build script is not
-      # configuration-cache compatible, so its problems are tolerated and ours are not.
+      # Only the library must be configuration-cache clean: onnxruntime-react-native's build
+      # script is not, so the example app's problems are tolerated.
       - name: Configuration cache (library, flag on)
         env:
           JAVA_OPTS: '-XX:MaxHeapSize=6g'
@@ -710,8 +706,7 @@ jobs:
           cd "$RUNNER_TEMP/base"
           yarn install --immutable
 
-      # Same settings on both sides: release, arm64-v8a (the consumer default), R8 as the
-      # example ships it (off).
+      # Both sides: release, arm64-v8a (the consumer default), R8 off as the example ships.
       - name: Build APKs
         env:
           JAVA_OPTS: '-XX:MaxHeapSize=6g'

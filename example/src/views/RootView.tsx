@@ -250,8 +250,6 @@ const RootView: React.FC = () => {
   const [kittenModels, setKittenModels] = React.useState<any[]>([]);
   const [phononModels, setPhononModels] = React.useState<any[]>([]);
 
-  // Phonon is shown only where the native probe says it is supported
-  // (never a dialog when it is not; see utils/engineSupport.ts).
   const {
     supportMap,
     refresh: refreshEngineSupport,
@@ -466,7 +464,6 @@ const RootView: React.FC = () => {
           setPhononLoad(null);
           await phononModelManager.scanInstalledModel();
           if (!phononModelManager.getInstalledModel()) {
-            // No dialog: open the Phonon model tab directly.
             setEngineReady(false);
             setModelManagerTab('phonon');
             setShowModelManager(true);
@@ -490,7 +487,6 @@ const RootView: React.FC = () => {
       } catch (error) {
         setEngineReady(false);
         if (engine === TTSEngine.PHONON) {
-          // Never a dialog for Phonon (see engineInitFailure).
           const map = await refreshEngineSupport();
           const outcome = engineInitFailure(
             engine,
@@ -528,8 +524,7 @@ const RootView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEngine, providers, phononComputeUnit]);
 
-  // A Phonon self-test drives Speech directly and leaves Phonon loaded;
-  // re-initialize this view's selected engine so its state matches.
+  // A self-test drives Speech directly; re-sync this view's engine after it.
   const reinitRef = React.useRef(() => {});
   reinitRef.current = () => {
     initializeEngine(selectedEngine, providers);
@@ -915,7 +910,6 @@ const RootView: React.FC = () => {
           await initializeEngine(TTSEngine.PHONON, providers);
         }
       } catch (err) {
-        // Inline, not an Alert (no dialogs on the Phonon path).
         console.log(`[Phonon] download failed: ${String(err)}`);
         setPhononDownloadError(
           err instanceof Error ? err.message : 'Download failed',
@@ -1616,7 +1610,7 @@ const RootView: React.FC = () => {
                 </View>
               )}
 
-              {/* ====== PHONON TAB (only when supported) ====== */}
+              {/* ====== PHONON TAB ====== */}
               {modelManagerTab === 'phonon' && phononVisible && (
                 <View>
                   <Text
@@ -2122,7 +2116,7 @@ const RootView: React.FC = () => {
             )}
           </View>
 
-          {/* Phonon: diagnostics + compute unit (iOS). No ONNX EPs. */}
+          {/* Phonon: diagnostics + compute unit (iOS) */}
           {selectedEngine === TTSEngine.PHONON && (
             <View style={styles.accelerationSection}>
               <Text

@@ -176,9 +176,8 @@ scan_arm64() {
   fi
 }
 
-# --- selftest ---------------------------------------------------------------------------------
-# Builds tiny libraries with the NDK clang: one that must pass every check, and negatives that
-# must each fail exactly the check they target.
+# Self-test: tiny NDK-clang libraries, one that passes every check and negatives that each fail
+# exactly the check they target.
 selftest() {
   local ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}" clang="" p dir out rc st=0
   if [[ -n "$ndk" ]]; then

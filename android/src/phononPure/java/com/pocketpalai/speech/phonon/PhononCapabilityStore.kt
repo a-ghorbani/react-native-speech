@@ -3,14 +3,11 @@ package com.pocketpalai.speech.phonon
 import java.io.File
 
 /**
- * Persisted negative capability record (DESIGN.md §2.4). After a library-missing,
- * symbols-missing or (non-config) load-failed outcome, getSupport reports that reason without
- * touching native code again, until a key component changes: the device/OS build
- * (Build.FINGERPRINT), the library release, or (for load-failed) the model at the recorded
- * path, e.g. a re-download (same rule as iOS). Speech.resetEngineSupport clears it.
+ * Persisted negative capability record (DESIGN.md §2.4): getSupport keeps reporting it without
+ * touching native code until Build.FINGERPRINT, the library release or (load-failed only) the
+ * recorded model changes, or Speech.resetEngineSupport clears it.
  *
- * One small flat JSON object in noBackupFilesDir. Hand-rolled encoding keeps it free of
- * org.json, which is a stub on the JVM unit-test classpath.
+ * Hand-rolled flat JSON because org.json is a stub on the JVM unit-test classpath.
  */
 class PhononCapabilityStore(private val file: File) {
   data class Record(
@@ -24,14 +21,12 @@ class PhononCapabilityStore(private val file: File) {
     /** Folder of the model that failed (load-failed only); "" for library failures. */
     val modelPath: String = ""
   ) {
-    /** Device + library part of the key; see [applies] for the model part. */
     fun matches(device: String, libraryVersion: String): Boolean =
       this.device == device && this.libraryVersion == libraryVersion
 
     /**
-     * Whether the probe should still report this record. The probe has no model at hand, so a
-     * load-failed record re-checks the model at its own [modelPath] ([stampOf] =
-     * [modelStamp] of a folder): a re-downloaded or replaced model re-enables the engine.
+     * Whether the probe, which has no model at hand, still reports this record: load-failed
+     * re-stamps its own [modelPath] with [stampOf], so a replaced model re-enables the engine.
      */
     fun applies(device: String, libraryVersion: String, stampOf: (String) -> String): Boolean =
       matches(device, libraryVersion) &&
@@ -49,7 +44,7 @@ class PhononCapabilityStore(private val file: File) {
       null
     }
 
-  /** Atomic replace (write + rename). Returns false on I/O failure; never throws. */
+  /** Atomic replace; false on I/O failure, never throws. */
   fun write(record: Record): Boolean =
     try {
       file.parentFile?.mkdirs()
@@ -71,15 +66,11 @@ class PhononCapabilityStore(private val file: File) {
     const val REASON_SYMBOLS_MISSING = "symbols-missing"
     const val REASON_LOAD_FAILED = "load-failed"
 
-    /** Outcomes that are recorded; everything else is not persisted. */
     val PERSISTED_REASONS = setOf(REASON_LIBRARY_MISSING, REASON_SYMBOLS_MISSING, REASON_LOAD_FAILED)
 
     /**
-     * ptts_new failures caused by the app's input (a missing / half-downloaded / wrong
-     * checkpoint folder, a bad language) or by transient memory pressure must not hide the
-     * engine: the next attempt with a fixed folder can work. Only failures that match none of
-     * these are recorded. On the CPU engine nearly every real failure is one of these, so this
-     * is deliberately conservative.
+     * ptts_new messages that point at the app's input (bad folder or language) or memory
+     * pressure: retryable, so never persisted. Upstream has no error codes, hence the match.
      */
     private val NOT_PERSISTED = Regex(
       listOf(
@@ -97,10 +88,7 @@ class PhononCapabilityStore(private val file: File) {
       return msg.isNotEmpty() && !NOT_PERSISTED.containsMatchIn(msg)
     }
 
-    /**
-     * Identifies a model folder: canonical path plus name, size and mtime of the files ptts
-     * reads. A re-download or another variant changes it.
-     */
+    /** Canonical path plus name, size and mtime of the files ptts reads. */
     fun modelStamp(dir: File): String {
       val path = try {
         dir.canonicalPath
@@ -130,7 +118,6 @@ class PhononCapabilityStore(private val file: File) {
         ).joinToString(",") { (k, v) -> "\"$k\":$v" } +
         "}"
 
-    /** null for anything that is not a complete record. */
     fun decode(text: String): Record? {
       val fields = HashMap<String, String>()
       for (m in FIELD.findAll(text)) {

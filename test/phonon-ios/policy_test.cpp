@@ -1,6 +1,3 @@
-// Host tests for ios/phonon/PhononIosPolicy (support order, compile detection, recovery set,
-// load-error classification, gain, capability-record matching). Build/run:
-// scripts/test-phonon-ios.sh. The same decisions are exercised on iOS by PhononTests.m.
 #include <cmath>
 #include <limits>
 #include <string>

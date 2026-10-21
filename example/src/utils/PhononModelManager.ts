@@ -11,12 +11,9 @@
  * names checkpoint voices by file stem) and a `voices.jsonl` with their
  * display metadata.
  *
- * iOS: the CI-precompiled Core ML bundle (`.mlmodelc`, no on-device
- * compile) mirrored unzipped to an HF repo we control (owner decision D1:
- * palshub org). The manifest (`path<TAB>size<TAB>sha256` per file, from
- * scripts/phonon/precompile-coreml.sh) drives a per-file download, so no
- * zip library is needed. The mirror location is configurable
- * (`setIosMirror`) because the repo may not be published yet.
+ * iOS: the CI-precompiled Core ML bundle (`.mlmodelc`) mirrored unzipped
+ * to a palshub HF repo (D1). Its manifest (`path<TAB>size<TAB>sha256`,
+ * from scripts/phonon/precompile-coreml.sh) drives a per-file download.
  *
  * Every file is checked against its pinned size and sha256 in a staging
  * directory, which is renamed into place only when complete (atomic
@@ -215,10 +212,8 @@ export const PHONON_CURATED_VOICES: readonly CuratedVoice[] = [
 ];
 
 /**
- * Default iOS mirror (D1). The repo may not exist until the precompiled
- * bundle from phonon-binaries.yml is uploaded; override with
- * `setIosMirror` (the self-test deep link takes `mirrorRepo` /
- * `mirrorRev`). Upload layout = precompile-coreml.sh's out dir:
+ * Default iOS mirror (D1); unpinned until published, override with
+ * `setIosMirror`. Layout = precompile-coreml.sh's out dir:
  * `<bundleName>/...` plus `<bundleName>.manifest.tsv` at the repo root.
  */
 export const DEFAULT_PHONON_IOS_MIRROR: PhononIosMirror = {
@@ -230,11 +225,7 @@ export const DEFAULT_PHONON_IOS_MIRROR: PhononIosMirror = {
   manifestSha256: null,
 };
 
-/**
- * True when `mirror` pins both a commit (40-hex revision) and the
- * manifest's own sha256. Pin DEFAULT_PHONON_IOS_MIRROR once the mirror
- * is published.
- */
+/** True when `mirror` pins both a commit sha and the manifest's sha256. */
 export function isPinnedMirror(mirror: PhononIosMirror): boolean {
   return (
     /^[0-9a-f]{40}$/.test(mirror.revision) &&
@@ -654,9 +645,8 @@ export class PhononModelManager {
   }
 
   /**
-   * Fail before any download when the disk is clearly too small. A
-   * failing `getFSInfo` is not fatal (fails soft: the download proceeds
-   * and a full disk surfaces as a download error).
+   * Fail before any download when the disk is clearly too small. A failing
+   * `getFSInfo` skips the check (a full disk then fails the download).
    */
   private async checkFreeSpace(totalBytes: number): Promise<void> {
     let free: number;

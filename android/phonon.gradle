@@ -1,18 +1,13 @@
-// Phonon (opt-in) binaries: fetch, verify and stage libptts_ffi.so for the JNI shim.
-// Applied from build.gradle only when RNSpeech_phononEnabled resolved to true
-// (docs/phonon/DESIGN.md §3.2).
+// Fetches, verifies and stages libptts_ffi.so for the JNI shim (docs/phonon/DESIGN.md §3.2).
+// Applied from build.gradle only when Phonon is enabled.
 //
 // Sources, in order:
-//   1. RNSpeech_phononLibDir=/abs/jniLibs  local binaries (offline / dev override). The dir holds
-//      <abi>/libptts_ffi.so; phonon_required_hwcaps.h is taken from <libDir>/../include (the
-//      layout scripts/phonon/build-android.sh stages) or <libDir>/include.
-//   2. The release asset named in phonon.lock.json, downloaded once into
-//      <gradle user home>/caches/rnspeech-phonon/<release>/ and verified against its sha256.
-//      RNSpeech_phononBaseUrl overrides the download base (a mirror, or file:///.../dist to try
-//      the download path against local zips after scripts/phonon/update-lock.sh).
+//   1. RNSpeech_phononLibDir: local <abi>/libptts_ffi.so, with phonon_required_hwcaps.h in
+//      <libDir>/../include (the scripts/phonon/build-android.sh layout) or <libDir>/include.
+//   2. The phonon.lock.json release asset, cached under <gradle user home>/caches/rnspeech-phonon
+//      and sha256-verified. RNSpeech_phononBaseUrl overrides the base (a mirror, or file://).
 //
-// Output: build/phonon/jniLibs/<abi>/libptts_ffi.so (added to every variant's jniLibs) and
-// build/phonon/include/phonon_required_hwcaps.h (CMake include dir for the shim).
+// Output: build/phonon/jniLibs/<abi>/ (every variant's jniLibs) and build/phonon/include/.
 
 import java.security.MessageDigest
 import java.util.zip.ZipFile
@@ -24,20 +19,17 @@ abstract class FetchPhononTask extends DefaultTask {
   @Input abstract Property<String> getBaseUrl()
   @Input abstract ListProperty<String> getAbis()
   @Input abstract Property<String> getArm64Features()
-  // Local override; "" = download. A path string, not an @InputDirectory, so an unset value
-  // needs no placeholder dir; the copied files are hashed through the outputs instead.
+  // "" = download. A string, not an @InputDirectory, so unset needs no placeholder dir;
+  // localFiles makes edits to the local binaries re-run the task.
   @Input abstract Property<String> getLibDir()
-  // The local override's files, so editing them re-runs the task.
   @InputFiles @PathSensitive(PathSensitivity.RELATIVE) abstract ConfigurableFileCollection getLocalFiles()
-  // Our vendored cpp/phonon/ptts.h: the binaries must ship the identical header.
+  // The binaries must ship a ptts.h identical to cpp/phonon/ptts.h.
   @InputFile @PathSensitive(PathSensitivity.NONE) abstract RegularFileProperty getPttsHeader()
   @Internal abstract DirectoryProperty getCacheDir()
 
   @OutputDirectory abstract DirectoryProperty getJniLibsDir()
   @OutputDirectory abstract DirectoryProperty getIncludeDir()
 
-  // Helpers are protected, not private: Gradle subclasses the task (FetchPhononTask_Decorated)
-  // and Groovy closures cannot dispatch to the superclass's private methods.
   static final String LIB = "libptts_ffi.so"
   static final String HWCAPS = "phonon_required_hwcaps.h"
 
@@ -59,6 +51,8 @@ abstract class FetchPhononTask extends DefaultTask {
     checkFeatures(new File(incOut, HWCAPS))
   }
 
+  // Helpers are protected: Groovy closures in the Gradle-decorated subclass cannot call private
+  // superclass methods.
   protected void stageLocal(File dir, File jniOut, File incOut) {
     if (!dir.isDirectory()) {
       throw new GradleException("RNSpeech: RNSpeech_phononLibDir=${dir} is not a directory")
@@ -80,7 +74,6 @@ abstract class FetchPhononTask extends DefaultTask {
           "(looked in ${dir.parentFile}/include and ${dir}/include)")
     }
     new File(incOut, HWCAPS).bytes = new File(inc, HWCAPS).bytes
-    // build-android.sh stages ptts.h next to the hwcaps header; a hand-assembled dir may not.
     File ptts = new File(inc, "ptts.h")
     if (ptts.isFile()) {
       checkPttsHeader(ptts.bytes, ptts.path)
@@ -138,7 +131,6 @@ abstract class FetchPhononTask extends DefaultTask {
       def hw = zip.getEntry("include/${HWCAPS}")
       if (hw == null) throw new GradleException("RNSpeech: ${zipFile.name} has no include/${HWCAPS}")
       new File(incOut, HWCAPS).bytes = zip.getInputStream(hw).bytes
-      // package-android.sh always ships ptts.h: a zip without it is not one of ours.
       def ptts = zip.getEntry("include/ptts.h")
       if (ptts == null) throw new GradleException("RNSpeech: ${zipFile.name} has no include/ptts.h")
       checkPttsHeader(zip.getInputStream(ptts).bytes, "${zipFile.name}!include/ptts.h")
@@ -146,8 +138,7 @@ abstract class FetchPhononTask extends DefaultTask {
     logger.lifecycle("RNSpeech: Phonon binaries ${release.get()} (${abis.get().join(', ')})")
   }
 
-  // The HWCAP gate must describe the library that ships: the header's feature list has to be
-  // the lock's (the shim re-checks this with a static_assert).
+  // The shim re-checks this with a static_assert.
   protected void checkFeatures(File header) {
     def m = header.text =~ /#define\s+PHONON_ARM64_FEATURES\s+"([^"]*)"/
     String found = m.find() ? m.group(1) : null
@@ -191,7 +182,7 @@ if (!unknownAbis.isEmpty()) {
       "exist for ${lockAbis} only")
 }
 
-// Releases are published by .github/workflows/phonon-binaries.yml on this package's repo.
+// Published by .github/workflows/phonon-binaries.yml.
 def repoMatch = (new groovy.json.JsonSlurper().parse(file("../package.json")).repository?.url ?: "") =~
     /github\.com[\/:]([^\/]+\/[^\/.]+)/
 def defaultBaseUrl = repoMatch.find() ?
@@ -227,7 +218,6 @@ android {
       cmake {
         arguments "-DRN_SPEECH_PHONON_INCLUDE_DIR=${layout.buildDirectory.dir('phonon/include').get().asFile}",
             "-DRN_SPEECH_PHONON_ARM64_FEATURES=${phononLock.arm64Features}",
-            // The shim is built only for ABIs that also get libptts_ffi.so.
             "-DRN_SPEECH_PHONON_ABIS=${phonon.abis.join(',')}"
       }
     }
@@ -246,8 +236,7 @@ tasks.configureEach { t ->
   }
 }
 
-// scripts/test-phonon-jni-host.sh: hand the host-built shim, a host libptts_ffi.so and a
-// checkpoint folder to PhononNativeHostTest (src/phononTest). Unset → those tests are skipped.
+// Set by scripts/test-phonon-jni-host.sh for PhononNativeHostTest; unset → those tests skip.
 def hostTestProps = ["phononHostShim", "phononHostLib", "phononModelDir"].collectEntries { [(it): phononOption(it)] }
 tasks.withType(Test).configureEach { t ->
   hostTestProps.each { k, v -> if (v) t.systemProperty("rnspeech.${k}", v) }

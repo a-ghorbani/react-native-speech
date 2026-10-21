@@ -17,7 +17,7 @@ struct SpeakCtx {
   const Core* core;
   int64_t requestId;
   size_t maxSamples;
-  const std::function<void()>* hook;  // nullptr when no hook
+  const std::function<void()>* hook;
   unsigned hookEvery;
   unsigned frames;
   bool failed;
@@ -175,8 +175,6 @@ double monotonic_ms() {
   return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
 }
 
-// ---------------------------------------------------------------------------------------------
-
 Core& Core::get() {
   static Core* instance = new Core();
   return *instance;
@@ -201,8 +199,8 @@ bool Core::libraryLoaded() const { return apiSet_.load(); }
 int64_t Core::allocRequestId() { return lastIssuedId_.fetch_add(1) + 1; }
 
 void Core::cancelUpTo(int64_t id) {
-  // fetch_max: order of concurrent cancels never matters, the watermark only moves forward.
-  // Clamped to the last issued id, so a bogus id from JS cannot poison future requests.
+  // CAS fetch_max: the watermark only moves forward. Clamped so a bogus JS id cannot
+  // pre-cancel future requests.
   id = std::min(id, lastIssuedId_.load());
   int64_t cur = watermark_.load();
   while (id > cur && !watermark_.compare_exchange_weak(cur, id)) {
@@ -259,7 +257,7 @@ Err Core::createImpl(const std::string& dir, uint32_t unit, const std::string& l
     if (err != nullptr) *err = "Phonon library not loaded";
     return Err::Unsupported;
   }
-  // One live handle per process: stop everything issued so far, then free the old handle.
+  // One live handle per process.
   cancelAll();
   freeHandleLocked();
 
@@ -267,7 +265,7 @@ Err Core::createImpl(const std::string& dir, uint32_t unit, const std::string& l
   const double t0 = monotonic_ms();
   PttsHandle* h = api_.create(dir.c_str(), unit, lang.c_str());
   if (h == nullptr) {
-    // ptts_new errors are thread-local upstream: read them here, on the same thread.
+    // ptts_new errors are thread-local upstream.
     if (err != nullptr) *err = handle_error(api_, nullptr, "ptts_new failed");
     return Err::LoadFailed;
   }
@@ -333,7 +331,7 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
   if (requestId <= 0 || requestId > lastIssuedId_.load()) {
     return fail(Err::Internal, "unknown request id " + std::to_string(requestId));
   }
-  // Check 1: on dequeue. A queued request that was cancelled never touches ptts.
+  // Cancel check 1: on dequeue, before touching ptts.
   if (isCancelled(requestId)) {
     r->cancelled = true;
     return Err::None;
@@ -364,8 +362,7 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
     currentLang_ = lang;
     r->voiceChanged = true;
   }
-  // "" means upstream's default. On a fresh handle that is already active, so no set_voice;
-  // after an explicit voice it switches back.
+  // "" = upstream default, already active on a fresh handle (no set_voice needed).
   const std::string& wanted = voice.empty() ? defaultVoice_ : voice;
   if (wanted != currentVoice_) {
     if (!api_.set_voice(handle_, wanted.c_str())) {
@@ -391,7 +388,7 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
         std::min<double>(estimate, static_cast<double>(std::min(limits_.maxReserveSamples,
                                                                 maxSamples)))));
   } catch (const std::bad_alloc&) {
-    // Not fatal: the callback grows the sink, and reports a failed allocation itself.
+    // Not fatal: the callback grows the sink and reports its own bad_alloc.
   }
 
   SpeakCtx ctx{&sink, this, requestId, maxSamples, frameHook_ ? &frameHook_ : nullptr,
@@ -437,8 +434,6 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
   return Err::None;
 }
 
-// ---- buffer store ---------------------------------------------------------------------------
-
 bool Core::isOrphan(const Buffer& b) const { return isCancelled(b.requestId); }
 
 size_t Core::bytesLocked() const {
@@ -448,7 +443,7 @@ size_t Core::bytesLocked() const {
 }
 
 void Core::evictOrphansLocked(size_t extraBytes) {
-  // Oldest first. Never evicts a live (non-orphan) buffer: that one is about to play.
+  // Oldest first; live (non-orphan) buffers are about to play and are never evicted.
   for (auto it = buffers_.begin(); it != buffers_.end();) {
     const bool full = buffers_.size() >= limits_.maxBuffers ||
                       bytesLocked() + extraBytes > limits_.maxBytes;

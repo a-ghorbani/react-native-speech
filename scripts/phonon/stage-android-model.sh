@@ -45,8 +45,7 @@ DEST="$ROOT_DIR/31m-en"
 BASE="${PHONON_HF_BASE_URL:-https://huggingface.co}"
 sha() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
-# Checkpoint: fetch-ci-model.sh into <dir>/.cache/phonon-31m-en, then copied (not linked: adb
-# push follows the folder as it is).
+# Copied from the fetch-ci-model.sh cache, not linked: adb push does not follow symlinks.
 ckpt="$("$HERE/fetch-ci-model.sh" "$ROOT_DIR/.cache" | tail -1)"
 mkdir -p "$DEST/voices"
 while read -r name want; do

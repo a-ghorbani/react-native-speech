@@ -1,5 +1,5 @@
-// Host stand-in for bionic's <sys/system_properties.h> (test/phonon-jni only).
-// Every property reads as unset (""), like a stock phone's ro.dalvik.vm.native.bridge.
+// Host stand-in for <sys/system_properties.h>; every property reads as unset, like a stock
+// phone's ro.dalvik.vm.native.bridge.
 #pragma once
 #define PROP_VALUE_MAX 92
 #ifdef __cplusplus

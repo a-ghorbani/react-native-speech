@@ -1,5 +1,4 @@
-# Host tests for cpp/phonon (DESIGN.md §1.4, WP3). Lives outside cpp/ so neither the Android
-# CMake build, the podspec glob nor npm can pick it up. Run via scripts/test-phonon-core.sh.
+# Host tests for cpp/phonon, outside cpp/ so no Android build, podspec glob or npm picks them up.
 cmake_minimum_required(VERSION 3.16)
 project(phonon_core_test C CXX)
 

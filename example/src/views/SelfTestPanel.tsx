@@ -241,8 +241,7 @@ const SelfTestPanel: React.FC = () => {
   const [summary, setSummary] = React.useState<string | null>(null);
   const {supportMap} = useEngineSupport();
 
-  // Same run as the deep link (speechexample://selftest/phonon), with a
-  // shorter S3/S8; results land in Documents/phonon-evidence/<runId>/.
+  // The deep-link run with shorter S3/S8; evidence in Documents/phonon-evidence/.
   const runPhonon = React.useCallback(async () => {
     const params = parseSelfTestUrl(
       'speechexample://selftest/phonon?runs=3&cycles=3',

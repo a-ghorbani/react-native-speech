@@ -1,19 +1,14 @@
 package com.pocketpalai.speech.phonon
 
 /**
- * CPU feature and translation checks for the Phonon probe. Pure functions (no Android APIs),
- * so the HWCAP matrix is unit tested on the JVM. The required bits come from the shim's
- * generated phonon_required_hwcaps.h (scripts/phonon/gen-hwcaps-header.sh), i.e. from the
- * same ARM64_FEATURES libptts_ffi.so was compiled with.
+ * CPU feature and translation checks for the probe. Required bits come from the generated
+ * phonon_required_hwcaps.h, i.e. the ARM64_FEATURES libptts_ffi.so was compiled with.
  */
 object PhononCpu {
   /** One required bit: [word] 1 = AT_HWCAP, 2 = AT_HWCAP2; [name] as /proc/cpuinfo prints it. */
   data class Requirement(val word: Int, val bit: Long, val name: String)
 
-  /**
-   * Parses the shim's "<word>:<bit>:<name>" entries. Malformed entries are an error, and so is
-   * null (the shim failed to build the list): the gate fails closed, never "no requirements".
-   */
+  /** Parses "<word>:<bit>:<name>" entries; null or malformed throws, so the gate fails closed. */
   fun parseRequirements(entries: Array<String>?): List<Requirement> =
     checkNotNull(entries) { "hwcap requirements unavailable from the shim" }.map { entry ->
       val parts = entry.split(":", limit = 3)
@@ -24,7 +19,6 @@ object PhononCpu {
       Requirement(word, java.lang.Long.parseUnsignedLong(parts[1]), parts[2])
     }
 
-  /** Names of the required features missing from (hwcap, hwcap2); empty = all present. */
   fun missing(hwcap: Long, hwcap2: Long, required: List<Requirement>): List<String> =
     required
       .filter { req ->
@@ -34,9 +28,8 @@ object PhononCpu {
       .map { it.name }
 
   /**
-   * True when an arm64 shim runs under binary translation on an x86 host (ChromeOS
-   * ndk_translation / houdini, Waydroid, WSA): HWCAP values there describe the translator,
-   * not real silicon, and performance is unusable.
+   * arm64 under binary translation (ChromeOS, Waydroid, WSA): HWCAP describes the translator,
+   * not the silicon, and performance is unusable.
    */
   fun isTranslated(nativeAbi: String, supportedAbis: List<String>, nativeBridge: String?): Boolean {
     if (nativeAbi != "arm64-v8a") return false

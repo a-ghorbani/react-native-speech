@@ -1,9 +1,4 @@
-// core_test.cpp — host tests for cpp/phonon (PhononApi, PhononCore, PhononWorker) against the
-// fake ptts library. Run through scripts/test-phonon-core.sh (ASan + UBSan).
-//
-// Usage: core_test [name-filter]
-// Optional real-library smoke test: PHONON_REAL_LIB=/path/libptts_ffi.so
-//                                    PHONON_MODEL_DIR=/path/phonon-31m-en core_test real_lib
+// Usage: core_test [name-filter]; see README.md for the optional real_lib test.
 #include <dlfcn.h>
 #include <pthread.h>
 
@@ -118,7 +113,6 @@ Synth synth(Core& core, int64_t handle, int64_t id, const std::string& text = "H
   return s;
 }
 
-// Post a job to `worker` and return a future for its result.
 template <typename F>
 auto onWorker(Worker& worker, F fn) -> std::future<decltype(fn())> {
   auto task = std::make_shared<std::packaged_task<decltype(fn())()>>(std::move(fn));

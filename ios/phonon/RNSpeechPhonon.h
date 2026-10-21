@@ -1,10 +1,6 @@
-// RNSpeechPhonon.h — iOS bridge from RNSpeech (TurboModule) onto the shared Phonon core
-// (cpp/phonon). Compiled only when the pod is installed with ENV['RN_SPEECH_PHONON'] = '1'.
-// See docs/phonon/DESIGN.md §1.3–§1.5, §2.2, §2.4.
-//
-// Process-wide state (Core, the synth worker, the handle) is shared by every instance and
-// survives RN reloads. One instance belongs to one RNSpeech module: its pending promises are
-// dropped, never resolved into a dead runtime, once -invalidate is called.
+// iOS bridge onto the shared Phonon core (cpp/phonon); docs/phonon/DESIGN.md §1.3–§1.5, §2.2, §2.4.
+// Core, worker and handle are process-wide and survive RN reloads. Each instance belongs to one
+// RNSpeech module; after -invalidate its pending promises are dropped, never settled.
 #import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -15,18 +11,17 @@ typedef void (^RNSpeechPhononReject)(NSString *code, NSString *_Nullable message
 
 @interface RNSpeechPhonon : NSObject
 
-#pragma mark Support (cheap; never touches the Phonon library)
+#pragma mark Support (never touches the Phonon library)
 
-/// PhononSupportInfo: §2.2 order (DEBUG force reason, capability record, iOS 18, x86_64
-/// simulator, physical memory).
+/// PhononSupportInfo, decided in §2.2 order.
 + (NSDictionary<NSString *, id> *)supportInfo;
-/// e.g. "0.4.0-r1" (from phonon.lock.json via the podspec).
+/// From phonon.lock.json via the podspec, e.g. "0.4.0-r1".
 + (NSString *)libraryVersion;
 /// "ios-arm64" | "ios-arm64-simulator" | "ios-x86_64-simulator".
 + (NSString *)abi;
-/// Any .mlpackage in `modelDir` without a compiled .mlmodelc beside it.
+/// Any .mlpackage in `modelDir` lacks a sibling .mlmodelc.
 + (BOOL)needsCompile:(NSString *)modelDir;
-/// The one JS → PTTS_UNIT_* mapping (Core); returns the effective unit reported to JS.
+/// Maps a JS compute unit to PTTS_UNIT_*; returns the effective unit reported to JS.
 + (NSString *)effectiveComputeUnitFor:(NSString *)requested pttsUnit:(uint32_t *_Nullable)unit;
 
 #pragma mark Capability store (Library/Application Support/rnspeech-phonon-cap.json)
@@ -62,21 +57,20 @@ typedef void (^RNSpeechPhononReject)(NSString *code, NSString *_Nullable message
                     language:(NSString *)language
                      resolve:(RNSpeechPhononResolve)resolve
                       reject:(RNSpeechPhononReject)reject;
-/// Moves the buffer out of the store as float32 mono samples with `gain` and [-1, 1] clamp
-/// applied. nil if the id is unknown.
+/// Moves the buffer out of the store with `gain` and a [-1, 1] clamp applied; nil if unknown.
 - (nullable NSData *)takeBuffer:(int64_t)bufferId gain:(float)gain;
 /// Base64 little-endian float32 copy; the buffer stays in the store.
 - (void)copyBuffer:(int64_t)bufferId
            resolve:(RNSpeechPhononResolve)resolve
             reject:(RNSpeechPhononReject)reject;
 - (BOOL)releaseBuffer:(int64_t)bufferId;
-/// Enqueued on the synth thread; settles after it ran (stale id: PHONON_INVALID_HANDLE).
+/// Queued behind in-flight work on the synth thread; a stale id rejects PHONON_INVALID_HANDLE.
 - (void)destroyHandle:(int64_t)handleId
               resolve:(RNSpeechPhononResolve)resolve
                reject:(RNSpeechPhononReject)reject;
 - (NSDictionary<NSString *, id> *)diagnostics;
-/// RN reload / module teardown: cancelAll, free unplayed buffers, drop this instance's pending
-/// promises. Returns at once; never destroys the handle or waits for the synth thread.
+/// cancelAll, free unplayed buffers and drop pending promises. Never destroys the handle or
+/// waits for the synth thread.
 - (void)invalidate;
 
 @end

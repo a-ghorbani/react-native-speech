@@ -137,8 +137,6 @@ class PhononSessionTest {
     "fp", "0.4.0-r1", stamp, PhononCapabilityStore.REASON_LOAD_FAILED, "bad weights", 1L
   )
 
-  // ---- create -------------------------------------------------------------------------------
-
   @Test
   fun createRejectsWithoutNativeWorkWhenProbeFails() {
     host.support = PhononProbe.Result(false, "missing-cpu-features", "asimddp", "arm64-v8a")
@@ -314,8 +312,6 @@ class PhononSessionTest {
     assertEquals(PhononSession.INTERNAL, s.code)
   }
 
-  // ---- module tokens ------------------------------------------------------------------------
-
   @Test
   fun invalidatingOneModuleKeepsAnotherModulesPromises() {
     // Two React instances in one process: invalidating A must not strand B's work.
@@ -396,8 +392,6 @@ class PhononSessionTest {
     session.onModuleInvalidated(alive)
     assertTrue(host.calls.isEmpty())
   }
-
-  // ---- synth / destroy / buffers ------------------------------------------------------------
 
   @Test
   fun synthesizeWithoutShimRejects() {

@@ -1,7 +1,6 @@
 /**
- * Speech facade: Phonon routing, getEngineSupport, and the
- * "currentEngine only changes after a successful init" fix for every
- * engine.
+ * Speech facade: Phonon routing, getEngineSupport, and currentEngine
+ * changing only after a successful init (every engine).
  */
 import type {FakeNativePhonon} from '../engines/phonon/__tests__/fakeNativePhonon.shared';
 

@@ -91,8 +91,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   // Neural Audio Player state
   private var audioTrack: AudioTrack? = null
-  // Play promise of audioTrack: settled on completion, or (like iOS) when the track is stopped
-  // or replaced, so a stopped play never stays pending. Guarded by audioLock.
+  // Settled on completion, or (like iOS) when the track is stopped or replaced. Guarded by audioLock.
   private var audioTrackPromise: Promise? = null
   private var isAudioPlayingState = false
   private var isAudioPausedState = false
@@ -705,9 +704,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
     selectedEngine = engineName
 
-    // OS TTS only: invalidate() is the module's teardown and would also cancel Phonon work,
-    // drop its pending promises and free buffers the live JS runtime still holds, and stop
-    // the neural audio executor.
+    // Not invalidate(): that tears down Phonon and the audio executor of a live module.
     resetSystemTts()
 
     pendingOperations.add(Pair({ promise.resolve(null) }, promise))
@@ -796,7 +793,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       audioTrack = null
       isAudioPlayingState = false
       isAudioPausedState = false
-      // Stopped or replaced before the end marker: resolve, like a finished play.
       audioTrackPromise?.resolve(null)
       audioTrackPromise = null
     }
@@ -815,11 +811,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, ducking, promise)
   }
 
-  /**
-   * Shared PCM16 playback entry point for the base64 player (playAudio) and Phonon's native
-   * buffers (phononPlayBuffer). [pcm] supplies little-endian Int16 PCM and is invoked on the
-   * audio executor.
-   */
+  /** Shared by playAudio and phononPlayBuffer; [pcm] (LE Int16) is invoked on the audio executor. */
   private fun playPcm16(
     pcm: () -> ByteArray,
     sampleRate: Int,
@@ -830,7 +822,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     try {
       audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, ducking, promise) }
     } catch (e: RejectedExecutionException) {
-      // Only after invalidate() shut the executor down.
+      // invalidate() shut the executor down.
       promise.reject("audio_error", "Audio player is shut down", e)
     }
   }
@@ -853,7 +845,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
         val decodedBytes = pcm()
         if (decodedBytes.size < 2) {
-          // Nothing to play: a static track's 0 marker may never be reached.
+          // A static track's 0 marker may never be reached.
           SpeechTrace.endSection()
           promise.resolve(null)
           return
@@ -908,7 +900,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
           override fun onMarkerReached(track: AudioTrack?) {
             synchronized(audioLock) {
-              // A late marker of a track that was stopped or replaced (already settled).
+              // Late marker of a stopped or replaced track (already settled).
               if (audioTrackPromise !== promise) return
               audioTrackPromise = null
               isAudioPlayingState = false
@@ -1029,11 +1021,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  // Phonon engine: thin delegations. PhononBridge is the real bridge when
-  // built with RNSpeech_phononEnabled=true, otherwise a not-compiled stub.
-
-  // This module's liveness token for Phonon work: invalidate() clears it, so only this
-  // module's pending Phonon promises are dropped (other React instances keep theirs).
+  // Cleared by invalidate(), so only this module's pending Phonon promises are dropped.
   private val phononAlive = AtomicBoolean(true)
 
   override fun phononGetSupport(promise: Promise) {
@@ -1072,8 +1060,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   override fun phononPlayBuffer(bufferId: Double, config: ReadableMap, promise: Promise) {
-    // The bridge takes the buffer and converts it (volume as gain); playback, events and
-    // isAudioPlaying state are the base64 player's.
     PhononBridge.playBuffer(bufferId.toLong(), config, promise) { pcm, sampleRate, ducking ->
       playPcm16({ pcm }, sampleRate, 1, ducking, promise)
     }
@@ -1099,7 +1085,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     PhononBridge.resetSupport(reactApplicationContext, promise)
   }
 
-  /** Shuts down the OS TTS engine (setEngine re-initializes it on a live module). */
   private fun resetSystemTts() {
     if (::synthesizer.isInitialized) {
       synthesizer.stop()
@@ -1111,12 +1096,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun invalidate() {
     super.invalidate()
-    // Real teardown only (never setEngine). Phonon state is process-wide: cancel only,
-    // never destroy or join.
+    // Phonon state is process-wide: cancel only, never destroy or join.
     PhononBridge.onModuleInvalidated(phononAlive)
     resetSystemTts()
 
-    // Cleanup neural audio player (never settle into the dead JS runtime)
+    // Cleanup neural audio player; never settle into the dead JS runtime.
     synchronized(audioLock) {
       audioTrackPromise = null
     }

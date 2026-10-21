@@ -85,8 +85,8 @@ prelink() {
   local lib="$SRC/$slice/libptts_ffi.a" dir="$WORK/slices/$name"
   [[ -f "$lib" ]] || { echo "upstream has no $slice/libptts_ffi.a" >&2; exit 1; }
   mkdir -p "$dir/members"
-  # Members are extracted rather than force-loaded so the object list is explicit; ar would
-  # silently keep only one of two same-named members, so duplicates are an error.
+  # Extracted, not force-loaded, so the object list is explicit; ar -x would silently drop one of
+  # two same-named members, hence the duplicate check.
   local dups
   dups="$(xcrun ar -t "$lib" | grep -v '^__\.SYMDEF' | sort | uniq -d)"
   [[ -z "$dups" ]] || { echo "$lib has duplicate member names: $dups" >&2; exit 1; }
@@ -161,8 +161,7 @@ jq -n --arg repo "$REPO" --arg tag "$TAG" --arg commit "$COMMIT" --arg upSha "$U
   >"$PKG/BUILDINFO.json"
 cp "$PKG/BUILDINFO.json" "$OUT_DIR/BUILDINFO-ios.json"
 
-# Fixed mtimes (SOURCE_DATE_EPOCH: the workflow passes the upstream commit time, as
-# build-android.sh uses), so the zip's metadata does not change from run to run.
+# Fixed mtimes (the workflow passes the upstream commit time) for a reproducible zip.
 EPOCH="${SOURCE_DATE_EPOCH:-315532800}"
 STAMP="$(TZ=UTC date -r "$EPOCH" +%Y%m%d%H%M.%S)"
 find "$PKG" -exec env TZ=UTC touch -h -t "$STAMP" {} +

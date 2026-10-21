@@ -224,10 +224,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   private warnedSpeed = false;
   private warnedPitch = false;
 
-  // ============================================================
-  // Support
-  // ============================================================
-
   /**
    * Cheap capability probe; never loads the Phonon library and never
    * throws. A resolved probe is cached for the process; a rejection
@@ -254,8 +250,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
         supported: info.supported && info.reason === 'ok',
         detail: info.detail ?? '',
       };
-      // A load-failed record is about one model: native drops it once the
-      // model changes, so it is asked again every time.
+      // Native drops a load-failed record when the model changes.
       if (!UNCACHED_REASONS.includes(normalized.reason)) {
         PhononEngine.supportCache = normalized;
       }
@@ -308,10 +303,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     }
   }
 
-  // ============================================================
-  // Lifecycle
-  // ============================================================
-
   setChunkProgressCallback(callback: ChunkProgressCallback | null): void {
     this.chunkProgressCallback = callback;
   }
@@ -353,7 +344,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     return run;
   }
 
-  /** True while an initialize() is queued or running. */
   private get isLoading(): boolean {
     return this.pendingInits > 0;
   }
@@ -452,12 +442,11 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
           `unit=${result.computeUnit} compiled=${result.compiled}`,
       );
     } catch (error) {
-      // Clean up any partial initialization to allow retry
+      // Clean up partial initialization to allow retry.
       await this.teardown();
       this.initError = error instanceof Error ? error.message : 'Unknown error';
       if (error instanceof PhononUnsupportedError) {
-        // Expected gating outcome (unsupported device, not compiled, a
-        // persisted record): no console.error, so no LogBox in dev.
+        // Expected gating outcome: no console.error, so no LogBox in dev.
         log.info(`Initialization skipped: ${error.message}`);
       } else if (
         error instanceof PhononError &&
@@ -492,10 +481,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
       error: brokenError?.message ?? this.initError,
     };
   }
-
-  // ============================================================
-  // Synthesis
-  // ============================================================
 
   /**
    * Synthesize text and play it, chunk by chunk, synthesizing the next
@@ -638,7 +623,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     };
   }
 
-  /** Throws if the engine cannot synthesize right now. */
   private assertUsable(): void {
     if (brokenError) {
       throw brokenError;
@@ -798,8 +782,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
         const nextChunk = chunks[chunkIndex + 1];
         if (nextChunk) {
           next = this.synthesizeChunk(nextChunk.text, ctx);
-          // Observed when awaited; keeps an early exit from leaving an
-          // unhandled rejection behind.
+          // Observed when awaited; avoids an unhandled rejection on early exit.
           next.catch(() => {});
         }
 
@@ -1083,10 +1066,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     }
   }
 
-  // ============================================================
-  // Voices
-  // ============================================================
-
   async getAvailableVoices(language?: string): Promise<string[]> {
     return this.getVoicesWithMetadata(language).map(v => v.id);
   }
@@ -1127,10 +1106,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     }
   }
 
-  // ============================================================
-  // Stop / release
-  // ============================================================
-
   /**
    * Stop playback and abort synthesis. The synchronous part (generation
    * bump, native cancel, stop signal, session cancel) runs before the
@@ -1146,7 +1121,6 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     this.stopResolvers.clear();
     const session = this.activeStreamSession;
     this.activeStreamSession = null;
-    // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});
     if (session) {
       await session.cancel().catch(() => {});
@@ -1223,9 +1197,9 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   }
 
   /**
-   * Native destroy. Once the engine is broken it is queued behind the
-   * hung job on the serial worker and never settles, so it is then fired
-   * and not waited for (also when the watchdog fires while waiting).
+   * Once broken, native destroy queues behind the hung job and never
+   * settles, so it is fired and not awaited (also if the watchdog fires
+   * mid-wait).
    */
   private async destroyHandle(handleId: number): Promise<void> {
     const destroyed = NativePhonon.destroy(handleId).then(() => false);

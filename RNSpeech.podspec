@@ -2,11 +2,9 @@ require "json"
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
-# Phonon (opt-in native TTS engine): Podfile `ENV['RN_SPEECH_PHONON'] = '1'`.
-# ios/phonon/fetch.rb resolves the binary (docs/phonon/DESIGN.md §3.3). Until
-# phonon.lock.json carries a published iOS sha256, the flag falls back to off
-# with a warning, unless ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] points at a local
-# PhononCore.xcframework (or its release zip): the dev override.
+# Opt-in Phonon engine: Podfile `ENV['RN_SPEECH_PHONON'] = '1'` (docs/phonon/DESIGN.md §3.3).
+# Without a published iOS sha256 in phonon.lock.json or a local
+# ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] override, it falls back to off.
 require File.join(__dir__, "ios", "phonon", "fetch.rb")
 phonon_requested = ENV['RN_SPEECH_PHONON'] == '1'
 phonon = phonon_requested && RNSpeechPhonon.lock_ready?(__dir__)
@@ -35,19 +33,15 @@ Pod::Spec.new do |s|
   preprocessor_definitions = ['$(inherited)']
   preprocessor_definitions << 'RN_SPEECH_TRACE=1' if ENV['RN_SPEECH_TRACE'] == '1'
 
-  # Frameworks
   frameworks = ["AVFoundation", "AudioToolbox"]
 
   if phonon
-    # lock -> cache -> sha256 -> copy (or the local override), see ios/phonon/fetch.rb.
     RNSpeechPhonon.ensure_xcframework!(__dir__)
     s.vendored_frameworks = "ios/phonon/PhononCore.xcframework"
     frameworks += ["CoreML", "CoreVideo"]
     preprocessor_definitions << 'RN_SPEECH_PHONON=1'
-    # Stringified in RNSpeechPhonon.mm (libraryVersion, capability-store key).
     preprocessor_definitions << "RN_SPEECH_PHONON_VERSION=#{RNSpeechPhonon.library_version(__dir__)}"
   else
-    # Flag off: no Phonon sources, binary or framework links.
     excludes += ["ios/phonon/**/*", "cpp/phonon/**/*"]
   end
   s.exclude_files = excludes

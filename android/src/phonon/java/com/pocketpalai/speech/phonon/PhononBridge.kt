@@ -22,19 +22,10 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * PhononBridge (RNSpeech_phononEnabled=true). Process-wide: an RN reload creates a new
- * RNSpeechModule but talks to this same object, synth thread and native handle, so upstream's
- * one-thread-per-handle rule always holds (DESIGN.md §1.5). Same signatures as the flag-off
- * stub in src/phononStub/java.
- *
- *  * getSupport: cheap probe, cached per process (except load-failed, which depends on the
- *    model on disk); never dlopens libptts_ffi.so.
- *  * create: re-checks the probe, then on the synth thread applies the thread policy,
- *    dlopens the library (lazily, after the HWCAP gate) and creates the handle. That
- *    sequence, the per-module liveness token and buffer play/release live in PhononSession (pure,
- *    unit tested); this object supplies the Android and JNI side.
- *  * ids / cancel / release: synchronous, lock-free native calls.
- *  * Work runs on one "phonon-synth" thread with an 8 MB stack at THREAD_PRIORITY_AUDIO.
+ * Process-wide: an RN reload gets a new RNSpeechModule but the same object, synth thread and
+ * native handle, so upstream's one-thread-per-handle rule holds (DESIGN.md §1.5). Signatures
+ * match the flag-off stub. The create sequence and liveness tokens live in [PhononSession];
+ * this object supplies the Android and JNI side. getSupport never dlopens libptts_ffi.so.
  */
 object PhononBridge {
   const val NOT_COMPILED = "PHONON_NOT_COMPILED"
@@ -47,7 +38,7 @@ object PhononBridge {
   @Volatile private var cachedSupport: PhononProbe.Result? = null
   @Volatile private var shimLoaded = false
   private var loggedReason: String? = null
-  // Set by create (the only session entry that probes or touches the capability store).
+  // Set by create, the only session entry that needs a Context.
   @Volatile private var appContext: Context? = null
 
   private val session = PhononSession(AndroidHost)
@@ -61,8 +52,6 @@ object PhononBridge {
     }
     ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue(), factory)
   }
-
-  // ---- support ------------------------------------------------------------------------------
 
   fun getSupport(context: ReactApplicationContext, promise: Promise) {
     try {
@@ -83,8 +72,7 @@ object PhononBridge {
     "pageSize" to pageSize().toDouble()
   )
 
-  // A load-failed result is re-evaluated on every call: it stops applying once the recorded
-  // model changes (a cheap file read plus a few stats), see PhononCapabilityStore.Record.applies.
+  // load-failed is never cached: it lapses once the recorded model changes (Record.applies).
   private fun cached(): PhononProbe.Result? =
     cachedSupport?.takeIf { it.reason != PhononCapabilityStore.REASON_LOAD_FAILED }
 
@@ -186,8 +174,6 @@ object PhononBridge {
   private fun store(context: Context) =
     PhononCapabilityStore(File(context.noBackupFilesDir, PhononCapabilityStore.FILE_NAME))
 
-  // ---- model --------------------------------------------------------------------------------
-
   /** Android loads checkpoint folders; nothing is ever compiled. */
   fun needsCompile(modelDir: String, promise: Promise) {
     promise.resolve(false)
@@ -207,13 +193,10 @@ object PhononBridge {
       language = options.stringOr("language", "en"),
       computeUnit = options.stringOr("computeUnit", "cpu"),
       numThreads = options.intOr("numThreads", 0),
-      // PhononConfig.spinBudget -> XN_SPIN_BUDGET (0 = upstream default).
       spinBudget = options.intOr("spinBudget", 0)
     )
     session(context).create(params, alive, settle(promise))
   }
-
-  // ---- ids / cancel -------------------------------------------------------------------------
 
   fun allocRequestId(): Long = if (shimLoaded) PhononNative.nativeAllocRequestId() else 0L
 
@@ -229,8 +212,6 @@ object PhononBridge {
     return true
   }
 
-  // ---- synthesis ----------------------------------------------------------------------------
-
   fun synthesize(
     handleId: Long,
     requestId: Long,
@@ -244,13 +225,7 @@ object PhononBridge {
     session.synthesize(handleId, requestId, text, voice, language, enqueuedAt, alive, settle(promise))
   }
 
-  // ---- buffers ------------------------------------------------------------------------------
-
-  /**
-   * Takes (consumes) the buffer, converts it to PCM16 with the config's volume as gain, and
-   * hands it to the module's shared PCM player. [play] receives (pcm, sampleRate, ducking).
-   * The config is read (null- and type-safe) before the take.
-   */
+  /** Consumes the buffer as PCM16 (volume as gain) and passes (pcm, sampleRate, ducking) to [play]. */
   fun playBuffer(
     bufferId: Long,
     config: ReadableMap,
@@ -275,7 +250,6 @@ object PhononBridge {
   fun releaseBuffer(bufferId: Long): Boolean =
     shimLoaded && PhononNative.nativeReleaseBuffer(bufferId)
 
-  /** Enqueued behind any in-flight work; never blocks the caller. */
   fun destroy(handleId: Long, alive: AtomicBoolean, promise: Promise) {
     session.destroy(handleId, alive, settle(promise))
   }
@@ -297,22 +271,16 @@ object PhononBridge {
     }
   }
 
-  /**
-   * RNSpeechModule.invalidate() only (real module teardown, e.g. an RN reload; never
-   * setEngine): see [PhononSession.onModuleInvalidated].
-   */
+  /** RNSpeechModule.invalidate() only; see [PhononSession.onModuleInvalidated]. */
   fun onModuleInvalidated(alive: AtomicBoolean) {
     session.onModuleInvalidated(alive)
   }
-
-  // ---- helpers ------------------------------------------------------------------------------
 
   private fun session(context: Context): PhononSession {
     appContext = context.applicationContext ?: context
     return session
   }
 
-  /** The real natives, capability store and synth thread behind [PhononSession]. */
   private object AndroidHost : PhononSession.Host {
     private val context: Context get() = checkNotNull(appContext) { "Phonon used before create" }
 

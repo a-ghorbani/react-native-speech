@@ -171,9 +171,8 @@ verify() {
   fi
 }
 
-# --- selftest ---------------------------------------------------------------------------------
-# Synthetic APKs (zips laid out like AGP's, libraries built with the NDK clang): a good flag-on
-# and flag-off one, and negatives that must each fail.
+# Self-test: synthetic AGP-layout APKs with NDK-clang libraries, a good flag-on and flag-off one
+# and negatives that must each fail.
 selftest() {
   local ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}" clang="" p dir st=0
   if [[ -n "$ndk" ]]; then
@@ -219,8 +218,8 @@ with zipfile.ZipFile(out, "w") as z:
         if name.endswith(".so") and not deflate:
             info = zipfile.ZipInfo(name, date_time=(1981, 1, 1, 1, 1, 2))
             info.compress_type = zipfile.ZIP_STORED
-            # Pad the local header's extra field so the data starts on a 16 KB boundary, as
-            # zipalign -P 16 does (or one byte off for --unaligned).
+            # Pad the extra field to a 16 KB data boundary like zipalign -P 16 (one byte off for
+            # --unaligned).
             pos = z.fp.tell() + 30 + len(name.encode())
             pad = (-(pos + 4)) % 16384 + 4
             if unaligned:

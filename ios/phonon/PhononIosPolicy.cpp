@@ -1,4 +1,3 @@
-// PhononIosPolicy.cpp — see PhononIosPolicy.h.
 #include "PhononIosPolicy.h"
 
 #include <algorithm>
@@ -92,7 +91,7 @@ std::vector<std::string> recompilable_models(const std::vector<std::string>& ent
 
 bool should_persist_load_error(const std::string& message) {
   const std::string m = lower(message);
-  // Fixable by the app (path, download, bundle content, options): never hide the engine.
+  // App-fixable (path, download, bundle, options): never hide the engine.
   if (contains_any(m, {"no such file", "os error 2", "doesn't exist", "does not exist",
                        "doesn\xe2\x80\x99t exist", "couldn't be opened", "couldn\xe2\x80\x99t be opened",
                        "not found", "bundle.json", "tokenizer", "no voices", "has no `emb`",

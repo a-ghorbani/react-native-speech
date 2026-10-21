@@ -1,17 +1,13 @@
 package com.pocketpalai.speech.phonon
 
 /**
- * The getSupport decision sequence (DESIGN.md §2.1), separated from the Android calls that
- * feed it so the order and every outcome are unit tested. Each native step is a lambda and is
- * only invoked when every earlier check passed: in particular the shim is never loaded on a
- * low-memory device or when a record / forced reason already decided, and nothing here ever
- * dlopens libptts_ffi.so (that happens in phononCreate, after this gate).
+ * The getSupport decision sequence (DESIGN.md §2.1). Each native step is a lambda invoked only
+ * when every earlier check passed, so e.g. a low-memory device never loads the shim. Nothing
+ * here dlopens libptts_ffi.so.
  */
 object PhononProbe {
-  /** ActivityManager.MemoryInfo.totalMem floor. */
   const val MIN_TOTAL_MEM_BYTES = 3L shl 30
 
-  /** `detail` of a supported result whose HWCAP gate was skipped (debug negative control). */
   const val SKIPPED_HWCAP_GATE = "hwcap gate skipped (debug negative control)"
 
   data class Result(
@@ -23,20 +19,19 @@ object PhononProbe {
   )
 
   class Inputs(
-    /** BuildConfig.RN_SPEECH_PHONON_FORCE_REASON (always "" in release builds). */
+    /** Always "" in release builds. */
     val forceReason: String,
     /** A persisted negative record already matched to this device and library. */
     val capability: PhononCapabilityStore.Record?,
     /** 0 = unknown (check skipped). */
     val totalMemBytes: Long,
     val is64Bit: Boolean,
-    /** Build.SUPPORTED_ABIS. */
     val supportedAbis: List<String>,
     /** Build.SUPPORTED_32_BIT_ABIS: a 32-bit process runs the first of these, not SUPPORTED_ABIS[0]. */
     val supported32BitAbis: List<String> = emptyList(),
-    /** BuildConfig.RN_SPEECH_PHONON_ABIS: ABIs whose libptts_ffi.so is packaged. */
+    /** ABIs whose libptts_ffi.so is packaged. */
     val packagedAbis: List<String>,
-    /** System.loadLibrary("rnspeech_phonon"); returns the failure, null on success. */
+    /** Returns the failure, null on success. */
     val loadShim: () -> Throwable?,
     val nativeAbi: () -> String,
     /** ro.dalvik.vm.native.bridge. */
@@ -47,16 +42,14 @@ object PhononProbe {
     /** The shim's ARM64_FEATURES (e.g. "+dotprod,+fp16"); "" if unknown. */
     val arm64Features: () -> String = { "" },
     /**
-     * BuildConfig.RN_SPEECH_PHONON_SKIP_HWCAP_GATE (always false in release builds): the WP9
-     * negative control N1 reports `ok` without the HWCAP check, to prove the gate is what
-     * prevents the SIGILL on CPUs without the required features. Every other check still runs.
+     * Debug negative control (always false in release): reports `ok` without the HWCAP check,
+     * to prove the gate is what prevents SIGILL. Every other check still runs.
      */
     val skipHwcapGate: Boolean = false
   )
 
   fun evaluate(i: Inputs): Result {
-    // Before the shim reports its compile-time ABI: the process's ABI. A 32-bit process on an
-    // arm64 device runs armeabi-v7a although SUPPORTED_ABIS[0] is arm64-v8a.
+    // A 32-bit process on an arm64 device runs armeabi-v7a although SUPPORTED_ABIS[0] is arm64-v8a.
     val deviceAbi = (if (i.is64Bit) null else i.supported32BitAbis.firstOrNull())
       ?: i.supportedAbis.firstOrNull().orEmpty()
     fun no(reason: String, detail: String, abi: String = deviceAbi) =
@@ -70,8 +63,8 @@ object PhononProbe {
 
     val loadError = i.loadShim()
     if (loadError != null) {
-      // The shim is only built for 64-bit ABIs; a 64-bit process without it means the app
-      // was packaged without it (or AGP < 8.5.1 on a 16 KB-page kernel).
+      // The shim is 64-bit only; in a 64-bit process it was not packaged (or AGP < 8.5.1 on a
+      // 16 KB-page kernel).
       return if (!i.is64Bit) {
         no("unsupported-abi", "32-bit process ($deviceAbi)")
       } else {
@@ -95,8 +88,7 @@ object PhononProbe {
     } catch (e: Exception) {
       return no("error", "HWCAP gate unavailable: ${e.message ?: e.javaClass.simpleName}", abi)
     }
-    // Fail closed: an arm64 build compiled with extra features always has requirements, so an
-    // empty list means the gate itself is broken, not that nothing is needed.
+    // Fail closed: arm64 features with no requirements means the gate itself is broken.
     if (abi == "arm64-v8a" && required.isEmpty() && i.arm64Features().isNotBlank()) {
       return no("error", "no HWCAP requirements for arm64 features ${i.arm64Features()}", abi)
     }

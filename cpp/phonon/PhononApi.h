@@ -12,9 +12,8 @@
 
 #include <string>
 
-// Upstream's header has no extern "C" guard; without this the statically linked (iOS)
-// symbols would be looked up with C++ mangling. Its system includes come first (above), so
-// they are not re-entered inside the extern "C" block.
+// Upstream ptts.h has no extern "C" guard; its system includes come first (above) so they
+// are not re-entered inside this block.
 extern "C" {
 #include "ptts.h"
 }
@@ -42,7 +41,6 @@ struct PttsApi {
   // dlopen handle (nullptr when bound statically). Owned by the table.
   void* lib = nullptr;
 
-  // True when every entry is resolved.
   bool complete() const;
 };
 

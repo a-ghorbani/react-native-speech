@@ -36,10 +36,9 @@ find_apkanalyzer() {
   command -v apkanalyzer || true
 }
 
-# --- selftest ---------------------------------------------------------------------------------
-# Synthetic APKs and a stand-in apkanalyzer (it reads the package size from <apk>.pkg): the
-# gate must pass on identical builds and on small growth, and fail on an injected .so, a
-# changed .so, a Phonon library, +10 KB of library dex and an over-budget codegen library.
+# Self-test on synthetic APKs and a stand-in apkanalyzer (package size from <apk>.pkg): pass on
+# identical builds and small growth; fail on an added, changed or Phonon .so, +10 KB of library dex
+# and an over-budget codegen library.
 selftest() {
   local dir st=0
   dir="$(mktemp -d)"

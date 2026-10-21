@@ -192,8 +192,7 @@ const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
       /* not installed */
     }
 
-    // Phonon: only where the native probe says supported (never loads
-    // the library; unsupported devices just do not list it).
+    // The probe never loads the Phonon library.
     try {
       const support = await probeEngineSupport([TTSEngine.PHONON]);
       if (isEngineVisible(TTSEngine.PHONON, support)) {

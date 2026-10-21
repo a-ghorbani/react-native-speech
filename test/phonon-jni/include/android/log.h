@@ -1,4 +1,4 @@
-// Host stand-in for <android/log.h> (test/phonon-jni only): logs to stderr.
+// Host stand-in for <android/log.h>.
 #pragma once
 #ifdef __cplusplus
 extern "C" {

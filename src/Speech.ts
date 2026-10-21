@@ -151,9 +151,8 @@ export default class Speech {
 
     log.info(`Initializing engine: ${engine}`);
 
-    // Initialize the specific engine. `currentEngine` is switched only
-    // after the engine initialized successfully, so a failed init keeps
-    // the previous engine usable.
+    // `currentEngine` switches only after a successful init, so a failed
+    // init keeps the previous engine usable.
     if (engine === 'kokoro') {
       if (!kokoroEngine) {
         kokoroEngine = new KokoroEngine();

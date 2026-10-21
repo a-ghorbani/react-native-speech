@@ -23,7 +23,7 @@ const DOCS = [
 const guide = read(GUIDE);
 const lock = JSON.parse(read('phonon.lock.json'));
 
-/** Body of the `## heading` / `### heading` section, up to the next heading of that level or higher. */
+/** Body of a `##`/`###` section, up to the next heading of that level or higher. */
 function section(md: string, heading: string): string {
   const lines = md.split('\n');
   const start = lines.findIndex(

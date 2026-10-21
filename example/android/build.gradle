@@ -18,11 +18,9 @@ buildscript {
     }
 }
 
-// Phonon dev override: -PRNSpeech_phononLocal=true builds flag-on against the
-// binaries scripts/phonon/build-android.sh staged in this checkout
-// (scripts/out/phonon/android), so no download and no published hashes are
-// needed. The library reads rootProject.ext before gradle properties, so an
-// explicit -PRNSpeech_phononEnabled=false is a conflict, not silently overridden.
+// -PRNSpeech_phononLocal=true: build Phonon against scripts/phonon/build-android.sh
+// output in this checkout. The library reads rootProject.ext before gradle
+// properties, so an explicit RNSpeech_phononEnabled=false must fail, not be overridden.
 if ((findProperty("RNSpeech_phononLocal") ?: "false").toString().toBoolean()) {
     def explicitEnabled = findProperty("RNSpeech_phononEnabled")
     if (explicitEnabled != null && !explicitEnabled.toString().trim().toBoolean()) {

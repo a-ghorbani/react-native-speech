@@ -1,6 +1,4 @@
-# Evaluates RNSpeech.podspec with a stand-in for CocoaPods' DSL, flag off and on, so the Phonon
-# branches (excludes, vendored framework, defines, placeholder fallback) are checked without
-# CocoaPods. Run: ruby test/phonon-ios/podspec_test.rb
+# Evaluates RNSpeech.podspec against a stand-in CocoaPods DSL. Run: ruby test/phonon-ios/podspec_test.rb
 require 'minitest/autorun'
 require 'digest'
 require 'fileutils'
@@ -18,7 +16,6 @@ module Pod
     end
   end
 
-  # Records every attribute the podspec sets.
   class Spec
     attr_reader :attrs
 
@@ -42,9 +39,8 @@ end
 def min_ios_version_supported = '15.1'
 def install_modules_dependencies(_spec) = nil
 
-# Loaded up front (after the Pod stand-ins) so RNSpeechPhonon::Error exists whatever order
-# minitest runs the tests in. The podspec's own require of the symlinked copy resolves to the
-# same real path and is a no-op.
+# Loaded up front so RNSpeechPhonon::Error exists in any test order; the podspec's require of the
+# symlinked copy resolves to the same real path.
 require File.join(File.expand_path('../..', __dir__), 'ios', 'phonon', 'fetch.rb')
 
 class PodspecTest < Minitest::Test
@@ -52,13 +48,13 @@ class PodspecTest < Minitest::Test
 
   def setup
     @tmp = Dir.mktmpdir('phonon-podspec')
-    # A copy of the package files the podspec reads, so tests can edit the lock.
+    # Copied so tests can edit the lock.
     @root = File.join(@tmp, 'pkg')
     FileUtils.mkdir_p(File.join(@root, 'ios', 'phonon'))
     FileUtils.cp(File.join(REPO, 'RNSpeech.podspec'), @root)
     FileUtils.cp(File.join(REPO, 'package.json'), @root)
     FileUtils.cp(File.join(REPO, 'phonon.lock.json'), @root)
-    # Symlinked: `require` dedups by real path, so fetch.rb loads once as under CocoaPods.
+    # Symlinked: `require` dedups by real path.
     File.symlink(File.join(REPO, 'ios', 'phonon', 'fetch.rb'), File.join(@root, 'ios', 'phonon', 'fetch.rb'))
     @saved = ENV.to_h.slice('RN_SPEECH_PHONON', 'RN_SPEECH_PHONON_XCFRAMEWORK',
                             'RN_SPEECH_PHONON_CACHE', 'RN_SPEECH_TRACE')
@@ -84,7 +80,6 @@ class PodspecTest < Minitest::Test
 
   def eval_podspec
     path = File.join(@root, 'RNSpeech.podspec')
-    # __dir__ inside the podspec resolves to its own directory, as under CocoaPods.
     eval(File.read(path), TOPLEVEL_BINDING.dup, path) # rubocop:disable Security/Eval
   end
 
@@ -152,13 +147,11 @@ class PodspecTest < Minitest::Test
     ENV.delete('RN_SPEECH_PHONON_RELEASE_URL')
   end
 
-  # Host tests must never be inside a podspec source glob (DESIGN.md §3.3).
   def test_sources_never_include_tests
     spec = eval_podspec
     globs = spec.attrs['source_files']
     assert(globs.all? { |g| g.start_with?('ios/', 'cpp/') })
     assert(Dir.glob(File.join(REPO, 'test', '**', '*')).none? { |f| f.start_with?(File.join(REPO, 'ios'), File.join(REPO, 'cpp')) })
-    # Exactly one ptts.h in the pod sources.
     hits = globs.flat_map { |g| Dir.glob(File.join(REPO, g)) }.select { |f| File.basename(f) == 'ptts.h' }
     assert_equal [File.join(REPO, 'cpp', 'phonon', 'ptts.h')], hits.uniq
   end

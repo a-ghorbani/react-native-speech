@@ -21,16 +21,14 @@ export const PHONON_CONSTANTS = {
   /** Multiplier over the estimated synth time */
   WATCHDOG_FACTOR: 4,
   /**
-   * Estimated audio per input character. Matches the native sink
-   * pre-reservation (text.size() × 24000 × 0.09 samples). Supported
-   * devices synthesize at or above real time, so this also bounds the
-   * expected synth time.
+   * Estimated audio per input character (matches the native sink
+   * pre-reservation). Supported devices synthesize at least in real time,
+   * so this also bounds the expected synth time.
    */
   ESTIMATED_MS_PER_CHAR: 90,
 
-  // Create watchdog. A create queued behind a hung synth (e.g. after an
-  // RN reload, which resets the JS broken flag but not the native
-  // worker) would otherwise never settle.
+  // A create queued behind a hung synth (an RN reload resets the JS broken
+  // flag, not the native worker) would otherwise never settle.
   /** Budget of a native create (Android ~0.6 s, iOS compiled: seconds) */
   CREATE_WATCHDOG_MS: 120_000,
   /** Budget of a native create that has to compile Core ML first (iOS) */

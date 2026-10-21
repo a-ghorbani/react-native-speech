@@ -271,11 +271,9 @@ export interface Spec extends TurboModule {
    */
   dictLookup: (word: string) => string | null;
 
-  // Phonon engine methods. Present in every build; when the library is
-  // built without Phonon (RNSpeech_phononEnabled / RN_SPEECH_PHONON off)
-  // the native side is a stub: getSupport resolves `not-compiled` and the
-  // work methods reject `PHONON_NOT_COMPILED`. Access only through
-  // src/engines/phonon/NativePhonon.ts. PCM stays native; JS passes ids.
+  // Phonon. Built without Phonon, native is a stub: getSupport resolves
+  // `not-compiled`, work methods reject `PHONON_NOT_COMPILED`. Access only
+  // through engines/phonon/NativePhonon.ts; PCM stays native, JS passes ids.
   /** Cheap capability probe; never loads the Phonon library. */
   phononGetSupport: () => Promise<PhononSupportInfo>;
   /** iOS: true if any .mlpackage in modelDir lacks a compiled .mlmodelc. */
@@ -311,10 +309,7 @@ export interface Spec extends TurboModule {
   /** Enqueued on the synth thread; never blocks the caller. */
   phononDestroy: (handleId: number) => Promise<void>;
   phononGetDiagnostics: () => Promise<PhononDiagnostics>;
-  /**
-   * Clears the persisted capability record and the cached probe, so the
-   * next getSupport probes again. Resolves true if no record is left.
-   */
+  /** Clears the persisted capability record and cached probe; true if none is left. */
   phononResetSupport: () => Promise<boolean>;
 
   //Listeners

@@ -1,4 +1,4 @@
-// test_harness.h — minimal self-registering test runner (no gtest dependency).
+// Minimal self-registering test runner (no gtest dependency).
 #pragma once
 
 #include <cstdio>

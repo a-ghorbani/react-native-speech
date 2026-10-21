@@ -1,7 +1,5 @@
-# Host (Linux/macOS) build of the Android JNI shim, android/src/main/cpp/phonon/phonon_jni.cpp,
-# for the JVM test PhononNativeHostTest (android/src/phononTest). Lives outside cpp/ and
-# android/ so neither the Android CMake build, the podspec nor npm can pick it up.
-# Driven by scripts/test-phonon-jni-host.sh.
+# Host build of phonon_jni.cpp for PhononNativeHostTest; outside cpp/ and android/ so no Android
+# build, podspec or npm picks it up. Driven by scripts/test-phonon-jni-host.sh.
 cmake_minimum_required(VERSION 3.16)
 project(phonon_jni_host CXX)
 

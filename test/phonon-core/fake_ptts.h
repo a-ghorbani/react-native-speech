@@ -1,11 +1,5 @@
-/* fake_ptts.h — test controls for fake_ptts.c, a stand-in for libptts_ffi.
- *
- * The fake implements the 8 ptts_* symbols with upstream's documented semantics (thread-local
- * ptts_new error, per-handle errors, borrowed NUL-separated lists, set_voice validation, early
- * stop when the callback returns false) and records every call so tests can assert what the
- * core did. Tests reach the controls with dlsym on the handle phonon_load_api opened, or link
- * the fake statically (static-API test).
- */
+/* Controls for fake_ptts.c, a stand-in for libptts_ffi with upstream's documented semantics.
+ * Reached via dlsym on the handle phonon_load_api opened, or linked statically. */
 #ifndef FAKE_PTTS_H
 #define FAKE_PTTS_H
 
@@ -16,7 +10,6 @@ extern "C" {
 #endif
 
 typedef struct FakePttsState {
-  /* Call counters. */
   int news, speaks, set_voices, set_languages, frees, last_errors;
   int live_handles;
   /* Behaviour knobs (reset to defaults by fake_ptts_reset). */

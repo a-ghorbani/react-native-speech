@@ -115,10 +115,6 @@ afterEach(async () => {
   jest.useRealTimers();
 });
 
-// ============================================================
-// Support
-// ============================================================
-
 describe('PhononEngine.getSupport', () => {
   it('resolves the native probe and caches it', async () => {
     await expect(PhononEngine.getSupport()).resolves.toMatchObject({
@@ -264,10 +260,6 @@ describe('PhononEngine.getSupport', () => {
     await expect(PhononEngine.getDiagnostics()).resolves.toBeNull();
   });
 });
-
-// ============================================================
-// Initialize
-// ============================================================
 
 describe('initialize', () => {
   it('probes, then creates with normalized options', async () => {
@@ -493,10 +485,6 @@ describe('initialize', () => {
   });
 });
 
-// ============================================================
-// Voices
-// ============================================================
-
 describe('voices', () => {
   it('lists model voices with catalog metadata', async () => {
     mockReadFile.mockResolvedValueOnce(
@@ -548,10 +536,6 @@ describe('voices', () => {
     await expect(engine.getAvailableVoices('fr')).resolves.toHaveLength(2);
   });
 });
-
-// ============================================================
-// synthesize()
-// ============================================================
 
 describe('synthesize: input and options', () => {
   it('requires initialize', async () => {
@@ -1216,10 +1200,6 @@ describe('watchdog', () => {
   });
 });
 
-// ============================================================
-// synthesizeStream()
-// ============================================================
-
 describe('synthesizeStream', () => {
   it('requires initialize', () => {
     expect(() => new PhononEngine().synthesizeStream()).toThrow(
@@ -1431,10 +1411,6 @@ describe('synthesizeStream', () => {
     await expect(codeOf(fin)).resolves.toBe('ERR_PHONON_SYNTH');
   });
 });
-
-// ============================================================
-// release / destroy
-// ============================================================
 
 describe('release and destroy', () => {
   it('release of an uninitialized engine is a no-op success', async () => {

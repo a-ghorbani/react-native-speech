@@ -49,8 +49,8 @@ else
 fi
 
 # machotool archs <file> | thin <file> <arch> <out> | create <out> <in>...
-# lipo's three jobs in Python: llvm-lipo 19 crashes on thin archives, and the same code path on
-# macOS and Linux keeps the checks identical.
+# lipo's three jobs in Python: llvm-lipo 19 crashes on thin archives, and one code path keeps
+# macOS and Linux checks identical.
 machotool() {
   python3 -I - "$@" <<'EOF'
 import struct, sys
@@ -224,9 +224,8 @@ verify() {
   done <<<"$libs"
 }
 
-# --- selftest ---------------------------------------------------------------------------------
-# Builds dummy xcframeworks from ptts_stub.c with clang (xcrun clang, or LLVM clang targeting
-# Apple without an SDK): one must pass, and each negative must fail exactly the check it targets.
+# Self-test: dummy xcframeworks from ptts_stub.c (xcrun clang, or SDK-less LLVM clang), one that
+# passes and negatives that each fail exactly the check they target.
 selftest() {
   local dir clang ar st=0
   dir="$(mktemp -d)"

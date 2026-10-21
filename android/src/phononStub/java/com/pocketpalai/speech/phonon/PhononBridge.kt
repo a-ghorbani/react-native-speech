@@ -11,11 +11,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableMap
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * PhononBridge (flag-off stub). Compiled only when the library is built
- * without RNSpeech_phononEnabled; the real bridge lives in src/phonon/java
- * with the same signatures. Reports `not-compiled`, never loads native code.
- */
+/** Flag-off stub of src/phonon/java's PhononBridge: reports `not-compiled`, loads no native code. */
 object PhononBridge {
   const val NOT_COMPILED = "PHONON_NOT_COMPILED"
   private const val TAG = "Phonon"
@@ -24,7 +20,6 @@ object PhononBridge {
 
   @Volatile private var logged = false
 
-  /** Support fields as plain values, so they can be unit tested on the JVM. */
   fun supportInfo(): Map<String, Any> = mapOf(
     "supported" to false,
     "reason" to "not-compiled",
@@ -107,7 +102,6 @@ object PhononBridge {
     promise.resolve(true)
   }
 
-  /** Called from RNSpeechModule.invalidate(); nothing to cancel here. */
   fun onModuleInvalidated(alive: AtomicBoolean) {
     alive.set(false)
   }

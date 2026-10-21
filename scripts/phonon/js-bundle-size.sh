@@ -28,8 +28,7 @@ tmp="$(mktemp -d)"
 entry="$ROOT/example/phonon-size-entry.js"
 trap 'rm -rf "$tmp" "$entry"' EXIT
 OUT="${OUT:-$tmp/size.bundle}"
-# Every export, so nothing the package ships is tree-shaken away (Metro does not tree-shake,
-# but a future bundler might).
+# Every export, so no bundler can tree-shake away what the package ships.
 printf "import * as lib from '%s';\nglobalThis.__phononSizeProbe = lib;\n" "$pkg" >"$entry"
 args=(bundle --platform android --dev false --minify true --entry-file phonon-size-entry.js
   --bundle-output "$OUT" --assets-dest "$tmp/assets")

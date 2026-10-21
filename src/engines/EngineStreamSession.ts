@@ -176,8 +176,7 @@ export class EngineStreamSession<
     const {synthesizeChunk, playAudio, playbackOptions, postProcess} =
       this.config;
     const stopSignal = this.createStopSignal();
-    // Audio not yet handed to playAudio, and a prefetch not yet consumed:
-    // both are discarded if the loop ends early (cancel or error).
+    // Discarded if the loop ends early (cancel or error).
     let currentAudio: TAudio | null = null;
     let prefetchPromise: Promise<{
       chunk: ChunkInfo;
@@ -232,12 +231,11 @@ export class EngineStreamSession<
         // any no-audio chunks until it finds one with audio (or chunker
         // drains).
         prefetchPromise = this.fetchNextWithAudio(synthesizeChunk, stopSignal);
-        // Rejections are observed when awaited below; this only keeps an
-        // early return from leaving one unhandled.
+        // Observed when awaited; avoids an unhandled rejection on early return.
         prefetchPromise.catch(() => {});
 
-        // Play current chunk (concurrent with prefetch). From here on the
-        // player owns the audio, so it is never discarded.
+        // Play current chunk (concurrent with prefetch). The player now owns
+        // the audio, so it is never discarded.
         currentAudio = null;
         await this.raceWithStop(playAudio(audio, playbackOptions), stopSignal);
 
@@ -305,10 +303,9 @@ export class EngineStreamSession<
         return null;
       }
       const synth = synthesizeChunk(chunk.text);
-      // Discard on the synth promise itself: if the stop signal wins the
-      // race, the result still arrives later and must be released.
-      // cancel() sets `cancelled` before resolving the stop signal, so a
-      // result that settles after a lost race always sees it.
+      // If the stop signal wins the race the result still arrives later
+      // and must be discarded; cancel() sets `cancelled` before resolving
+      // the stop signal, so that late result always sees it.
       let settled = false;
       synth.then(
         result => {

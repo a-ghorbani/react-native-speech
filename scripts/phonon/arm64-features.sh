@@ -57,11 +57,9 @@ declare -gA PHONON_FEATURE_OPERANDS=(
   [aes]='\.1q\b' # pmull/pmull2 on 64-bit lanes; the .8b form is base NEON
 )
 
-# Instructions of a disabled extension that are allowed anyway, because the code that runs them
-# checks for the extension at run time first: "<mnemonic>=<max count>". A count above the limit
-# still fails, so a new unconditional use cannot hide behind an entry.
-#   stg=1  the NDK's libunwind (statically linked), which tags stack memory only after its own
-#          MTE check
+# Disabled-extension instructions allowed because their code checks the extension at run time,
+# as "<mnemonic>=<max count>" so a new unconditional use still fails.
+#   stg=1  the NDK's static libunwind, which tags stack memory only after its own MTE check
 PHONON_RUNTIME_GATED="stg=1"
 
 # fp16 needs both a mnemonic and an operand test; verify-android-so.sh special-cases it.

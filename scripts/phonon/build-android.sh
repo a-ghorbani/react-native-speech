@@ -104,10 +104,9 @@ WORK="$OUT.work"
 TARGET_DIR="$WORK/target"
 mkdir -p "$TARGET_DIR"
 
-# 4. Flags. The per-target variables take precedence over the checkout's build.rustflags
-# (target-cpu=native); RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS would take precedence over both, so
-# they are cleared. Stripping keeps the exported ptts_* functions. max-page-size=16384 for
-# Android 15's 16 KB pages.
+# 4. Flags. The per-target variables override the checkout's build.rustflags (target-cpu=native);
+# RUSTFLAGS / CARGO_ENCODED_RUSTFLAGS would override both, so they are cleared. Stripping keeps
+# the exported ptts_* functions; max-page-size=16384 for Android 15's 16 KB pages.
 REMAP="--remap-path-prefix=$UPSTREAM=/xn-ptts --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$WORK=/build"
 COMMON="-C strip=symbols -C link-arg=-Wl,-z,max-page-size=16384 $REMAP"
 ARM64_RUSTFLAGS="$COMMON -C target-cpu=generic${ARM64_FEATURES:+ -C target-feature=$ARM64_FEATURES}"
@@ -133,8 +132,8 @@ for abi in $ABIS; do
   rustup target add "${TRIPLE[$abi]}" >/dev/null
 done
 
-# 5. Build. cargo-ndk only sets up the NDK linker and env; the library is taken from the target
-# dir (cargo-ndk's -o copy skips files that look newer, which could leave stale flags in place).
+# 5. Build. The library comes from the target dir, not cargo-ndk's -o copy, which skips files
+# that look newer and could keep a stale build.
 (
   cd "$UPSTREAM"
   for abi in $ABIS; do

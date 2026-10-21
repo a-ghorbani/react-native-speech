@@ -114,10 +114,8 @@ function computePercentiles(values: number[]): PercentileStats {
 }
 
 /**
- * Native Phonon metrics of one speak, or undefined for other engines.
- * `getLastMetrics()` holds only the last played chunk, so the chunks of
- * the call are collected while it runs: ttfa/queued come from the first
- * chunk (the one the listener waits for), totals sum every chunk.
+ * Native Phonon metrics of one speak (undefined for other engines):
+ * ttfa/queued from the first chunk, totals over every chunk.
  */
 export function phononMetrics(
   engine: string,
@@ -316,7 +314,6 @@ export async function runBenchmark(
         textLength: config.testPhrase.length,
       });
 
-      // Phonon: per-chunk native metrics of this call.
       const collector =
         engineConfig.engine === TTSEngine.PHONON ? new ChunkCollector() : null;
       collector?.start();

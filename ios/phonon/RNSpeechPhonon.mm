@@ -1,14 +1,10 @@
-// RNSpeechPhonon.mm — see RNSpeechPhonon.h and docs/phonon/DESIGN.md §1.3–§1.5, §2.2, §2.4.
+// Threading: every ptts call runs on the shared PhononWorker, so upstream's
+// one-thread-per-handle rule holds across RN reloads. Core ML autoreleases per prediction and
+// the worker is not a GCD thread, so each job gets a pool that the frame hook swaps every 16
+// frames. Support, request ids, cancel and the buffer store never touch the worker.
 //
-// Threading: every ptts call runs on the shared PhononWorker (one pthread, 8 MB stack, QoS
-// userInitiated), so upstream's one-thread-per-handle rule holds across RN reloads. Each job
-// runs inside an autorelease pool, and the frame callback swaps that pool every 16 frames:
-// Core ML's objc2 calls autorelease per prediction and a non-GCD thread never drains on its
-// own. Support, request ids, cancel and the buffer store never touch the worker.
-//
-// iOS 18 gating: libptts_ffi.a is linked into every flag-on app (it only references iOS
-// 15-safe C symbols, DESIGN.md §3.3), but nothing calls into it unless +supportInfo says ok,
-// which requires @available(iOS 18.0). The create job re-checks @available as well.
+// libptts_ffi.a is linked into every flag-on app (iOS 15-safe symbols, DESIGN.md §3.3) but is
+// only called once +supportInfo confirms iOS 18.
 #import "RNSpeechPhonon.h"
 
 #import <CommonCrypto/CommonDigest.h>
@@ -40,7 +36,7 @@ using rnspeech::phonon::SynthResult;
 using rnspeech::phonon::Worker;
 namespace policy = rnspeech::phonon::ios;
 
-// The runtime entry points @autoreleasepool lowers to; stable ABI, not in a public header.
+// What @autoreleasepool lowers to (stable ABI, no public header); needed to swap mid-job.
 extern "C" void *objc_autoreleasePoolPush(void);
 extern "C" void objc_autoreleasePoolPop(void *context);
 
@@ -55,7 +51,7 @@ static const char *const kPhononLibraryVersion = "unknown";
 static NSString *const kCapabilityFile = @"rnspeech-phonon-cap.json";
 static const unsigned kFramesPerPoolDrain = 16;
 
-// The autorelease pool of the job running on the worker (worker thread only).
+// Worker thread only.
 static thread_local void *tJobPool = nullptr;
 
 namespace {
@@ -136,7 +132,6 @@ void LogUnsupportedOnce(NSString *reason) {
   RCTLogInfo(@"[Phonon] unsupported: %@", reason);
 }
 
-// Process-wide, once: the per-job autorelease pool and the per-16-frames drain.
 void SetupWorkerOnce() {
   static dispatch_once_t once;
   dispatch_once(&once, ^{
@@ -151,8 +146,7 @@ void SetupWorkerOnce() {
       } pool;
       job();
     });
-    // Runs inside ptts_speak's frame callback, on the worker. upstream pushes no pool of its
-    // own around the callback, so the job's pool is the innermost one here.
+    // Upstream pushes no pool around the frame callback, so the job's pool is innermost here.
     Core::get().setFrameHook(
         [] {
           if (tJobPool != nullptr) {
@@ -164,19 +158,18 @@ void SetupWorkerOnce() {
   });
 }
 
-// Worker thread only. Binds the statically linked ptts_* symbols once.
+// Worker thread only.
 void EnsureApi() {
   Core &core = Core::get();
   if (core.libraryLoaded()) return;
-  // Reference CoreML so the linker keeps the framework: upstream reaches its classes through
-  // the runtime (objc_getClass), which finds nothing if CoreML was never loaded.
+  // Keeps CoreML linked: upstream only reaches it through objc_getClass.
   (void)[MLModel class];
   PttsApi api;
   rnspeech::phonon::phonon_bind_static_api(&api);
   core.setApi(api);
 }
 
-// Deletes compiled models that ptts_new can rebuild (a .mlpackage beside them). §2.4 recovery.
+// §2.4 recovery.
 NSUInteger RemoveRecompilable(NSString *dir) {
   NSUInteger removed = 0;
   for (const std::string &name : policy::recompilable_models(DirEntries(dir))) {
@@ -212,7 +205,7 @@ void MemoryKb(double *memKb, double *peakKb) {
     return;
   }
   *memKb = (double)(info.phys_footprint / 1024);
-  // Older kernels fill fewer fields; only read the peak when this one filled it.
+  // Older kernels fill fewer fields.
   const size_t peakEnd = offsetof(task_vm_info_data_t, ledger_phys_footprint_peak) +
                          sizeof(info.ledger_phys_footprint_peak);
   if ((size_t)count * sizeof(natural_t) >= peakEnd) {
@@ -234,7 +227,7 @@ double ThreadCount() {
 }  // namespace
 
 @implementation RNSpeechPhonon {
-  // false once this module is invalidated: its pending promises are then dropped.
+  // false after -invalidate: pending promises are dropped.
   std::shared_ptr<std::atomic<bool>> _alive;
 }
 
@@ -404,7 +397,7 @@ static NSURL *sCapabilityStoreOverride = nil;
                computeUnit:(NSString *)computeUnit
                    resolve:(RNSpeechPhononResolve)resolve
                     reject:(RNSpeechPhononReject)reject {
-  // The cached probe first: an unsupported device never reaches the library.
+  // An unsupported device never reaches the library.
   NSDictionary *support = [RNSpeechPhonon supportInfo];
   if (![support[@"supported"] boolValue]) {
     reject(@"PHONON_UNSUPPORTED",
@@ -532,7 +525,6 @@ static NSURL *sCapabilityStoreOverride = nil;
     return [NSData data];
   }
   policy::apply_gain_clamp(samples->data(), samples->size(), gain, samples->data());
-  // No copy: the NSData owns the vector's storage.
   return [[NSData alloc] initWithBytesNoCopy:samples->data()
                                       length:samples->size() * sizeof(float)
                                  deallocator:^(void *, NSUInteger) {
@@ -570,8 +562,6 @@ static NSURL *sCapabilityStoreOverride = nil;
 - (void)destroyHandle:(int64_t)handleId
               resolve:(RNSpeechPhononResolve)resolve
                reject:(RNSpeechPhononReject)reject {
-  // Enqueued behind any in-flight compile/speak (the caller never waits on the JS thread); it
-  // settles once it ran, like Android. A stale id rejects PHONON_INVALID_HANDLE.
   SetupWorkerOnce();
   auto alive = _alive;
   RNSpeechPhononResolve res = [resolve copy];
@@ -611,7 +601,7 @@ static NSURL *sCapabilityStoreOverride = nil;
   _alive->store(false);
   Core &core = Core::get();
   core.cancelAll();
-  // Everything issued so far is cancelled, so every stored buffer is an orphan now.
+  // After cancelAll every stored buffer is an orphan.
   core.releaseOrphans();
 }
 

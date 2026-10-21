@@ -97,9 +97,8 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
   }
 
   /**
-   * Draw the current activity's window into a PNG at [path] (self-test
-   * evidence). Software draw of the view tree: enough for UI state, not
-   * for SurfaceView/TextureView content.
+   * Software-draw the current window into a PNG at [path] (self-test
+   * evidence); SurfaceView/TextureView content is not captured.
    */
   @ReactMethod
   fun captureScreen(path: String, promise: Promise) {

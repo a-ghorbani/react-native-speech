@@ -3,11 +3,8 @@ package com.pocketpalai.speech.phonon
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * PhononBridge's glue logic, separated from Android and JNI so it is unit tested: the
- * create sequence (stale load-failed reset, probe gate, thread policy once, lazy dlopen,
- * which failures are persisted), the per-module liveness token that drops promises of an
- * invalidated module, and buffer playback/release. PhononBridge implements [Host] with the real
- * natives, the capability store and the "phonon-synth" executor.
+ * PhononBridge's logic minus Android and JNI: the create sequence (probe gate, thread policy,
+ * lazy dlopen, which failures persist), per-module liveness tokens, and buffer play/release.
  */
 class PhononSession(private val host: Host) {
   /** A promise, minus React Native: [resolve] gets a field map (or null for void). */
@@ -17,14 +14,12 @@ class PhononSession(private val host: Host) {
   }
 
   interface Host {
-    /** The (cached) getSupport probe. */
     fun probe(): PhononProbe.Result
     /** Reason of the cached probe without probing; null if not probed yet. */
     fun cachedReason(): String?
-    /** The persisted capability record, if any. */
     fun storedRecord(): PhononCapabilityStore.Record?
     fun resetSupport()
-    /** Persists a negative outcome and makes the cached probe report it. */
+    /** Also makes the cached probe report it. */
     fun recordFailure(reason: String, detail: String, modelPath: String, modelStamp: String)
     fun shimLoaded(): Boolean
     /** Runs [job] on the synth thread; throws if the thread is unavailable. */
@@ -56,7 +51,6 @@ class PhononSession(private val host: Host) {
 
   class CreateParams(
     val modelDir: String,
-    /** PhononCapabilityStore.modelStamp of [modelDir]. */
     val modelStamp: String,
     val language: String,
     val computeUnit: String,
@@ -64,19 +58,16 @@ class PhononSession(private val host: Host) {
     val spinBudget: Int
   )
 
-  // Synth-thread state. RAYON_NUM_THREADS / XN_SPIN_BUDGET / GEMM_PACKED_LHS_CACHE_MB are read
-  // once per process by rayon, xn and xn-gemm, so the first create fixes them.
+  // Synth-thread state. The env vars are read once per process, so the first create fixes them.
   @Volatile var effectiveThreads = 0
     private set
   private var effectiveSpinBudget = 0
 
   /**
-   * [alive] is the submitting module's token (one per RNSpeechModule): once
-   * [onModuleInvalidated] clears it, that module's pending promises are dropped, never settled
-   * into its dead JS runtime. Other modules (another React instance) are unaffected.
+   * [alive] is the calling module's token: once [onModuleInvalidated] clears it, that module's
+   * pending promises are dropped rather than settled into its dead JS runtime.
    */
   fun create(p: CreateParams, alive: AtomicBoolean, settle: Settle) {
-    // A load-failed record is about one model: pointing at another one re-enables the probe.
     if (host.cachedReason() == PhononCapabilityStore.REASON_LOAD_FAILED) {
       val record = host.storedRecord()
       if (record != null && record.isStaleFor(p.modelStamp)) host.resetSupport()
@@ -117,11 +108,8 @@ class PhononSession(private val host: Host) {
           host.setEnv("XN_SPIN_BUDGET", spinBudget.toString())
           effectiveSpinBudget = spinBudget
         }
-        // xn-gemm keeps a per-thread cache of packed weight panels keyed on the weight's
-        // address, never evicted (up to 256 MB process-wide by default). The worker threads
-        // outlive every handle, so each release() left the old model's panels behind:
-        // +8-12 MB per init/release cycle on device (DESIGN.md Appendix E, S8). Off unless the
-        // process already set it.
+        // Workaround: xn-gemm's per-thread packed-weight cache is never evicted, leaking
+        // 8-12 MB per init/release (DESIGN.md Appendix E, S8). Off unless the app set it.
         if (host.getEnv(PACKED_CACHE_ENV) == null) host.setEnv(PACKED_CACHE_ENV, "0")
       } catch (e: Exception) {
         host.log(true, "could not set the worker thread environment: ${e.message}")
@@ -165,14 +153,14 @@ class PhononSession(private val host: Host) {
         return@submit
       }
       if (!reply.resolve(PhononResults.synth(out))) {
-        // Dropped (module invalidated): nobody will ever play or release it.
+        // Module invalidated: nobody will ever play or release it.
         val bufferId = PhononResults.bufferId(out)
         if (bufferId > 0) host.releaseBuffer(bufferId)
       }
     }
   }
 
-  /** Enqueued behind any in-flight work; never blocks the caller. */
+  /** Queued behind in-flight work; never blocks. */
   fun destroy(handleId: Long, alive: AtomicBoolean, settle: Settle) {
     if (!host.shimLoaded()) {
       settle.resolve(null)
@@ -205,25 +193,22 @@ class PhononSession(private val host: Host) {
   }
 
   /**
-   * The module's real teardown (RNSpeechModule.invalidate, e.g. an RN reload): cancel
-   * everything issued so far (process-wide, DESIGN.md §1.5), drop the pending promises of the
-   * module that owns [alive] and free unplayed buffers. Returns immediately: never destroys
-   * the handle and never waits for the synth thread. Not for setEngine, which re-initializes
-   * OS TTS on a live module.
+   * Module teardown (RNSpeechModule.invalidate, never setEngine): cancels everything issued so
+   * far (process-wide, DESIGN.md §1.5), drops [alive]'s pending promises and frees unplayed
+   * buffers. Never destroys the handle or waits for the synth thread.
    */
   fun onModuleInvalidated(alive: AtomicBoolean) {
     alive.set(false)
     if (!host.shimLoaded()) return
     try {
       host.cancelAll()
-      // Every buffer now belongs to a cancelled id, i.e. is an orphan.
       host.releaseOrphans()
     } catch (t: Throwable) {
       host.log(true, "invalidate cleanup failed: ${t.message}")
     }
   }
 
-  /** Resolves/rejects only while the submitting module is alive. */
+  /** Settles only while the submitting module is alive. */
   private class Reply(private val settle: Settle, private val alive: AtomicBoolean) {
     fun resolve(value: Map<String, Any>?): Boolean {
       if (!alive.get()) return false
@@ -257,7 +242,6 @@ class PhononSession(private val host: Host) {
     const val INVALID_BUFFER = "PHONON_INVALID_BUFFER"
     const val INTERNAL = "PHONON_INTERNAL"
     const val LOAD_FAILED = "PHONON_LOAD_FAILED"
-    /** xn-gemm's packed-weight cache budget (MB), read once per process. */
     const val PACKED_CACHE_ENV = "GEMM_PACKED_LHS_CACHE_MB"
   }
 }

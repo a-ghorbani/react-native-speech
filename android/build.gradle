@@ -25,12 +25,9 @@ def getExtOrIntegerDefault(name) {
   return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["RNSpeech_" + name]).toInteger()
 }
 
-// --- Phonon (opt-in native TTS engine) ---
-// Consumer sets RNSpeech_phononEnabled=true in gradle.properties, or
-// rootProject.ext.RNSpeech_phononEnabled = true (ext.phononEnabled also works).
-// Optional: RNSpeech_phononAbis (default arm64-v8a), RNSpeech_phononLibDir
-// (local jniLibs dir, skips the download), RNSpeech_phononForceReason (debug only),
-// RNSpeech_phononSkipHwcapGate (debug only, WP9 negative control N1: never ship it).
+// Phonon (opt-in): RNSpeech_phononEnabled=true in gradle.properties or rootProject.ext.
+// Optional: RNSpeech_phononAbis (default arm64-v8a), RNSpeech_phononLibDir (local jniLibs dir,
+// skips the download), and debug-only RNSpeech_phononForceReason / RNSpeech_phononSkipHwcapGate.
 def getPhononOption(name) {
   def extName = "RNSpeech_" + name
   def value = rootProject.ext.has(extName) ? rootProject.ext.get(extName) : getExtOrDefault(name)
@@ -41,8 +38,7 @@ def phononRequested = (getPhononOption("phononEnabled") ?: "false").toBoolean()
 def phononAbis = (getPhononOption("phononAbis") ?: "arm64-v8a").split(",").collect { it.trim() }.findAll { it }
 def phononLibDir = getPhononOption("phononLibDir") ?: ""
 def phononForceReason = getPhononOption("phononForceReason") ?: ""
-// N1 negative control (docs/phonon/DESIGN.md §8.3): the debug probe skips the HWCAP gate, so a
-// CPU without the required features crashes (SIGILL) on create. Debug builds only; default off.
+// Negative control (DESIGN.md §8.3): debug builds skip the HWCAP gate, so unsupported CPUs SIGILL.
 def phononSkipHwcapGate = (getPhononOption("phononSkipHwcapGate") ?: "false").toBoolean()
 if (phononSkipHwcapGate) {
   logger.warn("RNSpeech: RNSpeech_phononSkipHwcapGate=true: DEBUG builds skip the Phonon HWCAP " +
@@ -114,7 +110,6 @@ android {
 
   buildTypes {
     debug {
-      // Debug-only override for evidence runs (forces getSupport to report this reason).
       buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"${phononForceReason}\""
       buildConfigField "boolean", "RN_SPEECH_PHONON_SKIP_HWCAP_GATE", phononSkipHwcapGate.toString()
     }
@@ -144,10 +139,8 @@ android {
         "generated/java",
         "generated/jni"
       ]
-      // Flag off: only a stub PhononBridge that reports `not-compiled`.
       java.srcDirs += phononEnabled ? "src/phonon/java" : "src/phononStub/java"
-      // Pure-JVM Phonon policy (probe, HWCAP, threads, capability store): app code only
-      // when enabled, but always unit tested (src/test/java).
+      // Pure-JVM policy: shipped only when enabled, unit tested always.
       if (phononEnabled) java.srcDirs += "src/phononPure/java"
     }
     test {

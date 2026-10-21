@@ -73,9 +73,7 @@ RUNS="" CYCLES="" THREADS="" SPIN="" HOLD=4000 OUT="" RUN_ID="" TIMEOUT=600 ABI=
 THREADS_LIST="2,3,4,6" SPIN_LIST="default,200"
 FRESH=0 INSTALL=1 KEEP_APP=0 EMULATOR=0 DRY=0
 
-# ================================================================================================
-# Pure helpers (covered by --selftest)
-# ================================================================================================
+# Pure helpers, covered by --selftest.
 
 # expected_reason <flavor> <scenario ids>: the support reason this run must report.
 expected_reason() {
@@ -308,11 +306,9 @@ check_apk_libs() {
   fi
 }
 
-# maps_proof <maps> <apk>: "libptts_ffi_maps=<n> method=<...> <detail>". Libraries stored
-# uncompressed in the APK (extractNativeLibs=false) are mmapped from base.apk, so /proc/<pid>/maps
-# names base.apk, not the library: count base.apk mappings whose file offset lies inside
-# lib/<abi>/libptts_ffi.so's stored data in <apk>, plus any mapping named libptts_ffi (an
-# extracted install).
+# maps_proof <maps> <apk>: "libptts_ffi_maps=<n> method=<...> <detail>". An uncompressed lib is
+# mmapped from base.apk, so count base.apk mappings whose offset lies inside
+# lib/<abi>/libptts_ffi.so's stored data, plus any mapping named libptts_ffi (extracted install).
 maps_proof() {
   python3 -I - "$1" "$2" <<'EOF'
 import re, struct, sys, zipfile
@@ -376,9 +372,7 @@ for node in re.findall(r"<node [^>]*>", xml):
 EOF
 }
 
-# ================================================================================================
-# --selftest: the checks above on fixtures (no phone)
-# ================================================================================================
+# --selftest: the checks above on fixtures (no phone).
 selftest() {
   local d st=0
   d="$(mktemp -d)"
@@ -538,9 +532,6 @@ print(hex(i.header_offset + 30 + sum(struct.unpack("<HH", h[26:30]))))' "$d/m.ap
   return $st
 }
 
-# ================================================================================================
-# Device steps
-# ================================================================================================
 exec 3>&2 # the dry-run trace survives the callers' redirections
 A() { # adb for this serial; --dry-run prints instead
   if ((DRY)); then echo "+ adb -s $SERIAL $*" >&3; return 0; fi
@@ -605,8 +596,7 @@ ui_dump() { # <out xml>
   [[ -s "$1" ]]
 }
 
-# A fresh install starts on Kitten without a model: its "Kitten Model Required" prompt is not
-# Phonon's and would hide the screen, so tap "Later" (logged in collect.log).
+# A fresh install's "Kitten Model Required" prompt would hide the screen: tap "Later".
 dismiss_kitten_prompt() {
   local xml="$TMP/ui-start.xml" xy
   ((DRY)) && return 0
@@ -625,9 +615,8 @@ dismiss_kitten_prompt() {
   done
 }
 
-# install_apk <log> <adb install args...>: adb install, confirming the OEM "Install via USB?"
-# prompt (Xiaomi HyperOS securitycenter, a packageinstaller) by tapping its Install button.
-# "Remember my choice" is left unticked: no phone setting changes.
+# install_apk <log> <adb install args...>: adb install, tapping Install on an OEM "Install via
+# USB?" prompt (HyperOS) without ticking "Remember my choice".
 install_apk() {
   local logf="$1" ipid xml="$TMP/ui-install.xml" xy rc=0
   shift
@@ -650,8 +639,7 @@ install_apk() {
         sleep 3
       fi
     elif grep -q 'package="com.android.vending"' "$xml" && grep -q 'Play Protect' "$xml"; then
-      # Play Protect "Send app for a security check?": tap "Don't send" (nothing uploaded,
-      # "Always send" left unticked, no setting changes).
+      # Play Protect "Send app for a security check?": "Don't send", "Always send" unticked.
       xy="$(ui_tap_center "$xml" "don(.|&apos;)t send")"
       if [[ -n "$xy" ]]; then
         log "dismissing the Play Protect scan prompt (tap $xy)"
@@ -724,7 +712,6 @@ run_once() {
     return 0
   fi
 
-  # Follow the live log: act on markers as they appear.
   deadline=$((SECONDS + TIMEOUT))
   exec {fd}< <(tail -n +1 -F "$TMP/live.txt" 2>/dev/null)
   while ((SECONDS < deadline)); do
@@ -766,7 +753,6 @@ run_once() {
   fi
   A shell dumpsys meminfo "$PKG" >"$out/meminfo-after.txt" 2>&1 || true
 
-  # Logs.
   kill "$LIVE_PID" 2>/dev/null || true
   LIVE_PID=""
   A logcat -d -b crash -v threadtime >"$out/logcat-crash.txt" 2>/dev/null || true
@@ -782,7 +768,6 @@ run_once() {
   if [[ -n "$now_pid" && "$now_pid" != "$pid" ]]; then pid_log "$TMP/live.txt" "$now_pid" >>"$out/logcat.txt"; fi
   gzip -c "$TMP/live.txt" >"$out/logcat-full.txt.gz"
 
-  # Evidence folder written by the app.
   local ext
   ext="$(sed -n 's/.* external=\(.*\)$/\1/p' <<<"$done_line")"
   mkdir -p "$out/phonon-evidence"
@@ -848,9 +833,6 @@ checks() {
   [[ "$status" != FAIL ]]
 }
 
-# ================================================================================================
-# main
-# ================================================================================================
 if [[ "${1:-}" == --selftest ]]; then selftest; exit $?; fi
 if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0; fi
 if [[ $# -lt 3 ]]; then awk 'NR > 1 { if (!/^#/) exit; print }' "$0" >&2; exit 2; fi
@@ -902,7 +884,6 @@ RUN_ID="${RUN_ID:-$FLAVOR-$ids_tag-$(date -u +%Y%m%dT%H%M%S)}"
 TMP="$(mktemp -d)"
 trap 'cleanup; rm -rf "$TMP"' EXIT
 
-# Model.
 MODEL_DIR_HOST="" MODEL_DEVICE="" model_kv=()
 if [[ -z "$MODEL" ]]; then
   if [[ "$REASON" == ok || "$REASON" == crash ]]; then MODEL="${PHONON_MODEL_DIR:-download}"; else MODEL=none; fi
@@ -920,7 +901,6 @@ esac
   echo "model=$MODEL required=$REQUIRED out=$OUT runId=$RUN_ID"
 } | tee "$OUT/collect.txt" >&2
 
-# Device present?
 if ((!DRY)); then
   state="$(adb -s "$SERIAL" get-state 2>/dev/null || true)"
   [[ "$state" == device ]] || { echo "NOT-RUN device $SERIAL: state '${state:-absent}'" | tee "$OUT/check.txt"; exit 3; }
@@ -930,7 +910,6 @@ fi
 
 device_json "$OUT/device.json"
 
-# Install.
 if ((INSTALL)); then
   ((FRESH)) && { A uninstall "$PKG" >/dev/null 2>&1 || true; }
   install_args=(install -r -t)
@@ -953,7 +932,6 @@ common_kv=(hold="$HOLD")
 
 st=0
 if [[ ",$SCENARIO," == *,S13,* ]]; then
-  # S13: threads x spin, a fresh process each.
   rows="$TMP/rows.jsonl"
   : >"$rows"
   for th in ${THREADS_LIST//,/ }; do
@@ -988,7 +966,6 @@ else
   ((DRY)) || checks "$OUT" "$REASON" "$REQUIRED" || st=1
 fi
 
-# Leave the phone clean.
 A shell am force-stop "$PKG" >/dev/null 2>&1 || true
 if ((KEEP_APP)); then
   log "keeping $PKG installed (--keep-app)"
