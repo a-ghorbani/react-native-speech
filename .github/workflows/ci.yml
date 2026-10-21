@@ -134,7 +134,7 @@ jobs:
 
       - name: Check turborepo cache for Android
         run: |
-          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:android').cache.status")
+          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:android --filter=react-native-speech-example --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:android').cache.status")
 
           if [[ "$TURBO_CACHE_STATUS" == "HIT" ]]; then
             echo "turbo_cache_hit=1" >> "$GITHUB_ENV"
@@ -174,7 +174,7 @@ jobs:
         env:
           JAVA_OPTS: '-XX:MaxHeapSize=6g'
         run: |
-          yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+          yarn turbo run build:android --filter=react-native-speech-example --cache-dir="${{ env.TURBO_CACHE_DIR }}"
 
   e2e-android:
     # Runs the example app's self-test (example/e2e) on an emulator with the
@@ -297,7 +297,7 @@ jobs:
 
       - name: Check turborepo cache for iOS
         run: |
-          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:ios').cache.status")
+          TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:ios --filter=react-native-speech-example --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:ios').cache.status")
 
           if [[ "$TURBO_CACHE_STATUS" == "HIT" ]]; then
             echo "turbo_cache_hit=1" >> "$GITHUB_ENV"
@@ -319,7 +319,7 @@ jobs:
 
       - name: Build example for iOS
         run: |
-          yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+          yarn turbo run build:ios --filter=react-native-speech-example --cache-dir="${{ env.TURBO_CACHE_DIR }}"
 
   # Phonon add-on (packages/react-native-speech-phonon/docs/DESIGN.md §4.2). Until the lock pins a
   # published release (sha256 PLACEHOLDER), this job builds libptts_ffi.so from the pinned upstream
@@ -408,40 +408,11 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Install JDK
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+      - name: Phonon Android setup
+        uses: ./.github/actions/phonon-android-setup
         with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Finalize Android SDK
-        run: |
-          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
-          for v in $ANDROID_NDK_VERSIONS; do
-            for i in 1 2 3; do
-              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
-              [ "$i" = 3 ] && exit 1
-              sleep 10
-            done
-          done
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >>"$GITHUB_ENV"
-
-      - name: Cache Gradle
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: |
-            ~/.gradle/wrapper
-            ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Download local Phonon binaries
-        if: env.PHONON_SOURCE == 'local'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: phonon-android-stage
-          path: packages/react-native-speech-phonon/scripts/out/android
+          phonon-source: ${{ env.PHONON_SOURCE }}
+          export-ndk-home: 'true'
 
       # Released binaries: unpack the pinned zip into the same layout, so the JNI host test and
       # the add-on's JVM tests always have a local jniLibs + include/.
@@ -490,39 +461,10 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Install JDK
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+      - name: Phonon Android setup
+        uses: ./.github/actions/phonon-android-setup
         with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Finalize Android SDK
-        run: |
-          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
-          for v in $ANDROID_NDK_VERSIONS; do
-            for i in 1 2 3; do
-              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
-              [ "$i" = 3 ] && exit 1
-              sleep 10
-            done
-          done
-
-      - name: Cache Gradle
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: |
-            ~/.gradle/wrapper
-            ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Download local Phonon binaries
-        if: env.PHONON_SOURCE == 'local'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: phonon-android-stage
-          path: packages/react-native-speech-phonon/scripts/out/android
+          phonon-source: ${{ env.PHONON_SOURCE }}
 
       - name: Phonon options
         run: |
@@ -610,39 +552,10 @@ jobs:
       - name: Setup
         uses: ./.github/actions/setup
 
-      - name: Install JDK
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+      - name: Phonon Android setup
+        uses: ./.github/actions/phonon-android-setup
         with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Finalize Android SDK
-        run: |
-          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
-          for v in $ANDROID_NDK_VERSIONS; do
-            for i in 1 2 3; do
-              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$v" >/dev/null && break
-              [ "$i" = 3 ] && exit 1
-              sleep 10
-            done
-          done
-
-      - name: Cache Gradle
-        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: |
-            ~/.gradle/wrapper
-            ~/.gradle/caches
-          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Download local Phonon binaries
-        if: env.PHONON_SOURCE == 'local'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: phonon-android-stage
-          path: packages/react-native-speech-phonon/scripts/out/android
+          phonon-source: ${{ env.PHONON_SOURCE }}
 
       - name: Cache the Phonon model
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
