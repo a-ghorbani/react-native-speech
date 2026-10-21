@@ -852,8 +852,8 @@ checks() {
 # main
 # ================================================================================================
 if [[ "${1:-}" == --selftest ]]; then selftest; exit $?; fi
-if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then sed -n '2,62p' "$0"; exit 0; fi
-if [[ $# -lt 3 ]]; then sed -n '2,62p' "$0" >&2; exit 2; fi
+if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0; fi
+if [[ $# -lt 3 ]]; then awk 'NR > 1 { if (!/^#/) exit; print }' "$0" >&2; exit 2; fi
 SERIAL="$1" SLUG="$2" FLAVOR="$3"
 shift 3
 while [[ $# -gt 0 ]]; do

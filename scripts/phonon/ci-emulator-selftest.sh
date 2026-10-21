@@ -128,7 +128,7 @@ while [[ $# -gt 0 ]]; do
     --check-log) CHECK_LOG="$2"; shift 2 ;;
     --crash-log) CRASH_LOG="$2"; shift 2 ;;
     --selftest) selftest; exit $? ;;
-    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done

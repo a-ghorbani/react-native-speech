@@ -341,7 +341,7 @@ EOF
 
 case "${1:-}" in
   --selftest) selftest; exit $? ;;
-  -h|--help|"") sed -n '2,20p' "$0"; exit 2 ;;
+  -h|--help|"") awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 2 ;;
 esac
 verify "$1"
 if ((FAILED)); then echo "verify-ios-xcframework: FAILED"; exit 1; fi

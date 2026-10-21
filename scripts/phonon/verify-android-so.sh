@@ -279,7 +279,7 @@ while [[ $# -gt 0 ]]; do
     --max-size) MAX="$2"; shift 2 ;;
     --jnilibs) JNILIBS="$2"; shift 2 ;;
     --selftest) selftest; exit $? ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) break ;;
   esac

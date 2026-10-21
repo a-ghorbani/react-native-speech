@@ -144,5 +144,5 @@ EOF
 }
 
 if [[ "${1:-}" == --selftest ]]; then selftest; exit $?; fi
-if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then sed -n '2,24p' "$0"; exit 0; fi
+if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0; fi
 exec python3 "$HERE/apk_size_report.py" --apkanalyzer "$(find_apkanalyzer)" "$@"

@@ -311,7 +311,7 @@ while [[ $# -gt 0 ]]; do
     --libdir) LIBDIR="$2"; shift 2 ;;
     --contents) CONTENTS="$2"; shift 2 ;;
     --selftest) selftest; exit $? ;;
-    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done

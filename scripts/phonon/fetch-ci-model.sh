@@ -19,7 +19,7 @@ FILES=(
   "default-voice.safetensors f739e8c4c76ee7f92e7c94a82002748c8cd22e99582ac49f7b9b94cd63786e18"
 )
 
-[[ $# -eq 1 ]] || { sed -n '2,11p' "$0" >&2; exit 2; }
+[[ $# -eq 1 ]] || { awk 'NR > 1 { if (!/^#/) exit; print }' "$0" >&2; exit 2; }
 if [[ "$1" == --pins ]]; then
   for f in "${FILES[@]}"; do echo "$f"; done
   echo "revision $REVISION"

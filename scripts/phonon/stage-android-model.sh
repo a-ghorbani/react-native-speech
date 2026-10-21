@@ -32,7 +32,7 @@ VOICES=(
   "Alfie X6NceqF285Gr04gb 4de75497fff3030168e8aa6dca23ffeb332b1bc8c25d0bf3507ceadac953ae9c"
 )
 
-[[ $# -eq 1 ]] || { sed -n '2,19p' "$0" >&2; exit 2; }
+[[ $# -eq 1 ]] || { awk 'NR > 1 { if (!/^#/) exit; print }' "$0" >&2; exit 2; }
 if [[ "$1" == --pins ]]; then
   for v in "${VOICES[@]}"; do echo "$v"; done
   echo "revision $VOICES_REVISION"
