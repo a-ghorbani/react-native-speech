@@ -269,24 +269,22 @@ describe('Phonon docs: versions, models and licences', () => {
 
   it('matches the example model manager (revision, files, voices)', () => {
     const mm = read('../../example/src/utils/PhononModelManager.ts');
-    const rev = mm.match(
-      /repo: 'gradium\/phonon-31m-en',\s+revision: '([0-9a-f]{40})'/,
-    )![1]!;
-    expect(guide).toContain(rev);
+    const pins = JSON.parse(read('../../example/src/utils/phononPins.json'));
+    expect(guide).toContain(pins.checkpoint.revision);
     const files = section(guide, 'Android: checkpoint folder');
-    for (const f of [
+    const paths = pins.checkpoint.files.map((f: {path: string}) => f.path);
+    expect(paths).toEqual([
       'config.json',
       'tokenizer.json',
       'model.q8.gguf',
       'default-voice.safetensors',
-    ]) {
-      expect(mm).toContain(`path: '${f}'`);
+    ]);
+    for (const f of paths) {
       expect(files).toContain(`\`${f}\``);
     }
-    const curated = mm.slice(mm.indexOf('PHONON_CURATED_VOICES'));
-    const names = [
-      ...curated.slice(0, curated.indexOf('];')).matchAll(/name: '(\w+)'/g),
-    ].map(m => m[1]!);
+    const names: string[] = pins.voices.curated.map(
+      (v: {name: string}) => v.name,
+    );
     expect(names).toHaveLength(8);
     const voices = section(guide, 'Voices');
     for (const n of names) {

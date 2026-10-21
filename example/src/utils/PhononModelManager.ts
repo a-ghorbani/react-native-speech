@@ -29,6 +29,9 @@ import {Platform} from 'react-native';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import type {PhononConfig} from '@pocketpalai/react-native-speech-phonon';
 
+// HF repos, revisions and per-file sha256; also read by the add-on's CI model scripts.
+import PINS from './phononPins.json';
+
 export type PhononVariant = '31m-en' | '40m-en';
 
 export interface PhononModelInfo {
@@ -95,44 +98,6 @@ export class PhononModelError extends Error {
 
 const HF_BASE_URL = 'https://huggingface.co';
 
-/** HF `gradium/phonon-31m-en`, pinned. */
-const CHECKPOINT_31M = {
-  repo: 'gradium/phonon-31m-en',
-  revision: '52433c46975bfa13144c56204c9f4ee1c5b148aa',
-  files: [
-    {
-      path: 'config.json',
-      size: 2851,
-      sha256:
-        '7062ea376e6b158543c8abec8e5af67df171c49ad70eb7e2a0fb25c16f265e06',
-    },
-    {
-      path: 'tokenizer.json',
-      size: 277967,
-      sha256:
-        '691a00068fa7b989f2f3e5ae5daa2d1a5bb319f2d5360deafcfb19a8bb6e7936',
-    },
-    {
-      path: 'model.q8.gguf',
-      size: 64512352,
-      sha256:
-        'a7d9aad2cd6dc66473f24a08bc6d2939030ef4d751ef82349361fbef3272dbae',
-    },
-    {
-      path: 'default-voice.safetensors',
-      size: 256136,
-      sha256:
-        'f739e8c4c76ee7f92e7c94a82002748c8cd22e99582ac49f7b9b94cd63786e18',
-    },
-  ],
-};
-
-/** HF `gradium/phonon-voices`, pinned. */
-const VOICES_REPO = {
-  repo: 'gradium/phonon-voices',
-  revision: 'da6c9ec0d47be8df5c87c730a3aa97187f3229c3',
-};
-
 interface CuratedVoice {
   name: string;
   voiceId: string;
@@ -142,75 +107,9 @@ interface CuratedVoice {
   sha256: string;
 }
 
-const VOICE_FILE_SIZE = 256136;
-
 /** Curated English voices (Apache-2.0), saved under their display name. */
-export const PHONON_CURATED_VOICES: readonly CuratedVoice[] = [
-  {
-    name: 'Zoey',
-    voiceId: 'NbpkqMVS3CJeq2j8',
-    locale: 'en-us',
-    gender: 'female',
-    description: 'Playful and upbeat, standard American accent',
-    sha256: '97c7f8c253413574406ab80dd23f49c3ebb2517163b00a9bf86b9c4cf43e7e23',
-  },
-  {
-    name: 'Juniper',
-    voiceId: 'NIWIOv5vTi5eRMj8',
-    locale: 'en-us',
-    gender: 'female',
-    description: 'Cheerful, personable, resonant',
-    sha256: '444378eb06b7c492b86e8fc7d13e4db1a3c0cf3e68891a960bf6f0a41a13ef35',
-  },
-  {
-    name: 'Harper',
-    voiceId: '4SZHfMpw-p46Ywgs',
-    locale: 'en-us',
-    gender: 'female',
-    description: 'Modern, confident and friendly',
-    sha256: '6b3da6e2d796a20c51af892c482bd6509fb88267a221aff83c870843dee2a123',
-  },
-  {
-    name: 'Easton',
-    voiceId: 'LMDIYE0Oa377Qh6Z',
-    locale: 'en-us',
-    gender: 'male',
-    description: 'Punchy and close in, crisp consonants',
-    sha256: '45c582673cb20edb04ddcca2b5a8865ddfb0a82599efadb269021e87d20fbdd4',
-  },
-  {
-    name: 'Micah',
-    voiceId: '40QrMVgAxFiUnP9f',
-    locale: 'en-us',
-    gender: 'male',
-    description: 'Buoyant, high energy, playful lift',
-    sha256: '0de1098d1051686a138d068e83ff09deb5053328bc74ec9541a1fdb90bfc24da',
-  },
-  {
-    name: 'Trevor',
-    voiceId: '0zLApsZfVLLNaEGl',
-    locale: 'en-us',
-    gender: 'male',
-    description: 'Buoyant over a resonant mid-low core',
-    sha256: 'dc1341c8937af5534e6bbcc5c0fc5e7c10312229b59061228074f93683fe2261',
-  },
-  {
-    name: 'Maeve',
-    voiceId: '6PWnV0Nq4wu7RVBT',
-    locale: 'en-gb',
-    gender: 'female',
-    description: 'Sparky, attentive British English',
-    sha256: '56494ee67d533ad227ff0dfd0b1c13ff5aa91f1ad6e596e66c2986ba3005e844',
-  },
-  {
-    name: 'Alfie',
-    voiceId: 'X6NceqF285Gr04gb',
-    locale: 'en-gb',
-    gender: 'male',
-    description: 'Punchy and forward British English',
-    sha256: '4de75497fff3030168e8aa6dca23ffeb332b1bc8c25d0bf3507ceadac953ae9c',
-  },
-];
+export const PHONON_CURATED_VOICES: readonly CuratedVoice[] =
+  PINS.voices.curated;
 
 /**
  * Default iOS mirror; override with `setIosMirror`. Unpinned until the
@@ -297,12 +196,12 @@ function hfUrl(
 
 /** Android file list for the downloadable checkpoint. */
 export function androidModelFiles(): PhononModelFile[] {
-  const files: PhononModelFile[] = CHECKPOINT_31M.files.map(f => ({
+  const files: PhononModelFile[] = PINS.checkpoint.files.map(f => ({
     ...f,
     url: hfUrl(
       HF_BASE_URL,
-      CHECKPOINT_31M.repo,
-      CHECKPOINT_31M.revision,
+      PINS.checkpoint.repo,
+      PINS.checkpoint.revision,
       f.path,
     ),
   }));
@@ -311,11 +210,11 @@ export function androidModelFiles(): PhononModelFile[] {
       path: `voices/${v.name}.safetensors`,
       url: hfUrl(
         HF_BASE_URL,
-        VOICES_REPO.repo,
-        VOICES_REPO.revision,
+        PINS.voices.repo,
+        PINS.voices.revision,
         `voices/${v.voiceId}.safetensors`,
       ),
-      size: VOICE_FILE_SIZE,
+      size: PINS.voices.fileSize,
       sha256: v.sha256,
     });
   }
@@ -773,7 +672,7 @@ export class PhononModelManager {
           source:
             this.platform === 'ios'
               ? `${this.iosMirror.repo}@${this.iosMirror.revision}`
-              : `${CHECKPOINT_31M.repo}@${CHECKPOINT_31M.revision}`,
+              : `${PINS.checkpoint.repo}@${PINS.checkpoint.revision}`,
           ...(sourceDir ? {copiedFrom: sourceDir} : {}),
           installedAt: new Date().toISOString(),
         }),

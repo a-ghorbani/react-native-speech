@@ -684,7 +684,9 @@ crash-safe recovery from 2.4.
 `getDownloadedModelConfig()`. Default variant `31m-en`; 40m listed as "user-downloaded, CC
 BY-NC" behind a toggle. Android: 4 files + `voices.jsonl`, curated 8 English voices. iOS: per-file
 mirror into `Library/Application Support/phonon/phonon-31m-en-coreml/` (the inner folder is the
-`modelPath`), `NSURLIsExcludedFromBackupKey`. No zip dependency.
+`modelPath`), `NSURLIsExcludedFromBackupKey`. No zip dependency. Android repos, revisions and
+per-file sha256 live in `example/src/utils/phononPins.json`, which `fetch-ci-model.sh` and
+`stage-android-model.sh` read with jq, so the app and the CI model scripts cannot disagree.
 
 ---
 

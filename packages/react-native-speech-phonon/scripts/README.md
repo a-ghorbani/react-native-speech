@@ -146,7 +146,7 @@ The scripts the app-level CI jobs run; all of them also run locally, and
 | `verify-apk.sh` | what an APK carries of Phonon. `--phonon on`: per ABI both libraries present, stored uncompressed at 16 KB aligned offsets, PT_LOAD p_align ≥ 0x4000, NEEDED sets, `--libdir` source match (PT_LOAD bytes: AGP re-strips), none under other ABIs, `PhononNative` natives survived R8. `--phonon off`: no Phonon library, no `PhononNative`. `--selftest` |
 | `check-npm-pack.sh` | `npm pack` (runs `prepare`, as publishing does): lock and Phonon build glue in; `test/`, `cpp/tests`, JVM tests, scripts, docs other than the notices, build output, any `libptts_ffi*` / `PhononCore.xcframework` out; tarball size. `--core --root ../..`: the core package has no Phonon file or mention. `--selftest` |
 | `ci-emulator-selftest.sh` | installs a debug APK with the add-on, copies a model in with `run-as`, runs the self-test deep link, checks the `[SelfTest]` results, page size and crashes. `--check-log` checks saved logs; `--selftest` |
-| `fetch-ci-model.sh` | phonon-31m-en checkpoint with the example's sha256 pins, for the emulator jobs' cache |
+| `fetch-ci-model.sh` | phonon-31m-en checkpoint, sha256-pinned in `example/src/utils/phononPins.json`, for the emulator jobs' cache |
 | `ci.init.gradle` | CI-only switches without touching the example's build files: `-PrnSpeechCiMinify=true` (R8 on for release), `-PrnSpeechCiBundleDebug=true` (JS bundled into the debug APK) |
 
 While `phonon.lock.json` still says `PLACEHOLDER`, the `phonon-android-libs` job builds
@@ -185,7 +185,7 @@ then reused, no problem from our files) and builds the app without it.
 
 | Script | Does |
 |---|---|
-| `stage-android-model.sh <dir>` | the example's Android download on the host (checkpoint + 8 curated voices, sha256-pinned like `PhononModelManager.ts`) into `<dir>/31m-en`, for phones without internet |
+| `stage-android-model.sh <dir>` | the example's Android download on the host (checkpoint + 8 curated voices, sha256-pinned in `example/src/utils/phononPins.json`) into `<dir>/31m-en`, for phones without internet |
 | `collect-android-evidence.sh <serial> <slug> <flavor> --apk <apk>` | one evidence run: install (confirms the HyperOS "Install via USB?" prompt), `device.json`, launch, model push, meminfo before/after, self-test deep link, screenshots + UI dumps at `SCREENSHOT_READY`, maps proof, pid-filtered logcat + crash buffer + new dropbox crashes against the §8.4 regex, the app's `phonon-evidence/<runId>/`, `check.txt` (PASS/FAIL/NOT-RUN per check, §8.3 thresholds). `--scenario S1..S13,U1,U2,U3,F1` picks scenarios, `--dry-run` prints the adb plan, `--selftest` tests the checks offline |
 
 Output lands in the gitignored `docs/evidence/` and is never committed: summarise it in a
