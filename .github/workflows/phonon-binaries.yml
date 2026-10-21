@@ -270,11 +270,14 @@ jobs:
       - name: Use release asset names
         run: packages/react-native-speech-phonon/scripts/update-lock.sh --release "${{ needs.meta.outputs.release }}"
 
+      # test-scripts.sh needs bash >= 4; macOS ships 3.2.
       - name: Toolchain
         run: |
+          brew list bash >/dev/null 2>&1 || brew install bash
+          echo "$(brew --prefix)/bin" >>"$GITHUB_PATH"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
-          bash --version | head -1
+          "$(brew --prefix)/bin/bash" --version | head -1
 
       # Includes verify-ios-xcframework.sh --selftest with Xcode's tools.
       - name: Script tests
