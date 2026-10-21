@@ -522,14 +522,15 @@ jobs:
           echo "PHONON_FLAGS=$flags" >>"$GITHUB_ENV"
 
       # Only the libraries must be configuration-cache clean: onnxruntime-react-native's build
-      # script is not, so the example app's problems are tolerated.
+      # script is not, so the example app's problems are tolerated. The first run only warms up:
+      # RN autolinking creates its generated files during configuration.
       - name: Configuration cache (core and add-on)
         env:
           JAVA_OPTS: '-XX:MaxHeapSize=6g'
         run: |
           cd example/android
           read -ra flags <<<"$PHONON_FLAGS"
-          for run in store reuse; do
+          for run in warm store reuse; do
             ./gradlew :pocketpalai_react-native-speech-phonon:assembleRelease --no-daemon --console=plain \
               --configuration-cache --configuration-cache-problems=warn \
               -PreactNativeArchitectures=arm64-v8a,x86_64 "${flags[@]}" | tee "$RUNNER_TEMP/cc-$run.log"
