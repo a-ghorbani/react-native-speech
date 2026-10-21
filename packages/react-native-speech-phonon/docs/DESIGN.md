@@ -289,6 +289,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   setChunkProgressCallback(cb: ChunkProgressCallback | null): void;
   stop(): Promise<void>; destroy(): Promise<void>; release(): Promise<ReleaseResult>;
   getLastMetrics(): PhononChunkMetrics | null;
+  onChunkMetrics(cb: (m: PhononChunkMetrics) => void): () => void; // after each chunk plays; unsubscribe
 }
 ```
 

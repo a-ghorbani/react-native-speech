@@ -268,6 +268,24 @@ import {PhononEngine} from '@pocketpalai/react-native-speech-phonon';
 const willCompile = await PhononEngine.needsCompile(modelPath); // always false on Android
 ```
 
+### Chunk metrics
+
+Keep the engine instance you registered to read per-chunk timings (`PhononChunkMetrics`:
+`ttfaMs`, `totalMs`, `queuedMs`, `audioSec`, `chars`, `playStartTs` / `playEndTs`,
+`voiceChanged`, ...). Each chunk reports once its playback ends, finished or stopped.
+
+```ts
+const phonon = new PhononEngine();
+Speech.registerEngine(phonon);
+
+const unsubscribe = phonon.onChunkMetrics(m => console.log(m.ttfaMs, m.audioSec));
+// ...
+unsubscribe();
+phonon.getLastMetrics(); // the last chunk's metrics, or null
+```
+
+A listener that throws is logged and does not stop synthesis.
+
 ### Configuration (`PhononConfig`)
 
 | Field | Platforms | Default | Meaning |

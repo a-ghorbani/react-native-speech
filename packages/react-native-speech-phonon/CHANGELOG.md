@@ -21,3 +21,6 @@
   and load failures are remembered per device so the engine stays hidden.
 - `PhononError` / `PhononUnsupportedError` with stable `ERR_PHONON_*` codes, and the Phonon
   types (`PhononConfig`, `PhononVoice`, `PhononSupportInfo`, ...).
+- `PhononEngine.getLastMetrics()` and `PhononEngine.onChunkMetrics(listener)` (returns an
+  unsubscribe function): per-chunk timings (`PhononChunkMetrics`: `ttfaMs`, `totalMs`,
+  `queuedMs`, `audioSec`, playback start/end, `voiceChanged`) once each chunk's playback ends.
