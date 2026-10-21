@@ -165,10 +165,16 @@
           "name": "angular"
         },
         "gitRawCommitsOpts": {
-          "path": [".", ":(exclude)packages"]
+          "path": [
+            ".",
+            ":(exclude)packages"
+          ]
         },
         "commitsOpts": {
-          "path": [".", ":(exclude)packages"]
+          "path": [
+            ".",
+            ":(exclude)packages"
+          ]
         }
       }
     }
