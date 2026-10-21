@@ -2,8 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- **Engine add-ons.** `Speech.registerEngine(engine)` makes an engine
+  from another package available to `Speech.initialize({engine: id})`;
+  `Speech` dispatches every call through the registry, and the built-in
+  engines register themselves, so existing apps see no change. Add-ons
+  type their init config by extending `CustomEngineConfigs`, and import
+  the building blocks they need (`EngineStreamSession`,
+  `neuralAudioPlayer`, `TextChunker`, ...) from the package root. Native
+  add-ons play PCM on the shared neural player through
+  `NeuralPcmSink` (Android) and `RNSpeechAudioOutput` (iOS). See
+  [docs/USAGE.md](docs/USAGE.md#engine-add-ons).
+- **`Speech.getEngineSupport(engine)` / `Speech.resetEngineSupport(engine)`**:
+  never throw; report whether an engine can run on this build and
+  device (built-ins always can; add-ons answer through the new optional
+  `TTSEngineInterface.getSupport()` / `resetSupport()`).
+
 ### Fixed
 
+- **A rejected `Speech.initialize()` no longer switches the current
+  engine.** The previous engine stays current when the new one fails to
+  initialize (all engines).
+- **Android: neural playback promises settle on stop and replace.** A
+  `playAudio` promise now resolves when its track is stopped or
+  replaced, as on iOS, instead of never settling; `initialize()` no
+  longer shuts down the neural audio executor of a live module.
 - **CamelCase / PascalCase tokens are split before phonemization.**
   `PrismML` → `Prism ML`, `XMLParser` → `XML Parser`, `iOS` → `i OS`.
   Conservative two-rule splitter — `iPhone`, `McDonald`, `JavaScript`,

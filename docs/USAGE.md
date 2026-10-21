@@ -702,3 +702,42 @@ subscription.remove();
 
 Neural engines hold ONNX sessions and voice buffers that can run to 200+ MB. Call `Speech.release()` when you're done to free the sessions. Re-initialize before the next call. See [ARCHITECTURE.md](./ARCHITECTURE.md) for memory characteristics per engine.
 
+### Engine add-ons
+
+Engines can also ship as separate packages. Register an add-on once, before initializing it, then use it like any built-in engine:
+
+```ts
+import Speech from '@pocketpalai/react-native-speech';
+import {MyEngine} from 'my-speech-engine';
+
+Speech.registerEngine(new MyEngine());
+
+const {supported, reason} = await Speech.getEngineSupport('my-engine');
+if (supported) {
+  await Speech.initialize({engine: 'my-engine', modelPath: '...'});
+  await Speech.speak('Hello from an add-on.');
+}
+```
+
+`getEngineSupport` never throws: built-in engines report `{supported: true, reason: 'ok'}`, registered add-ons answer through their own probe, and unregistered ids report `reason: 'unknown-engine'`. `resetEngineSupport(id)` clears a negative result an add-on persisted, so the next probe runs again.
+
+#### Writing an add-on
+
+An add-on engine is a class implementing `TTSEngineInterface<TConfig>` whose `name` is its id (built-in ids are reserved). `Speech` calls `initialize(config)` on the first `Speech.initialize`, and `destroy()` + `initialize(config)` on later ones, and the current engine changes only once `initialize` resolves. The optional members are picked up when present: `synthesizeStream` (used by `createSpeechStream`), `setChunkProgressCallback` (chunk progress events), `getVoicesWithMetadata`, and `getSupport` / `resetSupport` (must not throw or load the model).
+
+- **Imports:** import only from `@pocketpalai/react-native-speech` (never deep paths). It exports the pieces the built-in engines use: `EngineStreamSession` (pipelined synth + play for streams; its `hasAudio` / `discard` / `onCancel` hooks cover audio that stays native), `neuralAudioPlayer`, `TextChunker`, `StreamingChunker`, `stripMarkdown`, `createComponentLogger`, and the engine types.
+- **Playback:** play through the shared player so ducking, audio focus, interruptions and `onStart` / `onFinish` behave as for the built-in engines. Audio in JS goes through `neuralAudioPlayer.play(buffer)`. Audio that lives in native memory is played natively through the core's PCM sink, wrapped in `neuralAudioPlayer.playNative(() => myNativeModule.play(...))` so `Speech.stop()` / `pause()` reach it:
+  - Android: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)` (`com.pocketpalai.speech.NeuralPcmSink`, LE Int16 PCM; add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies).
+  - iOS: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]` from `<RNSpeech/RNSpeechAudioOutput.h>` (float32 samples; add `s.dependency "RNSpeech"` to the add-on's podspec).
+- **Typed config:** extend `CustomEngineConfigs` so `Speech.initialize` type-checks the add-on's config:
+
+```ts
+declare module '@pocketpalai/react-native-speech' {
+  interface CustomEngineConfigs {
+    'my-engine': MyEngineConfig;
+  }
+}
+```
+
+- **Native module:** an add-on with native code ships its own TurboModule (its own codegen spec and module name); the core spec stays unchanged.
+
