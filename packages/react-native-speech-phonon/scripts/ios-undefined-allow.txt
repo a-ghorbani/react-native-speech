@@ -1,0 +1,41 @@
+# Undefined symbols the prelinked PhononCore object may keep (verify-ios-xcframework.sh
+# 'undefined'): one anchored ERE per line, matched against `nm -uj` names (leading underscore
+# included). After the ld -r prelink everything Rust is defined inside the object, so whatever
+# is left must come from the iOS 15 SDK the app links. A symbol not matched here fails the
+# check; add it only after confirming it exists in iOS 15.1 libSystem / the named framework.
+#
+# Seeded from the net undefined symbols of upstream's v0.4.0 ios-arm64 archive.
+
+# CoreFoundation, CoreVideo, CommonCrypto
+^_kCF[A-Za-z0-9_]+$
+^_CF[A-Z][A-Za-z0-9_]*$
+^_kCV[A-Za-z0-9_]+$
+^_CV[A-Z][A-Za-z0-9_]*$
+^_CC[A-Z][A-Za-z0-9_]*$
+
+# Objective-C runtime and blocks (class references are the 'objc' check's business)
+^_(objc|object|class|ivar|method|protocol|sel)_[A-Za-z0-9_]+$
+^__Block_(copy|release)$
+^__NSConcrete(Global|Stack)Block$
+
+# libSystem: pthreads, dyld, unwinder, stack protector, TLS
+^_pthread_[a-z0-9_]+$
+^_(dlopen|dlclose|dlerror|dlsym|dladdr)$
+^__Unwind_[A-Za-z_]+$
+^___stack_chk_(fail|guard)$
+^___(error|assert_rtn|exp10|exp10f|sincos_stret|sincosf_stret)$
+^__tlv_bootstrap$
+^__tlv_atexit$
+^__NSGetExecutablePath$
+^__NSGetEnviron$
+
+# libc
+^_(bzero|bcmp|memchr|memcmp|memcpy|memmove|memset|memset_pattern16|strlen|strcmp|strncmp)$
+^_(malloc|calloc|realloc|free|posix_memalign|malloc_size|abort|exit|getenv|sysconf|sysctl|sysctlbyname|sysctlnametomib)$
+^_(open|close|read|write|writev|fstat|lseek|isatty|getcwd|realpath|strerror_r|getpid|nanosleep|sched_yield)$
+^_(mmap|munmap|mprotect|madvise|msync|mlock|munlock)$
+^_(clock_gettime|gettimeofday|mach_absolute_time|mach_timebase_info|arc4random_buf|getentropy)$
+^_(sigaction|sigaltstack|signal)$
+
+# libm
+^_(a?sin|a?cos|a?tan|atan2|sinh|cosh|tanh|exp|exp2|expm1|log|log2|log10|log1p|pow|sqrt|cbrt|hypot|fmod|round|trunc|floor|ceil|fma|fmin|fmax|erf|erfc|lgamma|tgamma)f?$

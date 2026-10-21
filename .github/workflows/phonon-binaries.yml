@@ -1,0 +1,425 @@
+# Build, verify and (on request) release the Phonon native binaries that consumers download at
+# build time when they install @pocketpalai/react-native-speech-phonon (packages/react-native-speech-phonon/docs/DESIGN.md §3, §4.1):
+#
+#   phonon-android-<ver>-r<N>.zip            libptts_ffi.so for arm64-v8a and x86_64, rebuilt from
+#                                            the pinned xn-ptts commit
+#   phonon-ios-<ver>-r<N>.xcframework.zip    upstream's PhononCore.xcframework, repackaged
+#   SHA256SUMS, BUILDINFO-{android,ios}.json
+#   + a workflow artifact with the precompiled Core ML bundle, for the HF mirror
+#
+# Pull requests that touch the scripts only lint, build and verify. A release is created only from a
+# pushed phonon-bin-v* tag, or a manual run with `publish` ticked; it is never marked Latest (the
+# v* releases of release-it stay Latest), and the lock-file update arrives as a PR.
+name: Phonon binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Release revision, e.g. r1 (release name: phonon-bin-<upstream tag>-<revision>)'
+        required: true
+        default: r1
+      publish:
+        description: 'Create the GitHub release and open the phonon.lock.json PR'
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'phonon-bin-v*'
+  pull_request:
+    paths:
+      - '.github/workflows/phonon-binaries.yml'
+      - 'packages/react-native-speech-phonon/scripts/**'
+      - 'packages/react-native-speech-phonon/cpp/ptts.h'
+      - 'packages/react-native-speech-phonon/phonon.lock.json'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  ACTIONLINT_VERSION: '1.7.12'
+  ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' # linux_amd64
+  SHELLCHECK_PY_VERSION: '0.11.0.1'
+  RUST_VERSION: '1.99.1'
+  CARGO_NDK_VERSION: '4.1.2'
+  CARGO_ABOUT_VERSION: '0.9.2'
+  NDK_VERSION: '28.2.13676358'
+
+jobs:
+  # actionlint (with shellcheck on every run: block) and shellcheck over the scripts.
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install actionlint and shellcheck
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lint"
+          "$RUNNER_TEMP/lint/bin/pip" install --quiet "shellcheck-py==$SHELLCHECK_PY_VERSION"
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP/lint/bin" actionlint
+          echo "$RUNNER_TEMP/lint/bin" >>"$GITHUB_PATH"
+
+      - name: actionlint
+        run: |
+          shellcheck --version | sed -n 2p
+          actionlint -version | head -1
+          actionlint .github/workflows/phonon-binaries.yml
+
+      - name: shellcheck
+        run: shellcheck -x packages/react-native-speech-phonon/scripts/*.sh
+
+  meta:
+    runs-on: ubuntu-24.04
+    outputs:
+      release: ${{ steps.meta.outputs.release }}
+      publish: ${{ steps.meta.outputs.publish }}
+      commit: ${{ steps.meta.outputs.commit }}
+      repo: ${{ steps.meta.outputs.repo }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Release name
+        id: meta
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REVISION: ${{ inputs.revision }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          tag="$(jq -er '.upstream.tag' packages/react-native-speech-phonon/phonon.lock.json)"
+          case "$EVENT" in
+            push) release="$REF_NAME"; publish=true ;;
+            workflow_dispatch) release="phonon-bin-$tag-$REVISION"; publish="$PUBLISH" ;;
+            *) release="$(jq -er '.binaries.release' packages/react-native-speech-phonon/phonon.lock.json)"; publish=false ;;
+          esac
+          # Validates the name against the upstream tag; the names-only update is thrown away.
+          cp packages/react-native-speech-phonon/phonon.lock.json "$RUNNER_TEMP/lock.json"
+          packages/react-native-speech-phonon/scripts/update-lock.sh --lock "$RUNNER_TEMP/lock.json" --release "$release"
+          {
+            echo "release=$release"
+            echo "publish=$publish"
+            echo "commit=$(jq -er '.upstream.commit' packages/react-native-speech-phonon/phonon.lock.json)"
+            echo "repo=$(jq -er '.upstream.repo' packages/react-native-speech-phonon/phonon.lock.json)"
+          } >>"$GITHUB_OUTPUT"
+          echo "release: $release, publish: $publish"
+
+  # cargo-about over the pinned upstream: notices for each zip and packages/react-native-speech-phonon/docs/THIRD_PARTY_NOTICES.md.
+  notices:
+    needs: meta
+    runs-on: ubuntu-24.04
+    outputs:
+      epoch: ${{ steps.epoch.outputs.epoch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Checkout upstream
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ needs.meta.outputs.repo }}
+          ref: ${{ needs.meta.outputs.commit }}
+          path: xn-ptts
+          persist-credentials: false
+
+      # The upstream commit time, the SOURCE_DATE_EPOCH of both zips (build-android.sh reads it
+      # from its own checkout; the ios job has none).
+      - name: Upstream commit time
+        id: epoch
+        run: echo "epoch=$(git -C xn-ptts log -1 --format=%ct HEAD)" >>"$GITHUB_OUTPUT"
+
+      - name: Cache cargo
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/bin/cargo-about
+          key: phonon-notices-${{ env.CARGO_ABOUT_VERSION }}-${{ hashFiles('xn-ptts/Cargo.lock') }}
+
+      - name: Install cargo-about
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          if ! cargo about --version 2>/dev/null | grep -q "$CARGO_ABOUT_VERSION"; then
+            cargo install cargo-about --version "$CARGO_ABOUT_VERSION" --locked --features cli
+          fi
+
+      - name: Generate notices
+        run: |
+          (cd xn-ptts && cargo fetch --locked)
+          mkdir -p out/licenses
+          packages/react-native-speech-phonon/scripts/gen-notices.sh --upstream xn-ptts --out out/NOTICES-android.md \
+            --target aarch64-linux-android --target x86_64-linux-android
+          packages/react-native-speech-phonon/scripts/gen-notices.sh --upstream xn-ptts --out out/NOTICES-ios.md \
+            --target aarch64-apple-ios --target aarch64-apple-ios-sim
+          packages/react-native-speech-phonon/scripts/gen-notices.sh --upstream xn-ptts --out out/THIRD_PARTY_NOTICES.md
+          cp xn-ptts/LICENSE-MIT out/licenses/xn-ptts-LICENSE-MIT
+          cp xn-ptts/LICENSE-APACHE out/licenses/xn-ptts-LICENSE-APACHE
+
+      - name: Upload notices
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phonon-notices
+          path: out/
+          if-no-files-found: error
+
+  android:
+    needs: [meta, notices]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Checkout upstream
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ needs.meta.outputs.repo }}
+          ref: ${{ needs.meta.outputs.commit }}
+          path: xn-ptts
+          persist-credentials: false
+
+      - name: Check upstream commit
+        env:
+          WANT: ${{ needs.meta.outputs.commit }}
+        run: test "$(git -C xn-ptts rev-parse HEAD)" = "$WANT"
+
+      - name: Use release asset names
+        run: packages/react-native-speech-phonon/scripts/update-lock.sh --release "${{ needs.meta.outputs.release }}"
+
+      - name: Cache cargo
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/bin/cargo-ndk
+          key: phonon-android-${{ env.RUST_VERSION }}-${{ env.CARGO_NDK_VERSION }}-${{ hashFiles('xn-ptts/Cargo.lock') }}
+
+      - name: Install Rust, cargo-ndk and the NDK
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal \
+            --target aarch64-linux-android --target x86_64-linux-android
+          rustup default "$RUST_VERSION"
+          if ! cargo ndk --version 2>/dev/null | grep -q "$CARGO_NDK_VERSION"; then
+            cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+          fi
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >>"$GITHUB_ENV"
+
+      # Includes verify-android-so.sh --selftest and the iOS verifier's self-test on LLVM tools.
+      - name: Script tests
+        run: packages/react-native-speech-phonon/scripts/test-scripts.sh
+
+      - name: Build libptts_ffi.so
+        run: packages/react-native-speech-phonon/scripts/build-android.sh --upstream xn-ptts --out "$RUNNER_TEMP/android"
+
+      - name: Verify libptts_ffi.so
+        run: packages/react-native-speech-phonon/scripts/verify-android-so.sh --jnilibs "$RUNNER_TEMP/android/jniLibs"
+
+      - name: Download notices
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-notices
+          path: ${{ runner.temp }}/notices
+
+      - name: Package
+        run: |
+          packages/react-native-speech-phonon/scripts/package-android.sh --stage "$RUNNER_TEMP/android" \
+            --notices "$RUNNER_TEMP/notices/NOTICES-android.md" --out-dir dist
+          mv dist/SHA256SUMS dist/SHA256SUMS-android
+          cat dist/SHA256SUMS-android
+          jq . dist/BUILDINFO-android.json
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phonon-android
+          path: dist/
+          if-no-files-found: error
+
+      # A second build from another directory must give the same bytes. Warn-only for now
+      # (design §4.1 step 7).
+      - name: Reproducibility check
+        continue-on-error: true
+        run: |
+          cp -R xn-ptts "$RUNNER_TEMP/xn-ptts-repro"
+          packages/react-native-speech-phonon/scripts/build-android.sh --upstream "$RUNNER_TEMP/xn-ptts-repro" --out "$RUNNER_TEMP/android-repro"
+          a="$(jq -S .libs "$RUNNER_TEMP/android/BUILDINFO.json")"
+          b="$(jq -S .libs "$RUNNER_TEMP/android-repro/BUILDINFO.json")"
+          if [ "$a" != "$b" ]; then
+            echo "::warning::libptts_ffi.so is not reproducible across build directories"
+            diff <(echo "$a") <(echo "$b") || true
+            exit 1
+          fi
+          echo "reproducible: $a"
+
+  ios:
+    needs: [meta, notices]
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Use release asset names
+        run: packages/react-native-speech-phonon/scripts/update-lock.sh --release "${{ needs.meta.outputs.release }}"
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          bash --version | head -1
+
+      # Includes verify-ios-xcframework.sh --selftest with Xcode's tools.
+      - name: Script tests
+        run: packages/react-native-speech-phonon/scripts/test-scripts.sh
+
+      - name: Download notices
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-notices
+          path: ${{ runner.temp }}/notices
+
+      # Prelink, stub slice, xcframework; package-ios.sh runs verify-ios-xcframework.sh before
+      # zipping.
+      - name: Repackage PhononCore.xcframework
+        env:
+          SOURCE_DATE_EPOCH: ${{ needs.notices.outputs.epoch }}
+        run: |
+          test -n "$SOURCE_DATE_EPOCH"
+          packages/react-native-speech-phonon/scripts/package-ios.sh --notices "$RUNNER_TEMP/notices/NOTICES-ios.md" \
+            --licenses "$RUNNER_TEMP/notices/licenses" --work "$RUNNER_TEMP/ios" --out-dir dist
+          mv dist/SHA256SUMS dist/SHA256SUMS-ios
+          cat dist/SHA256SUMS-ios
+          jq . dist/BUILDINFO-ios.json
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phonon-ios
+          path: dist/
+          if-no-files-found: error
+
+      - name: Precompile the Core ML bundle
+        run: packages/react-native-speech-phonon/scripts/precompile-coreml.sh --out-dir "$RUNNER_TEMP/coreml"
+
+      # Mirrored by hand to the palshub HF repo (owner decision D1); not a release asset.
+      - name: Upload precompiled bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phonon-31m-en-coreml-precompiled
+          path: ${{ runner.temp }}/coreml/
+          if-no-files-found: error
+
+  publish:
+    needs: [meta, lint, android, ios]
+    if: needs.meta.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      RELEASE: ${{ needs.meta.outputs.release }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      # The branch the lock PR targets. A tag push (or a manual run on a tag) checks out a
+      # detached HEAD, from which create-pull-request cannot open a PR: use the default branch.
+      BASE: ${{ github.ref_type == 'branch' && github.ref_name || github.event.repository.default_branch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BASE }}
+
+      # The lock on BASE must pin the upstream commit these binaries were built from, or the
+      # lock PR would pair them with another upstream.
+      - name: Check the lock on the base branch
+        env:
+          WANT: ${{ needs.meta.outputs.commit }}
+        run: |
+          have="$(jq -er '.upstream.commit' packages/react-native-speech-phonon/phonon.lock.json)"
+          if [ "$have" != "$WANT" ]; then
+            echo "::error::phonon.lock.json on $BASE pins upstream $have, the binaries are from $WANT"
+            exit 1
+          fi
+
+      - name: Download Android binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-android
+          path: dist
+
+      - name: Download iOS binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-ios
+          path: dist
+
+      - name: Download notices
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-notices
+          path: ${{ runner.temp }}/notices
+
+      - name: SHA256SUMS
+        run: |
+          cat dist/SHA256SUMS-android dist/SHA256SUMS-ios | LC_ALL=C sort -k2 >dist/SHA256SUMS
+          rm dist/SHA256SUMS-android dist/SHA256SUMS-ios
+          (cd dist && sha256sum -c SHA256SUMS)
+
+      # Before the release, so a lock that cannot take this release name fails with nothing
+      # published.
+      - name: Update phonon.lock.json and notices
+        run: |
+          packages/react-native-speech-phonon/scripts/update-lock.sh --sums dist/SHA256SUMS --release "$RELEASE"
+          mkdir -p packages/react-native-speech-phonon/docs
+          cp "$RUNNER_TEMP/notices/THIRD_PARTY_NOTICES.md" packages/react-native-speech-phonon/docs/THIRD_PARTY_NOTICES.md
+          git diff --stat
+
+      # Releases are immutable: a rebuild gets a new -r<N>. A re-run of this job (say the PR
+      # step failed) finds its own release: that is fine when it holds exactly these binaries.
+      - name: Create release
+        run: |
+          if gh release view "$RELEASE" >/dev/null 2>&1; then
+            mkdir -p "$RUNNER_TEMP/existing"
+            gh release download "$RELEASE" --pattern SHA256SUMS --dir "$RUNNER_TEMP/existing" --clobber
+            if cmp -s "$RUNNER_TEMP/existing/SHA256SUMS" dist/SHA256SUMS; then
+              echo "release $RELEASE already holds these binaries; going on to the lock PR"
+              exit 0
+            fi
+            echo "::error::release $RELEASE already exists with other binaries; bump the revision"
+            exit 1
+          fi
+          upstream="$(jq -r '"\(.upstream.repo)@\(.upstream.tag) (\(.upstream.commit))"' packages/react-native-speech-phonon/phonon.lock.json)"
+          gh release create "$RELEASE" --target "$GITHUB_SHA" --latest=false \
+            --title "$RELEASE" \
+            --notes "Phonon native binaries built from $upstream for @pocketpalai/react-native-speech-phonon. Fetched at build time by apps that install it; see its phonon.lock.json. Not a package release." \
+            dist/*.zip dist/SHA256SUMS dist/BUILDINFO-android.json dist/BUILDINFO-ios.json
+
+      - name: Open lock PR
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
+        with:
+          # A PR opened with the default GITHUB_TOKEN starts no workflows, so ci.yml (the first
+          # download-and-verify run against the real release) would not run on it. Set the
+          # PHONON_LOCK_PR_TOKEN secret (PAT / GitHub App token with contents + pull-requests
+          # write) to get CI on the PR; without it, trigger CI by hand (see the PR body).
+          token: ${{ secrets.PHONON_LOCK_PR_TOKEN || github.token }}
+          base: ${{ env.BASE }}
+          branch: phonon-lock/${{ needs.meta.outputs.release }}
+          title: 'chore(phonon): pin ${{ needs.meta.outputs.release }} binaries'
+          commit-message: 'chore(phonon): pin ${{ needs.meta.outputs.release }} binaries'
+          add-paths: |
+            packages/react-native-speech-phonon/phonon.lock.json
+            packages/react-native-speech-phonon/docs/THIRD_PARTY_NOTICES.md
+          body: |
+            Pins the binaries of release `${{ needs.meta.outputs.release }}` in `phonon.lock.json` (sha256 from its `SHA256SUMS`) and refreshes `packages/react-native-speech-phonon/docs/THIRD_PARTY_NOTICES.md`.
+
+            Built by run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.
+
+            **Before merging:** CI must have run on this PR: it is the first run that downloads and verifies the release binaries (`source=release`). If the PR was opened without the `PHONON_LOCK_PR_TOKEN` secret, no checks started: close and reopen the PR, or push an empty commit to the branch.
