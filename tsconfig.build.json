@@ -2,6 +2,7 @@
   "extends": "./tsconfig",
   "exclude": [
     "example",
+    "packages",
     "lib",
     "docs",
     "scripts/experiments",

@@ -2745,6 +2745,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@pocketpalai/react-native-speech-phonon@workspace:*, @pocketpalai/react-native-speech-phonon@workspace:packages/react-native-speech-phonon":
+  version: 0.0.0-use.local
+  resolution: "@pocketpalai/react-native-speech-phonon@workspace:packages/react-native-speech-phonon"
+  peerDependencies:
+    "@pocketpalai/react-native-speech": ^2.7.0
+    react: "*"
+    react-native: "*"
+  languageName: unknown
+  linkType: soft
+
 "@pocketpalai/react-native-speech@workspace:.":
   version: 0.0.0-use.local
   resolution: "@pocketpalai/react-native-speech@workspace:."
@@ -10472,6 +10482,7 @@ __metadata:
     "@babel/preset-env": ^7.25.3
     "@babel/runtime": ^7.25.0
     "@dr.pogodin/react-native-fs": ^2.36.1
+    "@pocketpalai/react-native-speech-phonon": "workspace:*"
     "@react-native-community/cli": 20.2.0
     "@react-native-community/cli-platform-android": 20.2.0
     "@react-native-community/cli-platform-ios": 20.2.0

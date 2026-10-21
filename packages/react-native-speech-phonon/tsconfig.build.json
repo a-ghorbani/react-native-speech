@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig",
+  "compilerOptions": {
+    "rootDir": ".",
+    "paths": {
+      "@pocketpalai/react-native-speech": ["../../lib/typescript/src/index.d.ts"]
+    }
+  },
+  "exclude": ["lib", "**/__tests__"]
+}
