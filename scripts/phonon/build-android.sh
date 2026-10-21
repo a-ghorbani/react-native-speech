@@ -46,6 +46,9 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$UPSTREAM" ]] || { echo "--upstream <xn-ptts checkout> is required" >&2; exit 2; }
 UPSTREAM="$(cd "$UPSTREAM" && pwd)"
+# Absolute, because cargo resolves CARGO_TARGET_DIR from inside $UPSTREAM.
+mkdir -p "$(dirname "$OUT")"
+OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 
 LOCK_COMMIT="$(jq -er '.upstream.commit' "$LOCK")"
 LOCK_TAG="$(jq -er '.upstream.tag' "$LOCK")"
