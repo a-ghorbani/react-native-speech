@@ -10,6 +10,8 @@ using namespace JS::NativeSpeech;
 {
   BOOL isDucking;
   NSDictionary *defaultOptions;
+  // Bumped on every stop/replace so completion handlers of stopped buffers become no-ops.
+  NSUInteger _playbackGeneration;
 }
 
 RCT_EXPORT_MODULE();
@@ -449,6 +451,7 @@ RCT_EXPORT_MODULE();
 }
 
 - (void)cleanupAudio {
+  _playbackGeneration++;
   if (_audioEngine.isRunning) {
     [_audioEngine stop];
   }
@@ -631,6 +634,7 @@ RCT_EXPORT_MODULE();
 
   [self emitOnStart:[self getAudioEventData]];
 
+  NSUInteger generation = self->_playbackGeneration;
   __weak RNSpeech *weakSelf = self;
   [self->_playerNode scheduleBuffer:pcmBuffer
                      atTime:nil
@@ -639,6 +643,12 @@ RCT_EXPORT_MODULE();
     RNSpeech *strongSelf = weakSelf;
     if (strongSelf) {
       dispatch_async(strongSelf->_audioQueue, ^{
+        // Also fires when cleanupAudio stops the node; by then a newer playback (or stop) owns the state.
+        if (strongSelf->_playbackGeneration != generation) {
+          RNSpeechTraceEnd(traceHandle, traceName);
+          resolve(nil);
+          return;
+        }
         strongSelf->_isAudioPlaying = NO;
         [strongSelf deactivateAudioSession];
         RNSpeechTraceEnd(traceHandle, traceName);
