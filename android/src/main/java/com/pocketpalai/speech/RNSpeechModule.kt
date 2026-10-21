@@ -31,7 +31,7 @@ import java.nio.ByteOrder
 
 @ReactModule(name = RNSpeechModule.NAME)
 class RNSpeechModule(reactContext: ReactApplicationContext) :
-  NativeSpeechSpec(reactContext) {
+  NativeSpeechSpec(reactContext), NeuralPcmSink {
 
   override fun getName(): String {
     return NAME
@@ -808,6 +808,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     val ducking = if (config.hasKey("ducking")) config.getBoolean("ducking") else false
 
     playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, ducking, promise)
+  }
+
+  override fun playPcm16(pcm: ByteArray, sampleRate: Int, channels: Int, ducking: Boolean, promise: Promise) {
+    playPcm16({ pcm }, sampleRate, channels, ducking, promise)
   }
 
   /** [pcm] (LE Int16) is invoked on the audio executor. */
