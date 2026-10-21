@@ -14,7 +14,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+# bash -eo pipefail: a failing check piped into tee fails its step.
+defaults:
+  run:
+    shell: bash
+
 env:
+  # Pinned tools; keep in step with .github/workflows/phonon-binaries.yml.
+  ACTIONLINT_VERSION: '1.7.12'
+  ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' # linux_amd64
+  SHELLCHECK_PY_VERSION: '0.11.0.1'
+  RUST_VERSION: '1.99.1'
+  CARGO_NDK_VERSION: '4.1.2'
+  NDK_VERSION: '28.2.13676358'
   # NDKs the Android builds request. Preinstalled because Gradle's on-demand download
   # occasionally unpacks a truncated zip.
   ANDROID_NDK_VERSIONS: '27.1.12297006 28.2.13676358'
@@ -36,6 +51,22 @@ jobs:
       - name: Typecheck files
         run: yarn typecheck
 
+      - name: Install actionlint and shellcheck
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lint"
+          "$RUNNER_TEMP/lint/bin/pip" install --quiet "shellcheck-py==$SHELLCHECK_PY_VERSION"
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tgz" \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C "$RUNNER_TEMP/lint/bin" actionlint
+          echo "$RUNNER_TEMP/lint/bin" >>"$GITHUB_PATH"
+
+      # phonon-binaries.yml lints itself and the add-on's scripts when they change; this covers CI.
+      - name: Lint workflows and Phonon CI scripts
+        run: |
+          actionlint .github/workflows/ci.yml
+          shellcheck -x packages/react-native-speech-phonon/scripts/*.sh
+
   test:
     runs-on: ubuntu-latest
 
@@ -49,6 +80,12 @@ jobs:
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 
+      - name: Run Phonon add-on unit tests
+        run: yarn test:phonon --maxWorkers=2
+
+      - name: Run example unit tests
+        run: yarn example test --maxWorkers=2
+
   build-library:
     runs-on: ubuntu-latest
 
@@ -61,6 +98,19 @@ jobs:
 
       - name: Build package
         run: yarn prepare
+
+      # The add-on's types build against the core's lib/typescript from the step above.
+      - name: Build the Phonon add-on
+        run: yarn workspace @pocketpalai/react-native-speech-phonon prepare
+
+      # Core alone must carry no Phonon: no file and no mention of it in the core tarball.
+      - name: Check the core npm package has no Phonon
+        run: packages/react-native-speech-phonon/scripts/check-npm-pack.sh --core --root . --list "$RUNNER_TEMP/npm-pack-core.txt"
+
+      # Packs exactly what `npm publish` would (npm pack runs `prepare` again): the lock and the
+      # Phonon build glue in, host tests, scripts and every Phonon binary out.
+      - name: Check the add-on npm package contents
+        run: packages/react-native-speech-phonon/scripts/check-npm-pack.sh --list "$RUNNER_TEMP/npm-pack-phonon.txt"
 
   build-android:
     runs-on: ubuntu-latest
@@ -87,8 +137,8 @@ jobs:
         run: |
           TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:android').cache.status")
 
-          if [[ $TURBO_CACHE_STATUS == "HIT" ]]; then
-            echo "turbo_cache_hit=1" >> $GITHUB_ENV
+          if [[ "$TURBO_CACHE_STATUS" == "HIT" ]]; then
+            echo "turbo_cache_hit=1" >> "$GITHUB_ENV"
           fi
 
       - name: Install JDK
@@ -184,6 +234,13 @@ jobs:
           cd example/android
           ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=x86_64
 
+      # The example links the Phonon add-on natively only with RN_SPEECH_PHONON=1, so this APK is
+      # the core alone: no Phonon library, shim or class in it.
+      - name: Check the core-only APK has no Phonon
+        run: |
+          packages/react-native-speech-phonon/scripts/verify-apk.sh --phonon off \
+            --apk example/android/app/build/outputs/apk/release/app-release.apk
+
       - name: Install Maestro
         run: |
           curl -fsSL -o maestro.zip "https://github.com/mobile-dev-inc/Maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip"
@@ -243,8 +300,8 @@ jobs:
         run: |
           TURBO_CACHE_STATUS=$(node -p "($(yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}" --dry=json)).tasks.find(t => t.task === 'build:ios').cache.status")
 
-          if [[ $TURBO_CACHE_STATUS == "HIT" ]]; then
-            echo "turbo_cache_hit=1" >> $GITHUB_ENV
+          if [[ "$TURBO_CACHE_STATUS" == "HIT" ]]; then
+            echo "turbo_cache_hit=1" >> "$GITHUB_ENV"
           fi
 
       - name: Use appropriate Xcode version
@@ -254,7 +311,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Install cocoapods
-        if: env.turbo_cache_hit != 1 && steps.cocoapods-cache.outputs.cache-hit != 'true'
+        if: env.turbo_cache_hit != 1
         run: |
           cd example
           bundle install
@@ -264,3 +321,523 @@ jobs:
       - name: Build example for iOS
         run: |
           yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
+
+  # Phonon add-on (packages/react-native-speech-phonon/docs/DESIGN.md §4.2). With a published
+  # release in the lock, Gradle downloads libptts_ffi.so like a consumer build; while the lock says
+  # PLACEHOLDER, this job builds it from the pinned upstream commit and the add-on jobs pass it as
+  # RNSpeech_phononLibDir. The example links the add-on natively only with RN_SPEECH_PHONON=1.
+  phonon-android-libs:
+    runs-on: ubuntu-24.04
+    outputs:
+      source: ${{ steps.source.outputs.source }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Binary source
+        id: source
+        run: |
+          if [ "$(jq -er '.binaries.android.sha256' packages/react-native-speech-phonon/phonon.lock.json)" = PLACEHOLDER ]; then
+            source=local
+          else
+            source=release
+          fi
+          {
+            echo "source=$source"
+            echo "repo=$(jq -er '.upstream.repo' packages/react-native-speech-phonon/phonon.lock.json)"
+            echo "commit=$(jq -er '.upstream.commit' packages/react-native-speech-phonon/phonon.lock.json)"
+          } >>"$GITHUB_OUTPUT"
+          echo "Phonon Android binaries: $source"
+
+      - name: Cache local build
+        if: steps.source.outputs.source == 'local'
+        id: cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: packages/react-native-speech-phonon/scripts/out/android
+          key: phonon-android-stage-${{ env.RUST_VERSION }}-${{ hashFiles('packages/react-native-speech-phonon/phonon.lock.json', 'packages/react-native-speech-phonon/scripts/build-android.sh', 'packages/react-native-speech-phonon/scripts/gen-hwcaps-header.sh', 'packages/react-native-speech-phonon/scripts/arm64-features.sh', 'packages/react-native-speech-phonon/cpp/ptts.h') }}
+
+      - name: Checkout upstream
+        if: steps.source.outputs.source == 'local' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ steps.source.outputs.repo }}
+          ref: ${{ steps.source.outputs.commit }}
+          path: xn-ptts
+          persist-credentials: false
+
+      - name: Install Rust, cargo-ndk and the NDK
+        if: steps.source.outputs.source == 'local' && steps.cache.outputs.cache-hit != 'true'
+        env:
+          WANT: ${{ steps.source.outputs.commit }}
+        run: |
+          test "$(git -C xn-ptts rev-parse HEAD)" = "$WANT"
+          rustup toolchain install "$RUST_VERSION" --profile minimal \
+            --target aarch64-linux-android --target x86_64-linux-android
+          rustup default "$RUST_VERSION"
+          cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >>"$GITHUB_ENV"
+
+      - name: Build libptts_ffi.so
+        if: steps.source.outputs.source == 'local' && steps.cache.outputs.cache-hit != 'true'
+        run: packages/react-native-speech-phonon/scripts/build-android.sh --upstream xn-ptts --out packages/react-native-speech-phonon/scripts/out/android
+
+      - name: Verify libptts_ffi.so
+        if: steps.source.outputs.source == 'local'
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_NDK_LATEST_HOME}"
+          packages/react-native-speech-phonon/scripts/verify-android-so.sh --jnilibs packages/react-native-speech-phonon/scripts/out/android/jniLibs
+
+      - name: Upload
+        if: steps.source.outputs.source == 'local'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phonon-android-stage
+          path: packages/react-native-speech-phonon/scripts/out/android/
+          if-no-files-found: error
+          retention-days: 3
+
+  # Host tests of the native layers, the CI scripts' own tests, and the Kotlin JVM tests of the
+  # core and the add-on.
+  test-phonon-native:
+    needs: phonon-android-libs
+    runs-on: ubuntu-24.04
+    env:
+      PHONON_SOURCE: ${{ needs.phonon-android-libs.outputs.source }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install JDK
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Finalize Android SDK
+        run: |
+          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_LATEST_HOME" >>"$GITHUB_ENV"
+
+      - name: Cache Gradle
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Download local Phonon binaries
+        if: env.PHONON_SOURCE == 'local'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-android-stage
+          path: packages/react-native-speech-phonon/scripts/out/android
+
+      # Released binaries: unpack the pinned zip into the same layout, so the JNI host test and
+      # the add-on's JVM tests always have a local jniLibs + include/.
+      - name: Released Phonon binaries
+        if: env.PHONON_SOURCE == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release="$(jq -er '.binaries.release' packages/react-native-speech-phonon/phonon.lock.json)"
+          asset="$(jq -er '.binaries.android.asset' packages/react-native-speech-phonon/phonon.lock.json)"
+          sha="$(jq -er '.binaries.android.sha256' packages/react-native-speech-phonon/phonon.lock.json)"
+          gh release download "$release" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$RUNNER_TEMP"
+          echo "$sha  $RUNNER_TEMP/$asset" | sha256sum -c -
+          mkdir -p packages/react-native-speech-phonon/scripts/out/android
+          unzip -q "$RUNNER_TEMP/$asset" 'jniLibs/*' 'include/*' -d packages/react-native-speech-phonon/scripts/out/android
+
+      - name: C++ core host tests (ASan + UBSan)
+        run: packages/react-native-speech-phonon/scripts/test-core.sh
+
+      - name: JNI shim host tests
+        run: packages/react-native-speech-phonon/scripts/test-jni-host.sh
+
+      - name: iOS policy, fetch.rb and podspec host tests
+        run: packages/react-native-speech-phonon/scripts/test-ios.sh
+
+      - name: Phonon CI script tests
+        run: packages/react-native-speech-phonon/scripts/test-ci-scripts.sh
+
+      - name: Kotlin JVM tests (core)
+        run: scripts/test-android.sh
+
+      - name: Kotlin JVM tests (add-on)
+        run: packages/react-native-speech-phonon/scripts/test-android.sh
+
+  # The example with the add-on: both shim ABIs, R8 release, configuration cache (no turbo cache).
+  build-android-phonon:
+    needs: phonon-android-libs
+    runs-on: ubuntu-latest
+    env:
+      PHONON_SOURCE: ${{ needs.phonon-android-libs.outputs.source }}
+      RN_SPEECH_PHONON: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install JDK
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Finalize Android SDK
+        run: |
+          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+
+      - name: Cache Gradle
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Download local Phonon binaries
+        if: env.PHONON_SOURCE == 'local'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-android-stage
+          path: packages/react-native-speech-phonon/scripts/out/android
+
+      - name: Phonon options
+        run: |
+          flags="-PRNSpeech_phononAbis=arm64-v8a,x86_64"
+          if [ "$PHONON_SOURCE" = local ]; then
+            flags="$flags -PRNSpeech_phononLibDir=$GITHUB_WORKSPACE/packages/react-native-speech-phonon/scripts/out/android/jniLibs"
+          fi
+          echo "PHONON_FLAGS=$flags" >>"$GITHUB_ENV"
+
+      # Only the libraries must be configuration-cache clean: onnxruntime-react-native's build
+      # script is not, so the example app's problems are tolerated.
+      - name: Configuration cache (core and add-on)
+        env:
+          JAVA_OPTS: '-XX:MaxHeapSize=6g'
+        run: |
+          cd example/android
+          read -ra flags <<<"$PHONON_FLAGS"
+          for run in store reuse; do
+            ./gradlew :pocketpalai_react-native-speech-phonon:assembleRelease --no-daemon --console=plain \
+              --configuration-cache --configuration-cache-problems=warn \
+              -PreactNativeArchitectures=arm64-v8a,x86_64 "${flags[@]}" | tee "$RUNNER_TEMP/cc-$run.log"
+          done
+          grep -q 'Reusing configuration cache' "$RUNNER_TEMP/cc-reuse.log"
+          if grep -hE '^- ' "$RUNNER_TEMP"/cc-*.log | grep -E 'pocketpalai_react-native-speech|\.\./\.\./android/|[Pp]honon'; then
+            echo "::error::configuration cache problems in the core or the add-on"; exit 1
+          fi
+
+      - name: Build the release with the add-on (R8, arm64-v8a + x86_64)
+        env:
+          JAVA_OPTS: '-XX:MaxHeapSize=6g'
+        run: |
+          cd example/android
+          read -ra flags <<<"$PHONON_FLAGS"
+          args=("-PreactNativeArchitectures=arm64-v8a,x86_64" "${flags[@]}" -PrnSpeechCiMinify=true
+            -I "$GITHUB_WORKSPACE/packages/react-native-speech-phonon/scripts/ci.init.gradle")
+          ./gradlew assembleRelease --no-daemon --console=plain "${args[@]}"
+          # R8 really ran (the switch comes from ci.init.gradle, not the example's build file).
+          ./gradlew assembleRelease --dry-run --console=plain "${args[@]}" | grep minifyReleaseWithR8 >/dev/null
+
+      - name: Verify the APK
+        run: |
+          mkdir -p evidence
+          args=(--apk example/android/app/build/outputs/apk/release/app-release.apk --phonon on
+            --abis "arm64-v8a,x86_64" --contents evidence/apk-contents-phonon.txt)
+          if [ "$PHONON_SOURCE" = local ]; then
+            args+=(--libdir packages/react-native-speech-phonon/scripts/out/android/jniLibs)
+          fi
+          packages/react-native-speech-phonon/scripts/verify-apk.sh "${args[@]}" | tee evidence/verify-apk-phonon.txt
+
+      - name: Upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-android-phonon
+          path: evidence/
+          if-no-files-found: error
+
+  # The self-test on x86_64 emulators (owner decision D5): S1/S3/S6 on 4 KB pages, S1
+  # (pageSize 16384) and S3 on the 16 KB image. The model comes from a cache, not the app.
+  android-emulator-phonon:
+    needs: phonon-android-libs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: google_apis
+            page-size: 4096
+            scenarios: s3,s6
+            require: S1_support,S2_init,S3_short_speak,S6_stop
+          - target: google_apis_ps16k
+            page-size: 16384
+            scenarios: s3
+            require: S1_support,S2_init,S3_short_speak
+    env:
+      PHONON_SOURCE: ${{ needs.phonon-android-libs.outputs.source }}
+      RN_SPEECH_PHONON: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Install JDK
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Finalize Android SDK
+        run: |
+          /bin/bash -c "yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null"
+
+      - name: Cache Gradle
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: ${{ runner.os }}-gradle-phonon-${{ hashFiles('example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Download local Phonon binaries
+        if: env.PHONON_SOURCE == 'local'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: phonon-android-stage
+          path: packages/react-native-speech-phonon/scripts/out/android
+
+      - name: Cache the Phonon model
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/phonon-model
+          key: phonon-31m-en-${{ hashFiles('packages/react-native-speech-phonon/scripts/fetch-ci-model.sh') }}
+
+      - name: Fetch the Phonon model
+        run: packages/react-native-speech-phonon/scripts/fetch-ci-model.sh "$HOME/phonon-model"
+
+      # Debug (run-as for the model and the evidence) with the JS bundled in (no Metro).
+      - name: Build the debug APK with the add-on (x86_64)
+        env:
+          JAVA_OPTS: '-XX:MaxHeapSize=6g'
+        run: |
+          args=(assembleDebug --no-daemon --console=plain -PreactNativeArchitectures=x86_64
+            -PRNSpeech_phononAbis=x86_64
+            -PrnSpeechCiBundleDebug=true -I "$GITHUB_WORKSPACE/packages/react-native-speech-phonon/scripts/ci.init.gradle")
+          if [ "$PHONON_SOURCE" = local ]; then
+            args+=("-PRNSpeech_phononLibDir=$GITHUB_WORKSPACE/packages/react-native-speech-phonon/scripts/out/android/jniLibs")
+          fi
+          cd example/android
+          ./gradlew "${args[@]}"
+          unzip -l app/build/outputs/apk/debug/app-debug.apk assets/index.android.bundle
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Self-test on the emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          target: ${{ matrix.target }}
+          ram-size: 4096M
+          disable-animations: true
+          script: packages/react-native-speech-phonon/scripts/ci-emulator-selftest.sh --apk example/android/app/build/outputs/apk/debug/app-debug.apk --model "$HOME/phonon-model/phonon-31m-en" --page-size ${{ matrix.page-size }} --scenarios ${{ matrix.scenarios }} --require ${{ matrix.require }} --out emulator-evidence
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-emulator-phonon-${{ matrix.target }}
+          path: emulator-evidence/
+          if-no-files-found: ignore
+
+  build-ios-phonon:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      XCODE_VERSION: '16.4'
+      RCT_USE_RN_DEP: 1
+      RCT_USE_PREBUILT_RNCORE: 1
+      WORKSPACE: example/ios/SpeechExample.xcworkspace
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Use Xcode with the iOS 18 SDK
+        uses: maxim-lobanov/setup-xcode@60606e260d2fc5762a71e64e74b2174e8ea3c8bd # v1.6.0
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      # Phonon needs iOS 18 at runtime: without an iOS 18 simulator nothing below proves anything.
+      - name: Simulator runtimes
+        run: |
+          xcrun simctl list runtimes
+          xcrun simctl list runtimes -j | jq -e '[.runtimes[] | select(.isAvailable and (.version | startswith("18.")))] | length > 0' >/dev/null ||
+            { echo "::error::no iOS 18 simulator runtime"; exit 1; }
+          udid="$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries[] | select(.key | test("iOS-18-")) | .value[] | select(.name | startswith("iPhone"))][0].udid')"
+          test -n "$udid" && test "$udid" != null
+          echo "SIM18=$udid" >>"$GITHUB_ENV"
+          ios17="$(xcrun simctl list devices available -j | jq -r '
+            [.devices | to_entries[] | select(.key | test("iOS-17-")) | .value[] | select(.name | startswith("iPhone"))][0].udid // empty')"
+          echo "SIM17=$ios17" >>"$GITHUB_ENV"
+
+      # Until the lock pins a published release: repackage upstream's xcframework here (the same
+      # script phonon-binaries.yml runs) and hand it to the podspec as the local override.
+      - name: Local PhononCore.xcframework
+        run: |
+          if [ "$(jq -er '.binaries.ios.sha256' packages/react-native-speech-phonon/phonon.lock.json)" != PLACEHOLDER ]; then
+            echo "release binaries pinned; pod install downloads them"
+            exit 0
+          fi
+          repo="$(jq -er '.upstream.repo' packages/react-native-speech-phonon/phonon.lock.json)"
+          commit="$(jq -er '.upstream.commit' packages/react-native-speech-phonon/phonon.lock.json)"
+          lic="$RUNNER_TEMP/phonon-licenses"
+          mkdir -p "$lic"
+          for f in LICENSE-MIT LICENSE-APACHE; do
+            curl -fsSL -o "$lic/xn-ptts-$f" "https://raw.githubusercontent.com/$repo/$commit/$f"
+          done
+          echo "CI-only local build of $repo@$commit; not distributed." >"$RUNNER_TEMP/NOTICES-ci.md"
+          packages/react-native-speech-phonon/scripts/package-ios.sh --notices "$RUNNER_TEMP/NOTICES-ci.md" --licenses "$lic" \
+            --work "$RUNNER_TEMP/phonon-ios" --out-dir "$RUNNER_TEMP/phonon-ios-dist"
+          echo "RN_SPEECH_PHONON_XCFRAMEWORK=$RUNNER_TEMP/phonon-ios/PhononCore.xcframework" >>"$GITHUB_ENV"
+
+      - name: Install cocoapods (with the add-on)
+        run: |
+          cd example
+          bundle install
+          bundle exec pod repo update
+          RN_SPEECH_PHONON=1 bundle exec pod install --project-directory=ios
+          test -d ../packages/react-native-speech-phonon/ios/PhononCore.xcframework
+
+      - name: PhononTests (XCTest, iOS 18 simulator)
+        run: |
+          set -o pipefail
+          # RN_SPEECH_PHONON_EXPECTED=1: PhononTests fail (not skip) if the bridge is missing.
+          TEST_RUNNER_RN_SPEECH_PHONON_EXPECTED=1 \
+          xcodebuild test -workspace "$WORKSPACE" -scheme SpeechExample \
+            -destination "id=$SIM18" -derivedDataPath "$RUNNER_TEMP/dd-sim" \
+            -only-testing:SpeechExampleTests/PhononTests | tee "$RUNNER_TEMP/build-sim.log"
+          if grep -q '\[PhononTests\] skipped' "$RUNNER_TEMP/build-sim.log"; then
+            echo "::error::PhononTests skipped: RNSpeechPhonon missing from the app"; exit 1
+          fi
+
+      # One ptts.h (the add-on's cpp/ptts.h; the xcframework is headerless), no host test sources.
+      - name: Check the build with the add-on
+        run: |
+          if grep -q 'core_test' "$RUNNER_TEMP/build-sim.log"; then
+            echo "::error::host tests were compiled into the app"; exit 1
+          fi
+          n="$(find "$RUNNER_TEMP/dd-sim/Build/Products" packages/react-native-speech-phonon/ios/PhononCore.xcframework -name ptts.h | wc -l | tr -d ' ')"
+          echo "ptts.h in built products and the vendored xcframework: $n"
+          test "$n" -le 1
+          if [ -n "$(find packages/react-native-speech-phonon/ios/PhononCore.xcframework -name '*.h' -o -name module.modulemap)" ]; then
+            echo "::error::the vendored xcframework has headers"; exit 1
+          fi
+
+      # -all_load pulls every member of every static library: duplicate symbols between the
+      # prelinked libptts_ffi.a and the app's other code would fail here.
+      - name: -all_load link test (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild build -workspace "$WORKSPACE" -scheme SpeechExample -configuration Debug \
+            -destination "id=$SIM18" -derivedDataPath "$RUNNER_TEMP/dd-allload" \
+            "OTHER_LDFLAGS=\$(inherited) -all_load" | tail -20
+
+      - name: Release device build (with the add-on)
+        run: |
+          set -o pipefail
+          xcodebuild build -workspace "$WORKSPACE" -scheme SpeechExample -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd-on" \
+            CODE_SIGNING_ALLOWED=NO | tail -20
+
+      - name: Release device build (core only)
+        run: |
+          set -o pipefail
+          (cd example && bundle exec pod install --project-directory=ios)
+          xcodebuild build -workspace "$WORKSPACE" -scheme SpeechExample -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd-off" \
+            CODE_SIGNING_ALLOWED=NO | tail -20
+
+      - name: Binary checks and ios-binary-size.json
+        run: |
+          on="$RUNNER_TEMP/dd-on/Build/Products/Release-iphoneos/SpeechExample.app/SpeechExample"
+          off="$RUNNER_TEMP/dd-off/Build/Products/Release-iphoneos/SpeechExample.app/SpeechExample"
+          llvm_on="$(otool -l "$on" | grep -c __LLVM || true)"
+          echo "__LLVM load commands (with the add-on): $llvm_on"
+          test "$llvm_on" -eq 0
+          if strings "$off" | grep -e ptts_new -e ptts_speak >/dev/null; then
+            echo "::error::the core-only app contains ptts_ symbols"; exit 1
+          fi
+          if strings "$off" | grep -e RNSpeechPhonon >/dev/null; then
+            echo "::error::the core-only app contains the RNSpeechPhonon module"; exit 1
+          fi
+          mkdir -p evidence
+          size -m "$on" >evidence/size-m-phonon.txt
+          size -m "$off" >evidence/size-m-core.txt
+          seg() { size -m "$1" | awk -v s="Segment $2:" 'index($0, s) == 1 { print $NF; exit }'; }
+          jq -n --argjson onFile "$(stat -f %z "$on")" --argjson offFile "$(stat -f %z "$off")" \
+            --argjson onText "$(seg "$on" __TEXT)" --argjson offText "$(seg "$off" __TEXT)" \
+            --argjson onData "$(seg "$on" __DATA)" --argjson offData "$(seg "$off" __DATA)" \
+            --argjson llvm "$llvm_on" --arg commit "$GITHUB_SHA" \
+            '{commit: $commit, llvmLoadCommands: $llvm,
+              core: {fileSize: $offFile, text: $offText, data: $offData},
+              withPhonon: {fileSize: $onFile, text: $onText, data: $onData},
+              delta: {fileSize: ($onFile - $offFile), text: ($onText - $offText), data: ($onData - $offData)}}' \
+            | tee evidence/ios-binary-size.json
+
+      # Non-blocking: on iOS 17 the app must launch and report os-too-old. Needs a Release
+      # simulator build (bundled JS) of the app with the add-on.
+      - name: iOS 17 launch smoke (os-too-old)
+        if: env.SIM17 != ''
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          (cd example && RN_SPEECH_PHONON=1 bundle exec pod install --project-directory=ios)
+          xcodebuild build -workspace "$WORKSPACE" -scheme SpeechExample -configuration Release \
+            -destination "id=$SIM17" -derivedDataPath "$RUNNER_TEMP/dd-17" | tail -5
+          app="$(find "$RUNNER_TEMP/dd-17/Build/Products" -name SpeechExample.app -maxdepth 2 | head -1)"
+          xcrun simctl boot "$SIM17" || true
+          xcrun simctl bootstatus "$SIM17" -b
+          xcrun simctl install "$SIM17" "$app"
+          xcrun simctl openurl "$SIM17" 'speechexample://selftest/phonon?scenarios=s1&runId=ci'
+          for _ in $(seq 1 60); do
+            xcrun simctl spawn "$SIM17" log show --last 10m --style compact \
+              --predicate 'eventMessage CONTAINS "[SelfTest]"' >"$RUNNER_TEMP/ios17.log" 2>/dev/null || true
+            grep -q 'SELFTEST_DONE' "$RUNNER_TEMP/ios17.log" && break
+            sleep 5
+          done
+          cat "$RUNNER_TEMP/ios17.log"
+          grep -q 'S1_support .*reason=os-too-old' "$RUNNER_TEMP/ios17.log"
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-ios-phonon
+          path: evidence/
+          if-no-files-found: ignore

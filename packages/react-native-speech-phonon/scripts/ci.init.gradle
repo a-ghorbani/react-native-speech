@@ -1,0 +1,23 @@
+// CI-only switches for the example app's Phonon jobs (docs/DESIGN.md §4.2), applied with
+// `./gradlew -I scripts/ci.init.gradle -P<switch>=true` so the example keeps its defaults:
+//
+//   -PrnSpeechCiMinify=true        R8 on for release, to prove the consumer rule keeps
+//                                  PhononNative's native methods.
+//   -PrnSpeechCiBundleDebug=true   bundle the JS into the debug APK, so the emulator jobs run a
+//                                  debuggable app (run-as) without Metro.
+def ciSwitch = { String name -> (startParameter.projectProperties[name] ?: "false").toBoolean() }
+def minify = ciSwitch("rnSpeechCiMinify")
+def bundleDebug = ciSwitch("rnSpeechCiBundleDebug")
+
+allprojects { p ->
+  if (minify) {
+    p.plugins.withId("com.android.application") {
+      p.androidComponents.finalizeDsl { ext -> ext.buildTypes.getByName("release").minifyEnabled = true }
+    }
+  }
+  if (bundleDebug) {
+    p.plugins.withId("com.facebook.react") {
+      if (p.name == "app") p.extensions.getByName("react").debuggableVariants.set([])
+    }
+  }
+}
