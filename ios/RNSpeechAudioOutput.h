@@ -14,13 +14,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable RNSpeechAudioOutput *)shared;
 
 /**
- * Plays interleaved float32 samples in [-1, 1] the way playAudio plays its decoded PCM: stops the current
- * playback, emits onStart/onFinish, and resolves when playback finishes or is replaced.
+ * Plays interleaved float32 samples in [-1, 1] like playAudio: stops the current playback, emits
+ * onStart/onFinish, and resolves when playback finishes, is stopped or is replaced.
  * Callable from any thread; work runs on RNSpeech's serial audio queue.
- * channels must be 1 or 2 (values below 1 play as mono); more rejects with "audio_error" without
- * stopping the current playback.
- * silentMode: @"obey" (default; any other value behaves as obey), @"respect" or @"ignore", as
- * SynthesisOptions.silentMode; ignored when ducking is YES.
+ * channels must be 1 or 2 (below 1 plays as mono); more rejects with "audio_error" without stopping
+ * the current playback.
+ * silentMode: as SynthesisOptions.silentMode (@"obey", @"respect", @"ignore"; unknown values obey);
+ * ignored when ducking is YES.
  */
 - (void)playFloatSamples:(NSData *)samples
               sampleRate:(double)sampleRate

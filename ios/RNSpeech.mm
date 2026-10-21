@@ -10,7 +10,7 @@ using namespace JS::NativeSpeech;
 {
   BOOL isDucking;
   NSDictionary *defaultOptions;
-  // Bumped on every stop/replace so completion handlers of stopped buffers become no-ops.
+  // Bumped by cleanupAudio; completion handlers of older buffers then only resolve.
   NSUInteger _playbackGeneration;
 }
 
@@ -579,8 +579,8 @@ RCT_EXPORT_MODULE();
   });
 }
 
-// Same rule as Android's pcmFrameBytes: below 1 plays as mono, above 2 is rejected.
-// Runs before cleanupAudio so a rejected call leaves the current playback alone. Returns NO after rejecting.
+// Same rule as Android's pcmFrameBytes; returns NO after rejecting. Call before cleanupAudio so a
+// rejection leaves current playback alone.
 - (BOOL)rejectUnsupportedChannels:(NSInteger)channels
                       traceHandle:(RNSpeechTraceHandle)traceHandle
                         traceName:(const char *)traceName
@@ -593,9 +593,8 @@ RCT_EXPORT_MODULE();
   return NO;
 }
 
-// Runs on _audioQueue after the caller stopped playback and bumped the utterance id.
-// `fill` deinterleaves the caller's samples straight into the buffer's channels.
-// Resolves on completion (or when replaced/stopped) so chunks play back to back.
+// Runs on _audioQueue after the caller's cleanupAudio and utterance-id bump; `fill` deinterleaves into dst.
+// Resolves on completion, stop or replace, so chunks play back to back.
 - (void)playOnAudioQueueWithSampleCount:(NSUInteger)sampleCount
                              sampleRate:(double)sampleRate
                                channels:(NSInteger)channels
@@ -608,7 +607,7 @@ RCT_EXPORT_MODULE();
                                    fill:(void (NS_NOESCAPE ^)(float *const *dst, NSUInteger frameCount, NSUInteger channelCount))fill {
   NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
   NSUInteger frameCount = sampleCount / channelCount;
-  // cleanupAudio left the replaced playback's session active; release it on every early exit.
+  // cleanupAudio keeps the session active for the replacement; every early exit must deactivate it.
   if (frameCount == 0) {
     [self deactivateAudioSession];
     RNSpeechTraceEnd(traceHandle, traceName);
@@ -665,7 +664,7 @@ RCT_EXPORT_MODULE();
     RNSpeech *strongSelf = weakSelf;
     if (strongSelf) {
       dispatch_async(strongSelf->_audioQueue, ^{
-        // Also fires when cleanupAudio stops the node; by then a newer playback (or stop) owns the state.
+        // Also fires when cleanupAudio stops the node; a newer playback or stop then owns the state.
         if (strongSelf->_playbackGeneration != generation) {
           RNSpeechTraceEnd(traceHandle, traceName);
           resolve(nil);

@@ -13,11 +13,8 @@
  *   - `playAudio(audio) → void`  (resolves when audio finishes)
  *   - `stopPlayback()` — abort native playback
  *
- * Engines whose audio lives natively (passing ids, not samples) use
- * the hooks: `hasAudio` (required for non-`AudioBuffer` audio) decides
- * whether a chunk produced audio, `discard` releases audio that will
- * never be played, and `onCancel` aborts native synthesis synchronously
- * on cancel.
+ * Engines whose audio stays native (ids, not samples) also pass
+ * `hasAudio`, `discard` and `onCancel`.
  *
  * OS engine does not use this — SpeechStream falls back to the
  * adaptive batcher there.
@@ -252,8 +249,8 @@ export class EngineStreamSession<
         // Observed when awaited; avoids an unhandled rejection on early return.
         prefetchPromise.catch(() => {});
 
-        // Play current chunk (concurrent with prefetch). The player now owns
-        // the audio, so it is never discarded.
+        // Play current chunk (concurrent with prefetch). The player owns
+        // the audio from here, so the finally block must not discard it.
         currentAudio = null;
         await this.raceWithStop(playAudio(audio, playbackOptions), stopSignal);
 

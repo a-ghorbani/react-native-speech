@@ -73,6 +73,8 @@ export type {
   SpeechStreamOptions,
   StreamProgressEvent,
   FirstChunkMode,
+  ReleaseResult,
+  ReleaseError,
 } from './types';
 
 // Export Kokoro types
@@ -131,8 +133,6 @@ export type {
   StripMarkdownOptions,
 } from './utils/stripMarkdown';
 
-// Advanced: not covered by semver (see the header comment).
-
 /** @internal Advanced: low-level engine registry. */
 export {engineManager} from './engines/EngineManager';
 /** @internal Advanced: OS native engine class. */
@@ -143,6 +143,3 @@ export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
 /** @internal Advanced: Kitten neural engine class. */
 export {KittenEngine} from './engines/kitten';
-
-// Return types of TTSEngineInterface.release().
-export type {ReleaseResult, ReleaseError} from './types';

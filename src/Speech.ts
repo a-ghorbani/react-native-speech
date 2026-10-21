@@ -230,8 +230,6 @@ export default class Speech {
 
     log.info(`Initializing engine: ${engine}`);
 
-    // `currentEngine` switches only after a successful init of the latest
-    // call, so a failed or superseded init keeps the previous engine.
     const instance = resolveEngine(engine);
     if (!instance) {
       throw new Error(`Unknown engine: ${engine}`);

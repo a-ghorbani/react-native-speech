@@ -90,7 +90,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   // Neural Audio Player state
   private var audioTrack: AudioTrack? = null
-  // Settled on completion, or (like iOS) when the track is stopped or replaced. Guarded by audioLock.
+  // Resolved on completion, stop or replace. Guarded by audioLock.
   private var audioTrackPromise: Promise? = null
   private var isAudioPlayingState = false
   private var isAudioPausedState = false
@@ -98,7 +98,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private var currentAudioUtteranceId = 0
   private val audioExecutor = Executors.newSingleThreadExecutor()
   private val audioLock = Any()
-  // Set by invalidate(); an already-dequeued audio task must not touch the dead runtime.
+  // Set by invalidate(); audio tasks already dequeued must not touch the dead runtime.
   @Volatile private var audioInvalidated = false
   private var audioFocusListenerNeural: AudioManager.OnAudioFocusChangeListener? = null
   private var audioFocusRequestNeural: AudioFocusRequest? = null
@@ -705,7 +705,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
     selectedEngine = engineName
 
-    // Not invalidate(): that shuts down the audio executor of a live module.
+    // Not invalidate(): it also shuts down the audio executor.
     resetSystemTts()
 
     pendingOperations.add(Pair({ promise.resolve(null) }, promise))
@@ -816,7 +816,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     playPcm16({ pcm }, sampleRate, channels, ducking, promise)
   }
 
-  /** [pcm] (LE Int16) is invoked on the audio executor. */
+  /** [pcm] (LE Int16) is evaluated on the audio executor, off the caller's thread. */
   private fun playPcm16(
     pcm: () -> ByteArray,
     sampleRate: Int,
@@ -853,7 +853,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           return
         }
         cleanupAudio()
-        // Abandon the replaced playback's ducking request before a new one overwrites it.
+        // Release the replaced playback's ducking focus before activate overwrites the request.
         deactivateAudioDuckingSession()
 
         currentAudioUtteranceId++
@@ -900,14 +900,12 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
         audioTrack = track
 
-        // Setup ducking
         isAudioDuckingState = ducking
         activateAudioDuckingSession()
 
         // Acquire audio focus so we get interruption callbacks.
         neuralFocusManager.requestFocus()
 
-        // Write data to track
         track.write(decodedBytes, 0, decodedBytes.size)
 
         track.notificationMarkerPosition = frames
@@ -935,10 +933,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         isAudioPlayingState = true
         isAudioPausedState = false
 
-        // Emit start event
         emitOnStart(getAudioEventData())
-
-        // Start playback
         track.play()
         audioTrackPromise = promise
       }
@@ -1055,7 +1050,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     super.invalidate()
     resetSystemTts()
 
-    // Cleanup neural audio player; never settle into the dead JS runtime.
+    // Drop the pending promise and queued tasks: nothing may settle into the dead JS runtime.
     synchronized(audioLock) {
       audioInvalidated = true
       audioTrackPromise = null
@@ -1063,7 +1058,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     cleanupAudio()
     deactivateAudioDuckingSession()
     neuralFocusManager.abandonFocus()
-    // Drop queued tasks (and their promises) instead of running them.
     audioExecutor.shutdownNow()
   }
 }
