@@ -321,10 +321,9 @@ jobs:
         run: |
           yarn turbo run build:ios --cache-dir="${{ env.TURBO_CACHE_DIR }}"
 
-  # Phonon add-on (packages/react-native-speech-phonon/docs/DESIGN.md §4.2). With a published
-  # release in the lock, Gradle downloads libptts_ffi.so like a consumer build; while the lock says
-  # PLACEHOLDER, this job builds it from the pinned upstream commit and the add-on jobs pass it as
-  # RNSpeech_phononLibDir. The example links the add-on natively only with RN_SPEECH_PHONON=1.
+  # Phonon add-on (packages/react-native-speech-phonon/docs/DESIGN.md §4.2). Until the lock pins a
+  # published release (sha256 PLACEHOLDER), this job builds libptts_ffi.so from the pinned upstream
+  # commit and the add-on jobs pass it as RNSpeech_phononLibDir; after that Gradle downloads it.
   phonon-android-libs:
     runs-on: ubuntu-24.04
     outputs:
@@ -397,8 +396,6 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-  # Host tests of the native layers, the CI scripts' own tests, and the Kotlin JVM tests of the
-  # core and the add-on.
   test-phonon-native:
     needs: phonon-android-libs
     runs-on: ubuntu-24.04
@@ -569,8 +566,7 @@ jobs:
           path: evidence/
           if-no-files-found: error
 
-  # The self-test on x86_64 emulators (owner decision D5): S1/S3/S6 on 4 KB pages, S1
-  # (pageSize 16384) and S3 on the 16 KB image. The model comes from a cache, not the app.
+  # The model is pushed from an actions/cache, not downloaded by the app.
   android-emulator-phonon:
     needs: phonon-android-libs
     runs-on: ubuntu-latest
@@ -636,7 +632,7 @@ jobs:
       - name: Fetch the Phonon model
         run: packages/react-native-speech-phonon/scripts/fetch-ci-model.sh "$HOME/phonon-model"
 
-      # Debug (run-as for the model and the evidence) with the JS bundled in (no Metro).
+      # Debug for run-as (model push, evidence pull), with the JS bundled in (no Metro).
       - name: Build the debug APK with the add-on (x86_64)
         env:
           JAVA_OPTS: '-XX:MaxHeapSize=6g'

@@ -50,7 +50,6 @@ env:
   NDK_VERSION: '28.2.13676358'
 
 jobs:
-  # actionlint (with shellcheck on every run: block) and shellcheck over the scripts.
   lint:
     runs-on: ubuntu-24.04
     steps:
@@ -112,7 +111,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
           echo "release: $release, publish: $publish"
 
-  # cargo-about over the pinned upstream: notices for each zip and packages/react-native-speech-phonon/docs/THIRD_PARTY_NOTICES.md.
+  # cargo-about over the pinned upstream: per-zip notices and docs/THIRD_PARTY_NOTICES.md.
   notices:
     needs: meta
     runs-on: ubuntu-24.04
@@ -130,8 +129,8 @@ jobs:
           path: xn-ptts
           persist-credentials: false
 
-      # The upstream commit time, the SOURCE_DATE_EPOCH of both zips (build-android.sh reads it
-      # from its own checkout; the ios job has none).
+      # SOURCE_DATE_EPOCH for the ios zip, which has no upstream checkout (build-android.sh reads
+      # it from its own).
       - name: Upstream commit time
         id: epoch
         run: echo "epoch=$(git -C xn-ptts log -1 --format=%ct HEAD)" >>"$GITHUB_OUTPUT"
@@ -312,7 +311,7 @@ jobs:
       - name: Precompile the Core ML bundle
         run: packages/react-native-speech-phonon/scripts/precompile-coreml.sh --out-dir "$RUNNER_TEMP/coreml"
 
-      # Mirrored by hand to the palshub HF repo (owner decision D1); not a release asset.
+      # Mirrored by hand to the palshub HF repo; not a release asset.
       - name: Upload precompiled bundle
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -127,7 +127,7 @@ class Core {
   void setApi(const PttsApi& api);
   bool libraryLoaded() const;
 
-  // ---- any thread, lock-free ----
+  // Any thread, lock-free.
   int64_t allocRequestId();            // starts at 1, never reset
   void cancelUpTo(int64_t id);         // watermark = max(watermark, min(id, lastIssuedId))
   void cancelAll();                    // cancelUpTo(lastIssuedId)
@@ -135,7 +135,7 @@ class Core {
   int64_t lastIssuedId() const;
   int64_t cancelWatermark() const;
 
-  // ---- synth thread only ----
+  // Synth thread only.
   // Frees any existing handle first (after cancelAll). `unit` is a PTTS_UNIT_* from
   // map_compute_unit. Errors: Unsupported (no library), LoadFailed (ptts_new NULL, message
   // from ptts_last_error(NULL) read on this thread).
@@ -156,7 +156,7 @@ class Core {
   // loading/speaking only while idle and resets to idle after each create/synthesize.
   void setBusy(Busy busy);
 
-  // ---- buffer store, mutex, any thread ----
+  // Buffer store: mutex protected, any thread.
   bool takeBuffer(int64_t bufferId, std::vector<float>* out);  // play path (consumes)
   bool copyBuffer(int64_t bufferId, std::vector<float>* out) const;
   bool releaseBuffer(int64_t bufferId);  // idempotent; false if unknown

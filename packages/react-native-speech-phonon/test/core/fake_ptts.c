@@ -125,8 +125,6 @@ EXPORT int fake_ptts_wait_speaks(int count, int timeout_ms) {
   return ok;
 }
 
-/* ---- ptts.h ---------------------------------------------------------------------------- */
-
 EXPORT PttsHandle *ptts_new(const char *dir, uint32_t unit, const char *lang) {
   pthread_mutex_lock(&g_mu);
   g_state.news++;

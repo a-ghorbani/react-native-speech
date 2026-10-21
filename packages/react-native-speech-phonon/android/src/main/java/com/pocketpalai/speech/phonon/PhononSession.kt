@@ -108,8 +108,8 @@ class PhononSession(private val host: Host) {
           host.setEnv("XN_SPIN_BUDGET", spinBudget.toString())
           effectiveSpinBudget = spinBudget
         }
-        // Workaround: xn-gemm's per-thread packed-weight cache is never evicted, leaking
-        // 8-12 MB per init/release (DESIGN.md Appendix E, S8). Off unless the app set it.
+        // xn-gemm never evicts its per-thread packed-weight cache (8-12 MB leaked per
+        // init/release, DESIGN.md Appendix E S8), so it is off unless the app set it.
         if (host.getEnv(PACKED_CACHE_ENV) == null) host.setEnv(PACKED_CACHE_ENV, "0")
       } catch (e: Exception) {
         host.log(true, "could not set the worker thread environment: ${e.message}")

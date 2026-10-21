@@ -5,12 +5,9 @@
 #   1. gen-hwcaps-header.sh: masks for the lock's features, rejects unknown/disabled features,
 #      and the header compiles for both shim ABIs.
 #   2. ptts.exp names exactly the functions cpp/ptts.h declares.
-#   3. verify-android-so.sh --selftest (dummies: good, 4 KB-aligned, .symtab, ldadd, SVE, fp16,
-#      crc32, stg over/within the runtime-gated allowance, no dotprod, extra export, bad NEEDED,
-#      build path, over budget).
-#   4. verify-ios-xcframework.sh --selftest (dummies: good, minos 16, extra export, OBJC ref,
-#      unresolved Rust symbol, bitcode, headers, no x86_64); package-ios.sh refuses to run
-#      without notices and licenses.
+#   3. verify-android-so.sh --selftest.
+#   4. verify-ios-xcframework.sh --selftest; package-ios.sh refuses to run without notices and
+#      licenses.
 #   5. package-android.sh is deterministic and lays the zip out as designed (GNU and BSD
 #      date/touch/shasum alike).
 #   6. precompile-coreml.sh + bundle_manifest.py on a synthetic bundle with a stand-in compiler,

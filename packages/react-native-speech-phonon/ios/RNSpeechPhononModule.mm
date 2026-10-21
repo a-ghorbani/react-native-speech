@@ -23,8 +23,6 @@ RCT_EXPORT_MODULE(RNSpeechPhonon)
   return self;
 }
 
-// Sync methods only touch atomics; ptts work runs on the Phonon worker.
-
 // NaN/inf map to 0, which is never issued.
 static int64_t RNSpeechPhononId(double v) {
   return std::isfinite(v) ? (int64_t)std::llround(v) : 0;
@@ -143,7 +141,6 @@ static int64_t RNSpeechPhononId(double v) {
   resolve(@([RNSpeechPhonon clearCapabilityRecord]));
 }
 
-// Cancels and drops this module's promises without destroying the handle (DESIGN.md §1.5).
 - (void)invalidate {
   [_phonon invalidate];
 }

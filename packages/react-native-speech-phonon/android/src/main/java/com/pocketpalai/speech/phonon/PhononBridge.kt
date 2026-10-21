@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Process-wide: an RN reload gets a new RNSpeechPhononModule but the same object, synth thread
- * and native handle, so upstream's one-thread-per-handle rule holds (DESIGN.md §1.5). The create sequence and liveness tokens live in [PhononSession];
- * this object supplies the Android and JNI side. getSupport never dlopens libptts_ffi.so.
+ * and native handle, so upstream's one-thread-per-handle rule holds (DESIGN.md §1.5). This is
+ * the Android and JNI side of [PhononSession]. getSupport never dlopens libptts_ffi.so.
  */
 object PhononBridge {
   const val UNSUPPORTED = "PHONON_UNSUPPORTED"

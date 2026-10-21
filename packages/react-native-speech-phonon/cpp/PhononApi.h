@@ -50,8 +50,7 @@ enum class ApiStatus {
   SymbolsMissing,  // dlopen ok, at least one ptts_* symbol absent (library closed again)
 };
 
-// Capability reason string reported by getSupport (DESIGN.md §1.3): "ok", "library-missing",
-// "symbols-missing".
+// The getSupport reason for `status` (DESIGN.md §1.3).
 const char* api_status_reason(ApiStatus status);
 
 #if RN_SPEECH_PHONON_STATIC_API

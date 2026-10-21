@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Host tests for the Phonon iOS integration that do not need a Mac (docs/DESIGN.md WP5):
+# Host tests for the Phonon iOS integration that do not need a Mac:
 #   * ios/PhononIosPolicy.cpp under ASan + UBSan (test/ios/policy_test.cpp);
 #   * ios/fetch.rb and RNSpeechPhonon.podspec (minitest).
 # The Objective-C++ bridge itself is covered by example/ios/SpeechExampleTests/PhononTests.m

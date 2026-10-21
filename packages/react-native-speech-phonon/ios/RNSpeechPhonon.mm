@@ -3,8 +3,8 @@
 // the worker is not a GCD thread, so each job gets a pool that the frame hook swaps every 16
 // frames. Support, request ids, cancel and the buffer store never touch the worker.
 //
-// libptts_ffi.a is linked into every app with this package (iOS 15-safe symbols, DESIGN.md §3.3) but is
-// only called once +supportInfo confirms iOS 18.
+// libptts_ffi.a links into every app with this package (iOS 15-safe symbols, DESIGN.md §3.3) but
+// is only called once +supportInfo confirms iOS 18.
 #import "RNSpeechPhonon.h"
 
 #import <CommonCrypto/CommonDigest.h>

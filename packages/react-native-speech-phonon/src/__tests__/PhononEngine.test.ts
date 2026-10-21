@@ -285,7 +285,6 @@ describe('initialize', () => {
       isLoading: false,
       error: null,
     });
-    // A second initialize is a no-op.
     await engine.initialize(CONFIG);
     expect(fake.api.create).toHaveBeenCalledTimes(1);
   });
@@ -377,7 +376,6 @@ describe('initialize', () => {
   });
 
   it('a load-failed record stops gating once the model changes', async () => {
-    // JS-level view of the native fix: the probe re-checks the recorded model.
     fake.state.support = {
       ...fake.state.support,
       supported: false,

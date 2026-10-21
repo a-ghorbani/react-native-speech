@@ -1,8 +1,8 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
 // Temporary until phonon.lock.json is published: RN_SPEECH_PHONON=1 links the Phonon add-on
-// (react-native.config.js). Autolinking is cached on its lock files only, so the switch is
-// written to one of them, without reading it first so the configuration cache sees only content.
+// (react-native.config.js). RN autolinking re-runs only when its input files change, so the
+// switch is written to one, blind, so the configuration cache tracks only its content.
 def phononSwitch = file("build/generated/rn-speech-phonon-switch.txt")
 phononSwitch.parentFile.mkdirs()
 phononSwitch.text = System.getenv("RN_SPEECH_PHONON") ?: ""

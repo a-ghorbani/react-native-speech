@@ -348,6 +348,15 @@ describe('parseSelfTestUrl', () => {
     });
   });
 
+  it('keeps a value with "=" and a bad escape as written', () => {
+    const p = parseSelfTestUrl(
+      'speechexample://selftest/phonon?model=/data/a=b&mirrorRev=100%',
+      NOW,
+    )!;
+    expect(p.modelPath).toBe('/data/a=b');
+    expect(p.mirrorRev).toBe('100%');
+  });
+
   it('clamps numbers and ignores junk', () => {
     const p = parseSelfTestUrl(
       'speechexample://selftest/phonon?runs=999&threads=-3&spin=abc&unit=gpu',
@@ -658,7 +667,7 @@ describe('runPhononSelfTest', () => {
   });
 
   it('S6 stops during playback when first audio comes after 1.0 s', async () => {
-    // First audio after the old fixed 1.0 s stop point (WP9: 1.1-2.5 s).
+    // Late first audio (1.1-2.5 s on test phones): stop must wait for it.
     mockState.startDelayMs = 300;
     const params = parseSelfTestUrl(
       'speechexample://selftest/phonon?scenarios=s6&runId=s6slow',

@@ -2,7 +2,7 @@
 //  PhononTests.m
 //  SpeechExampleTests
 //
-//  XCTest for the iOS Phonon bridge (packages/react-native-speech-phonon/docs/DESIGN.md WP5, §8.1).
+//  XCTest for the iOS Phonon bridge (packages/react-native-speech-phonon/docs/DESIGN.md §8.1).
 //
 //  The bridge is reached through the runtime, not linked, so the process keeps one copy of the
 //  core (the app's libRNSpeechPhonon.a). Builds without the add-on (RN_SPEECH_PHONON unset at

@@ -33,8 +33,7 @@ class PhononResultsTest {
 
   @Test
   fun computeUnitIsWhatNativeReportsAndDefaultsToCpu() {
-    // The shim maps every request to PTTS_UNIT_CPU (map_compute_unit, host-tested in
-    // test/core) and reports "cpu"; a missing value still reads as cpu.
+    // Android always reports "cpu"; a missing value still reads as cpu.
     val raw = arrayOf<Any?>("", "", "", arrayOf<String>(), arrayOf<String>(), doubleArrayOf(1.0, 24000.0, 1.0), null)
     assertEquals("cpu", PhononResults.load(raw, 2).fields["computeUnit"])
   }

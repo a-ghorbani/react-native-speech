@@ -330,7 +330,6 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
   if (requestId <= 0 || requestId > lastIssuedId_.load()) {
     return fail(Err::Internal, "unknown request id " + std::to_string(requestId));
   }
-  // Cancel check 1: on dequeue, before touching ptts.
   if (isCancelled(requestId)) {
     r->cancelled = true;
     return Err::None;
@@ -349,7 +348,6 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
     }
   }
 
-  // Check 2: before conditioning.
   if (isCancelled(requestId)) {
     r->cancelled = true;
     return Err::None;
@@ -371,7 +369,6 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
     r->voiceChanged = true;
   }
 
-  // Check 3: right before ptts_speak.
   if (isCancelled(requestId)) {
     r->cancelled = true;
     return Err::None;
@@ -402,7 +399,7 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
   r->ttfaMs = pr.ttfa_ms;
   r->totalMs = pr.total_ms;
 
-  // Check 4 (after the per-frame checks): a late cancel discards the audio.
+  // A cancel after the last frame still discards the audio.
   if (ctx.cancelled || isCancelled(requestId)) {
     r->cancelled = true;
     return Err::None;

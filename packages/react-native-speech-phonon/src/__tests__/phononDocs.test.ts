@@ -24,7 +24,7 @@ const DOCS = [
   '../../docs/ARCHITECTURE.md',
   CORE_LICENSES,
 ];
-/** What app developers read: no build flag may be documented there any more. */
+/** What app developers read: no build flag may be documented there. */
 const USER_DOCS = [GUIDE, 'CHANGELOG.md', CORE_README, CORE_USAGE];
 
 const guide = read(GUIDE);

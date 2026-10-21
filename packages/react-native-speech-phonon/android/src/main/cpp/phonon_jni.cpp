@@ -183,7 +183,7 @@ const char* kInternal = "PHONON_INTERNAL";
 
 extern "C" {
 
-// ---- probes (cheap; safe before the HWCAP gate) ---------------------------------------------
+// Probes: cheap, safe before the HWCAP gate.
 
 JNIEXPORT jstring JNICALL
 Java_com_pocketpalai_speech_phonon_PhononNative_nativeAbi(JNIEnv* env, jclass) {
@@ -242,9 +242,10 @@ Java_com_pocketpalai_speech_phonon_PhononNative_nativeMonotonicMs(JNIEnv*, jclas
   return rnspeech::phonon::monotonic_ms();
 }
 
-// ---- library (only after the gate) ----------------------------------------------------------
+// Library: only after the gate.
 
-// dlopen + dlsym. Returns [reason, detail], reason "ok" | "library-missing" | "symbols-missing".
+// dlopen + dlsym. Returns [reason, detail], reason "ok" | "library-missing" | "symbols-missing"
+// | "load-failed".
 // Idempotent once loaded. Call on the synth thread.
 JNIEXPORT jobjectArray JNICALL
 Java_com_pocketpalai_speech_phonon_PhononNative_nativeLoadLibrary(JNIEnv* env, jclass,
@@ -270,7 +271,6 @@ Java_com_pocketpalai_speech_phonon_PhononNative_nativeLibraryLoaded(JNIEnv*, jcl
 
 // Returns [code, message, defaultVoice, voices: String[], languages: String[],
 //          numbers: double[handleId, sampleRate, loadMs], effectiveUnit]. code "" = ok.
-// The compute unit is always PTTS_UNIT_CPU on Android (map_compute_unit), whatever JS asked.
 JNIEXPORT jobjectArray JNICALL
 Java_com_pocketpalai_speech_phonon_PhononNative_nativeCreate(JNIEnv* env, jclass, jstring dir,
                                                              jstring lang,
@@ -352,7 +352,7 @@ Java_com_pocketpalai_speech_phonon_PhononNative_nativeDestroy(JNIEnv* env, jclas
   }
 }
 
-// ---- ids and cancel (lock-free, any thread; the JS thread calls these synchronously) --------
+// Ids and cancel: lock-free, any thread (the JS thread calls these synchronously).
 
 JNIEXPORT jlong JNICALL
 Java_com_pocketpalai_speech_phonon_PhononNative_nativeAllocRequestId(JNIEnv*, jclass) {

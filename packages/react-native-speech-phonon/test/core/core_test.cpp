@@ -38,8 +38,6 @@ constexpr int kFrame = 1920;   // fake default frame size
 constexpr int kFrames = 4;     // fake default frames per speak
 constexpr int kSpeakSamples = kFrame * kFrames;
 
-// ---- fake library fixture --------------------------------------------------------------------
-
 struct Fake {
   PttsApi api;
   FakePttsState* (*state)() = nullptr;
@@ -127,8 +125,6 @@ bool ready(std::future<Synth>& f, int ms = 0) {
 
 }  // namespace
 
-// ---- PhononApi ------------------------------------------------------------------------------
-
 TEST(api_loads_all_symbols) {
   PttsApi api;
   std::string err;
@@ -172,8 +168,6 @@ TEST(api_missing_library_is_library_missing) {
   CHECK(!err.empty());
   CHECK(!api.complete());
 }
-
-// ---- handle lifecycle -----------------------------------------------------------------------
 
 TEST(create_without_library_is_unsupported) {
   Core core;
@@ -305,8 +299,6 @@ TEST(load_failure_bad_language_and_unit) {
   CHECK_EQ(core->create("/m", PTTS_UNIT_ANE, "en", nullptr, &err), Err::LoadFailed);
   CHECK(err.find("Apple only") != std::string::npos);
 }
-
-// ---- request ids and cancel -----------------------------------------------------------------
 
 TEST(request_ids_start_at_one_and_are_monotonic) {
   Core core;
@@ -532,8 +524,6 @@ TEST(unknown_request_id_is_internal) {
   CHECK_EQ(fake().s().speaks, 0);
 }
 
-// ---- voice and language ---------------------------------------------------------------------
-
 TEST(voice_and_language_applied_only_on_change) {
   auto core = newCore();
   const int64_t h = createOk(*core, "en");
@@ -614,8 +604,6 @@ TEST(model_without_voices_speaks_unconditioned) {
   CHECK(s.r.bufferId > 0);
   CHECK_EQ(fake().s().set_voices, 0);
 }
-
-// ---- synthesis results and errors -----------------------------------------------------------
 
 TEST(synthesize_result_fields) {
   auto core = newCore();
@@ -719,8 +707,6 @@ TEST(frame_hook_runs_every_n_frames) {
   CHECK_EQ(drains, 2);
 }
 
-// ---- buffer store ---------------------------------------------------------------------------
-
 TEST(buffer_copy_is_non_consuming_take_consumes_release_idempotent) {
   auto core = newCore();
   const int64_t h = createOk(*core);
@@ -823,8 +809,6 @@ TEST(release_orphans_frees_cancelled_buffers_only) {
   CHECK_EQ(core->diagnostics().liveBuffers, size_t{0});
 }
 
-// ---- pure helpers ---------------------------------------------------------------------------
-
 TEST(float_to_pcm16_clamp_gain_and_nan) {
   const float nan = std::numeric_limits<float>::quiet_NaN();
   const float inf = std::numeric_limits<float>::infinity();
@@ -859,7 +843,6 @@ TEST(compute_unit_mapping) {
   CHECK_EQ(map_compute_unit(Platform::Android, "cpu", &eff), uint32_t{PTTS_UNIT_CPU});
   CHECK_EQ(map_compute_unit(Platform::Android, "", &eff), uint32_t{PTTS_UNIT_CPU});
   CHECK_EQ(map_compute_unit(Platform::Android, "gpu", nullptr), uint32_t{PTTS_UNIT_CPU});
-  // Apple.
   CHECK_EQ(map_compute_unit(Platform::Apple, "neuralEngine", &eff), uint32_t{PTTS_UNIT_ANE});
   CHECK_EQ(eff, std::string("neuralEngine"));
   CHECK_EQ(map_compute_unit(Platform::Apple, "cpu", &eff), uint32_t{PTTS_UNIT_CPU});
@@ -979,8 +962,6 @@ TEST(stress_cancel_while_synthesizing) {
   CHECK_EQ(core->liveBuffers(), size_t{0});
 }
 
-// ---- PhononWorker ---------------------------------------------------------------------------
-
 TEST(worker_runs_jobs_in_order_with_hook) {
   std::vector<int> order;
   std::vector<std::string> trace;
@@ -1067,8 +1048,6 @@ TEST(shared_worker_and_core_are_singletons) {
   auto fut = onWorker(Worker::shared(), [] { return Worker::shared().isWorkerThread(); });
   CHECK(fut.get());
 }
-
-// ---- optional: real libptts_ffi on the host -------------------------------------------------
 
 TEST(real_lib) {
   const char* lib = std::getenv("PHONON_REAL_LIB");

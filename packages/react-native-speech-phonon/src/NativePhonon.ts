@@ -1,10 +1,10 @@
 /**
  * NativePhonon - the only module that touches the `RNSpeechPhonon` TurboModule.
  *
- * A thin, guarded pass-through to the TurboModule. Every method checks
- * that its native counterpart exists, so JS without the linked native
- * module (or new JS on an older native build, e.g. an OTA update) degrades
- * to `not-compiled` instead of throwing a TypeError. Tests mock this module rather than the TurboModule.
+ * Every method checks that its native counterpart exists, so JS without
+ * the linked native module (or new JS on an older native build, e.g. an
+ * OTA update) degrades to `not-compiled` instead of throwing a TypeError.
+ * Tests mock this module rather than the TurboModule.
  *
  * Native ids (request, handle, buffer) are plain JS numbers; they are
  * issued natively and stay well below 2^53.
@@ -20,7 +20,7 @@ import type {
   PhononSynthResult,
 } from './NativeSpeechPhonon';
 
-// Every call below is guarded by has(), which checks for null first.
+// Non-null: every call below is guarded by has().
 const native = NativeSpeechPhonon as Spec;
 
 /** Rejection code when Phonon is not in this native build. */

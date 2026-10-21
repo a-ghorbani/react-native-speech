@@ -1,8 +1,7 @@
-// The eight ptts_* entry points with no engine behind them.
-//
-// The ios-x86_64-simulator slice of PhononCore.xcframework, so Intel-Mac simulator builds link
-// without EXCLUDED_ARCHS (the engine reports unsupported-abi there), and the body of the verifiers'
-// self-test libraries. ptts_new always fails, so no other call ever sees a handle.
+// The ptts_* API with no engine behind it: the ios-x86_64-simulator slice of PhononCore.xcframework
+// (Intel-Mac simulator builds link without EXCLUDED_ARCHS; the engine reports unsupported-abi there)
+// and the body of the verifiers' self-test libraries. ptts_new always fails, so no other call ever
+// sees a handle.
 #include <stddef.h>
 
 #include "ptts.h"

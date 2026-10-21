@@ -12,7 +12,8 @@
 #     platform variant, hence ios-arm64_x86_64-simulator rather than a separate slice);
 #   * no headers and no modulemap: the one ptts.h is cpp/ptts.h.
 #
-# Env: SOURCE_DATE_EPOCH (zip mtimes; the workflow passes the upstream commit time), LLVM_OBJCOPY (only if bitcode survives bitcode_strip).
+# Env: SOURCE_DATE_EPOCH (zip mtimes; the workflow passes the upstream commit time),
+#      LLVM_OBJCOPY (only if bitcode survives bitcode_strip).
 # Usage: package-ios.sh --notices <md> --licenses <dir with xn-ptts-LICENSE-*>
 #        [--upstream-zip <PhononCore.xcframework.zip>] [--out-dir <dir>] [--work <dir>]
 # Without --upstream-zip, the zip is downloaded from the upstream release in phonon.lock.json.

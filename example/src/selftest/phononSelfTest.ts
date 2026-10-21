@@ -1,5 +1,6 @@
 /**
- * Phonon device self-test, for automated evidence runs (design §6, §8.3).
+ * Phonon device self-test, for automated evidence runs. Scenario ids
+ * (S1..S13, U1..) follow the add-on's docs/DESIGN.md §8.3.
  *
  * Triggered by the deep link
  *   speechexample://selftest/phonon?runs=5&threads=4&spin=200
@@ -160,7 +161,7 @@ const SPEAK_TIMEOUT_MS = 90_000;
 const STOP_AT_MS = 1000;
 /**
  * S6/S9: how far into playback stop()/pause() lands, measured from first
- * audio (1-2.5 s for LONG_TEXT on the WP9 phones, so a fixed time misses).
+ * audio (1-2.5 s for LONG_TEXT on test phones, so a fixed time misses).
  */
 const INTO_PLAYBACK_MS = 500;
 /** S6 (a): stop this soon after speak, while the first chunk is synthesizing */
@@ -199,7 +200,10 @@ function intParam(
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-/** Minimal query-string parser (URLSearchParams is incomplete in RN). */
+/**
+ * Lenient query parser: RN's URLSearchParams polyfill throws on a bad `%`
+ * escape and cuts a value at its first `=`.
+ */
 function parseQuery(query: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const part of query.split('&')) {
@@ -694,7 +698,7 @@ export async function runPhononSelfTest(
       params: {...params, scenarios: [...params.scenarios]},
     });
 
-    // ---- S1 support ----
+    // S1 support
     support = await PhononEngine.getSupport();
     const engineSupport = await Speech.getEngineSupport(PHONON);
     report(
@@ -714,7 +718,7 @@ export async function runPhononSelfTest(
       return await finish();
     }
 
-    // ---- model ----
+    // model
     if (params.mirrorRepo || params.mirrorRev) {
       phononModelManager.setIosMirror({
         ...(params.mirrorRepo ? {repo: params.mirrorRepo} : {}),
@@ -782,7 +786,7 @@ export async function runPhononSelfTest(
       ducking: false,
     };
 
-    // ---- S2 init ----
+    // S2 init
     const needsCompile = await PhononEngine.needsCompile(modelPath);
     await Speech.release().catch(() => undefined);
     const diagBefore = await diagnostics();
@@ -828,7 +832,7 @@ export async function runPhononSelfTest(
     });
     const voices = load?.voices ?? [];
 
-    // ---- S3 short speak × runs ----
+    // S3 short speak × runs
     if (has('s3')) {
       const runs: Array<Record<string, number>> = [];
       let ok = true;
@@ -915,7 +919,7 @@ export async function runPhononSelfTest(
       );
     }
 
-    // ---- S4 long speak ----
+    // S4 long speak
     if (has('s4')) {
       collector.start();
       const progress: number[] = [];
@@ -950,7 +954,7 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S5 stream (30 tok/s simulated LLM) ----
+    // S5 stream (30 tok/s simulated LLM)
     if (has('s5')) {
       for (const firstChunk of ['clause', 'sentence'] as const) {
         collector.start();
@@ -1000,12 +1004,12 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S6 stop: during playback, and during first-chunk synthesis ----
+    // S6 stop: during playback, and during first-chunk synthesis
     if (has('s6')) {
       await runStop(results, evidence, collector);
     }
 
-    // ---- S7 voice switch ----
+    // S7 voice switch
     if (has('s7')) {
       const picks = voices.slice(0, 3);
       if (picks.length < 2) {
@@ -1051,7 +1055,7 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S9 pause / resume ----
+    // S9 pause / resume
     if (has('s9')) {
       // Mid chunk: INTO_PLAYBACK_MS after first audio (pause() is a playback
       // control; before first audio there is nothing to pause and it
@@ -1098,7 +1102,7 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S10 audio capture ----
+    // S10 audio capture
     if (has('s10')) {
       const captured: AudioBuffer[] = [];
       try {
@@ -1139,17 +1143,17 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S11 (a) background / foreground (host-driven) ----
+    // S11 (a) background / foreground (host-driven)
     if (has('s11')) {
       await runBackground(results, evidence, collector, initConfig);
     }
 
-    // ---- S8 init/release cycles ----
+    // S8 init/release cycles
     if (has('s8')) {
       await runInitRelease(results, evidence, initConfig, params.cycles);
     }
 
-    // ---- S12 peak memory ----
+    // S12 peak memory
     if (has('s12')) {
       const d = await diagnostics();
       report(
@@ -1167,7 +1171,7 @@ export async function runPhononSelfTest(
     }
     deps.showTab?.('demo');
 
-    // ---- S11 (b) RN reload during synthesis: always last ----
+    // S11 (b) RN reload during synthesis: always last
     if (has('s11')) {
       // Returns only when the build cannot reload; otherwise the next JS
       // context finishes the run (resumePhononSelfTestAfterReload).
@@ -1361,7 +1365,7 @@ type StopWhen = 'before-audio' | 'playing';
 /**
  * One S6 trial on `${LONG_TEXT} ${LONG_TEXT}`:
  *  - 'playing': stop at max(1.0 s after speak, INTO_PLAYBACK_MS after the
- *    first onStart) and measure stop -> onStopped (§8.3, Appendix E);
+ *    first onStart) and measure stop -> onStopped;
  *  - 'before-audio': stop STOP_BEFORE_AUDIO_MS after speak, during
  *    first-chunk synthesis; no onStopped is expected without an onStart.
  * Judged by native `playStartTs`, not JS `onStart`, which can be delivered

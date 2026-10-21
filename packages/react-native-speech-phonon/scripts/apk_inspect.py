@@ -17,9 +17,9 @@ Prints one JSON object:
 --extract-dir writes every lib/<abi>/*.so to DIR/<abi>/<name> for readelf.
 
 --load-digest prints the sha256 of an ELF file's PT_LOAD segments (their file bytes, in
-program-header order, with the ELF header's section-header fields zeroed). AGP re-strips packaged libraries, which rewrites the section headers and
-drops non-loaded bytes, so a packaged library is never byte-identical to its source; what the
-loader maps is.
+program-header order, with the ELF header's section-header fields zeroed). AGP re-strips
+packaged libraries, so a packaged library is never byte-identical to its source; what the loader
+maps is.
 
 Pure stdlib, no Android tools.
 """

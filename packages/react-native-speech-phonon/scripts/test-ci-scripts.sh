@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Tests for the Phonon CI scripts (docs/DESIGN.md §4.2, WP8). Linux or macOS; nothing here
+# Tests for the Phonon CI scripts (docs/DESIGN.md §4.2). Linux or macOS; nothing here
 # builds the app or needs a device.
 #
-#   1. verify-apk.sh --selftest (synthetic APKs: good with-add-on / core-only, compressed or
-#      misaligned libraries, 4 KB p_align, bad NEEDED, R8-stripped natives, missing ABI, stray
-#      ABI, wrong source library, Phonon in a core-only APK)
-#   2. check-npm-pack.sh --selftest (required files, forbidden paths, size, core without Phonon)
-#   3. ci-emulator-selftest.sh --selftest (logcat checks: results, page size, crashes)
+#   1. verify-apk.sh --selftest (synthetic APKs)
+#   2. check-npm-pack.sh --selftest
+#   3. ci-emulator-selftest.sh --selftest (logcat checks on fixtures)
 #   4. fetch-ci-model.sh pins the same files as example/src/utils/PhononModelManager.ts, and
-#      stage-android-model.sh the same curated voices (WP9 device-lab model staging)
+#      stage-android-model.sh the same curated voices
 #   5. ci.yml: the core Android / iOS builds know nothing of Phonon, the add-on jobs exist with
 #      the design's matrix, steps call scripts that exist, actions are pinned by SHA (needs
 #      python3 + PyYAML; skipped otherwise)
-#   6. collect-android-evidence.sh --selftest (WP9 device evidence checks on fixtures, dry runs)
+#   6. collect-android-evidence.sh --selftest (device evidence checks on fixtures, dry runs)
 #
 # Env: ANDROID_NDK_HOME (NDK clang, for 1). Optional real-APK checks:
 #   PHONON_APK_ADDON=<apk> [PHONON_APK_ABIS=arm64-v8a,x86_64] [PHONON_APK_LIBDIR=<jniLibs>]

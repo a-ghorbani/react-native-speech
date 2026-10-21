@@ -18,7 +18,7 @@ object PhononNative {
   @JvmStatic external fun nativeLibraryLoaded(): Boolean
 
   // Synth thread only.
-  /** [reason, detail]; reason "ok" | "library-missing" | "symbols-missing". */
+  /** [reason, detail]; reason "ok" | "library-missing" | "symbols-missing" | "load-failed". */
   @JvmStatic external fun nativeLoadLibrary(soname: String): Array<String>?
   /** See PhononResults.load for the layout. */
   @JvmStatic external fun nativeCreate(dir: String, language: String, computeUnit: String): Array<Any?>?

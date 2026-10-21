@@ -49,7 +49,6 @@ object PhononProbe {
   )
 
   fun evaluate(i: Inputs): Result {
-    // A 32-bit process on an arm64 device runs armeabi-v7a although SUPPORTED_ABIS[0] is arm64-v8a.
     val deviceAbi = (if (i.is64Bit) null else i.supported32BitAbis.firstOrNull())
       ?: i.supportedAbis.firstOrNull().orEmpty()
     fun no(reason: String, detail: String, abi: String = deviceAbi) =

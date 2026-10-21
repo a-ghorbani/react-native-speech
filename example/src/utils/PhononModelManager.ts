@@ -12,8 +12,8 @@
  * display metadata.
  *
  * iOS: the CI-precompiled Core ML bundle (`.mlmodelc`) mirrored unzipped
- * to a palshub HF repo (D1). Its manifest (`path<TAB>size<TAB>sha256`,
- * from packages/react-native-speech-phonon/scripts/precompile-coreml.sh) drives a per-file download.
+ * to a palshub HF repo. Its manifest (`path<TAB>size<TAB>sha256`, from the
+ * package's scripts/precompile-coreml.sh) drives a per-file download.
  *
  * Every file is checked against its pinned size and sha256 in a staging
  * directory, which is renamed into place only when complete (atomic
@@ -62,7 +62,7 @@ export interface PhononIosMirror {
   baseUrl: string;
   /** HF repo (org/name) */
   repo: string;
-  /** Git revision; pin a commit sha once the mirror is published */
+  /** Git revision; only a commit sha pins it */
   revision: string;
   /** Bundle folder name; also the inner folder used as `modelPath` */
   bundleName: string;
@@ -213,8 +213,9 @@ export const PHONON_CURATED_VOICES: readonly CuratedVoice[] = [
 ];
 
 /**
- * Default iOS mirror (D1); unpinned until published, override with
- * `setIosMirror`. Layout = precompile-coreml.sh's out dir:
+ * Default iOS mirror; override with `setIosMirror`. Unpinned until the
+ * mirror is published: then set `revision` to its commit sha and
+ * `manifestSha256`. Layout = precompile-coreml.sh's out dir:
  * `<bundleName>/...` plus `<bundleName>.manifest.tsv` at the repo root.
  */
 export const DEFAULT_PHONON_IOS_MIRROR: PhononIosMirror = {
@@ -384,8 +385,7 @@ export function requiredFreeBytes(
   platform: 'android' | 'ios',
   totalBytes: number,
 ): number {
-  // iOS: room for the staged bundle plus a possible fallback compile
-  // (design §5: ≥ 2× bundle + 100 MB). Android: the checkpoint + margin.
+  // iOS: the staged bundle plus room for a fallback Core ML compile.
   return (platform === 'ios' ? 2 * totalBytes : totalBytes) + 100 * MB;
 }
 
@@ -550,10 +550,9 @@ export class PhononModelManager {
    */
   /**
    * Android: install `variant` from a local folder holding the download's
-   * files at their download paths (a device-lab push,
-   * packages/react-native-speech-phonon/scripts/stage-android-model.sh). Same per-file size and sha256
-   * checks, catalog, install marker and atomic swap as downloadModel; only
-   * the transport differs. The source folder is left as it is.
+   * files at their download paths (a device-lab push via the package's
+   * scripts/stage-android-model.sh). Same checks, catalog, marker and
+   * atomic swap as downloadModel; the source folder is left as it is.
    */
   installFromDirectory(
     sourceDir: string,
@@ -783,7 +782,7 @@ export class PhononModelManager {
 
       await this.swapInto(staging, finalDir, variant);
       if (this.platform === 'ios') {
-        // Re-assert the backup exclusion on the installed folder.
+        // The engine requires modelPath to be excluded from backup.
         await RNFS.mkdir(finalDir, {NSURLIsExcludedFromBackupKey: true});
       }
     } catch (error) {
