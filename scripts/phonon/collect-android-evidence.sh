@@ -355,6 +355,12 @@ summarize_status() {
   else echo PASS; fi
 }
 
+# install_reason <install log>: the adb install failure reason (INSTALL_* code, or the adb
+# client's "ABI <abi> not supported on this device"), else the log's last line.
+install_reason() {
+  grep -o -E 'INSTALL_[A-Z_]*[^]]*|ABI [^ ]+ not supported on this device' "$1" | head -1 || tail -1 "$1"
+}
+
 # ui_tap_center <ui.xml> <text regex>: "x y" of the first node whose text matches.
 ui_tap_center() {
   python3 -I - "$1" "$2" <<'EOF'
@@ -507,6 +513,17 @@ print(hex(i.header_offset + 30 + sum(struct.unpack("<HH", h[26:30]))))' "$d/m.ap
   echo '<hierarchy><node text="Install this app via USB?" package="com.miui.securitycenter" bounds="[0,0][9,9]"/><node text="Install" package="com.miui.securitycenter" bounds="[100,2300][588,2454]"/><node text="Deny (5)" bounds="[600,2300][1000,2454]"/></hierarchy>' >"$d/inst.xml"
   eq "install prompt: Install button" "$(ui_tap_center "$d/inst.xml" '(install|continue installation)')" "344 2377"
 
+  # Play Protect "Send app for a security check?" (com.android.vending): tap Don't send.
+  echo '<hierarchy><node text="Send app for a security check?" package="com.android.vending" bounds="[0,0][9,9]"/><node text="Google Play Protect" package="com.android.vending" bounds="[0,10][9,19]"/><node text="Always send" package="com.android.vending" bounds="[0,20][9,29]"/><node text="Send" package="com.android.vending" bounds="[100,2000][300,2100]"/><node text="Don'"'"'t send" package="com.android.vending" bounds="[400,2000][700,2100]"/></hierarchy>' >"$d/pp.xml"
+  eq "Play Protect prompt: Don't send" "$(ui_tap_center "$d/pp.xml" "don(.|&apos;)t send")" "550 2050"
+
+  printf 'Performing Streamed Install\nadb: failed to install x.apk: Failure [INSTALL_FAILED_NO_MATCHING_ABIS: no native libs]\n' >"$d/inst1.txt"
+  eq "install reason: INSTALL_ code" "$(install_reason "$d/inst1.txt")" "INSTALL_FAILED_NO_MATCHING_ABIS: no native libs"
+  printf 'java.lang.IllegalArgumentException: ABI armeabi-v7a not supported on this device\n\tat x\n' >"$d/inst2.txt"
+  eq "install reason: adb ABI check" "$(install_reason "$d/inst2.txt")" "ABI armeabi-v7a not supported on this device"
+  printf 'adb: device offline\n' >"$d/inst3.txt"
+  eq "install reason: last line" "$(install_reason "$d/inst3.txt")" "adb: device offline"
+
   printf 'PASS a: x\nNOT-RUN b: y\n' >"$d/c1.txt"; eq "status NOT-RUN" "$(summarize_status "$d/c1.txt")" NOT-RUN
   printf 'PASS a: x\nFAIL b: y\n' >"$d/c2.txt"; eq "status FAIL" "$(summarize_status "$d/c2.txt")" FAIL
   printf 'PASS a: x\n' >"$d/c3.txt"; eq "status PASS" "$(summarize_status "$d/c3.txt")" PASS
@@ -580,6 +597,7 @@ device_json() { # <out file>
 
 ui_dump() { # <out xml>
   ((DRY)) && { A shell uiautomator dump /data/local/tmp/wp9-ui.xml; return 0; }
+  rm -f "$1" # never act on a stale dump
   if A shell uiautomator dump /data/local/tmp/wp9-ui.xml >/dev/null 2>&1; then
     A exec-out cat /data/local/tmp/wp9-ui.xml >"$1" 2>/dev/null || true
     A shell rm -f /data/local/tmp/wp9-ui.xml >/dev/null 2>&1 || true
@@ -631,13 +649,23 @@ install_apk() {
         A shell input tap $xy
         sleep 3
       fi
+    elif grep -q 'package="com.android.vending"' "$xml" && grep -q 'Play Protect' "$xml"; then
+      # Play Protect "Send app for a security check?": tap "Don't send" (nothing uploaded,
+      # "Always send" left unticked, no setting changes).
+      xy="$(ui_tap_center "$xml" "don(.|&apos;)t send")"
+      if [[ -n "$xy" ]]; then
+        log "dismissing the Play Protect scan prompt (tap $xy)"
+        # shellcheck disable=SC2086
+        A shell input tap $xy
+        sleep 3
+      fi
     fi
   done
   wait "$ipid" || rc=$?
   return $rc
 }
 
-app_pid() { ((DRY)) && { echo 0; return; }; sh1 pidof "$PKG" | awk '{print $1}'; }
+app_pid() { ((DRY)) && { echo 0; return; }; { sh1 pidof "$PKG" || true; } | awk '{print $1}'; } # pidof exits 1 once the app is gone (N1)
 debuggable() { ((DRY)) && return 1; A shell run-as "$PKG" true >/dev/null 2>&1; }
 
 push_model() { # <host dir> -> prints the device folder
@@ -911,7 +939,7 @@ if ((INSTALL)); then
     cat "$OUT/install.txt" >&2
     {
       echo "# $(date -u +%FT%TZ) serial=$SERIAL flavor=$FLAVOR apk=$(basename "$APK") sha256=$APK_SHA"
-      echo "NOT-RUN install: $(grep -o 'INSTALL_[A-Z_]*[^]]*' "$OUT/install.txt" | head -1 || tail -1 "$OUT/install.txt")"
+      echo "NOT-RUN install: $(install_reason "$OUT/install.txt")"
       echo "RESULT NOT-RUN"
     } >"$OUT/check.txt"
     cat "$OUT/check.txt" >&2
