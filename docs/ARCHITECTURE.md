@@ -26,6 +26,10 @@ Native add-ons keep their own TurboModule but play through the core's neural pla
 
 Both resolve when playback finishes or is stopped or replaced.
 
+| Add-on | Kind | Design |
+|--------|------|--------|
+| Phonon (`@pocketpalai/react-native-speech-phonon`) | Neural, native (Rust `libptts_ffi`: CPU on Android, Core ML on iOS) | [DESIGN.md](../packages/react-native-speech-phonon/docs/DESIGN.md) |
+
 ## Threading model
 
 - **JS bridge:** `Speech.*` entry points are `async` and return Promises. Engine instances and the audio player live in JS.

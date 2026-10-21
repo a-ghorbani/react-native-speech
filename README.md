@@ -3,7 +3,7 @@
 On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS (iOS `AVSpeechSynthesizer` / Android `TextToSpeech`) and three neural engines — Kokoro, Supertonic, Kitten — behind a single API, with native audio playback, progress events, and audio-focus handling.
 
 <div align="center">
-  <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
+  <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./packages/react-native-speech-phonon/README.md">Phonon</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
 </div>
 <br/>
 
@@ -26,6 +26,7 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 ## Features
 
 - **Four engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality; English text, other languages via phoneme input), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven).
+- **Engine add-ons**: engines from other packages plug into the same API with `Speech.registerEngine`. [`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) adds Gradium's native Phonon engine (CPU on Android, Core ML on iOS 18+); apps that do not install it carry no Phonon code.
 - **License-neutral runner**: the library is MIT and ships no model or dictionary data. Consumer apps supply both at runtime. See [LICENSES.md](./docs/LICENSES.md).
 - **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
 - **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.
@@ -228,6 +229,7 @@ Neural model credits (weights are not bundled):
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache-2.0).
 - [Supertonic](https://github.com/supertone-inc/supertonic) by [Supertone](https://supertone.ai) (code MIT, weights OpenRAIL).
 - [KittenML kitten-tts](https://huggingface.co/KittenML) (Apache-2.0).
+- [Phonon](https://github.com/gradium-ai/xn-ptts) by [Gradium](https://huggingface.co/gradium), used by the Phonon add-on: runtime MIT OR Apache-2.0; Phonon 31m weights Apache-2.0, Phonon 40m weights CC BY-NC 4.0 (non-commercial).
 
 Full license details in [LICENSES.md](./docs/LICENSES.md).
 
