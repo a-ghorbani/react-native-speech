@@ -55,11 +55,22 @@ export class NeuralAudioPlayer {
       silentMode: options?.silentMode,
     };
 
-    // Play audio via native module
+    await this.playNative(() =>
+      NativeNeuralAudioPlayer.playAudio(base64Audio, config),
+    );
+  }
+
+  /**
+   * Track a playback that the caller starts natively (e.g. an engine
+   * add-on playing through the native PCM sink), so `stop()` and
+   * `pause()` reach native while it is pending.
+   * @param start - Starts playback; resolves when it finishes or is stopped
+   */
+  async playNative(start: () => Promise<void>): Promise<void> {
     this.isCurrentlyPlaying = true;
 
     try {
-      await NativeNeuralAudioPlayer.playAudio(base64Audio, config);
+      await start();
     } finally {
       this.isCurrentlyPlaying = false;
     }
