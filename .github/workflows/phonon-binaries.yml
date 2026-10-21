@@ -210,7 +210,7 @@ jobs:
           if ! cargo ndk --version 2>/dev/null | grep -q "$CARGO_NDK_VERSION"; then
             cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
           fi
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >>"$GITHUB_ENV"
 
       # Includes verify-android-so.sh --selftest and the iOS verifier's self-test on LLVM tools.

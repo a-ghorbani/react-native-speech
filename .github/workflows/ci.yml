@@ -344,7 +344,7 @@ jobs:
             --target aarch64-linux-android --target x86_64-linux-android
           rustup default "$RUST_VERSION"
           cargo install cargo-ndk --version "$CARGO_NDK_VERSION" --locked
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >>"$GITHUB_ENV"
 
       - name: Build libptts_ffi.so
