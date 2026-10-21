@@ -138,7 +138,8 @@
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "\\.shared\\.ts$"
+      "\\.shared\\.ts$",
+      "<rootDir>/example/"
     ]
   },
   "commitlint": {

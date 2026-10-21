@@ -22,6 +22,14 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- Self-test deep link for automated device runs:
+             speechexample://selftest/phonon?runs=5 (src/selftest/phononSelfTest.ts) -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="speechexample" android:host="selftest" />
+        </intent-filter>
       </activity>
     </application>
 </manifest>

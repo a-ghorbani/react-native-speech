@@ -13,9 +13,15 @@
  */
 
 import {Platform} from 'react-native';
-import Speech, {type TTSEngine} from '@pocketpalai/react-native-speech';
+import Speech, {
+  TTSEngine,
+  engineManager,
+  type PhononChunkMetrics,
+  type PhononEngine,
+} from '@pocketpalai/react-native-speech';
 import Benchmark from './NativeBenchmark';
 import {emitBenchmark, generateRunId} from './BenchmarkLogger';
+import {ChunkCollector, utteranceMetrics} from '../utils/phononChunks';
 import type {
   BenchmarkConfig,
   BenchmarkResult,
@@ -23,6 +29,7 @@ import type {
   BenchmarkProgress,
   MemorySnapshot,
   PercentileStats,
+  PhononBenchMetrics,
 } from './types';
 
 type ProgressCallback = (progress: BenchmarkProgress) => void;
@@ -104,6 +111,42 @@ function computePercentiles(values: number[]): PercentileStats {
     median,
     p90: Math.round(sorted[p90Index]!),
   };
+}
+
+/**
+ * Native Phonon metrics of one speak, or undefined for other engines.
+ * `getLastMetrics()` holds only the last played chunk, so the chunks of
+ * the call are collected while it runs: ttfa/queued come from the first
+ * chunk (the one the listener waits for), totals sum every chunk.
+ */
+export function phononMetrics(
+  engine: string,
+  chunks: readonly PhononChunkMetrics[],
+): PhononBenchMetrics | undefined {
+  if (engine !== TTSEngine.PHONON) {
+    return undefined;
+  }
+  try {
+    const phonon = engineManager.getEngine(
+      TTSEngine.PHONON,
+    ) as unknown as PhononEngine;
+    const utt = utteranceMetrics(chunks);
+    const load = phonon.getLoadInfo();
+    return {
+      ttfaMs: Math.round(utt?.first.ttfaMs ?? -1),
+      totalMs: Math.round(utt?.first.totalMs ?? -1),
+      queuedMs: Math.round(utt?.first.queuedMs ?? -1),
+      voiceChanged: utt?.first.voiceChanged ?? false,
+      chunkCount: utt?.chunkCount ?? 0,
+      synthTotalMs: Math.round(utt?.synthTotalMs ?? -1),
+      audioSec: Math.round((utt?.audioSec ?? 0) * 100) / 100,
+      numThreads: load?.numThreads ?? 0,
+      computeUnit: load?.computeUnit ?? '',
+      loadMs: Math.round(load?.loadMs ?? -1),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -273,10 +316,15 @@ export async function runBenchmark(
         textLength: config.testPhrase.length,
       });
 
+      // Phonon: per-chunk native metrics of this call.
+      const collector =
+        engineConfig.engine === TTSEngine.PHONON ? new ChunkCollector() : null;
+      collector?.start();
+
       const speakStart = performance.now();
 
       // Set up one-shot listeners for TTFA and completion
-      const {ttfaMs, totalSpeakMs} = await new Promise<{
+      const speakResult = new Promise<{
         ttfaMs: number;
         totalSpeakMs: number;
       }>((resolve, reject) => {
@@ -325,9 +373,18 @@ export async function runBenchmark(
           reject(err);
         });
       });
+      let ttfaMs: number;
+      let totalSpeakMs: number;
+      let chunks: PhononChunkMetrics[] = [];
+      try {
+        ({ttfaMs, totalSpeakMs} = await speakResult);
+      } finally {
+        chunks = collector?.flush() ?? [];
+      }
 
       Benchmark.endTraceInterval(`speak:${traceTag}`);
       const speakPeak = await Benchmark.stopMemoryPolling();
+      const phonon = phononMetrics(engineConfig.engine, chunks);
 
       emitBenchmark('SPEAK_END', {
         runId,
@@ -336,6 +393,7 @@ export async function runBenchmark(
         totalMs: Math.round(totalSpeakMs),
         peakNativeHeapMB: round1(speakPeak.peakNativeHeapMB),
         memorySamples: speakPeak.sampleCount,
+        ...(phonon ? {phonon} : {}),
       });
 
       // Memory after speak
@@ -397,6 +455,7 @@ export async function runBenchmark(
         memoryPostRelease: memPostRelease,
         peakInitMemoryMB: round1(initPeak.peakNativeHeapMB),
         peakSpeakMemoryMB: round1(speakPeak.peakNativeHeapMB),
+        ...(phonon ? {phonon} : {}),
       };
 
       allResults.get(engineKey)!.push(result);
@@ -475,6 +534,15 @@ export async function runBenchmark(
       inferMemoryMB: computePercentiles(inferMemVals),
       peakInitMemoryMB: avgPeakInit,
       peakSpeakMemoryMB: avgPeakSpeak,
+      ...(measured.some(r => r.phonon)
+        ? {
+            nativeTtfaMs: computePercentiles(
+              measured
+                .filter(r => r.phonon && r.phonon.ttfaMs >= 0)
+                .map(r => r.phonon!.ttfaMs),
+            ),
+          }
+        : {}),
     };
 
     summaries.push({

@@ -57,7 +57,11 @@
               "totalSpeakMs": { "$ref": "#/$defs/percentileStats" },
               "releaseMs": { "$ref": "#/$defs/percentileStats" },
               "modelMemoryMB": { "$ref": "#/$defs/percentileStats" },
-              "inferMemoryMB": { "$ref": "#/$defs/percentileStats" }
+              "inferMemoryMB": { "$ref": "#/$defs/percentileStats" },
+              "nativeTtfaMs": {
+                "$ref": "#/$defs/percentileStats",
+                "description": "Phonon only: native time to first audio of each call's first chunk (normalization + conditioning + prefill)."
+              }
             }
           },
           "peakInitMemoryMB": { "type": "number" },
@@ -79,7 +83,8 @@
                 "memoryBaseline": { "$ref": "#/$defs/memorySnapshot" },
                 "memoryPostInit": { "$ref": "#/$defs/memorySnapshot" },
                 "memoryPostSpeak": { "$ref": "#/$defs/memorySnapshot" },
-                "memoryPostRelease": { "$ref": "#/$defs/memorySnapshot" }
+                "memoryPostRelease": { "$ref": "#/$defs/memorySnapshot" },
+                "phonon": { "$ref": "#/$defs/phononMetrics" }
               }
             }
           }
@@ -97,6 +102,22 @@
         "mean": { "type": "number" },
         "median": { "type": "number" },
         "p90": { "type": "number" }
+      }
+    },
+    "phononMetrics": {
+      "type": "object",
+      "description": "Phonon only: native timings of one speak call and the effective load settings. ttfaMs/totalMs/queuedMs/voiceChanged are the call's first chunk (the one first audio waits for).",
+      "properties": {
+        "ttfaMs": { "type": "number", "description": "First chunk: native time to first audio (normalization + conditioning + prefill)." },
+        "totalMs": { "type": "number", "description": "First chunk: native synthesis time." },
+        "queuedMs": { "type": "number", "description": "First chunk: time the request waited for the synth thread." },
+        "voiceChanged": { "type": "boolean" },
+        "chunkCount": { "type": "integer", "description": "Chunks played in the call." },
+        "synthTotalMs": { "type": "number", "description": "Native synthesis time summed over every chunk." },
+        "audioSec": { "type": "number", "description": "Audio duration summed over every chunk." },
+        "numThreads": { "type": "integer" },
+        "computeUnit": { "type": "string", "enum": ["cpu", "neuralEngine", ""] },
+        "loadMs": { "type": "number" }
       }
     },
     "memorySnapshot": {

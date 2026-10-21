@@ -1,5 +1,5 @@
 import React from 'react';
-import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet, Linking} from 'react-native';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
@@ -9,6 +9,11 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {C, MONO} from './styles/cyber';
+import {
+  isPhononSelfTestRunning,
+  parseSelfTestUrl,
+  runPhononSelfTest,
+} from './selftest/phononSelfTest';
 
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
@@ -21,6 +26,28 @@ const TABS: {key: Tab; label: string}[] = [
 function AppContent() {
   const [tab, setTab] = React.useState<Tab>('demo');
   const insets = useSafeAreaInsets();
+
+  // Automated device runs: speechexample://selftest/phonon?runs=5&...
+  // (adb `am start -a android.intent.action.VIEW -d <url>`, or
+  // `xcrun devicectl ... --payload-url <url>` on iOS).
+  React.useEffect(() => {
+    const handle = (url: string | null | undefined) => {
+      const params = url ? parseSelfTestUrl(url) : null;
+      if (!params) return;
+      if (isPhononSelfTestRunning()) {
+        console.log('[SelfTest] already running; ignored', url);
+        return;
+      }
+      runPhononSelfTest(params, {showTab: setTab}).catch(err =>
+        console.log(`[SelfTest] SELFTEST_DONE error=${String(err)}`),
+      );
+    };
+    Linking.getInitialURL()
+      .then(handle)
+      .catch(() => {});
+    const sub = Linking.addEventListener('url', e => handle(e.url));
+    return () => sub.remove();
+  }, []);
 
   return (
     <View style={styles.container}>

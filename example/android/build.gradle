@@ -18,4 +18,20 @@ buildscript {
     }
 }
 
+// Phonon dev override: -PRNSpeech_phononLocal=true builds flag-on against the
+// binaries scripts/phonon/build-android.sh staged in this checkout
+// (scripts/out/phonon/android), so no download and no published hashes are
+// needed. The library reads rootProject.ext before gradle properties.
+if ((findProperty("RNSpeech_phononLocal") ?: "false").toString().toBoolean()) {
+    def localLibs = file("../../scripts/out/phonon/android/jniLibs")
+    if (!localLibs.isDirectory()) {
+        throw new GradleException("RNSpeech_phononLocal: ${localLibs} not found; " +
+            "run scripts/phonon/build-android.sh first")
+    }
+    ext.RNSpeech_phononEnabled = true
+    if (findProperty("RNSpeech_phononLibDir") == null) {
+        ext.RNSpeech_phononLibDir = localLibs.absolutePath
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"

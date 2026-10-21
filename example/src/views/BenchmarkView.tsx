@@ -13,6 +13,8 @@ import {TTSEngine} from '@pocketpalai/react-native-speech';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {supertonicModelManager} from '../utils/SupertonicModelManager';
 import {kittenModelManager} from '../utils/KittenModelManager';
+import {phononModelManager} from '../utils/PhononModelManager';
+import {isEngineVisible, probeEngineSupport} from '../utils/engineSupport';
 import {phonemizerDictManager} from '../utils/PhonemizerDictManager';
 import {
   runBenchmark,
@@ -185,6 +187,27 @@ const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
           }),
           defaultVoice: '',
         });
+      }
+    } catch {
+      /* not installed */
+    }
+
+    // Phonon: only where the native probe says supported (never loads
+    // the library; unsupported devices just do not list it).
+    try {
+      const support = await probeEngineSupport([TTSEngine.PHONON]);
+      if (isEngineVisible(TTSEngine.PHONON, support)) {
+        await phononModelManager.scanInstalledModel();
+        for (const model of phononModelManager.getAllInstalledModels()) {
+          engines.push({
+            engine: TTSEngine.PHONON,
+            label: `Phonon (${model.variant})`,
+            variant: model.variant,
+            getInitConfig: () =>
+              phononModelManager.getDownloadedModelConfig(model.variant),
+            defaultVoice: '',
+          });
+        }
       }
     } catch {
       /* not installed */
@@ -472,6 +495,18 @@ const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
                     <ResultCell
                       label="PEAK_INFER"
                       value={`${summary.stats.peakSpeakMemoryMB}MB`}
+                    />
+                  )}
+                  {summary.stats.nativeTtfaMs != null && (
+                    <ResultCell
+                      label="NATIVE_TTFA"
+                      value={`${summary.stats.nativeTtfaMs.median}ms`}
+                    />
+                  )}
+                  {summary.iterations[0]?.phonon && (
+                    <ResultCell
+                      label="THREADS/UNIT"
+                      value={`${summary.iterations[0].phonon.numThreads}/${summary.iterations[0].phonon.computeUnit}`}
                     />
                   )}
                 </View>

@@ -24,6 +24,10 @@ import Speech, {
   CoreMlFlag,
   DEFAULT_COREML_FLAGS,
   TTSEngine,
+  PhononEngine,
+  engineManager,
+  type PhononComputeUnit,
+  type PhononLoadResult,
 } from '@pocketpalai/react-native-speech';
 import Button from '../components/Button';
 import {C, MONO} from '../styles/cyber';
@@ -38,7 +42,18 @@ import {
   kittenModelManager,
   type KittenVersion,
 } from '../utils/KittenModelManager';
+import {
+  phononModelManager,
+  type PhononVariant,
+} from '../utils/PhononModelManager';
+import {
+  engineInitFailure,
+  isEngineVisible,
+  useEngineSupport,
+  visibleEngines,
+} from '../utils/engineSupport';
 import {saveChunksAsWav} from '../utils/wavWriter';
+import {onPhononSelfTestDone} from '../selftest/phononSelfTest';
 import {
   ENGLISH_DEFAULT_TEXT,
   IPA_SAMPLE_TEXT,
@@ -51,7 +66,19 @@ const isAndroidLowerThan26 = Platform.OS === 'android' && Platform.Version < 26;
 const DEFAULT_TEXT = ENGLISH_DEFAULT_TEXT;
 
 // Model Manager Tab Type
-type ModelTab = 'kokoro' | 'supertonic' | 'kitten';
+type ModelTab = 'kokoro' | 'supertonic' | 'kitten' | 'phonon';
+
+/** Load info of the current Phonon handle (diagnostics line). */
+function getPhononLoadInfo(): PhononLoadResult | null {
+  try {
+    const engine = engineManager.getEngine(
+      TTSEngine.PHONON,
+    ) as unknown as PhononEngine;
+    return engine.getLoadInfo();
+  } catch {
+    return null;
+  }
+}
 
 // Acceleration EP picker state. Per-platform candidate set; cpu is
 // always appended as the last fallback so users can't fully disable it.
@@ -221,6 +248,31 @@ const RootView: React.FC = () => {
   const [kokoroModels, setKokoroModels] = React.useState<any[]>([]);
   const [supertonicModels, setSupertonicModels] = React.useState<any[]>([]);
   const [kittenModels, setKittenModels] = React.useState<any[]>([]);
+  const [phononModels, setPhononModels] = React.useState<any[]>([]);
+
+  // Phonon is shown only where the native probe says it is supported
+  // (never a dialog when it is not; see utils/engineSupport.ts).
+  const {
+    supportMap,
+    refresh: refreshEngineSupport,
+    hide: hideEngine,
+  } = useEngineSupport();
+  const phononVisible = isEngineVisible(TTSEngine.PHONON, supportMap);
+  const [phononLoad, setPhononLoad] = React.useState<PhononLoadResult | null>(
+    null,
+  );
+  const [phononError, setPhononError] = React.useState<string | null>(null);
+  const [phononPreparing, setPhononPreparing] = React.useState(false);
+  const [phononComputeUnit, setPhononComputeUnit] =
+    React.useState<PhononComputeUnit>('neuralEngine');
+  const phononComputeUnitRef = React.useRef(phononComputeUnit);
+  phononComputeUnitRef.current = phononComputeUnit;
+  const [showNonCommercial, setShowNonCommercial] = React.useState(false);
+  const [phononDownloadError, setPhononDownloadError] = React.useState<
+    string | null
+  >(null);
+  // Engine to return to when Phonon turns out to be unusable.
+  const previousEngineRef = React.useRef<TTSEngine>(TTSEngine.KITTEN);
 
   // Execution provider selection for hardware acceleration. Multi-select
   // per platform; CPU is always appended as the final fallback.
@@ -409,25 +461,89 @@ const RootView: React.FC = () => {
           });
           setInitializedEngine(TTSEngine.KITTEN);
           setEngineReady(true);
+        } else if (engine === TTSEngine.PHONON) {
+          setPhononError(null);
+          setPhononLoad(null);
+          await phononModelManager.scanInstalledModel();
+          if (!phononModelManager.getInstalledModel()) {
+            // No dialog: open the Phonon model tab directly.
+            setEngineReady(false);
+            setModelManagerTab('phonon');
+            setShowModelManager(true);
+            return;
+          }
+
+          const config = phononModelManager.getDownloadedModelConfig();
+          // iOS: a bundle without .mlmodelc compiles on first load (slow).
+          setPhononPreparing(await PhononEngine.needsCompile(config.modelPath));
+          await Speech.initialize({
+            engine: TTSEngine.PHONON,
+            ...config,
+            computeUnit: phononComputeUnitRef.current,
+            silentMode: 'obey',
+            ducking: true,
+          });
+          setPhononLoad(getPhononLoadInfo());
+          setInitializedEngine(TTSEngine.PHONON);
+          setEngineReady(true);
         }
       } catch (error) {
-        console.error('Failed to initialize engine:', error);
         setEngineReady(false);
+        if (engine === TTSEngine.PHONON) {
+          // Never a dialog for Phonon (see engineInitFailure).
+          const map = await refreshEngineSupport();
+          const outcome = engineInitFailure(
+            engine,
+            error,
+            map,
+            previousEngineRef.current,
+          );
+          if (outcome.action === 'hide') {
+            hideEngine(TTSEngine.PHONON, outcome.reason);
+            setSelectedEngine(outcome.fallbackTo);
+          } else {
+            console.log(`[Phonon] init failed: ${String(error)}`);
+            setPhononError(outcome.message);
+          }
+          return;
+        }
+        console.error('Failed to initialize engine:', error);
         Alert.alert(
           'Initialization Error',
           `Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
       } finally {
         setIsInitializing(false);
+        setPhononPreparing(false);
       }
     },
-    [releaseCurrentEngine],
+    [releaseCurrentEngine, refreshEngineSupport, hideEngine],
   );
 
   React.useEffect(() => {
+    if (selectedEngine !== TTSEngine.PHONON) {
+      previousEngineRef.current = selectedEngine;
+    }
     initializeEngine(selectedEngine, providers);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedEngine, providers]);
+  }, [selectedEngine, providers, phononComputeUnit]);
+
+  // A Phonon self-test drives Speech directly and leaves Phonon loaded;
+  // re-initialize this view's selected engine so its state matches.
+  const reinitRef = React.useRef(() => {});
+  reinitRef.current = () => {
+    initializeEngine(selectedEngine, providers);
+  };
+  React.useEffect(
+    () =>
+      onPhononSelfTestDone(({engineBefore, engineAfter}) => {
+        console.log(
+          `[SelfTest] restoring view engine (before=${engineBefore} after=${engineAfter})`,
+        );
+        reinitRef.current();
+      }),
+    [],
+  );
 
   // Load voices when engine is ready
   const loadVoices = React.useCallback(async () => {
@@ -495,6 +611,10 @@ const RootView: React.FC = () => {
 
     await kittenModelManager.scanInstalledModel();
     setKittenModels(kittenModelManager.getAllInstalledModels());
+
+    // File scan only; never touches the Phonon native library.
+    await phononModelManager.scanInstalledModel();
+    setPhononModels(phononModelManager.getAllInstalledModels());
   }, []);
 
   React.useEffect(() => {
@@ -776,9 +896,42 @@ const RootView: React.FC = () => {
     [loadInstalledModels, selectedEngine, providers, initializeEngine],
   );
 
+  const downloadPhononModel = React.useCallback(
+    async (variant: PhononVariant) => {
+      try {
+        setIsDownloading(true);
+        setDownloadingItem(`phonon-${variant}`);
+        setDownloadProgress(0);
+        setPhononDownloadError(null);
+
+        await phononModelManager.downloadModel(variant, progress => {
+          setDownloadProgress(progress.progress);
+        });
+
+        phononModelManager.setActiveVariant(variant);
+        await loadInstalledModels();
+
+        if (selectedEngine === TTSEngine.PHONON) {
+          await initializeEngine(TTSEngine.PHONON, providers);
+        }
+      } catch (err) {
+        // Inline, not an Alert (no dialogs on the Phonon path).
+        console.log(`[Phonon] download failed: ${String(err)}`);
+        setPhononDownloadError(
+          err instanceof Error ? err.message : 'Download failed',
+        );
+      } finally {
+        setIsDownloading(false);
+        setDownloadingItem(null);
+        setDownloadProgress(0);
+      }
+    },
+    [loadInstalledModels, selectedEngine, providers, initializeEngine],
+  );
+
   const deleteModel = React.useCallback(
     async (
-      type: 'kokoro' | 'supertonic' | 'kitten',
+      type: 'kokoro' | 'supertonic' | 'kitten' | 'phonon',
       version: string,
       variant: string,
     ) => {
@@ -800,6 +953,8 @@ const RootView: React.FC = () => {
                 );
               } else if (type === 'kitten') {
                 await kittenModelManager.deleteModel(variant as KittenVersion);
+              } else if (type === 'phonon') {
+                await phononModelManager.deleteModel(variant as PhononVariant);
               }
               await loadInstalledModels();
               Alert.alert('Deleted', 'Model removed.');
@@ -907,6 +1062,27 @@ const RootView: React.FC = () => {
                   Kitten
                 </Text>
               </TouchableOpacity>
+              {phononVisible && (
+                <TouchableOpacity
+                  style={[
+                    styles.tab,
+                    modelManagerTab === 'phonon' && styles.tabActive,
+                    modelManagerTab === 'phonon' &&
+                      themedStyles.bgCardSecondary,
+                  ]}
+                  onPress={() => setModelManagerTab('phonon')}
+                  disabled={isDownloading}>
+                  <Text
+                    style={[
+                      styles.tabText,
+                      modelManagerTab === 'phonon'
+                        ? themedStyles.textPrimary
+                        : themedStyles.textSecondary,
+                    ]}>
+                    Phonon
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <ScrollView
@@ -1439,6 +1615,207 @@ const RootView: React.FC = () => {
                   })}
                 </View>
               )}
+
+              {/* ====== PHONON TAB (only when supported) ====== */}
+              {modelManagerTab === 'phonon' && phononVisible && (
+                <View>
+                  <Text
+                    style={[styles.sectionLabel, themedStyles.textSecondary]}>
+                    INSTALLED
+                  </Text>
+                  {phononModels.length === 0 ? (
+                    <Text
+                      style={[styles.emptyText, themedStyles.textSecondary]}>
+                      No models installed
+                    </Text>
+                  ) : (
+                    phononModels.map(model => {
+                      const isActive =
+                        phononModelManager.getActiveVariant() === model.variant;
+                      return (
+                        <View
+                          key={model.variant}
+                          style={[
+                            styles.modelCard,
+                            themedStyles.bgCard,
+                            isActive && styles.modelCardActive,
+                          ]}>
+                          <View style={styles.modelCardInfo}>
+                            <View style={styles.modelCardNameRow}>
+                              <Text
+                                style={[
+                                  styles.modelCardName,
+                                  themedStyles.textPrimary,
+                                ]}>
+                                Phonon {model.variant}
+                              </Text>
+                              {isActive && (
+                                <View style={styles.activeBadge}>
+                                  <Text style={styles.activeBadgeText}>
+                                    ACTIVE
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text
+                              style={[
+                                styles.modelCardMeta,
+                                themedStyles.textSecondary,
+                              ]}>
+                              {(model.size / 1024 / 1024).toFixed(0)} MB
+                              {` • ${model.license}`}
+                              {model.voices.length > 0
+                                ? ` • ${model.voices.length} voices`
+                                : ''}
+                            </Text>
+                          </View>
+                          <View style={styles.modelCardActions}>
+                            {!isActive && phononModels.length > 1 && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  phononModelManager.setActiveVariant(
+                                    model.variant,
+                                  );
+                                  loadInstalledModels();
+                                  if (selectedEngine === TTSEngine.PHONON) {
+                                    initializeEngine(
+                                      TTSEngine.PHONON,
+                                      providers,
+                                    );
+                                  }
+                                }}
+                                style={styles.useBtn}>
+                                <Text style={styles.useBtnText}>Use</Text>
+                              </TouchableOpacity>
+                            )}
+                            <TouchableOpacity
+                              onPress={() =>
+                                deleteModel('phonon', '', model.variant)
+                              }
+                              style={styles.deleteBtn}>
+                              <Text style={styles.deleteBtnText}>Delete</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+
+                  <Text
+                    style={[
+                      styles.sectionLabel,
+                      themedStyles.textSecondary,
+                      themedStyles.sectionLabelWithMargin,
+                    ]}>
+                    AVAILABLE DOWNLOADS
+                  </Text>
+                  {phononDownloadError && (
+                    <Text
+                      testID="phonon-download-error"
+                      style={[styles.emptyText, themedStyles.statusNotReady]}>
+                      {phononDownloadError}
+                    </Text>
+                  )}
+                  {phononModelManager
+                    .getAvailableVariants(showNonCommercial)
+                    .map(item => {
+                      const isInstalled = phononModels.some(
+                        m => m.variant === item.variant,
+                      );
+                      const isThisDownloading =
+                        downloadingItem === `phonon-${item.variant}`;
+                      return (
+                        <TouchableOpacity
+                          key={item.variant}
+                          style={[
+                            styles.downloadCard,
+                            isInstalled
+                              ? themedStyles.downloadCardInstalled
+                              : item.nonCommercial
+                                ? themedStyles.downloadCardOrange
+                                : themedStyles.downloadCardGreen,
+                            isDownloading && !isThisDownloading
+                              ? themedStyles.opacityFaded
+                              : themedStyles.opacityFull,
+                          ]}
+                          onPress={() => downloadPhononModel(item.variant)}
+                          disabled={
+                            isInstalled || isDownloading || item.userProvided
+                          }>
+                          {isThisDownloading ? (
+                            <View style={styles.downloadingState}>
+                              <ActivityIndicator color="white" size="small" />
+                              <Text style={styles.downloadingText}>
+                                {Math.round(downloadProgress * 100)}%
+                              </Text>
+                              <View style={styles.progressBarContainer}>
+                                <View
+                                  style={[
+                                    styles.progressBarFill,
+                                    {width: `${downloadProgress * 100}%`},
+                                  ]}
+                                />
+                              </View>
+                            </View>
+                          ) : (
+                            <>
+                              <View style={styles.downloadCardContent}>
+                                <Text
+                                  style={[
+                                    styles.downloadCardTitle,
+                                    isInstalled
+                                      ? themedStyles.downloadTextInstalled
+                                      : themedStyles.textWhite,
+                                  ]}>
+                                  {isInstalled
+                                    ? `${item.label} Installed`
+                                    : item.label}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.downloadCardMeta,
+                                    isInstalled
+                                      ? themedStyles.downloadTextInstalled
+                                      : themedStyles.downloadMetaWhite,
+                                  ]}>
+                                  ~
+                                  {Math.round(item.estimatedSize / 1024 / 1024)}{' '}
+                                  MB • {item.description} • {item.license}
+                                </Text>
+                                {item.userProvided && !isInstalled && (
+                                  <Text
+                                    style={[
+                                      styles.downloadCardLangs,
+                                      themedStyles.downloadLangsWhite,
+                                    ]}>
+                                    Copy the checkpoint to{' '}
+                                    {phononModelManager.getVariantDirectory(
+                                      item.variant,
+                                    )}
+                                  </Text>
+                                )}
+                              </View>
+                              {!isInstalled && !item.userProvided && (
+                                <Text style={styles.downloadIcon}>↓</Text>
+                              )}
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  {Platform.OS === 'android' && (
+                    <TouchableOpacity
+                      onPress={() => setShowNonCommercial(v => !v)}
+                      disabled={isDownloading}>
+                      <Text
+                        style={[styles.emptyText, themedStyles.textSecondary]}>
+                        {showNonCommercial ? '☑ ' : '☐ '}
+                        Show non-commercial (CC BY-NC) models
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1636,6 +2013,8 @@ const RootView: React.FC = () => {
                     setModelManagerTab('supertonic');
                   } else if (selectedEngine === TTSEngine.KITTEN) {
                     setModelManagerTab('kitten');
+                  } else if (selectedEngine === TTSEngine.PHONON) {
+                    setModelManagerTab('phonon');
                   }
                   setShowModelManager(true);
                 }}>
@@ -1645,16 +2024,21 @@ const RootView: React.FC = () => {
           </View>
 
           <View style={styles.engineButtons}>
-            {[
-              {engine: TTSEngine.KITTEN, label: 'Kitten'},
-              {engine: TTSEngine.KOKORO, label: 'Kokoro'},
-              {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
-              {engine: TTSEngine.OS_NATIVE, label: 'System'},
-            ].map(item => {
+            {visibleEngines(
+              [
+                {engine: TTSEngine.KITTEN, label: 'Kitten'},
+                {engine: TTSEngine.KOKORO, label: 'Kokoro'},
+                {engine: TTSEngine.SUPERTONIC, label: 'Supertonic'},
+                {engine: TTSEngine.PHONON, label: 'Phonon'},
+                {engine: TTSEngine.OS_NATIVE, label: 'System'},
+              ],
+              supportMap,
+            ).map(item => {
               const isEngineSelected = selectedEngine === item.engine;
               return (
                 <TouchableOpacity
                   key={item.engine}
+                  testID={`engine-chip-${item.engine}`}
                   style={[
                     styles.engineBtn,
                     isEngineSelected
@@ -1699,7 +2083,9 @@ const RootView: React.FC = () => {
                 <Text style={[styles.statusText, themedStyles.textSecondary]}>
                   {isReleasing
                     ? '> releasing resources...'
-                    : '> loading model...'}
+                    : phononPreparing
+                      ? '> preparing model (Core ML compile)...'
+                      : '> loading model...'}
                 </Text>
               </View>
             ) : (
@@ -1736,126 +2122,182 @@ const RootView: React.FC = () => {
             )}
           </View>
 
-          {/* Acceleration (neural only) */}
-          {selectedEngine !== TTSEngine.OS_NATIVE && (
+          {/* Phonon: diagnostics + compute unit (iOS). No ONNX EPs. */}
+          {selectedEngine === TTSEngine.PHONON && (
             <View style={styles.accelerationSection}>
-              <View style={styles.accelHeaderRow}>
-                <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
-                  Acceleration providers
-                </Text>
-                <Text
-                  style={[styles.accelOrderText, themedStyles.textSecondary]}>
-                  CPU is always the last fallback
-                </Text>
-              </View>
-              <View style={styles.accelerationButtons}>
-                {(Platform.OS === 'ios'
-                  ? [
-                      {key: 'coreml' as const, label: 'CoreML'},
-                      {key: 'xnnpack' as const, label: 'XNNPACK'},
-                    ]
-                  : [{key: 'xnnpack' as const, label: 'XNNPACK'}]
-                ).map(item => {
-                  const isOn = accel.selected.has(item.key);
-                  return (
-                    <TouchableOpacity
-                      key={item.key}
-                      style={[
-                        styles.accelBtn,
-                        isOn
-                          ? themedStyles.btnSelected
-                          : themedStyles.btnUnselected,
-                      ]}
-                      onPress={() => {
-                        const next = new Set(accel.selected);
-                        if (isOn) {
-                          next.delete(item.key);
-                        } else {
-                          next.add(item.key);
-                        }
-                        setAccel({...accel, selected: next});
-                      }}
-                      disabled={isInitializing || isStarted}>
-                      <Text
+              <Text
+                testID="phonon-diag"
+                style={[
+                  styles.accelOrderText,
+                  phononError
+                    ? themedStyles.statusNotReady
+                    : themedStyles.textSecondary,
+                ]}>
+                {`reason=${supportMap[TTSEngine.PHONON]?.reason ?? '?'}`}
+                {phononLoad
+                  ? ` threads=${phononLoad.numThreads} loadMs=${Math.round(phononLoad.loadMs)} unit=${phononLoad.computeUnit}${phononLoad.compiled ? ' compiled' : ''}`
+                  : ''}
+                {phononError ? ` error=${phononError}` : ''}
+              </Text>
+              {Platform.OS === 'ios' && (
+                <View style={styles.accelerationButtons}>
+                  {(
+                    [
+                      {key: 'neuralEngine', label: 'Neural Engine'},
+                      {key: 'cpu', label: 'CPU'},
+                    ] as const
+                  ).map(item => {
+                    const isOn = phononComputeUnit === item.key;
+                    return (
+                      <TouchableOpacity
+                        key={item.key}
                         style={[
-                          styles.accelBtnText,
+                          styles.accelBtn,
                           isOn
-                            ? themedStyles.textWhite
-                            : themedStyles.textPrimary,
-                        ]}>
-                        {isOn ? '☑ ' : '☐ '}
-                        {item.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {Platform.OS === 'android' && (
-                <Text
-                  style={[styles.accelHelpText, themedStyles.textSecondary]}>
-                  NNAPI was dropped — Android's Neural Networks API was
-                  deprecated in Android 15.
-                </Text>
-              )}
-
-              {/* CoreML flag sub-options (iOS + CoreML selected) */}
-              {Platform.OS === 'ios' && accel.selected.has('coreml') && (
-                <View style={styles.accelDetailsBlock}>
-                  <TouchableOpacity
-                    onPress={() => setShowAccelDetails(s => !s)}
-                    disabled={isInitializing || isStarted}>
-                    <Text
-                      style={[
-                        styles.accelDetailsToggle,
-                        themedStyles.textSecondary,
-                      ]}>
-                      {showAccelDetails ? '▼' : '▶'} CoreML flags
-                    </Text>
-                  </TouchableOpacity>
-                  {showAccelDetails && (
-                    <View style={styles.accelDetails}>
-                      {COREML_FLAG_OPTIONS.map(opt => {
-                        // eslint-disable-next-line no-bitwise
-                        const isOn = (accel.coreMlFlags & opt.flag) !== 0;
-                        return (
-                          <TouchableOpacity
-                            key={opt.flag}
-                            style={styles.accelFlagRow}
-                            onPress={() =>
-                              setAccel({
-                                ...accel,
-                                coreMlFlags: isOn
-                                  ? // eslint-disable-next-line no-bitwise
-                                    accel.coreMlFlags & ~opt.flag
-                                  : // eslint-disable-next-line no-bitwise
-                                    accel.coreMlFlags | opt.flag,
-                              })
-                            }
-                            disabled={isInitializing || isStarted}>
-                            <Text
-                              style={[
-                                styles.accelFlagLabel,
-                                themedStyles.textPrimary,
-                              ]}>
-                              {isOn ? '☑ ' : '☐ '}
-                              {opt.label}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.accelFlagHint,
-                                themedStyles.textSecondary,
-                              ]}>
-                              {opt.hint}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
+                            ? themedStyles.btnSelected
+                            : themedStyles.btnUnselected,
+                        ]}
+                        onPress={() => setPhononComputeUnit(item.key)}
+                        disabled={isInitializing || isStarted || isOn}>
+                        <Text
+                          style={[
+                            styles.accelBtnText,
+                            isOn
+                              ? themedStyles.textWhite
+                              : themedStyles.textPrimary,
+                          ]}>
+                          {isOn ? '◉ ' : '○ '}
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               )}
             </View>
           )}
+
+          {/* Acceleration (ONNX engines only) */}
+          {selectedEngine !== TTSEngine.OS_NATIVE &&
+            selectedEngine !== TTSEngine.PHONON && (
+              <View style={styles.accelerationSection}>
+                <View style={styles.accelHeaderRow}>
+                  <Text style={[styles.fieldLabel, themedStyles.textSecondary]}>
+                    Acceleration providers
+                  </Text>
+                  <Text
+                    style={[styles.accelOrderText, themedStyles.textSecondary]}>
+                    CPU is always the last fallback
+                  </Text>
+                </View>
+                <View style={styles.accelerationButtons}>
+                  {(Platform.OS === 'ios'
+                    ? [
+                        {key: 'coreml' as const, label: 'CoreML'},
+                        {key: 'xnnpack' as const, label: 'XNNPACK'},
+                      ]
+                    : [{key: 'xnnpack' as const, label: 'XNNPACK'}]
+                  ).map(item => {
+                    const isOn = accel.selected.has(item.key);
+                    return (
+                      <TouchableOpacity
+                        key={item.key}
+                        style={[
+                          styles.accelBtn,
+                          isOn
+                            ? themedStyles.btnSelected
+                            : themedStyles.btnUnselected,
+                        ]}
+                        onPress={() => {
+                          const next = new Set(accel.selected);
+                          if (isOn) {
+                            next.delete(item.key);
+                          } else {
+                            next.add(item.key);
+                          }
+                          setAccel({...accel, selected: next});
+                        }}
+                        disabled={isInitializing || isStarted}>
+                        <Text
+                          style={[
+                            styles.accelBtnText,
+                            isOn
+                              ? themedStyles.textWhite
+                              : themedStyles.textPrimary,
+                          ]}>
+                          {isOn ? '☑ ' : '☐ '}
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {Platform.OS === 'android' && (
+                  <Text
+                    style={[styles.accelHelpText, themedStyles.textSecondary]}>
+                    NNAPI was dropped — Android's Neural Networks API was
+                    deprecated in Android 15.
+                  </Text>
+                )}
+
+                {/* CoreML flag sub-options (iOS + CoreML selected) */}
+                {Platform.OS === 'ios' && accel.selected.has('coreml') && (
+                  <View style={styles.accelDetailsBlock}>
+                    <TouchableOpacity
+                      onPress={() => setShowAccelDetails(s => !s)}
+                      disabled={isInitializing || isStarted}>
+                      <Text
+                        style={[
+                          styles.accelDetailsToggle,
+                          themedStyles.textSecondary,
+                        ]}>
+                        {showAccelDetails ? '▼' : '▶'} CoreML flags
+                      </Text>
+                    </TouchableOpacity>
+                    {showAccelDetails && (
+                      <View style={styles.accelDetails}>
+                        {COREML_FLAG_OPTIONS.map(opt => {
+                          // eslint-disable-next-line no-bitwise
+                          const isOn = (accel.coreMlFlags & opt.flag) !== 0;
+                          return (
+                            <TouchableOpacity
+                              key={opt.flag}
+                              style={styles.accelFlagRow}
+                              onPress={() =>
+                                setAccel({
+                                  ...accel,
+                                  coreMlFlags: isOn
+                                    ? // eslint-disable-next-line no-bitwise
+                                      accel.coreMlFlags & ~opt.flag
+                                    : // eslint-disable-next-line no-bitwise
+                                      accel.coreMlFlags | opt.flag,
+                                })
+                              }
+                              disabled={isInitializing || isStarted}>
+                              <Text
+                                style={[
+                                  styles.accelFlagLabel,
+                                  themedStyles.textPrimary,
+                                ]}>
+                                {isOn ? '☑ ' : '☐ '}
+                                {opt.label}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.accelFlagHint,
+                                  themedStyles.textSecondary,
+                                ]}>
+                                {opt.hint}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
 
           {/* Voice selector */}
           {engineReady && (

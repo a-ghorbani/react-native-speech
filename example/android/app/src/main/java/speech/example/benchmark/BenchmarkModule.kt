@@ -2,6 +2,8 @@ package speech.example.benchmark
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Debug
 import android.os.Trace
 import com.facebook.react.bridge.Arguments
@@ -9,6 +11,8 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -90,6 +94,38 @@ class BenchmarkModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   fun clearMarkers() {
     // No-op on Android — markers are captured via logcat, not file-based.
+  }
+
+  /**
+   * Draw the current activity's window into a PNG at [path] (self-test
+   * evidence). Software draw of the view tree: enough for UI state, not
+   * for SurfaceView/TextureView content.
+   */
+  @ReactMethod
+  fun captureScreen(path: String, promise: Promise) {
+    val activity = reactApplicationContext.currentActivity
+    if (activity == null) {
+      promise.reject("no_activity", "No current activity")
+      return
+    }
+    activity.runOnUiThread {
+      try {
+        val view = activity.window.decorView.rootView
+        if (view.width <= 0 || view.height <= 0) {
+          promise.reject("capture_error", "Window has no size yet")
+          return@runOnUiThread
+        }
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+        val file = File(path)
+        file.parentFile?.mkdirs()
+        FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        promise.resolve(file.absolutePath)
+      } catch (e: Exception) {
+        promise.reject("capture_error", "Failed to capture screen: ${e.message}", e)
+      }
+    }
   }
 
   @ReactMethod

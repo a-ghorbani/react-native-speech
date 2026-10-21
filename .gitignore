@@ -110,3 +110,6 @@ package-lock.json
 .agents/
 .claude/
 e2e-artifacts/
+
+# jest --coverage output
+coverage/
