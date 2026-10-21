@@ -16,6 +16,8 @@ interface BenchmarkModule {
     peakNativeHeapMB: number;
     sampleCount: number;
   }>;
+  /** PNG of the current window to `path`; resolves the path. */
+  captureScreen(path: string): Promise<string>;
 }
 
 const {RNBenchmark} = NativeModules;

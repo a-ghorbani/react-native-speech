@@ -18,4 +18,17 @@ buildscript {
     }
 }
 
+// -PRNSpeech_phononLocal=true: build the Phonon add-on against its scripts/build-android.sh
+// output in this checkout (with RN_SPEECH_PHONON=1, see react-native.config.js).
+if ((findProperty("RNSpeech_phononLocal") ?: "false").toString().toBoolean()) {
+    def localLibs = file("../../packages/react-native-speech-phonon/scripts/out/android/jniLibs")
+    if (!localLibs.isDirectory()) {
+        throw new GradleException("RNSpeech_phononLocal: ${localLibs} not found; " +
+            "run packages/react-native-speech-phonon/scripts/build-android.sh first")
+    }
+    if (findProperty("RNSpeech_phononLibDir") == null) {
+        ext.RNSpeech_phononLibDir = localLibs.absolutePath
+    }
+}
+
 apply plugin: "com.facebook.react.rootproject"

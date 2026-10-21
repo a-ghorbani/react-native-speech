@@ -9,10 +9,12 @@ import {
   Platform,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {TTSEngine} from '@pocketpalai/react-native-speech';
+import {TTSEngine, type EngineId} from '@pocketpalai/react-native-speech';
 import {kokoroModelManager} from '../utils/ModelManager';
 import {supertonicModelManager} from '../utils/SupertonicModelManager';
 import {kittenModelManager} from '../utils/KittenModelManager';
+import {phononModelManager} from '../utils/PhononModelManager';
+import {isEngineVisible, probeEngineSupport} from '../utils/engineSupport';
 import {phonemizerDictManager} from '../utils/PhonemizerDictManager';
 import {
   runBenchmark,
@@ -23,6 +25,7 @@ import {
 } from '../benchmark';
 import type {ExecutionProvider} from '@pocketpalai/react-native-speech';
 import {DEFAULT_COREML_FLAGS} from '@pocketpalai/react-native-speech';
+import {PHONON} from '@pocketpalai/react-native-speech-phonon';
 import {C, MONO} from '../styles/cyber';
 
 /**
@@ -66,7 +69,7 @@ const TEST_PHRASE =
   'How much wood would a woodchuck chuck if a woodchuck could chuck wood?';
 
 interface InstalledEngine {
-  engine: TTSEngine;
+  engine: EngineId;
   label: string;
   variant?: string;
   getInitConfig: () => Record<string, any>;
@@ -185,6 +188,26 @@ const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
           }),
           defaultVoice: '',
         });
+      }
+    } catch {
+      /* not installed */
+    }
+
+    // The probe never loads the Phonon library.
+    try {
+      const support = await probeEngineSupport([PHONON]);
+      if (isEngineVisible(PHONON, support)) {
+        await phononModelManager.scanInstalledModel();
+        for (const model of phononModelManager.getAllInstalledModels()) {
+          engines.push({
+            engine: PHONON,
+            label: `Phonon (${model.variant})`,
+            variant: model.variant,
+            getInitConfig: () =>
+              phononModelManager.getDownloadedModelConfig(model.variant),
+            defaultVoice: '',
+          });
+        }
       }
     } catch {
       /* not installed */
@@ -472,6 +495,18 @@ const BenchmarkView: React.FC<BenchmarkViewProps> = ({visible}) => {
                     <ResultCell
                       label="PEAK_INFER"
                       value={`${summary.stats.peakSpeakMemoryMB}MB`}
+                    />
+                  )}
+                  {summary.stats.nativeTtfaMs != null && (
+                    <ResultCell
+                      label="NATIVE_TTFA"
+                      value={`${summary.stats.nativeTtfaMs.median}ms`}
+                    />
+                  )}
+                  {summary.iterations[0]?.phonon && (
+                    <ResultCell
+                      label="THREADS/UNIT"
+                      value={`${summary.iterations[0].phonon.numThreads}/${summary.iterations[0].phonon.computeUnit}`}
                     />
                   )}
                 </View>

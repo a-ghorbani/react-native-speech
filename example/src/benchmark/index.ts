@@ -9,4 +9,5 @@ export type {
   MemorySnapshot,
   EngineTestConfig,
   PercentileStats,
+  PhononBenchMetrics,
 } from './types';

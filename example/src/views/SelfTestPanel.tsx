@@ -19,7 +19,14 @@ import Speech, {
   type StreamProgressEvent,
   type ChunkProgressEvent,
 } from '@pocketpalai/react-native-speech';
+import {PHONON} from '@pocketpalai/react-native-speech-phonon';
 import {C, MONO} from '../styles/cyber';
+import {isEngineVisible, useEngineSupport} from '../utils/engineSupport';
+import {
+  isPhononSelfTestRunning,
+  parseSelfTestUrl,
+  runPhononSelfTest,
+} from '../selftest/phononSelfTest';
 
 const PROSE =
   'Sure, here is a quick overview of how the whole process works, step by step, so you can follow along easily. ' +
@@ -253,6 +260,22 @@ const SelfTestPanel: React.FC = () => {
   const [running, setRunning] = React.useState(false);
   const [interruptLog, setInterruptLog] = React.useState<string[]>([]);
   const [summary, setSummary] = React.useState<string | null>(null);
+  const {supportMap} = useEngineSupport();
+
+  // The deep-link run with shorter S3/S8; evidence in Documents/phonon-evidence/.
+  const runPhonon = React.useCallback(async () => {
+    const params = parseSelfTestUrl(
+      'speechexample://selftest/phonon?runs=3&cycles=3',
+    );
+    if (!params || isPhononSelfTestRunning()) return;
+    setRunning(true);
+    try {
+      const phononSummary = await runPhononSelfTest(params);
+      setResults(phononSummary.results);
+    } finally {
+      setRunning(false);
+    }
+  }, []);
 
   const runAll = React.useCallback(async () => {
     setRunning(true);
@@ -339,6 +362,14 @@ const SelfTestPanel: React.FC = () => {
         <TouchableOpacity onPress={runInterruption} style={styles.btn}>
           <Text style={styles.btnText}>INTERRUPT</Text>
         </TouchableOpacity>
+        {isEngineVisible(PHONON, supportMap) && (
+          <TouchableOpacity
+            disabled={running}
+            onPress={runPhonon}
+            style={styles.btn}>
+            <Text style={styles.btnText}>PHONON</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {results.map(r => (
         <Text
@@ -378,7 +409,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
-  row: {flexDirection: 'row', gap: 8, marginBottom: 8},
+  row: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8},
   btn: {
     paddingHorizontal: 14,
     paddingVertical: 10,

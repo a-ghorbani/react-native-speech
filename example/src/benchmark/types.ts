@@ -1,11 +1,11 @@
 import type {
-  TTSEngine,
   SynthesisOptions,
   ExecutionProvider,
+  EngineId,
 } from '@pocketpalai/react-native-speech';
 
 export interface EngineTestConfig {
-  engine: TTSEngine;
+  engine: EngineId;
   label: string;
   variant?: string;
   getInitConfig: () => Record<string, any>;
@@ -33,6 +33,33 @@ export interface MemorySnapshot {
   timestamp: number;
 }
 
+/**
+ * Phonon native metrics of one speak call and the effective load
+ * settings. ttfa/total/queued/voiceChanged are the call's first chunk
+ * (the one first audio waits for); later chunks synthesize while earlier
+ * ones play.
+ */
+export interface PhononBenchMetrics {
+  /** Native time to first audio of the first chunk (normalize + condition + prefill) */
+  ttfaMs: number;
+  /** Native synthesis time of the first chunk */
+  totalMs: number;
+  /** Time the first chunk's request waited for the synth thread */
+  queuedMs: number;
+  voiceChanged: boolean;
+  /** Chunks played in the call */
+  chunkCount: number;
+  /** Native synthesis time summed over every chunk */
+  synthTotalMs: number;
+  /** Audio duration summed over every chunk (s) */
+  audioSec: number;
+  /** Effective RAYON/xn thread count (Android); 0 on iOS */
+  numThreads: number;
+  /** Effective compute unit ('cpu' | 'neuralEngine') */
+  computeUnit: string;
+  loadMs: number;
+}
+
 export interface BenchmarkResult {
   engine: string;
   variant: string;
@@ -50,6 +77,8 @@ export interface BenchmarkResult {
   peakInitMemoryMB?: number;
   /** Peak native heap MB during speak phase (from memory polling) */
   peakSpeakMemoryMB?: number;
+  /** Phonon only: native timings and load settings */
+  phonon?: PhononBenchMetrics;
 }
 
 export interface PercentileStats {
@@ -88,6 +117,8 @@ export interface BenchmarkSummary {
     peakInitMemoryMB?: number;
     /** Average peak memory during speak phase (from polling) */
     peakSpeakMemoryMB?: number;
+    /** Phonon only: native time to first audio */
+    nativeTtfaMs?: PercentileStats;
   };
 }
 
