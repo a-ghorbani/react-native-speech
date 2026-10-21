@@ -1,87 +1,53 @@
 /**
- * Per-chunk Phonon metrics for one speak call.
- *
- * `PhononEngine.getLastMetrics()` holds only the last played chunk, and
- * the engine records a chunk after it finishes playing. A collector reads
- * it on each chunk-progress event (which picks up the previous chunk) and
- * once more on `flush()` (the last chunk), so every chunk of a call is
- * seen once. Shared by the benchmark runner and the device self-test.
+ * Per-chunk Phonon metrics for one speak call. Shared by the benchmark
+ * runner and the device self-test.
  */
 
-import Speech, {engineManager} from '@pocketpalai/react-native-speech';
+import {engineManager} from '@pocketpalai/react-native-speech';
 import {
   type PhononChunkMetrics,
   type PhononEngine,
   PHONON,
 } from '@pocketpalai/react-native-speech-phonon';
 
-export interface ChunkCollectorSource {
-  /** Last recorded chunk (default: the Phonon engine's getLastMetrics) */
-  read: () => PhononChunkMetrics | null;
-  /** Subscribe to chunk progress; returns the unsubscribe function */
-  subscribe: (cb: () => void) => () => void;
-}
+/** Subscribes to per-chunk metrics; returns the unsubscribe function. */
+export type ChunkMetricsSource = (
+  listener: (m: PhononChunkMetrics) => void,
+) => () => void;
 
-function phononEngine(): PhononEngine | null {
+const engineSource: ChunkMetricsSource = listener => {
   try {
-    return engineManager.getEngine(PHONON) as unknown as PhononEngine;
+    const engine = engineManager.getEngine(PHONON) as unknown as PhononEngine;
+    return engine.onChunkMetrics(listener);
   } catch {
-    return null;
+    return () => {};
   }
-}
-
-const DEFAULT_SOURCE: ChunkCollectorSource = {
-  read: () => phononEngine()?.getLastMetrics() ?? null,
-  subscribe: cb => Speech.onChunkProgress(() => cb()),
 };
 
 export class ChunkCollector {
   readonly chunks: PhononChunkMetrics[] = [];
-  private seen = new Set<string>();
   private unsubscribe: (() => void) | null = null;
 
   constructor(
     private readonly onChunk?: (m: PhononChunkMetrics) => void,
-    private readonly source: ChunkCollectorSource = DEFAULT_SOURCE,
+    private readonly source: ChunkMetricsSource = engineSource,
   ) {}
 
   start(): void {
     this.unsubscribe?.();
     this.chunks.length = 0;
-    // Whatever is recorded now belongs to an earlier call.
-    const stale = this.source.read();
-    if (stale) {
-      this.seen.add(chunkKey(stale));
-    }
-    this.unsubscribe = this.source.subscribe(() => this.poll());
+    this.unsubscribe = this.source(m => {
+      this.chunks.push(m);
+      this.onChunk?.(m);
+    });
   }
 
-  /** Read the last recorded chunk now (also called on chunk progress). */
-  poll(): void {
-    const m = this.source.read();
-    if (!m) {
-      return;
-    }
-    const key = chunkKey(m);
-    if (this.seen.has(key)) {
-      return;
-    }
-    this.seen.add(key);
-    this.chunks.push(m);
-    this.onChunk?.(m);
-  }
-
-  /** Stop listening and pick up the last chunk. */
+  /** Stop listening; returns the chunks collected since `start()`. */
   flush(): PhononChunkMetrics[] {
-    this.poll();
     this.unsubscribe?.();
     this.unsubscribe = null;
     return [...this.chunks];
   }
-}
-
-function chunkKey(m: PhononChunkMetrics): string {
-  return `${m.requestId}:${m.playStartTs}`;
 }
 
 export interface UtteranceMetrics {

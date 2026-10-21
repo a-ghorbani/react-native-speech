@@ -10,7 +10,7 @@ const mockState = {
   start: new Set<Listener>(),
   finish: new Set<Listener>(),
   chunk: new Set<Listener>(),
-  lastMetrics: null as any,
+  metrics: new Set<Listener>(),
   requestId: 0,
   markers: [] as string[],
 };
@@ -40,7 +40,7 @@ jest.mock('@pocketpalai/react-native-speech', () => {
       MOCK_CHUNKS.forEach((c, i) => {
         mockEmit(mockState.chunk, {chunkIndex: i});
         if (i === 0) mockEmit(mockState.start);
-        mockState.lastMetrics = {
+        mockEmit(mockState.metrics, {
           event: 'PHONON_CHUNK',
           path: 'synth',
           requestId: ++mockState.requestId,
@@ -52,7 +52,7 @@ jest.mock('@pocketpalai/react-native-speech', () => {
           playEndTs: t + 1,
           voiceChanged: i === 0,
           ...c,
-        };
+        });
         t += 10;
       });
       mockEmit(mockState.finish);
@@ -71,8 +71,10 @@ jest.mock('@pocketpalai/react-native-speech', () => {
     TTSEngine: {KITTEN: 'kitten'},
     engineManager: {
       getEngine: () => ({
-        getLastMetrics: () =>
-          mockState.lastMetrics ? {...mockState.lastMetrics} : null,
+        onChunkMetrics: (cb: Listener) => {
+          mockState.metrics.add(cb);
+          return () => mockState.metrics.delete(cb);
+        },
         getLoadInfo: () => ({loadMs: 70, numThreads: 4, computeUnit: 'cpu'}),
       }),
     },

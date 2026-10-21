@@ -238,6 +238,9 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
 
   private chunkProgressCallback: ChunkProgressCallback | null = null;
   private lastMetrics: PhononChunkMetrics | null = null;
+  private readonly metricsListeners = new Set<
+    (metrics: PhononChunkMetrics) => void
+  >();
   private warnedSpeed = false;
   private warnedPitch = false;
 
@@ -499,6 +502,17 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   /** Timeline of the last played chunk, or null. */
   getLastMetrics(): PhononChunkMetrics | null {
     return this.lastMetrics ? {...this.lastMetrics} : null;
+  }
+
+  /**
+   * Call `listener` with the timeline of every chunk once its playback
+   * ends. Returns the unsubscribe function.
+   */
+  onChunkMetrics(listener: (metrics: PhononChunkMetrics) => void): () => void {
+    this.metricsListeners.add(listener);
+    return () => {
+      this.metricsListeners.delete(listener);
+    };
   }
 
   getStatus(): {isReady: boolean; isLoading: boolean; error: string | null} {
@@ -1072,6 +1086,13 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     };
     this.lastMetrics = metrics;
     log.info(`[BENCH] ${JSON.stringify(metrics)}`);
+    for (const listener of this.metricsListeners) {
+      try {
+        listener({...metrics});
+      } catch (e) {
+        log.warn('chunk metrics listener threw; continuing:', e);
+      }
+    }
   }
 
   private releaseChunk(chunk: PhononChunk): void {

@@ -729,6 +729,29 @@ describe('synthesize: chunked playback', () => {
     ).toHaveLength(3);
   });
 
+  it('reports every played chunk to onChunkMetrics listeners', async () => {
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    const engine = await ready({maxChunkSize: 25});
+    const seen: string[] = [];
+    engine.onChunkMetrics(() => {
+      throw new Error('listener bug');
+    });
+    const unsubscribe = engine.onChunkMetrics(m =>
+      seen.push(`${m.path}:${m.chars}`),
+    );
+    await engine.synthesize(TEXT);
+    expect(seen).toEqual([
+      `synth:${'First sentence here.'.length}`,
+      `synth:${'Second one now.'.length}`,
+      `synth:${'Third and last.'.length}`,
+    ]);
+
+    unsubscribe();
+    await engine.synthesize(TEXT);
+    expect(seen).toHaveLength(3);
+  });
+
   it('skips chunks that produced no audio', async () => {
     fake.state.autoPlay = true;
     const engine = await ready({maxChunkSize: 25});

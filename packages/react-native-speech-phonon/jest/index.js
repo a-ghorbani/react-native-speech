@@ -45,6 +45,7 @@ class PhononEngine {
   getAvailableVoices = jestFn(() => Promise.resolve([]));
   getVoicesWithMetadata = jestFn(() => []);
   setChunkProgressCallback = jestFn();
+  onChunkMetrics = jestFn(() => () => {});
   stop = jestFn(() => Promise.resolve());
   destroy = jestFn(() => Promise.resolve());
   release = jestFn(() =>

@@ -1,12 +1,11 @@
 /**
- * Per-chunk Phonon metrics: the collector sees every chunk of a call once
- * (and none from earlier calls); the utterance summary reports the first
- * played chunk.
+ * Per-chunk Phonon metrics: the collector sees the chunks played between
+ * start() and flush(); the utterance summary reports the first played chunk.
  */
 
 jest.mock('@pocketpalai/react-native-speech', () => ({
   __esModule: true,
-  default: {onChunkProgress: jest.fn(() => () => {})},
+  default: {},
   TTSEngine: {},
   engineManager: {getEngine: jest.fn()},
 }));
@@ -48,44 +47,33 @@ function chunk(
 }
 
 function fakeSource() {
-  let last: PhononChunkMetrics | null = null;
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(m: PhononChunkMetrics) => void>();
   return {
-    set: (m: PhononChunkMetrics | null) => {
-      last = m;
-    },
-    progress: () => listeners.forEach(l => l()),
+    play: (m: PhononChunkMetrics) => listeners.forEach(l => l(m)),
     listeners,
-    source: {
-      read: () => last,
-      subscribe: (cb: () => void) => {
-        listeners.add(cb);
-        return () => {
-          listeners.delete(cb);
-        };
-      },
+    source: (listener: (m: PhononChunkMetrics) => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
 
 describe('ChunkCollector', () => {
-  it('collects each chunk of the call once and skips earlier calls', () => {
+  it('collects the chunks played between start and flush', () => {
     const f = fakeSource();
-    f.set(chunk(1, 1000)); // left over from an earlier call
     const seen: number[] = [];
     const c = new ChunkCollector(m => seen.push(m.requestId), f.source);
+    f.play(chunk(1, 1000)); // before start
     c.start();
-
-    f.progress(); // chunk 0 starts: only the stale chunk is recorded
-    f.set(chunk(2, 2000));
-    f.progress(); // chunk 1 starts: chunk 0 recorded
-    f.progress(); // duplicate event
-    f.set(chunk(3, 3000));
-    f.set(chunk(4, 4000)); // last chunk, picked up by flush
+    f.play(chunk(2, 2000));
+    f.play(chunk(3, 3000));
     const out = c.flush();
+    f.play(chunk(4, 4000)); // after flush
 
-    expect(out.map(m => m.requestId)).toEqual([2, 4]);
-    expect(seen).toEqual([2, 4]);
+    expect(out.map(m => m.requestId)).toEqual([2, 3]);
+    expect(seen).toEqual([2, 3]);
     expect(f.listeners.size).toBe(0);
   });
 
@@ -93,12 +81,23 @@ describe('ChunkCollector', () => {
     const f = fakeSource();
     const c = new ChunkCollector(undefined, f.source);
     c.start();
-    f.set(chunk(1, 1000));
-    c.poll();
+    f.play(chunk(1, 1000));
     c.start();
     expect(c.chunks).toEqual([]);
     expect(f.listeners.size).toBe(1);
-    expect(c.flush()).toEqual([]); // chunk 1 is now stale
+    expect(c.flush()).toEqual([]);
+  });
+
+  it('collects nothing when the Phonon engine is not registered', () => {
+    const {engineManager} = jest.requireMock(
+      '@pocketpalai/react-native-speech',
+    );
+    engineManager.getEngine.mockImplementation(() => {
+      throw new Error('not registered');
+    });
+    const c = new ChunkCollector();
+    c.start();
+    expect(c.flush()).toEqual([]);
   });
 });
 

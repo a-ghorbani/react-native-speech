@@ -12,7 +12,7 @@ const mockState = {
   start: new Set<Listener>(),
   stopped: new Set<Listener>(),
   chunk: new Set<Listener>(),
-  lastMetrics: null as any,
+  metrics: new Set<Listener>(),
   requestId: 0,
   lastVoice: '',
   currentEngine: 'kitten',
@@ -38,12 +38,12 @@ function mockEmit(set: Set<Listener>, ...args: any[]) {
   [...set].forEach(l => l(...args));
 }
 
-function mockPlayChunk(voice = '') {
+function mockPlayChunk(voice = '', delayMs = 0) {
   mockState.played = true;
   mockEmit(mockState.chunk, {chunkIndex: mockState.requestId});
   mockEmit(mockState.start);
-  const now = Date.now();
-  mockState.lastMetrics = {
+  const now = Date.now() + delayMs;
+  mockEmit(mockState.metrics, {
     event: 'PHONON_CHUNK',
     path: 'synth',
     requestId: ++mockState.requestId,
@@ -58,7 +58,7 @@ function mockPlayChunk(voice = '') {
     playStartTs: now,
     playEndTs: now + 1,
     voiceChanged: voice !== mockState.lastVoice,
-  };
+  });
   mockState.lastVoice = voice;
 }
 
@@ -107,8 +107,7 @@ jest.mock('@pocketpalai/react-native-speech', () => {
       }
       if (mockState.playAfterStop) {
         mockState.playAfterStop = false;
-        mockPlayChunk();
-        mockState.lastMetrics.playStartTs = Date.now() + 5;
+        mockPlayChunk('', 5);
       }
     }),
     // Like the neural player: only active playback can be paused.
@@ -117,7 +116,6 @@ jest.mock('@pocketpalai/react-native-speech', () => {
     createSpeechStream: jest.fn(() => ({
       append: jest.fn(),
       finalize: async () => {
-        mockState.lastMetrics = null;
         mockPlayChunk();
       },
     })),
@@ -145,8 +143,10 @@ jest.mock('@pocketpalai/react-native-speech', () => {
           numThreads: 4,
           computeUnit: 'cpu',
         }),
-        getLastMetrics: () =>
-          mockState.lastMetrics ? {...mockState.lastMetrics} : null,
+        onChunkMetrics: (cb: Listener) => {
+          mockState.metrics.add(cb);
+          return () => mockState.metrics.delete(cb);
+        },
       }),
     },
   };
@@ -447,7 +447,7 @@ describe('runPhononSelfTest', () => {
     mockState.start.clear();
     mockState.stopped.clear();
     mockState.chunk.clear();
-    mockState.lastMetrics = null;
+    mockState.metrics.clear();
     mockState.lastVoice = '';
     mockState.currentEngine = 'kitten';
     mockState.files.clear();
