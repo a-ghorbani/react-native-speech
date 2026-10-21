@@ -1,27 +1,15 @@
 /**
- * Phonon Model Manager
+ * The example's Phonon model store; the library itself never downloads.
  *
- * Downloads and tracks the Phonon (Gradium xn-ptts) models. The library
- * itself never downloads anything; this is the example's model store.
+ * Files and pins: phononPins.json. Android installs the checkpoint plus curated
+ * voices as voices/<Name>.safetensors (upstream names voices by file stem). iOS
+ * installs the CI-precompiled Core ML bundle file by file from its manifest
+ * (format: scripts/precompile-coreml.sh). Installs are atomic: verified in a
+ * staging dir, then renamed into place.
  *
- * Android: a checkpoint folder from HF `gradium/phonon-31m-en` (pinned
- * revision): config.json, tokenizer.json, model.q8.gguf and
- * default-voice.safetensors, plus a curated set of English voices from
- * `gradium/phonon-voices` saved as `voices/<Name>.safetensors` (upstream
- * names checkpoint voices by file stem) and a `voices.jsonl` with their
- * display metadata.
- *
- * iOS: the CI-precompiled Core ML bundle (`.mlmodelc`) mirrored unzipped
- * to a palshub HF repo. Its manifest (`path<TAB>size<TAB>sha256`, from the
- * package's scripts/precompile-coreml.sh) drives a per-file download.
- *
- * Every file is checked against its pinned size and sha256 in a staging
- * directory, which is renamed into place only when complete (atomic
- * install). Any failure removes the staging directory.
- *
- * 40m checkpoints are CC BY-NC and gated on HF, so they are never
- * downloaded: the user copies one into `<models>/40m-en/` and it shows up
- * behind the non-commercial toggle (Android only).
+ * 40m checkpoints are CC BY-NC and gated, so they are never downloaded: the user
+ * copies one into <models>/40m-en/ and it appears behind the non-commercial
+ * toggle (Android only).
  */
 
 import {Platform} from 'react-native';
