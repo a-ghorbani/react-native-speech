@@ -1,0 +1,16 @@
+# Run the Streaming tab's device self-test against the active engine and
+# require every scenario to pass (see example/src/views/SelfTestPanel.tsx).
+appId: speech.example
+---
+- tapOn: '.*STRM'
+- tapOn: 'SELFTEST'
+- extendedWaitUntil:
+    visible:
+      id: 'selftest-summary'
+    timeout: 600000
+- takeScreenshot: selftest-${ENGINE}
+# The summary names the engine the panel ran against, so a run that never
+# switched engines fails here instead of passing for the wrong one.
+- assertVisible:
+    id: 'selftest-summary'
+    text: 'SELFTEST DONE engine=${ENGINE === "System" ? "os-native" : ENGINE.toLowerCase()} passed=\d+ failed=0'

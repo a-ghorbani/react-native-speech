@@ -168,7 +168,6 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     streamRef.current = stream;
 
     // Time from the first append to the first chunk starting playback.
-    // Subscribed after creation on purpose: exercises late listeners.
     const startTs = Date.now();
     let chunkCount = 0;
     stream.onProgress(event => {

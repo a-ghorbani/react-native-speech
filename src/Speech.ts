@@ -59,11 +59,10 @@ let kokoroEngine: KokoroEngine | null = null;
 let supertonicEngine: SupertonicEngine | null = null;
 let kittenEngine: KittenEngine | null = null;
 
-// Chunk progress fan-out. Engines get `dispatchChunkProgress` once at
-// init; it forwards to the `setChunkProgressCallback` slot and to every
-// `onChunkProgress` subscription. Subscriptions are wrapper objects so the
-// same callback can be subscribed twice and each unsubscribe removes only
-// its own entry.
+// Engines get `dispatchChunkProgress` at init; it fans out to the
+// `setChunkProgressCallback` slot and every `onChunkProgress` subscription.
+// Subscriptions are wrapped so one callback can be added twice and removed
+// independently.
 let chunkProgressCallback: ChunkProgressCallback | null = null;
 const chunkProgressSubscriptions = new Set<{
   callback: ChunkProgressCallback;
@@ -412,19 +411,20 @@ export default class Speech {
    *   // Highlight current text in UI
    *   highlightText(event.textRange.start, event.textRange.end);
    * });
+   *
+   * Replaces any previous callback; does not affect `onChunkProgress`
+   * listeners.
    */
   public static setChunkProgressCallback(
     callback: ChunkProgressCallback | null,
   ): void {
-    // Single replaceable slot; independent of onChunkProgress listeners.
     chunkProgressCallback = callback;
   }
 
   /**
-   * Add a chunk progress listener. Listeners stack: each call adds one,
-   * alongside any `setChunkProgressCallback` callback and other
-   * listeners (including the ones `SpeechStream.onProgress` installs).
-   * Returns a function that removes this listener only.
+   * Add a chunk progress listener. Listeners stack with each other, with
+   * `setChunkProgressCallback`, and with `SpeechStream.onProgress`. The
+   * returned function removes only this one.
    *
    * @param callback - Function to call on chunk progress
    * @returns Function to unsubscribe the listener

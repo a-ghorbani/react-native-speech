@@ -17,9 +17,14 @@ const mockSessionCreate = jest.fn(async () => ({
 
 jest.mock('@dr.pogodin/react-native-fs', () => ({}), {virtual: true});
 
+// `playHangs` makes play() never settle, like a real player whose
+// promise is not resolved when playback is torn down.
+const mockPlayer = {playHangs: false};
 jest.mock('../../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
-    play: jest.fn().mockResolvedValue(undefined),
+    play: jest.fn(() =>
+      mockPlayer.playHangs ? new Promise<void>(() => {}) : Promise.resolve(),
+    ),
     stop: jest.fn().mockResolvedValue(undefined),
   },
 }));
@@ -442,5 +447,53 @@ describe('KittenEngine - late progress subscription', () => {
       {start: 0, end: 13},
       {start: 13, end: 25},
     ]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// release() during an active stream
+//
+// release() must cancel the stream session like stop() does; otherwise the
+// stream's finalize() stays pending once playback is torn down.
+// ─────────────────────────────────────────────────────────────────────────
+describe('KittenEngine - release() during an active stream', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(24000).fill(0.5), dims: [1, 24000]},
+    });
+    mockPlayer.playHangs = true;
+  });
+
+  afterEach(() => {
+    mockPlayer.playHangs = false;
+  });
+
+  test('finalize() resolves after release() mid-playback', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append('First sentence here. Second sentence here. ');
+    const done = handle.finalize().then(() => 'resolved');
+    // Let the first chunk synthesize and start (never-ending) playback.
+    await new Promise(r => setTimeout(r, 100));
+
+    await e.release();
+    const outcome = await Promise.race([
+      done,
+      new Promise(r => setTimeout(() => r('pending'), 2000)),
+    ]);
+    expect(outcome).toBe('resolved');
+  });
+
+  test('release() cancels the active stream session', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const cancel = jest.fn().mockResolvedValue(undefined);
+    (e as any).activeStreamSession = {cancel};
+    await e.release();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect((e as any).activeStreamSession).toBeNull();
   });
 });

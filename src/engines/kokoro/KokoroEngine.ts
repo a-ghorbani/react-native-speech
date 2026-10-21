@@ -288,10 +288,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       throw new Error('Kokoro engine not initialized');
     }
 
-    if (this.activeStreamSession) {
-      this.activeStreamSession.cancel().catch(() => {});
-      this.activeStreamSession = null;
-    }
+    this.cancelActiveStream();
 
     this.stopRequested = false;
     this.isSynthesizing = true;
@@ -319,8 +316,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
       },
-      // Always bind: listeners may subscribe after the stream starts, and
-      // emitChunkProgress already no-ops when no callback is set.
+      // Bind unconditionally: a callback may be set after the stream starts.
       onChunkProgress: event => this.emitChunkProgress(event),
     });
 
@@ -700,6 +696,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     return this.voiceLoader.getAvailableVoices(language);
   }
 
+  /** Cancels the active stream session, if any; resolves to whether one was. */
+  private async cancelActiveStream(): Promise<boolean> {
+    const session = this.activeStreamSession;
+    this.activeStreamSession = null;
+    if (!session) return false;
+    await session.cancel().catch(() => {});
+    return true;
+  }
+
   /**
    * Stop current playback and abort any ongoing synthesis.
    * Sets the stop flag and resolves the stop signal immediately,
@@ -712,9 +717,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    if (this.activeStreamSession) {
-      await this.activeStreamSession.cancel().catch(() => {});
-      this.activeStreamSession = null;
+    if (await this.cancelActiveStream()) {
       this.isSynthesizing = false;
     }
     // Fire-and-forget native audio stop
@@ -817,6 +820,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
     // 1. Signal stop and wait for any ongoing synthesis to complete
     this.stopRequested = true;
+
+    // Otherwise the stream's finalize() hangs once playback is torn down.
+    await this.cancelActiveStream();
 
     // 2. Stop audio player first
     try {

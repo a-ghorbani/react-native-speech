@@ -110,7 +110,7 @@ export interface SynthesisOptions {
   stripMarkdown?: boolean;
   /**
    * Streaming only. With `'clause'`, the first chunk flushes at the
-   * earliest of a sentence end, a `, ; : —` boundary after at least 3
+   * earliest of a sentence end, a `, ; : — –` boundary after at least 3
    * words, a `，；：、` boundary after at least 4 CJK characters, or 12
    * complete words, so audio starts sooner. Later chunks keep sentence
    * boundaries. Ignored by the OS engine.
@@ -427,6 +427,8 @@ export interface SpeechStream {
    * Use this instead of `Speech.onChunkProgress` when you need to
    * highlight text in the accumulated consumer buffer — batch-local
    * offsets from `Speech.onChunkProgress` would not map there.
+   *
+   * Neural engines only; never fires on the OS engine.
    */
   onProgress(cb: (event: StreamProgressEvent) => void): () => void;
 }

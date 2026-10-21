@@ -106,3 +106,4 @@ package-lock.json
 # Agent/IDE specs
 .agents/
 .claude/
+e2e-artifacts/

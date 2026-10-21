@@ -41,7 +41,10 @@ function wait(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-/** Run one stream to completion, collecting progress events. */
+/**
+ * Run one stream to completion; `listenAfterMs` > 0 attaches the progress
+ * listener that long after append().
+ */
 async function runStream(
   text: string,
   options: SpeechStreamOptions,
@@ -118,14 +121,12 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
   },
 
   async late_listener() {
-    // Listener attached 300ms after the stream started synthesizing.
     const ev = await runStream(PROSE, {stripMarkdown: false}, 300);
     return report('late_listener', ev.length > 0, `events=${ev.length}`);
   },
 
   async stale_unsubscribe() {
-    // Stream A subscribes, then stream B; A's listener goes away afterwards.
-    // B must still receive its events.
+    // Unsubscribing stream A must not drop stream B's listener.
     const a = Speech.createSpeechStream(undefined, {stripMarkdown: false});
     const unA = a.onProgress(() => {});
     const b = Speech.createSpeechStream(undefined, {stripMarkdown: false});
@@ -138,8 +139,6 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
   },
 
   async global_listener_survives_stream() {
-    // An app-level Speech.onChunkProgress listener registered before a
-    // stream must still fire for speak() after the stream is done.
     const got: ChunkProgressEvent[] = [];
     const un = Speech.onChunkProgress(e => got.push(e));
     try {
@@ -207,15 +206,40 @@ async function timeFirstAudio(firstChunk: 'sentence' | 'clause') {
   return {firstMs, firstText};
 }
 
+/**
+ * Releases the engine while a stream is playing; finalize() must still
+ * resolve. Runs last: the engine has to be re-initialized afterwards.
+ */
+async function releaseDuringStream(): Promise<Result> {
+  const stream = Speech.createSpeechStream(undefined, {stripMarkdown: false});
+  let started!: () => void;
+  const firstChunk = new Promise<void>(r => (started = r));
+  stream.onProgress(() => started());
+  stream.append(`${PROSE} ${PROSE}`);
+  const done = stream.finalize().then(() => 'resolved');
+  await Promise.race([firstChunk, wait(30000)]);
+  await Speech.release();
+  const outcome = await Promise.race([done, wait(5000).then(() => 'pending')]);
+  return report(
+    'release_during_stream',
+    outcome === 'resolved',
+    `finalize=${outcome} (engine released; re-INIT on SYS tab)`,
+  );
+}
+
 const SelfTestPanel: React.FC = () => {
   const [results, setResults] = React.useState<Result[]>([]);
   const [running, setRunning] = React.useState(false);
   const [interruptLog, setInterruptLog] = React.useState<string[]>([]);
+  const [summary, setSummary] = React.useState<string | null>(null);
 
   const runAll = React.useCallback(async () => {
     setRunning(true);
     setResults([]);
-    console.log(`[SelfTest] START engine=${Speech.getCurrentEngine()}`);
+    setSummary(null);
+    // Captured up front: the last scenario releases the engine.
+    const engine = Speech.getCurrentEngine();
+    console.log(`[SelfTest] START engine=${engine}`);
     const out: Result[] = [];
     for (const [name, fn] of Object.entries(SCENARIOS)) {
       try {
@@ -226,10 +250,17 @@ const SelfTestPanel: React.FC = () => {
       setResults([...out]);
       await wait(300);
     }
+    try {
+      out.push(await releaseDuringStream());
+    } catch (err) {
+      out.push(report('release_during_stream', false, `threw ${String(err)}`));
+    }
+    setResults([...out]);
     const failed = out.filter(r => !r.pass).length;
-    console.log(
-      `[SelfTest] DONE passed=${out.length - failed} failed=${failed}`,
-    );
+    // Read by the e2e flows (example/e2e) — keep the format stable.
+    const line = `SELFTEST DONE engine=${engine} passed=${out.length - failed} failed=${failed}`;
+    console.log(`[SelfTest] ${line.slice('SELFTEST '.length)}`);
+    setSummary(line);
     setRunning(false);
   }, []);
 
@@ -289,10 +320,18 @@ const SelfTestPanel: React.FC = () => {
         </TouchableOpacity>
       </View>
       {results.map(r => (
-        <Text key={r.name} style={r.pass ? styles.pass : styles.fail}>
+        <Text
+          key={r.name}
+          testID={`selftest-${r.name}`}
+          style={r.pass ? styles.pass : styles.fail}>
           {r.pass ? 'PASS' : 'FAIL'} {r.name}
         </Text>
       ))}
+      {summary && (
+        <Text testID="selftest-summary" style={styles.summary}>
+          {summary}
+        </Text>
+      )}
       {interruptLog.map((l, i) => (
         <Text key={i} style={styles.pass}>
           {l}
@@ -334,6 +373,13 @@ const styles = StyleSheet.create({
     color: C.green,
   },
   pass: {fontSize: 11, fontFamily: MONO, color: C.green},
+  summary: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: MONO,
+    color: C.cyan,
+    marginTop: 6,
+  },
   fail: {fontSize: 11, fontFamily: MONO, color: C.red},
 });
 

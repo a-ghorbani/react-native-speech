@@ -140,7 +140,7 @@ await stream.finalize(); // flushes the tail and resolves when playback ends
 
 Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. The stream avoids this by keeping one continuous synth+play loop alive for the stream's entire lifetime — the next chunk is synthesized while the current one plays, so the only gap is genuine token-rate underrun (LLM slower than playback).
 
-You can also track playback position with stream-absolute offsets:
+On neural engines you can also track playback position with stream-absolute offsets:
 
 ```ts
 stream.onProgress(event => {
@@ -149,7 +149,9 @@ stream.onProgress(event => {
 });
 ```
 
-For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : —` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+The OS engine does not emit chunk progress, so `stream.onProgress` never fires there.
+
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 
 ```ts
 const stream = Speech.createSpeechStream('af_bella', {firstChunk: 'clause'});
@@ -177,7 +179,7 @@ stream.append(tail);
 await stream.finalize();
 ```
 
-Works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
+Streaming playback works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine; progress events and `firstChunk` are neural-only. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 
 ## Architecture (short)
 

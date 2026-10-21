@@ -305,9 +305,9 @@ const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 // one, so the stripper never sees half of a pair.
 const INLINE_MARKER_RE = /[*_`[\]<]/;
 
-// Prepended while stripping text that continues a line cut mid-way, so
-// line-anchored block rules (`^- `, `^> `, `^# `) don't fire on it.
-// U+2060 WORD JOINER: not whitespace, so `trim()` and `[ \t]*` skip it.
+// Prepended to a mid-line continuation so line-anchored block rules
+// (`^- `, `^> `, `^# `) can't match it. U+2060 is not whitespace: `trim()`
+// keeps it and `[ \t]*` stops at it.
 const CONTINUATION = '\u2060';
 
 export function createMarkdownStreamBuffer(
@@ -316,10 +316,8 @@ export function createMarkdownStreamBuffer(
   const opts = {...DEFAULTS, ...options};
   let buffer = '';
   let inFence = false;
-  // The early clause cut is available until the emitted text contains a
-  // boundary the chunker can cut its first chunk at. Tracking the emitted
-  // text (not just "emitted anything") keeps it available after a leading
-  // line like `Okay\n` that has no boundary of its own.
+  // The clause cut stays armed until the emitted text holds a boundary the
+  // chunker can cut at (a leading `Okay\n` has none).
   let firstPending = opts.firstChunk === 'clause';
   let firstEmitted = '';
   // Whether `buffer` starts at a real line start. False after a mid-line
@@ -327,8 +325,6 @@ export function createMarkdownStreamBuffer(
   // must not be read as a new block (`- 5 is negative` keeps its minus).
   let atLineStart = true;
 
-  // Strip `text`, treating its first line as a continuation when it does
-  // not start a line.
   function strip(text: string, continuation: boolean): string {
     if (!continuation) return stripMarkdown(text, opts);
     return stripMarkdown(CONTINUATION + text, opts).replace(CONTINUATION, '');

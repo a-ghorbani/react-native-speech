@@ -5,9 +5,23 @@
  */
 
 /**
- * Sentence-boundary regex — matches ASCII punct + trailing whitespace,
- * or CJK punct optionally followed by whitespace. Same rules as
- * SpeechStream's `SENTENCE_END_RE`.
+ * Regex matching sentence-ending punctuation. Two alternations because
+ * ASCII and CJK behave differently:
+ *
+ * - ASCII `[.!?]+` **requires** trailing whitespace. Without it we can't
+ *   tell whether a terminal `.` is end-of-sentence or a mid-stream token
+ *   that will grow into `3.14`, `Dr.`, `...`, etc. Waiting for the next
+ *   whitespace is the reliable commit signal.
+ *
+ * - CJK `[。！？]+` **does not** require trailing whitespace. These
+ *   characters are unambiguous sentence boundaries (not used inside
+ *   words the way `.` is), and Chinese/Japanese prose typically runs
+ *   sentences together with no space. Requiring whitespace would mean
+ *   nothing ever flushes during a CJK stream — strictly worse than the
+ *   per-sentence fallback the stream is meant to replace.
+ *
+ * `finalize()` flushes the tail regardless, so a stream that ends
+ * without any matching punctuation still completes correctly.
  */
 export const SENTENCE_END_RE = /(?:[.!?]+\s+|[。！？]+\s*)/g;
 
