@@ -64,6 +64,23 @@ describe('NeuralAudioPlayer.playNative', () => {
     expect(native.stop).not.toHaveBeenCalled();
   });
 
+  it('a replaced playback settling does not clear the newer one', async () => {
+    const a = deferred();
+    const b = deferred();
+    const player = new NeuralAudioPlayer();
+    const first = player.playNative(() => a.promise);
+    const second = player.playNative(() => b.promise);
+
+    a.resolve();
+    await first;
+    await expect(player.pause()).resolves.toBe(true);
+    await player.stop();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+
+    b.resolve();
+    await second;
+  });
+
   it('play() goes through the same tracking', async () => {
     const d = deferred();
     native.playAudio!.mockReturnValueOnce(d.promise);

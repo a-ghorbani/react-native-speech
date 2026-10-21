@@ -34,6 +34,7 @@ export interface PlaybackOptions {
  */
 export class NeuralAudioPlayer {
   private isCurrentlyPlaying = false;
+  private playGen = 0;
 
   /**
    * Play an audio buffer
@@ -67,12 +68,15 @@ export class NeuralAudioPlayer {
    * @param start - Starts playback; resolves when it finishes or is stopped
    */
   async playNative(start: () => Promise<void>): Promise<void> {
+    const gen = ++this.playGen;
     this.isCurrentlyPlaying = true;
 
     try {
       await start();
     } finally {
-      this.isCurrentlyPlaying = false;
+      if (gen === this.playGen) {
+        this.isCurrentlyPlaying = false;
+      }
     }
   }
 
@@ -81,8 +85,9 @@ export class NeuralAudioPlayer {
    */
   async stop(): Promise<void> {
     if (this.isCurrentlyPlaying) {
-      await NativeNeuralAudioPlayer.stop();
+      this.playGen++;
       this.isCurrentlyPlaying = false;
+      await NativeNeuralAudioPlayer.stop();
     }
   }
 
