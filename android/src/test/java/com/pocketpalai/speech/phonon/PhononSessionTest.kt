@@ -73,6 +73,7 @@ class PhononSessionTest {
       queue.addLast(job)
     }
     override fun resolveThreads(requested: Int) = if (requested > 0) requested else 4
+    override fun getEnv(name: String): String? = env[name]
     override fun setEnv(name: String, value: String) {
       env[name] = value
     }
@@ -268,6 +269,25 @@ class PhononSessionTest {
     assertTrue(host.env.isEmpty())
     assertEquals(3.0, s.resolved!!["numThreads"])
     assertEquals(3, session.effectiveThreads)
+  }
+
+  @Test
+  fun packedWeightCacheIsTurnedOffOncePerProcess() {
+    session.create(params(), alive, FakeSettle())
+    host.runAll()
+    assertEquals("0", host.env[PhononSession.PACKED_CACHE_ENV])
+    host.env.clear()
+    session.create(params(), alive, FakeSettle())
+    host.runAll()
+    assertFalse(host.env.containsKey(PhononSession.PACKED_CACHE_ENV))
+  }
+
+  @Test
+  fun packedWeightCacheKeepsAValueTheProcessAlreadySet() {
+    host.env[PhononSession.PACKED_CACHE_ENV] = "64"
+    session.create(params(), alive, FakeSettle())
+    host.runAll()
+    assertEquals("64", host.env[PhononSession.PACKED_CACHE_ENV])
   }
 
   @Test

@@ -31,6 +31,7 @@ class PhononSession(private val host: Host) {
     fun execute(job: Runnable)
     fun resolveThreads(requested: Int): Int
     fun setEnv(name: String, value: String)
+    fun getEnv(name: String): String?
     fun log(warn: Boolean, message: String)
 
     // Natives (only called once shimLoaded()).
@@ -63,8 +64,8 @@ class PhononSession(private val host: Host) {
     val spinBudget: Int
   )
 
-  // Synth-thread state. RAYON_NUM_THREADS / XN_SPIN_BUDGET are read once per process by
-  // rayon and xn, so the first create fixes them.
+  // Synth-thread state. RAYON_NUM_THREADS / XN_SPIN_BUDGET / GEMM_PACKED_LHS_CACHE_MB are read
+  // once per process by rayon, xn and xn-gemm, so the first create fixes them.
   @Volatile var effectiveThreads = 0
     private set
   private var effectiveSpinBudget = 0
@@ -116,11 +117,21 @@ class PhononSession(private val host: Host) {
           host.setEnv("XN_SPIN_BUDGET", spinBudget.toString())
           effectiveSpinBudget = spinBudget
         }
+        // xn-gemm keeps a per-thread cache of packed weight panels keyed on the weight's
+        // address, never evicted (up to 256 MB process-wide by default). The worker threads
+        // outlive every handle, so each release() left the old model's panels behind:
+        // +8-12 MB per init/release cycle on device (DESIGN.md Appendix E, S8). Off unless the
+        // process already set it.
+        if (host.getEnv(PACKED_CACHE_ENV) == null) host.setEnv(PACKED_CACHE_ENV, "0")
       } catch (e: Exception) {
         host.log(true, "could not set the worker thread environment: ${e.message}")
       }
       effectiveThreads = threads
-      host.log(false, "threads=$threads spinBudget=${if (effectiveSpinBudget > 0) effectiveSpinBudget else "default"}")
+      host.log(
+        false,
+        "threads=$threads spinBudget=${if (effectiveSpinBudget > 0) effectiveSpinBudget else "default"} " +
+          "packedCacheMb=${host.getEnv(PACKED_CACHE_ENV) ?: "default"}"
+      )
       return
     }
     if (requested > 0 && requested != effectiveThreads) {
@@ -252,5 +263,7 @@ class PhononSession(private val host: Host) {
     const val INVALID_BUFFER = "PHONON_INVALID_BUFFER"
     const val INTERNAL = "PHONON_INTERNAL"
     const val LOAD_FAILED = "PHONON_LOAD_FAILED"
+    /** xn-gemm's packed-weight cache budget (MB), read once per process. */
+    const val PACKED_CACHE_ENV = "GEMM_PACKED_LHS_CACHE_MB"
   }
 }

@@ -328,6 +328,7 @@ object PhononBridge {
     override fun resolveThreads(requested: Int) =
       PhononThreads.resolve(requested, PhononThreads.readCpuMaxFreqs(), Runtime.getRuntime().availableProcessors())
     override fun setEnv(name: String, value: String) = Os.setenv(name, value, true)
+    override fun getEnv(name: String): String? = Os.getenv(name)
     override fun log(warn: Boolean, message: String) {
       if (warn) Log.w(TAG, message) else Log.i(TAG, message)
     }
