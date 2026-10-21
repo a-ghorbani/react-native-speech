@@ -195,7 +195,7 @@ describe('Speech.initialize with an unsupported Phonon', () => {
     const err = await Speech.initialize(PHONON_INIT).catch(e => e);
     expect(err.code).toBe('ERR_PHONON_UNSUPPORTED');
     expect(fake.api.create).not.toHaveBeenCalled();
-    expect(Speech.getCurrentEngine()).toBe(TTSEngine.KITTEN);
+    expect(Speech.getCurrentEngineId()).toBe(TTSEngine.KITTEN);
     // Speaking still uses the previous engine.
     await expect(Speech.speak('Hi.')).resolves.toBeUndefined();
   });
@@ -207,7 +207,8 @@ describe('Speech routing with Phonon', () => {
   });
 
   it('becomes current and reinitializes on a second initialize', async () => {
-    expect(Speech.getCurrentEngine()).toBe(PHONON);
+    expect(Speech.getAvailableEngineIds()).toContain(PHONON);
+    expect(Speech.getCurrentEngineId()).toBe(PHONON);
     await expect(Speech.isReady()).resolves.toBe(true);
     await Speech.initialize(PHONON_INIT);
     expect(fake.api.destroy).toHaveBeenCalled();

@@ -282,7 +282,7 @@ const SelfTestPanel: React.FC = () => {
     setResults([]);
     setSummary(null);
     // Captured up front: the last scenario releases the engine.
-    const engine = Speech.getCurrentEngine();
+    const engine = Speech.getCurrentEngineId();
     console.log(`[SelfTest] START engine=${engine}`);
     const out: Result[] = [];
     for (const [name, fn] of Object.entries(SCENARIOS)) {
@@ -310,7 +310,9 @@ const SelfTestPanel: React.FC = () => {
 
   const runTiming = React.useCallback(async () => {
     setRunning(true);
-    console.log(`[SelfTest] TIMING START engine=${Speech.getCurrentEngine()}`);
+    console.log(
+      `[SelfTest] TIMING START engine=${Speech.getCurrentEngineId()}`,
+    );
     for (let i = 1; i <= 3; i++) {
       for (const mode of ['sentence', 'clause'] as const) {
         const {firstMs, firstText} = await timeFirstAudio(mode);

@@ -623,9 +623,9 @@ let running = false;
 
 /** Engines around a self-test run, for views that track their own engine. */
 export interface SelfTestDoneEvent {
-  /** `Speech.getCurrentEngine()` when the run started */
+  /** `Speech.getCurrentEngineId()` when the run started */
   engineBefore: EngineId;
-  /** `Speech.getCurrentEngine()` when it ended (Phonon stays loaded) */
+  /** `Speech.getCurrentEngineId()` when it ended (Phonon stays loaded) */
   engineAfter: EngineId;
 }
 
@@ -657,7 +657,7 @@ export async function runPhononSelfTest(
     throw new Error('Phonon self-test already running');
   }
   running = true;
-  const engineBefore = Speech.getCurrentEngine();
+  const engineBefore = Speech.getCurrentEngineId();
   sleepImpl = deps.sleep ?? realSleep;
   const results: SelfTestResult[] = [];
   const evidence = new Evidence(params.runId);
@@ -1197,7 +1197,7 @@ function endRun(engineBefore: EngineId): void {
   sleepImpl = realSleep;
   const done: SelfTestDoneEvent = {
     engineBefore,
-    engineAfter: Speech.getCurrentEngine(),
+    engineAfter: Speech.getCurrentEngineId(),
   };
   doneListeners.forEach(l => {
     try {
@@ -1295,7 +1295,7 @@ async function runUnsupported(
   evidence: Evidence,
   support: PhononSupportInfo,
 ): Promise<void> {
-  const before = Speech.getCurrentEngine();
+  const before = Speech.getCurrentEngineId();
   let code = 'none';
   try {
     await Speech.initialize({
@@ -1305,7 +1305,7 @@ async function runUnsupported(
   } catch (e) {
     code = errorCode(e);
   }
-  const after = Speech.getCurrentEngine();
+  const after = Speech.getCurrentEngineId();
   report(
     results,
     'U_direct_init',
@@ -1732,7 +1732,7 @@ export async function resumePhononSelfTestAfterReload(
     return null;
   }
   running = true;
-  const engineBefore = Speech.getCurrentEngine();
+  const engineBefore = Speech.getCurrentEngineId();
   sleepImpl = deps.sleep ?? realSleep;
   const params: PhononSelfTestParams = {
     ...pending.params,

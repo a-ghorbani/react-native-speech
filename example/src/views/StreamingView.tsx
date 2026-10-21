@@ -117,7 +117,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [streamedChars, setStreamedChars] = React.useState(0);
   const [engineName, setEngineName] = React.useState<EngineId>(
-    Speech.getCurrentEngine(),
+    Speech.getCurrentEngineId(),
   );
   const [engineReady, setEngineReady] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -136,7 +136,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       const ready = await Speech.isReady();
       if (mounted) {
         setEngineReady(ready);
-        setEngineName(Speech.getCurrentEngine());
+        setEngineName(Speech.getCurrentEngineId());
         if (ready) {
           try {
             const meta = await Speech.getVoicesWithMetadata();
@@ -221,7 +221,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     } finally {
       streamRef.current = null;
       setIsStreaming(false);
-      if ((Speech.getCurrentEngine() as EngineId) === PHONON) {
+      if (Speech.getCurrentEngineId() === PHONON) {
         setNativeTiming(phononLastChunk());
       }
     }

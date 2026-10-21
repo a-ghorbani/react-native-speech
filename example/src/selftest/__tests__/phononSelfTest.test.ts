@@ -72,7 +72,7 @@ jest.mock('@pocketpalai/react-native-speech', () => {
       supported: mockState.supported,
       reason: mockState.reason,
     })),
-    getCurrentEngine: jest.fn(() => mockState.currentEngine),
+    getCurrentEngineId: jest.fn(() => mockState.currentEngine),
     initialize: jest.fn(async (config: any) => {
       mockState.initCalls.push(config);
       if (config.engine === 'phonon' && !mockState.supported) {
