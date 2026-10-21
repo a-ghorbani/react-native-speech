@@ -88,7 +88,8 @@
     },
     "github": {
       "release": true,
-      "releaseName": "phonon-v${version}"
+      "releaseName": "phonon-v${version}",
+      "makeLatest": false
     },
     "plugins": {
       "@release-it/conventional-changelog": {
@@ -98,6 +99,12 @@
         "infile": "CHANGELOG.md",
         "gitRawCommitsOpts": {
           "path": "."
+        },
+        "commitsOpts": {
+          "path": "."
+        },
+        "tagOpts": {
+          "prefix": "phonon-v"
         }
       }
     }

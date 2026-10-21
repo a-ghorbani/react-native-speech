@@ -163,6 +163,12 @@
       "@release-it/conventional-changelog": {
         "preset": {
           "name": "angular"
+        },
+        "gitRawCommitsOpts": {
+          "path": [".", ":(exclude)packages"]
+        },
+        "commitsOpts": {
+          "path": [".", ":(exclude)packages"]
         }
       }
     }
