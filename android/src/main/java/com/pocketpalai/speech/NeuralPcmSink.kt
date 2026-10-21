@@ -4,7 +4,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactContext
 
 /**
- * Plays LE Int16 PCM on RNSpeech's neural player, so engine add-ons share its audio focus,
+ * Plays interleaved LE Int16 PCM on RNSpeech's neural player, so engine add-ons share its audio focus,
  * ducking and onStart/onFinish events. The promise resolves when playback finishes or is
  * stopped or replaced.
  */

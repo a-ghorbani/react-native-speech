@@ -727,8 +727,8 @@ An add-on engine is a class implementing `TTSEngineInterface<TConfig>` whose `na
 
 - **Imports:** import only from `@pocketpalai/react-native-speech` (never deep paths). It exports the pieces the built-in engines use: `EngineStreamSession` (pipelined synth + play for streams; its `hasAudio` / `discard` / `onCancel` hooks cover audio that stays native), `neuralAudioPlayer`, `TextChunker`, `StreamingChunker`, `stripMarkdown`, `createComponentLogger`, and the engine types.
 - **Playback:** play through the shared player so ducking, audio focus, interruptions and `onStart` / `onFinish` behave as for the built-in engines. Audio in JS goes through `neuralAudioPlayer.play(buffer)`. Audio that lives in native memory is played natively through the core's PCM sink, wrapped in `neuralAudioPlayer.playNative(() => myNativeModule.play(...))` so `Speech.stop()` / `pause()` reach it:
-  - Android: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)` (`com.pocketpalai.speech.NeuralPcmSink`, LE Int16 PCM; add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies).
-  - iOS: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]` from `<RNSpeech/RNSpeechAudioOutput.h>` (float32 samples; add `s.dependency "RNSpeech"` to the add-on's podspec).
+  - Android: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)` (`com.pocketpalai.speech.NeuralPcmSink`, interleaved LE Int16 PCM; add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies).
+  - iOS: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]` from `<RNSpeech/RNSpeechAudioOutput.h>` (interleaved float32 samples; add `s.dependency "RNSpeech"` to the add-on's podspec).
 - **Typed config:** extend `CustomEngineConfigs` so `Speech.initialize` type-checks the add-on's config:
 
 ```ts

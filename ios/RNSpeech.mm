@@ -551,7 +551,7 @@ RCT_EXPORT_MODULE();
 
       [self playFloatSamplesOnAudioQueue:samples
                               sampleRate:sampleRate
-                                channels:MAX(channels, (NSInteger)1)
+                                channels:channels
                                  ducking:ducking
                               silentMode:silentMode
                              traceHandle:traceHandle
@@ -577,26 +577,36 @@ RCT_EXPORT_MODULE();
                            traceName:(const char *)traceName
                              resolve:(RCTPromiseResolveBlock)resolve
                               reject:(RCTPromiseRejectBlock)reject {
-  NSUInteger sampleCount = floatSamples.length / sizeof(float);
-  if (sampleCount == 0) {
+  NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
+  NSUInteger frameCount = floatSamples.length / sizeof(float) / channelCount;
+  if (frameCount == 0) {
     RNSpeechTraceEnd(traceHandle, traceName);
     resolve(nil);
     return;
   }
 
   AVAudioFormat *audioFormat = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:sampleRate
-                                                                               channels:(AVAudioChannelCount)channels];
+                                                                               channels:(AVAudioChannelCount)channelCount];
 
-  AVAudioPCMBuffer *pcmBuffer = [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
-                                                               frameCapacity:(AVAudioFrameCount)sampleCount];
+  AVAudioPCMBuffer *pcmBuffer = audioFormat
+      ? [[AVAudioPCMBuffer alloc] initWithPCMFormat:audioFormat
+                                      frameCapacity:(AVAudioFrameCount)frameCount]
+      : nil;
   if (!pcmBuffer) {
     RNSpeechTraceEnd(traceHandle, traceName);
     reject(@"audio_error", @"Failed to create audio buffer", nil);
     return;
   }
-  pcmBuffer.frameLength = (AVAudioFrameCount)sampleCount;
+  pcmBuffer.frameLength = (AVAudioFrameCount)frameCount;
 
-  memcpy(pcmBuffer.floatChannelData[0], floatSamples.bytes, sampleCount * sizeof(float));
+  // Input is interleaved; the standard format is deinterleaved.
+  const float *interleaved = (const float *)floatSamples.bytes;
+  for (NSUInteger ch = 0; ch < channelCount; ch++) {
+    float *dst = pcmBuffer.floatChannelData[ch];
+    for (NSUInteger f = 0; f < frameCount; f++) {
+      dst[f] = interleaved[f * channelCount + ch];
+    }
+  }
 
   self->_isAudioDucking = ducking;
 

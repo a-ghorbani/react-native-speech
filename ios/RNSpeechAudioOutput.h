@@ -10,7 +10,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (nullable RNSpeechAudioOutput *)shared;
 
 /**
- * Plays float32 samples in [-1, 1] the way playAudio plays its decoded PCM: stops the current
+ * Plays interleaved float32 samples in [-1, 1] the way playAudio plays its decoded PCM: stops the current
  * playback, emits onStart/onFinish, and resolves when playback finishes or is replaced.
  */
 - (void)playFloatSamples:(NSData *)samples

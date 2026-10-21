@@ -897,8 +897,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         // Write data to track
         track.write(decodedBytes, 0, decodedBytes.size)
 
-        // Set notification marker at end
-        track.notificationMarkerPosition = decodedBytes.size / 2 // 2 bytes per sample
+        track.notificationMarkerPosition = decodedBytes.size / (2 * channels.coerceAtLeast(1))
 
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
           override fun onMarkerReached(track: AudioTrack?) {
