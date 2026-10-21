@@ -719,6 +719,8 @@ if (supported) {
 }
 ```
 
+The `initialize` call type-checks because the add-on's package declares its config through `CustomEngineConfigs` (see [Writing an add-on](#writing-an-add-on)).
+
 `getEngineSupport` never throws: built-in engines report `{supported: true, reason: 'ok'}`, registered add-ons answer through their own probe, and unregistered ids report `reason: 'unknown-engine'`. `resetEngineSupport(id)` clears a negative result an add-on persisted, so the next probe runs again.
 
 #### Writing an add-on

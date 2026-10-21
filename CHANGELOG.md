@@ -26,8 +26,15 @@
   initialize (all engines).
 - **Android: neural playback promises settle on stop and replace.** A
   `playAudio` promise now resolves when its track is stopped or
-  replaced, as on iOS, instead of never settling; `initialize()` no
-  longer shuts down the neural audio executor of a live module.
+  replaced, as on iOS, instead of never settling.
+- **Android: `Speech.setEngine()` no longer shuts down the neural audio
+  executor** (later neural playback failed).
+- **`Speech.stop()` / `pause()` reach overlapping neural playback.** A
+  replaced playback settling no longer marks the player idle while the
+  newer one is still playing.
+- **Multi-channel neural PCM plays correctly.** Android fired `onFinish`
+  only for mono tracks, and iOS played interleaved stereo at double
+  length in one channel.
 - **CamelCase / PascalCase tokens are split before phonemization.**
   `PrismML` → `Prism ML`, `XMLParser` → `XML Parser`, `iOS` → `i OS`.
   Conservative two-rule splitter — `iPhone`, `McDonald`, `JavaScript`,

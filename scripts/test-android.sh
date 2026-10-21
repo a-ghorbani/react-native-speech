@@ -1,8 +1,5 @@
 #!/bin/bash
-# Run the library's Android JVM unit tests (JUnit).
-#
-# The library has no Gradle wrapper of its own, so this runs through the example app's:
-#   cd example/android && ./gradlew :pocketpalai_react-native-speech:testDebugUnitTest
+# Runs through example/android: the library has no Gradle wrapper.
 set -e
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
