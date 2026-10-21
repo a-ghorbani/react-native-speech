@@ -9,7 +9,9 @@
 //  The bridge lives in the app (libRNSpeech.a) and is reached through the runtime, so this
 //  bundle links none of it: one copy of the process-wide core, the app's. In a flag-off build
 //  (pod installed without RN_SPEECH_PHONON=1) RNSpeechPhonon does not exist and every test
-//  skips.
+//  skips, unless RN_SPEECH_PHONON_EXPECTED=1 (scheme environment, or
+//  `TEST_RUNNER_RN_SPEECH_PHONON_EXPECTED=1 xcodebuild test ...`, as the flag-on CI job does):
+//  then a missing bridge fails every test.
 //
 //  Model smoke: set PHONON_TEST_MODEL_DIR (scheme environment, or
 //  `TEST_RUNNER_PHONON_TEST_MODEL_DIR=<dir> xcodebuild test ...`) to the inner Core ML bundle
@@ -19,6 +21,7 @@
 #import <XCTest/XCTest.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef void (^PTResolve)(id _Nullable result);
 typedef void (^PTReject)(NSString *code, NSString *_Nullable message, NSError *_Nullable error);
@@ -35,7 +38,7 @@ typedef void (^PTReject)(NSString *code, NSString *_Nullable message, NSError *_
 + (void)recordCapabilityFailure:(NSString *)reason
                          detail:(NSString *)detail
                        modelDir:(nullable NSString *)modelDir;
-+ (void)clearCapabilityRecord;
++ (BOOL)clearCapabilityRecord;
 + (void)setCapabilityStoreURLForTesting:(nullable NSURL *)url;
 + (NSString *)modelStampFor:(nullable NSString *)modelDir;
 - (void)createWithModelDir:(NSString *)modelDir
@@ -101,6 +104,11 @@ static const uint32_t kUnitAne = 2;
 
 - (BOOL)requirePhonon {
   if (self.phonon == nil) {
+    const char *expected = getenv("RN_SPEECH_PHONON_EXPECTED");
+    if (expected != NULL && strcmp(expected, "1") == 0) {
+      XCTFail(@"RNSpeechPhonon is missing but RN_SPEECH_PHONON_EXPECTED=1 (flag-on build)");
+      return NO;
+    }
     NSLog(@"[PhononTests] skipped: built without RN_SPEECH_PHONON");
     return NO;
   }
@@ -302,7 +310,8 @@ static const uint32_t kUnitAne = 2;
   [@"not json" writeToURL:self.storeURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
   XCTAssertNil([self.phonon applicableCapabilityRecord]);
 
-  [self.phonon clearCapabilityRecord];
+  XCTAssertTrue([self.phonon clearCapabilityRecord]);
+  XCTAssertTrue([self.phonon clearCapabilityRecord]);  // nothing left: still YES
   XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:self.storeURL.path]);
 }
 

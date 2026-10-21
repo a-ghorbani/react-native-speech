@@ -1,5 +1,6 @@
 package com.pocketpalai.speech.phonon
 
+import android.content.ContextWrapper
 import com.facebook.react.bridge.JavaOnlyMap
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.WritableMap
@@ -8,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Flag-off stub contract: reports not-compiled, never does native work. */
 class PhononBridgeStubTest {
@@ -68,7 +70,7 @@ class PhononBridgeStubTest {
   fun workMethodsRejectNotCompiled() {
     val calls = listOf<(Promise) -> Unit>(
       { PhononBridge.needsCompile("/models", it) },
-      { PhononBridge.synthesize(1, 1, "hi", "", "en", it) },
+      { PhononBridge.synthesize(1, 1, "hi", "", "en", AtomicBoolean(true), it) },
       { PhononBridge.playBuffer(1, JavaOnlyMap(), it) { _, _, _ -> error("must not play") } },
       { PhononBridge.copyBuffer(1, it) }
     )
@@ -83,9 +85,20 @@ class PhononBridgeStubTest {
   @Test
   fun destroyResolves() {
     val promise = RecordingPromise()
-    PhononBridge.destroy(1, promise)
+    PhononBridge.destroy(1, AtomicBoolean(true), promise)
     assertTrue(promise.resolved)
     assertNull(promise.value)
     assertNull(promise.code)
+  }
+
+  @Test
+  fun resetSupportResolvesTrueAndInvalidateClearsTheToken() {
+    val promise = RecordingPromise()
+    PhononBridge.resetSupport(ContextWrapper(null), promise)
+    assertTrue(promise.resolved)
+    assertEquals(true, promise.value)
+    val alive = AtomicBoolean(true)
+    PhononBridge.onModuleInvalidated(alive)
+    assertFalse(alive.get())
   }
 }

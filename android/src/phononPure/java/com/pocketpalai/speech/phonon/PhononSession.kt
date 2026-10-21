@@ -1,12 +1,12 @@
 package com.pocketpalai.speech.phonon
 
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * PhononBridge's glue logic, separated from Android and JNI so it is unit tested: the
  * create sequence (stale load-failed reset, probe gate, thread policy once, lazy dlopen,
- * which failures are persisted), the module epoch that drops promises of an invalidated
- * module, and buffer playback/release. PhononBridge implements [Host] with the real
+ * which failures are persisted), the per-module liveness token that drops promises of an
+ * invalidated module, and buffer playback/release. PhononBridge implements [Host] with the real
  * natives, the capability store and the "phonon-synth" executor.
  */
 class PhononSession(private val host: Host) {
@@ -25,7 +25,7 @@ class PhononSession(private val host: Host) {
     fun storedRecord(): PhononCapabilityStore.Record?
     fun resetSupport()
     /** Persists a negative outcome and makes the cached probe report it. */
-    fun recordFailure(reason: String, detail: String, modelStamp: String)
+    fun recordFailure(reason: String, detail: String, modelPath: String, modelStamp: String)
     fun shimLoaded(): Boolean
     /** Runs [job] on the synth thread; throws if the thread is unavailable. */
     fun execute(job: Runnable)
@@ -63,17 +63,18 @@ class PhononSession(private val host: Host) {
     val spinBudget: Int
   )
 
-  // Bumped by onModuleInvalidated: work submitted by an invalidated module never settles
-  // its promise into the dead JS runtime.
-  private val moduleEpoch = AtomicInteger(0)
-
   // Synth-thread state. RAYON_NUM_THREADS / XN_SPIN_BUDGET are read once per process by
   // rayon and xn, so the first create fixes them.
   @Volatile var effectiveThreads = 0
     private set
   private var effectiveSpinBudget = 0
 
-  fun create(p: CreateParams, settle: Settle) {
+  /**
+   * [alive] is the submitting module's token (one per RNSpeechModule): once
+   * [onModuleInvalidated] clears it, that module's pending promises are dropped, never settled
+   * into its dead JS runtime. Other modules (another React instance) are unaffected.
+   */
+  fun create(p: CreateParams, alive: AtomicBoolean, settle: Settle) {
     // A load-failed record is about one model: pointing at another one re-enables the probe.
     if (host.cachedReason() == PhononCapabilityStore.REASON_LOAD_FAILED) {
       val record = host.storedRecord()
@@ -84,20 +85,20 @@ class PhononSession(private val host: Host) {
       settle.reject(UNSUPPORTED, "Phonon unsupported: ${support.reason} (${support.detail})")
       return
     }
-    submit(settle) { reply ->
+    submit(alive, settle) { reply ->
       applyThreadPolicy(p.numThreads, p.spinBudget)
       val load = host.loadLibrary()
       val loadReason = load?.getOrNull(0) ?: PhononCapabilityStore.REASON_LOAD_FAILED
       if (loadReason != "ok") {
         val detail = load?.getOrNull(1).orEmpty()
-        host.recordFailure(loadReason, detail, "")
+        host.recordFailure(loadReason, detail, "", "")
         reply.reject(UNSUPPORTED, "Phonon unsupported: $loadReason ($detail)")
         return@submit
       }
       val outcome = PhononResults.load(host.create(p.modelDir, p.language, p.computeUnit), effectiveThreads)
       if (outcome.code.isNotEmpty()) {
         if (outcome.code == LOAD_FAILED && PhononCapabilityStore.isPersistentLoadFailure(outcome.message)) {
-          host.recordFailure(PhononCapabilityStore.REASON_LOAD_FAILED, outcome.message, p.modelStamp)
+          host.recordFailure(PhononCapabilityStore.REASON_LOAD_FAILED, outcome.message, p.modelDir, p.modelStamp)
         }
         reply.reject(outcome.code, outcome.message)
         return@submit
@@ -137,13 +138,14 @@ class PhononSession(private val host: Host) {
     voice: String,
     language: String,
     enqueuedAtMs: Double,
+    alive: AtomicBoolean,
     settle: Settle
   ) {
     if (!host.shimLoaded()) {
       settle.reject(UNSUPPORTED, "Phonon is not loaded")
       return
     }
-    submit(settle) { reply ->
+    submit(alive, settle) { reply ->
       val out = DoubleArray(PhononResults.SYNTH_FIELDS)
       val res = host.synthesize(handleId, requestId, text, voice, language, enqueuedAtMs, out)
       val code = res?.getOrNull(0) ?: INTERNAL
@@ -160,12 +162,12 @@ class PhononSession(private val host: Host) {
   }
 
   /** Enqueued behind any in-flight work; never blocks the caller. */
-  fun destroy(handleId: Long, settle: Settle) {
+  fun destroy(handleId: Long, alive: AtomicBoolean, settle: Settle) {
     if (!host.shimLoaded()) {
       settle.resolve(null)
       return
     }
-    submit(settle) { reply ->
+    submit(alive, settle) { reply ->
       val code = host.destroy(handleId)
       if (code.isEmpty()) reply.resolve(null) else reply.reject(code, "Phonon handle $handleId is not open")
     }
@@ -199,12 +201,13 @@ class PhononSession(private val host: Host) {
 
   /**
    * The module's real teardown (RNSpeechModule.invalidate, e.g. an RN reload): cancel
-   * everything issued so far, drop the old module's pending promises and free unplayed
-   * buffers. Returns immediately: never destroys the handle and never waits for the synth
-   * thread. Not for setEngine, which re-initializes OS TTS on a live module.
+   * everything issued so far (process-wide, DESIGN.md §1.5), drop the pending promises of the
+   * module that owns [alive] and free unplayed buffers. Returns immediately: never destroys
+   * the handle and never waits for the synth thread. Not for setEngine, which re-initializes
+   * OS TTS on a live module.
    */
-  fun onModuleInvalidated() {
-    moduleEpoch.incrementAndGet()
+  fun onModuleInvalidated(alive: AtomicBoolean) {
+    alive.set(false)
     if (!host.shimLoaded()) return
     try {
       host.cancelAll()
@@ -216,22 +219,20 @@ class PhononSession(private val host: Host) {
   }
 
   /** Resolves/rejects only while the submitting module is alive. */
-  private inner class Reply(private val settle: Settle, private val epoch: Int) {
-    private val alive: Boolean get() = moduleEpoch.get() == epoch
-
+  private class Reply(private val settle: Settle, private val alive: AtomicBoolean) {
     fun resolve(value: Map<String, Any>?): Boolean {
-      if (!alive) return false
+      if (!alive.get()) return false
       settle.resolve(value)
       return true
     }
 
     fun reject(code: String, message: String) {
-      if (alive) settle.reject(code, message)
+      if (alive.get()) settle.reject(code, message)
     }
   }
 
-  private fun submit(settle: Settle, job: (Reply) -> Unit) {
-    val reply = Reply(settle, moduleEpoch.get())
+  private fun submit(alive: AtomicBoolean, settle: Settle, job: (Reply) -> Unit) {
+    val reply = Reply(settle, alive)
     try {
       host.execute {
         try {

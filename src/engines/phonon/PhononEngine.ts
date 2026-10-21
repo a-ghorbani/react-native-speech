@@ -11,9 +11,11 @@
  * - Every `synthesize()` / `synthesizeStream()` call captures a
  *   generation. A chunk result from an older generation is released,
  *   never played, even if it arrives after a newer call started.
- * - Every native synthesize races a watchdog. On timeout the engine is
- *   marked broken for the process (a hung native worker cannot be
- *   recovered without a restart) and reports `ERR_PHONON_TIMEOUT`.
+ * - Every native synthesize and create races a watchdog. On timeout the
+ *   engine is marked broken for the process (a hung native worker cannot
+ *   be recovered without a restart) and reports `ERR_PHONON_TIMEOUT`.
+ *   Once broken, release/destroy never wait for the native destroy: it is
+ *   queued behind the hung job on the serial worker.
  *
  * The native part is opt-in at build time; check
  * `PhononEngine.getSupport()` (or `Speech.getEngineSupport`) first.
@@ -72,6 +74,8 @@ const {
   WATCHDOG_MIN_MS,
   WATCHDOG_FACTOR,
   ESTIMATED_MS_PER_CHAR,
+  CREATE_WATCHDOG_MS,
+  CREATE_COMPILE_WATCHDOG_MS,
 } = PHONON_CONSTANTS;
 
 /**
@@ -129,13 +133,35 @@ interface RunContext {
  * any engine instance, so every instance refuses work until restart.
  */
 let brokenError: PhononError | null = null;
+let signalBroken: () => void = () => {};
+/** Resolves once `brokenError` is set. */
+let brokenSignal = newBrokenSignal();
 
-function timeoutError(detail: string): PhononError {
+function newBrokenSignal(): Promise<void> {
+  return new Promise<void>(resolve => {
+    signalBroken = resolve;
+  });
+}
+
+function markBroken(error: PhononError): void {
+  brokenError = error;
+  signalBroken();
+}
+
+function timeoutError(what: string, detail: string): PhononError {
   return new PhononError(
     'ERR_PHONON_TIMEOUT',
-    `Phonon synthesis timed out (${detail}); the engine is unavailable until the app restarts`,
+    `Phonon ${what} timed out (${detail}); the engine is unavailable until the app restarts`,
   );
 }
+
+/** Watchdog budget of a native create. */
+export function phononCreateWatchdogMs(needsCompile: boolean): number {
+  return needsCompile ? CREATE_COMPILE_WATCHDOG_MS : CREATE_WATCHDOG_MS;
+}
+
+/** Support reasons that depend on the model on disk, so are never cached. */
+const UNCACHED_REASONS: readonly string[] = ['load-failed'];
 
 /** Normalize 'en-US' / 'en_GB' / 'EN' to the base language code. */
 export function normalizePhononLanguage(language: string): string {
@@ -175,7 +201,14 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   private language: string = DEFAULT_LANGUAGE;
   private catalog: PhononCatalogEntry[] = [];
   private isInitialized = false;
-  private isLoading = false;
+  /** initialize() calls not yet settled (queued or running) */
+  private pendingInits = 0;
+  /**
+   * initialize() and destroy() run one at a time, in call order, so a
+   * concurrent re-initialization (EngineManager: destroy + initialize)
+   * never overlaps a create in flight. Never rejects.
+   */
+  private lifecycle: Promise<void> = Promise.resolve();
   private initError: string | null = null;
 
   // Cancellation and re-entry
@@ -221,7 +254,11 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
         supported: info.supported && info.reason === 'ok',
         detail: info.detail ?? '',
       };
-      PhononEngine.supportCache = normalized;
+      // A load-failed record is about one model: native drops it once the
+      // model changes, so it is asked again every time.
+      if (!UNCACHED_REASONS.includes(normalized.reason)) {
+        PhononEngine.supportCache = normalized;
+      }
       return {...normalized};
     } catch (e) {
       return errorSupport(e instanceof Error ? e.message : String(e));
@@ -231,6 +268,22 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   /** Drop the cached probe (e.g. after a load failure was recorded). */
   static clearSupportCache(): void {
     PhononEngine.supportCache = null;
+  }
+
+  /**
+   * Clear the persisted capability record (native) and the cached probe.
+   * Never throws; resolves false if native could not clear the record.
+   */
+  static async resetSupport(): Promise<boolean> {
+    PhononEngine.supportCache = null;
+    try {
+      return await NativePhonon.resetSupport();
+    } catch (e) {
+      log.warn('resetSupport failed:', e);
+      return false;
+    } finally {
+      PhononEngine.supportCache = null;
+    }
   }
 
   /**
@@ -263,29 +316,56 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     this.chunkProgressCallback = callback;
   }
 
+  /** Never throws: a throwing listener must not abort playback. */
   private emitChunkProgress(event: ChunkProgressEvent): void {
-    if (this.chunkProgressCallback) {
-      this.chunkProgressCallback(event);
+    if (!this.chunkProgressCallback) {
+      return;
     }
+    try {
+      this.chunkProgressCallback(event);
+    } catch (e) {
+      log.warn('chunk progress callback threw; continuing:', e);
+    }
+  }
+
+  /** Run a lifecycle step after every earlier initialize()/destroy(). */
+  private serialized(step: () => Promise<void>): Promise<void> {
+    const run = this.lifecycle.then(step);
+    this.lifecycle = run.catch(() => {});
+    return run;
   }
 
   /**
    * Initialize: support probe → (compile check) → native create.
    * Rejects `ERR_PHONON_UNSUPPORTED` without touching the native
-   * library when the probe is negative.
+   * library when the probe is negative. A call made while another
+   * initialize() or destroy() runs waits for it; once initialized,
+   * initialize() is a no-op until destroy()/release().
    */
-  async initialize(config?: PhononConfig): Promise<void> {
+  initialize(config?: PhononConfig): Promise<void> {
+    this.pendingInits++;
+    const run = this.serialized(() => this.initializeNow(config));
+    // Registered first, so callers see isLoading=false once run settles.
+    const settle = () => {
+      this.pendingInits--;
+    };
+    run.then(settle, settle);
+    return run;
+  }
+
+  /** True while an initialize() is queued or running. */
+  private get isLoading(): boolean {
+    return this.pendingInits > 0;
+  }
+
+  private async initializeNow(config?: PhononConfig): Promise<void> {
     if (this.isInitialized) {
       return;
-    }
-    if (this.isLoading) {
-      throw new Error('Engine is already loading');
     }
     if (brokenError) {
       throw brokenError;
     }
 
-    this.isLoading = true;
     this.initError = null;
     const initStart = Date.now();
 
@@ -309,23 +389,27 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
         throw new PhononUnsupportedError(support.reason, support.detail);
       }
 
-      if (config.spinBudget !== undefined) {
-        log.warn(
-          'spinBudget is not supported by this native build yet; ignored',
-        );
-      }
-
-      if (await PhononEngine.needsCompile(config.modelPath)) {
+      const needsCompile = await PhononEngine.needsCompile(config.modelPath);
+      if (needsCompile) {
         log.info('Model needs a Core ML compile; the first load is slow');
       }
 
       let result: PhononLoadResult;
       try {
-        result = await NativePhonon.create(config.modelPath, {
-          language,
-          numThreads: config.numThreads ?? 0,
-          computeUnit: config.computeUnit ?? DEFAULT_COMPUTE_UNIT,
-        });
+        result = await this.withWatchdog(
+          NativePhonon.create(config.modelPath, {
+            language,
+            numThreads: config.numThreads ?? 0,
+            computeUnit: config.computeUnit ?? DEFAULT_COMPUTE_UNIT,
+            spinBudget: config.spinBudget ?? 0,
+          }),
+          phononCreateWatchdogMs(needsCompile),
+          budget => timeoutError('load', `${budget} ms`),
+          // A handle created after the timeout is freed, never used.
+          late => {
+            NativePhonon.destroy(late.handleId).catch(() => {});
+          },
+        );
       } catch (e) {
         const err = toPhononError(e);
         if (
@@ -369,12 +453,21 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
       );
     } catch (error) {
       // Clean up any partial initialization to allow retry
-      await this.destroy();
+      await this.teardown();
       this.initError = error instanceof Error ? error.message : 'Unknown error';
-      log.error('Initialization failed:', error);
+      if (error instanceof PhononUnsupportedError) {
+        // Expected gating outcome (unsupported device, not compiled, a
+        // persisted record): no console.error, so no LogBox in dev.
+        log.info(`Initialization skipped: ${error.message}`);
+      } else if (
+        error instanceof PhononError &&
+        error.code === 'ERR_PHONON_LOAD'
+      ) {
+        log.warn('Initialization failed:', error);
+      } else {
+        log.error('Initialization failed:', error);
+      }
       throw error;
-    } finally {
-      this.isLoading = false;
     }
   }
 
@@ -786,8 +879,19 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
           ctx.voice,
           ctx.language,
         ),
-        requestId,
-        text,
+        phononWatchdogMs(text),
+        budget => {
+          NativePhonon.cancelUpTo(requestId);
+          return timeoutError(
+            'synthesis',
+            `request ${requestId}, ${text.length} chars, ${budget} ms`,
+          );
+        },
+        late => {
+          if (late.bufferId > 0) {
+            NativePhonon.releaseBuffer(late.bufferId);
+          }
+        },
       );
     } catch (e) {
       if (stale()) {
@@ -840,33 +944,29 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
   }
 
   /**
-   * Race a native synthesize against the watchdog. On timeout the
-   * request is cancelled, its eventual buffer released, and the engine
-   * marked broken for the process.
+   * Race a native call against the watchdog. On timeout `onTimeout`
+   * builds the error (and cancels what it can), the engine is marked
+   * broken for the process, and a late result goes to `onLate`.
    */
-  private withWatchdog(
-    promise: Promise<PhononSynthResult>,
-    requestId: number,
-    text: string,
-  ): Promise<PhononSynthResult> {
-    const budget = phononWatchdogMs(text);
-    return new Promise<PhononSynthResult>((resolve, reject) => {
+  private withWatchdog<T>(
+    promise: Promise<T>,
+    budget: number,
+    onTimeout: (budget: number) => PhononError,
+    onLate: (late: T) => void,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        brokenError = timeoutError(
-          `request ${requestId}, ${text.length} chars, ${budget} ms`,
-        );
-        log.error(brokenError.message);
-        NativePhonon.cancelUpTo(requestId);
-        reject(brokenError);
+        const error = onTimeout(budget);
+        markBroken(error);
+        log.error(error.message);
+        reject(error);
       }, budget);
       promise.then(
         res => {
           if (timedOut) {
-            if (res.bufferId > 0) {
-              NativePhonon.releaseBuffer(res.bufferId);
-            }
+            onLate(res);
             return;
           }
           clearTimeout(timer);
@@ -1084,7 +1184,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     const handleId = this.handleId;
     this.resetState();
     try {
-      await NativePhonon.destroy(handleId);
+      await this.destroyHandle(handleId);
     } catch (e) {
       const err = toPhononError(e);
       if (err.code !== 'ERR_PHONON_NOT_INITIALIZED') {
@@ -1100,18 +1200,46 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     };
   }
 
-  async destroy(): Promise<void> {
+  /**
+   * Tear down. Waits for a running initialize() first (see `lifecycle`),
+   * so its handle is destroyed rather than left live and replaced.
+   */
+  destroy(): Promise<void> {
+    return this.serialized(() => this.teardown());
+  }
+
+  private async teardown(): Promise<void> {
     await this.stop();
     await this.activeRun?.catch(() => {});
     const handleId = this.handleId;
     this.resetState();
-    this.isLoading = false;
     if (handleId > 0) {
       try {
-        await NativePhonon.destroy(handleId);
+        await this.destroyHandle(handleId);
       } catch (e) {
         log.debug('destroy: native handle already gone:', e);
       }
+    }
+  }
+
+  /**
+   * Native destroy. Once the engine is broken it is queued behind the
+   * hung job on the serial worker and never settles, so it is then fired
+   * and not waited for (also when the watchdog fires while waiting).
+   */
+  private async destroyHandle(handleId: number): Promise<void> {
+    const destroyed = NativePhonon.destroy(handleId).then(() => false);
+    if (brokenError) {
+      destroyed.catch(() => {});
+      return;
+    }
+    const broken = await Promise.race([
+      destroyed,
+      brokenSignal.then(() => true),
+    ]);
+    if (broken) {
+      destroyed.catch(() => {});
+      log.warn(`not waiting for destroy of handle ${handleId}: engine broken`);
     }
   }
 
@@ -1167,4 +1295,5 @@ function splitFirstClause(chunks: TextChunk[]): void {
 /** @internal Test-only: clear the process-wide broken flag. */
 export function __resetPhononBrokenStateForTests(): void {
   brokenError = null;
+  brokenSignal = newBrokenSignal();
 }

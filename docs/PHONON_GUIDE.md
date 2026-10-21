@@ -5,8 +5,9 @@
 CPU on Android, Core ML on iOS. It needs no `onnxruntime-react-native`.
 
 The native part is **opt-in at build time**. An app that does not enable it gets no Phonon
-binary, no model data and no Phonon native code; the engine then reports `not-compiled` and
-cannot be initialized.
+binary, no model data and no Phonon engine code; the only native addition is the TurboModule
+codegen glue for the always-declared `phonon*` methods (~7 KB in `libappmodules.so` on Android).
+The engine then reports `not-compiled` and cannot be initialized.
 
 For API basics shared by every engine (events, `stop`, `pause`, streaming) see
 [USAGE.md](USAGE.md). For the design rationale see [phonon/DESIGN.md](phonon/DESIGN.md).
@@ -19,7 +20,7 @@ For API basics shared by every engine (events, `stop`, `pause`, streaming) see
 | Minimum OS | the library's own minimum | **iOS 18** at runtime (the library still deploys to 15.1; older iOS reports `os-too-old`) |
 | Enable | `RNSpeech_phononEnabled=true` | `ENV['RN_SPEECH_PHONON'] = '1'` in the Podfile |
 | App size when enabled | ~7.6 MB installed per ABI (~2.5 MB Play download) | the static library is measured per release in CI |
-| App size when disabled | zero native binaries; budgets (not yet measured): dex delta ≤ 8 KB, ~40 KB of always-bundled JS | zero binaries, no Phonon sources compiled |
+| App size when disabled | no Phonon binaries; codegen glue +6.6 KB in `libappmodules.so` (CI budget 8 KB), library dex +3.4 KB (budget 8 KB; local build, CI to confirm), ~40 KB of always-bundled JS (budget, not yet measured) | zero binaries, no Phonon sources compiled |
 | Model (Phonon 31m) | checkpoint folder, ~66 MB plus voices | precompiled Core ML bundle, ~170 MB |
 | Sample rate | 24 kHz | 24 kHz |
 | Speed / pitch | not supported | not supported |
@@ -82,7 +83,8 @@ RNSpeech_phononAbis=arm64-v8a
 `rootProject.ext.RNSpeech_phononEnabled = true` in `android/build.gradle` works too. The build
 downloads the release asset pinned in the package's `phonon.lock.json` once, checks its sha256,
 caches it under `~/.gradle/caches/rnspeech-phonon/<release>/` and packages only the requested
-ABIs. No Rust toolchain is needed. The download is a normal Gradle task and works with the
+ABIs (`libptts_ffi.so` and the small JNI shim `librnspeech_phonon.so` alike; other ABIs report
+`unsupported-abi`). No Rust toolchain is needed. The download is a normal Gradle task and works with the
 configuration cache.
 
 Other properties:
@@ -135,8 +137,10 @@ Podfile `ENV` line above yourself (or with a small custom config plugin that edi
 ### Disabling
 
 Leave the flag unset, or set `RNSpeech_phononEnabled=false` / `RN_SPEECH_PHONON=0`. The flag-off
-build contains no Phonon binary, shim, Kotlin bridge or Objective-C code. The engine's JS
-(budget about 40 KB, not yet measured) is always part of the bundle; it reports `not-compiled`.
+build contains no Phonon binary, shim, Kotlin bridge or Objective-C code. What remains is the
+TurboModule spec: its codegen glue (~6.6 KB in `libappmodules.so`, gated at 8 KB in CI) and the
+not-compiled stubs (library dex +3.4 KB in a local build, budget 8 KB). The engine's JS (budget
+about 40 KB, not yet measured) is always part of the bundle; it reports `not-compiled`.
 
 ### Before the first binary release
 
@@ -258,7 +262,7 @@ const willCompile = await PhononEngine.needsCompile(modelPath); // always false 
 | `language` | both | `'en'` | Text normalization language: `'en' \| 'fr' \| 'de' \| 'es' \| 'pt' \| 'none'`. Phonon 31m speaks English only; other languages need a 40m model (CC BY-NC). |
 | `defaultVoice` | both | upstream's default voice | Voice used when `speak` gets no voice id. |
 | `numThreads` | Android | policy | Worker threads; `0`/unset = the number of big cores, clamped to 2–4. Fixed for the process lifetime after the first `initialize` (see limits). |
-| `spinBudget` | Android | upstream (5000) | **Accepted but ignored for now** (logs a warning): the native build does not pass it on yet. Reserved for `XN_SPIN_BUDGET`, how long idle workers spin before sleeping. |
+| `spinBudget` | Android | upstream (5000) | Sets `XN_SPIN_BUDGET`, how long idle workers spin before sleeping. Like `numThreads` it is fixed by the first `initialize` in a process. `0` keeps the upstream default. |
 | `computeUnit` | iOS | `'neuralEngine'` | `'neuralEngine'` or `'cpu'` for the flow model. The simulator always runs on the CPU. |
 | `maxChunkSize` | both | `250` | Maximum characters per synthesized chunk. |
 | `voicesMetadataPath` | both | none | A `voices.jsonl` (subset of the `gradium/phonon-voices` catalog) used for display names, gender, locale and description. |
@@ -308,9 +312,20 @@ same voice is not re-applied.
 Support/rnspeech-phonon-cap.json`, excluded from backup) keyed by device, OS build, library
 version and model. From then on `getEngineSupport` reports that reason and the engine stays
 hidden, so one failure does not repeat on every launch. Any change of the key (OS update, new
-library release, different model) re-enables the check. On iOS a load failure first triggers
-one recovery attempt before it is recorded: compiled models that have an `.mlpackage` next to
-them (so they can be rebuilt) are deleted and the load is retried once. There is no public JS API to clear the record yet; clearing the app's data does.
+library release) re-enables the check; a `load-failed` record also stops applying as soon as
+the model in the recorded folder changes (re-downloaded or replaced), on both platforms. On iOS
+a load failure first triggers one recovery attempt before it is recorded: compiled models that
+have an `.mlpackage` next to them (so they can be rebuilt) are deleted and the load is retried
+once.
+
+To clear a record by hand (for example to try a model in another folder, or after installing a
+fixed local build, whose version string does not change), call:
+
+```ts
+await Speech.resetEngineSupport(TTSEngine.PHONON); // true once no record is left
+```
+
+The next `getEngineSupport` / `initialize` then probes again. Clearing the app's data works too.
 
 ### Errors
 
@@ -339,9 +354,8 @@ Stopping is not an error: a stopped request just ends.
   per-language and multilingual models (CC BY-NC) cover French, German, Spanish and Portuguese.
   On iOS only the 31m English Core ML bundle is available.
 * **Worker threads are fixed per process (Android).** `numThreads` takes effect on the first
-  `initialize` in a process; later values are ignored until the app restarts. `spinBudget` is
-  accepted but ignored for now (a warning is logged). The
-  workers keep running (and spin briefly between chunks) while the process lives, also across
+  `initialize` in a process; later values are ignored until the app restarts. The same holds for
+  `spinBudget`. The workers keep running (and spin briefly between chunks) while the process lives, also across
   JS reloads and `release()`.
 * **Native state outlives JS reloads.** A Metro reload cancels pending synthesis but keeps the
   native worker and library loaded; the next `initialize` reuses them.

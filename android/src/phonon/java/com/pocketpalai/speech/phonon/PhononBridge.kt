@@ -16,6 +16,7 @@ import com.facebook.react.bridge.ReadableType
 import com.pocketpalai.speech.BuildConfig
 import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -26,10 +27,11 @@ import java.util.concurrent.TimeUnit
  * one-thread-per-handle rule always holds (DESIGN.md §1.5). Same signatures as the flag-off
  * stub in src/phononStub/java.
  *
- *  * getSupport: cheap probe, cached per process; never dlopens libptts_ffi.so.
+ *  * getSupport: cheap probe, cached per process (except load-failed, which depends on the
+ *    model on disk); never dlopens libptts_ffi.so.
  *  * create: re-checks the probe, then on the synth thread applies the thread policy,
  *    dlopens the library (lazily, after the HWCAP gate) and creates the handle. That
- *    sequence, the module epoch and buffer play/release live in PhononSession (pure,
+ *    sequence, the per-module liveness token and buffer play/release live in PhononSession (pure,
  *    unit tested); this object supplies the Android and JNI side.
  *  * ids / cancel / release: synchronous, lock-free native calls.
  *  * Work runs on one "phonon-synth" thread with an 8 MB stack at THREAD_PRIORITY_AUDIO.
@@ -81,10 +83,15 @@ object PhononBridge {
     "pageSize" to pageSize().toDouble()
   )
 
+  // A load-failed result is re-evaluated on every call: it stops applying once the recorded
+  // model changes (a cheap file read plus a few stats), see PhononCapabilityStore.Record.applies.
+  private fun cached(): PhononProbe.Result? =
+    cachedSupport?.takeIf { it.reason != PhononCapabilityStore.REASON_LOAD_FAILED }
+
   private fun probe(context: Context): PhononProbe.Result {
-    cachedSupport?.let { return it }
+    cached()?.let { return it }
     synchronized(supportLock) {
-      cachedSupport?.let { return it }
+      cached()?.let { return it }
       val result = try {
         PhononProbe.evaluate(probeInputs(context))
       } catch (t: Throwable) {
@@ -101,7 +108,11 @@ object PhononBridge {
 
   private fun probeInputs(context: Context) = PhononProbe.Inputs(
     forceReason = BuildConfig.RN_SPEECH_PHONON_FORCE_REASON,
-    capability = store(context).read()?.takeIf { it.matches(Build.FINGERPRINT ?: "", BuildConfig.RN_SPEECH_PHONON_VERSION) },
+    capability = store(context).read()?.takeIf {
+      it.applies(Build.FINGERPRINT ?: "", BuildConfig.RN_SPEECH_PHONON_VERSION) { dir ->
+        PhononCapabilityStore.modelStamp(File(dir))
+      }
+    },
     totalMemBytes = totalMem(context),
     is64Bit = Process.is64Bit(),
     supportedAbis = Build.SUPPORTED_ABIS?.toList() ?: emptyList(),
@@ -110,7 +121,8 @@ object PhononBridge {
     nativeAbi = { PhononNative.nativeAbi() },
     nativeBridge = { PhononNative.nativeSystemProperty("ro.dalvik.vm.native.bridge") },
     hwcaps = { longArrayOf(PhononNative.nativeHwcap(), PhononNative.nativeHwcap2()) },
-    requirements = { PhononCpu.parseRequirements(PhononNative.nativeRequiredHwcaps()) }
+    requirements = { PhononCpu.parseRequirements(PhononNative.nativeRequiredHwcaps()) },
+    arm64Features = { PhononNative.nativeArm64Features() }
   )
 
   private fun loadShim(): Throwable? =
@@ -125,14 +137,21 @@ object PhononBridge {
     }
 
   /** Records a negative outcome and makes the cached probe report it from now on. */
-  private fun recordFailure(context: Context, reason: String, detail: String, modelStamp: String) {
+  private fun recordFailure(
+    context: Context,
+    reason: String,
+    detail: String,
+    modelPath: String,
+    modelStamp: String
+  ) {
     val record = PhononCapabilityStore.Record(
       device = Build.FINGERPRINT ?: "",
       libraryVersion = BuildConfig.RN_SPEECH_PHONON_VERSION,
       modelStamp = modelStamp,
       reason = reason,
       detail = detail,
-      at = System.currentTimeMillis()
+      at = System.currentTimeMillis(),
+      modelPath = modelPath
     )
     if (!store(context).write(record)) Log.w(TAG, "could not persist capability record")
     synchronized(supportLock) {
@@ -150,6 +169,15 @@ object PhononBridge {
     return store(context).clear()
   }
 
+  /** phononResetSupport: resolves true if no record is left. */
+  fun resetSupport(context: Context, promise: Promise) {
+    try {
+      promise.resolve(resetSupport(context))
+    } catch (t: Throwable) {
+      promise.reject(INTERNAL, "Phonon support reset failed: ${t.message}", t)
+    }
+  }
+
   private fun store(context: Context) =
     PhononCapabilityStore(File(context.noBackupFilesDir, PhononCapabilityStore.FILE_NAME))
 
@@ -160,10 +188,12 @@ object PhononBridge {
     promise.resolve(false)
   }
 
+  /** [alive]: the calling module's token (see [onModuleInvalidated]). */
   fun create(
     context: ReactApplicationContext,
     modelDir: String,
     options: ReadableMap,
+    alive: AtomicBoolean,
     promise: Promise
   ) {
     val params = PhononSession.CreateParams(
@@ -172,10 +202,10 @@ object PhononBridge {
       language = options.stringOr("language", "en"),
       computeUnit = options.stringOr("computeUnit", "cpu"),
       numThreads = options.intOr("numThreads", 0),
-      // Optional (not in the spec yet): PhononConfig.spinBudget -> XN_SPIN_BUDGET.
+      // PhononConfig.spinBudget -> XN_SPIN_BUDGET (0 = upstream default).
       spinBudget = options.intOr("spinBudget", 0)
     )
-    session(context).create(params, settle(promise))
+    session(context).create(params, alive, settle(promise))
   }
 
   // ---- ids / cancel -------------------------------------------------------------------------
@@ -202,10 +232,11 @@ object PhononBridge {
     text: String,
     voice: String,
     language: String,
+    alive: AtomicBoolean,
     promise: Promise
   ) {
     val enqueuedAt = if (shimLoaded) PhononNative.nativeMonotonicMs() else 0.0
-    session.synthesize(handleId, requestId, text, voice, language, enqueuedAt, settle(promise))
+    session.synthesize(handleId, requestId, text, voice, language, enqueuedAt, alive, settle(promise))
   }
 
   // ---- buffers ------------------------------------------------------------------------------
@@ -240,8 +271,8 @@ object PhononBridge {
     shimLoaded && PhononNative.nativeReleaseBuffer(bufferId)
 
   /** Enqueued behind any in-flight work; never blocks the caller. */
-  fun destroy(handleId: Long, promise: Promise) {
-    session.destroy(handleId, settle(promise))
+  fun destroy(handleId: Long, alive: AtomicBoolean, promise: Promise) {
+    session.destroy(handleId, alive, settle(promise))
   }
 
   fun getDiagnostics(promise: Promise) {
@@ -265,8 +296,8 @@ object PhononBridge {
    * RNSpeechModule.invalidate() only (real module teardown, e.g. an RN reload; never
    * setEngine): see [PhononSession.onModuleInvalidated].
    */
-  fun onModuleInvalidated() {
-    session.onModuleInvalidated()
+  fun onModuleInvalidated(alive: AtomicBoolean) {
+    session.onModuleInvalidated(alive)
   }
 
   // ---- helpers ------------------------------------------------------------------------------
@@ -286,8 +317,8 @@ object PhononBridge {
     override fun resetSupport() {
       PhononBridge.resetSupport(context)
     }
-    override fun recordFailure(reason: String, detail: String, modelStamp: String) =
-      PhononBridge.recordFailure(context, reason, detail, modelStamp)
+    override fun recordFailure(reason: String, detail: String, modelPath: String, modelStamp: String) =
+      PhononBridge.recordFailure(context, reason, detail, modelPath, modelStamp)
     override fun shimLoaded() = shimLoaded
     override fun execute(job: Runnable) = executor.execute(job)
     override fun resolveThreads(requested: Int) =

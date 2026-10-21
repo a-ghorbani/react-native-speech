@@ -226,7 +226,9 @@ android {
     externalNativeBuild {
       cmake {
         arguments "-DRN_SPEECH_PHONON_INCLUDE_DIR=${layout.buildDirectory.dir('phonon/include').get().asFile}",
-            "-DRN_SPEECH_PHONON_ARM64_FEATURES=${phononLock.arm64Features}"
+            "-DRN_SPEECH_PHONON_ARM64_FEATURES=${phononLock.arm64Features}",
+            // The shim is built only for ABIs that also get libptts_ffi.so.
+            "-DRN_SPEECH_PHONON_ABIS=${phonon.abis.join(',')}"
       }
     }
   }

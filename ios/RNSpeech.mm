@@ -814,6 +814,12 @@ static NSString *RNSpeechPhononStubAbi(void) {
     @"cancelWatermark": @(0),
   });
 }
+
+// Nothing is ever recorded without Phonon.
+- (void)phononResetSupport:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject {
+  resolve(@(YES));
+}
 #else // RN_SPEECH_PHONON
 // Flag on: everything goes through ios/phonon/RNSpeechPhonon onto the shared core
 // (cpp/phonon). Sync methods only touch atomics; ptts work runs on the Phonon worker.
@@ -944,6 +950,12 @@ static int64_t RNSpeechPhononId(double v) {
 - (void)phononGetDiagnostics:(RCTPromiseResolveBlock)resolve
                       reject:(RCTPromiseRejectBlock)reject {
   resolve([_phonon diagnostics]);
+}
+
+// Speech.resetEngineSupport: +supportInfo is not cached on iOS, so clearing the file is enough.
+- (void)phononResetSupport:(RCTPromiseResolveBlock)resolve
+                    reject:(RCTPromiseRejectBlock)reject {
+  resolve(@([RNSpeechPhonon clearCapabilityRecord]));
 }
 
 // RN reload / teardown: cancel everything and drop this module's pending promises, without

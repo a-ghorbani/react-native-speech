@@ -832,9 +832,14 @@ jobs:
       - name: PhononTests (XCTest, iOS 18 simulator)
         run: |
           set -o pipefail
+          # RN_SPEECH_PHONON_EXPECTED=1: PhononTests fail (not skip) if the bridge is missing.
+          TEST_RUNNER_RN_SPEECH_PHONON_EXPECTED=1 \
           xcodebuild test -workspace "$WORKSPACE" -scheme SpeechExample \
             -destination "id=$SIM18" -derivedDataPath "$RUNNER_TEMP/dd-sim" \
             -only-testing:SpeechExampleTests/PhononTests | tee "$RUNNER_TEMP/build-sim.log"
+          if grep -q '\[PhononTests\] skipped' "$RUNNER_TEMP/build-sim.log"; then
+            echo "::error::PhononTests skipped: RNSpeechPhonon missing from the flag-on app"; exit 1
+          fi
 
       # One ptts.h (cpp/phonon/ptts.h; the xcframework is headerless), no host test sources.
       - name: Check the flag-on build

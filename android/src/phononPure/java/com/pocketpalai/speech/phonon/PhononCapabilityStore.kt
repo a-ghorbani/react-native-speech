@@ -6,7 +6,8 @@ import java.io.File
  * Persisted negative capability record (DESIGN.md §2.4). After a library-missing,
  * symbols-missing or (non-config) load-failed outcome, getSupport reports that reason without
  * touching native code again, until a key component changes: the device/OS build
- * (Build.FINGERPRINT), the library release, or (for load-failed) the model.
+ * (Build.FINGERPRINT), the library release, or (for load-failed) the model at the recorded
+ * path, e.g. a re-download (same rule as iOS). Speech.resetEngineSupport clears it.
  *
  * One small flat JSON object in noBackupFilesDir. Hand-rolled encoding keeps it free of
  * org.json, which is a stub on the JVM unit-test classpath.
@@ -19,11 +20,22 @@ class PhononCapabilityStore(private val file: File) {
     val modelStamp: String,
     val reason: String,
     val detail: String,
-    val at: Long
+    val at: Long,
+    /** Folder of the model that failed (load-failed only); "" for library failures. */
+    val modelPath: String = ""
   ) {
-    /** The probe has no model at hand, so device + library decide; see [isStaleFor]. */
+    /** Device + library part of the key; see [applies] for the model part. */
     fun matches(device: String, libraryVersion: String): Boolean =
       this.device == device && this.libraryVersion == libraryVersion
+
+    /**
+     * Whether the probe should still report this record. The probe has no model at hand, so a
+     * load-failed record re-checks the model at its own [modelPath] ([stampOf] =
+     * [modelStamp] of a folder): a re-downloaded or replaced model re-enables the engine.
+     */
+    fun applies(device: String, libraryVersion: String, stampOf: (String) -> String): Boolean =
+      matches(device, libraryVersion) &&
+        (reason != REASON_LOAD_FAILED || modelPath.isEmpty() || stampOf(modelPath) == modelStamp)
 
     /** A load-failed record no longer applies once the app points at a different model. */
     fun isStaleFor(modelStamp: String): Boolean =
@@ -113,6 +125,7 @@ class PhononCapabilityStore(private val file: File) {
           "modelStamp" to quote(r.modelStamp),
           "reason" to quote(r.reason),
           "detail" to quote(r.detail),
+          "modelPath" to quote(r.modelPath),
           "at" to r.at.toString()
         ).joinToString(",") { (k, v) -> "\"$k\":$v" } +
         "}"
@@ -130,7 +143,8 @@ class PhononCapabilityStore(private val file: File) {
         modelStamp = fields["modelStamp"] ?: "",
         reason = fields["reason"]?.takeIf { it in PERSISTED_REASONS } ?: return null,
         detail = fields["detail"] ?: "",
-        at = fields["at"]?.toLongOrNull() ?: 0L
+        at = fields["at"]?.toLongOrNull() ?: 0L,
+        modelPath = fields["modelPath"] ?: ""
       )
     }
 

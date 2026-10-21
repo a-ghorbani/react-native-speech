@@ -56,9 +56,14 @@ class PhononCpuTest {
     )
     // Off aarch64 the header has no requirements.
     assertEquals(emptyList<PhononCpu.Requirement>(), PhononCpu.parseRequirements(emptyArray()))
-    assertEquals(emptyList<PhononCpu.Requirement>(), PhononCpu.parseRequirements(null))
     // Bit 63 is an unsigned value.
     assertEquals(Long.MIN_VALUE, PhononCpu.parseRequirements(arrayOf("2:9223372036854775808:x"))[0].bit)
+  }
+
+  @Test(expected = IllegalStateException::class)
+  fun nullListIsAnErrorNotNoRequirements() {
+    // The shim returns null when it failed to build the list: fail closed.
+    PhononCpu.parseRequirements(null)
   }
 
   @Test(expected = IllegalArgumentException::class)

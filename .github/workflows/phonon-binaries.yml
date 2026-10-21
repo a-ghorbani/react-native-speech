@@ -405,6 +405,11 @@ jobs:
       - name: Open lock PR
         uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
+          # A PR opened with the default GITHUB_TOKEN starts no workflows, so ci.yml (the first
+          # download-and-verify run against the real release) would not run on it. Set the
+          # PHONON_LOCK_PR_TOKEN secret (PAT / GitHub App token with contents + pull-requests
+          # write) to get CI on the PR; without it, trigger CI by hand (see the PR body).
+          token: ${{ secrets.PHONON_LOCK_PR_TOKEN || github.token }}
           base: ${{ env.BASE }}
           branch: phonon-lock/${{ needs.meta.outputs.release }}
           title: 'chore(phonon): pin ${{ needs.meta.outputs.release }} binaries'
@@ -416,3 +421,5 @@ jobs:
             Pins the binaries of release `${{ needs.meta.outputs.release }}` in `phonon.lock.json` (sha256 from its `SHA256SUMS`) and refreshes `docs/phonon/THIRD_PARTY_NOTICES.md`.
 
             Built by run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.
+
+            **Before merging:** CI must have run on this PR: it is the first run that downloads and verifies the release binaries (`source=release`). If the PR was opened without the `PHONON_LOCK_PR_TOKEN` secret, no checks started: close and reopen the PR, or push an empty commit to the branch.

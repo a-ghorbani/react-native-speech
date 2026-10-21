@@ -42,6 +42,11 @@ end
 def min_ios_version_supported = '15.1'
 def install_modules_dependencies(_spec) = nil
 
+# Loaded up front (after the Pod stand-ins) so RNSpeechPhonon::Error exists whatever order
+# minitest runs the tests in. The podspec's own require of the symlinked copy resolves to the
+# same real path and is a no-op.
+require File.join(File.expand_path('../..', __dir__), 'ios', 'phonon', 'fetch.rb')
+
 class PodspecTest < Minitest::Test
   REPO = File.expand_path('../..', __dir__)
 

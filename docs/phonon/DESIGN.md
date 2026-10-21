@@ -1081,3 +1081,44 @@ js-api-ux lens:
 - **D4 iOS allowlist:** no A14+ allowlist; rely on the persisted load-failure record only.
 - **D5 CI:** add the emulator jobs and the `phonon-bin-*` release workflow (never marked Latest). The orchestrator asks the owner before the first real publish or push.
 - **D6 N1:** the one-off SIGILL negative-control test on the OnePlus 6 is approved.
+
+## Appendix C. Branch review changes (2026-10-21)
+
+Decisions taken while fixing the branch review; where they differ from the sections above,
+this appendix wins.
+
+- **Load-failed record (2.4).** Both platforms store the failing model's folder (`modelPath`) in
+  the record. The probe re-stamps that folder on every `getSupport`, so a re-downloaded or
+  replaced model re-enables the engine without a create (Android no longer caches a
+  `load-failed` probe; JS never caches `reason: 'load-failed'`). A model in a *different*
+  folder does not clear the record by itself: `Speech.resetEngineSupport` does.
+- **`Speech.resetEngineSupport` (2.4)** is implemented as `phononResetSupport(): Promise<boolean>`
+  (Android `PhononBridge.resetSupport`, stub resolves `true`; iOS `+clearCapabilityRecord`).
+  Other engines resolve `true` without native work.
+- **Broken state under RN reload (1.5).** Instead of a native broken flag, `phononCreate` also
+  runs under the JS watchdog (120 s; 600 s when `needsCompile`). A create queued behind a hung
+  worker after a reload therefore rejects `ERR_PHONON_TIMEOUT` and marks the engine broken; a
+  handle that arrives late is destroyed. Once broken, `release()`/`destroy()` fire the native
+  destroy without waiting for it (it is queued behind the hung job and never settles).
+- **Lifecycle serialization (1.6).** `initialize()` and `destroy()` run one at a time in call
+  order. A concurrent `initialize()` now waits for the running one instead of rejecting
+  "already loading"; `release()` still refuses while an initialize is queued or running.
+- **Per-module promise dropping (1.5).** Android uses one `AtomicBoolean` token per
+  `RNSpeechModule` (as iOS uses `_alive`): invalidating one module drops only its pending
+  promises. `cancelAll()` stays process-wide.
+- **`spinBudget` (1.5, 1.7)** is plumbed: `PhononLoadOptions.spinBudget?` (Android only, iOS
+  ignores it), `config.spinBudget ?? 0` from `initialize()`. WP9's spin sweep can use it.
+- **HWCAP gate fails closed (2.1 step 8).** A null requirement list from the shim, or an empty
+  one on arm64 when the build has ARM64_FEATURES, reports `reason: 'error'`.
+- **Shim ABIs (3.2).** `librnspeech_phonon.so` is built only for ABIs in `RNSpeech_phononAbis`
+  (`-DRN_SPEECH_PHONON_ABIS` from `phonon.gradle`), not for every 64-bit app ABI.
+- **Flag-off cost (3.2, R20, A.3).** The native libs are *not* identical to the baseline: the
+  always-declared `phonon*` methods add TurboModule codegen glue to `libappmodules.so`
+  (+6.6 KB measured locally). `apk-size-report.sh` gates it as a separate `codegen` budget of
+  8 KB; every other native lib must stay identical. Local dex delta: +3.4 KB (budget 8 KB).
+- **Android playback settles on stop.** A stopped or replaced AudioTrack now resolves its play
+  promise (as iOS's player-node completion does), so `playEndTs` / `[BENCH] PHONON_CHUNK` are
+  recorded for stopped chunks on both platforms.
+- **Lock PR token (4.1).** `create-pull-request` uses the `PHONON_LOCK_PR_TOKEN` secret when set;
+  otherwise CI must be triggered by hand on the lock PR (stated in the PR body and
+  `scripts/phonon/README.md`).

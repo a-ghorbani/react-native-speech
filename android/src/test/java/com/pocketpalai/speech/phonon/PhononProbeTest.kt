@@ -20,7 +20,8 @@ class PhononProbeTest {
     nativeAbi: String = "arm64-v8a",
     nativeBridge: String? = "",
     features: String = PhononCpuTest.PIXEL9,
-    required: Array<String> = PhononCpuTest.DOTPROD_FP16
+    required: Array<String>? = PhononCpuTest.DOTPROD_FP16,
+    arm64Features: String = "+dotprod,+fp16"
   ) = PhononProbe.Inputs(
     forceReason = forceReason,
     capability = capability,
@@ -32,8 +33,41 @@ class PhononProbeTest {
     nativeAbi = { calls += "nativeAbi"; nativeAbi },
     nativeBridge = { calls += "nativeBridge"; nativeBridge },
     hwcaps = { calls += "hwcaps"; longArrayOf(PhononCpuTest.hwcapOf(features), 0L) },
-    requirements = { PhononCpu.parseRequirements(required) }
+    requirements = { PhononCpu.parseRequirements(required) },
+    arm64Features = { arm64Features }
   )
+
+  @Test
+  fun hwcapGateFailsClosedWhenTheShimHasNoList() {
+    // nativeRequiredHwcaps() returned null (e.g. bad_alloc in the shim).
+    val r = eval(inputs(required = null))
+    assertFalse(r.supported)
+    assertEquals("error", r.reason)
+    assertTrue(r.detail, r.detail.contains("HWCAP"))
+  }
+
+  @Test
+  fun emptyRequirementsOnArm64WithFeaturesIsAnError() {
+    val r = eval(inputs(required = emptyArray()))
+    assertFalse(r.supported)
+    assertEquals("error", r.reason)
+    assertTrue(r.detail, r.detail.contains("+dotprod,+fp16"))
+  }
+
+  @Test
+  fun emptyRequirementsAreFineOffArm64OrWithoutFeatures() {
+    val x86 = eval(
+      inputs(
+        supportedAbis = listOf("x86_64"),
+        packagedAbis = listOf("x86_64"),
+        nativeAbi = "x86_64",
+        required = emptyArray()
+      )
+    )
+    assertTrue(x86.reason, x86.supported)
+    val noFeatures = eval(inputs(required = emptyArray(), arm64Features = ""))
+    assertTrue(noFeatures.reason, noFeatures.supported)
+  }
 
   private fun eval(i: PhononProbe.Inputs) = PhononProbe.evaluate(i)
 

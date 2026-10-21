@@ -285,6 +285,23 @@ export default class Speech {
   }
 
   /**
+   * Forget a persisted negative support result, so the next
+   * `getEngineSupport` / `initialize` probes again. Only Phonon persists
+   * one (after `library-missing`, `symbols-missing` or `load-failed`);
+   * every other engine resolves `true` at once. Never throws: resolves
+   * `false` if the record could not be cleared.
+   *
+   * @example
+   * await Speech.resetEngineSupport(TTSEngine.PHONON);
+   */
+  public static async resetEngineSupport(engine: TTSEngine): Promise<boolean> {
+    if (engine !== 'phonon') {
+      return true;
+    }
+    return PhononEngine.resetSupport();
+  }
+
+  /**
    * Speak text — or pre-phonemized IPA — using the current engine.
    *
    * @param input - Either a text string (runs the full pipeline,

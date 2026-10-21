@@ -116,6 +116,12 @@ on to the PR instead of failing. The precompiled Core ML bundle is a workflow ar
 rebuilding means a new `-r<N>`. Pull requests that touch these files only lint (actionlint with
 shellcheck, pinned), build and verify.
 
+The lock PR is opened with the `PHONON_LOCK_PR_TOKEN` secret (a PAT or GitHub App token with
+contents and pull-requests write) when it is set. Without it the default `GITHUB_TOKEN` is used,
+and GitHub starts no workflows for that PR: trigger `ci.yml` by hand (close and reopen the PR,
+or push an empty commit) before merging, because that run is the first to download and verify
+the released binaries.
+
 ## Tests
 
 ```bash

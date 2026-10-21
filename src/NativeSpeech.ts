@@ -159,6 +159,8 @@ export interface PhononLoadOptions {
   numThreads: number;
   /** 'neuralEngine' | 'cpu' (iOS); Android always runs on CPU */
   computeUnit: string;
+  /** XN_SPIN_BUDGET (Android only; 0 = upstream default). iOS ignores it */
+  spinBudget?: number;
 }
 
 export interface PhononLoadResult {
@@ -309,6 +311,11 @@ export interface Spec extends TurboModule {
   /** Enqueued on the synth thread; never blocks the caller. */
   phononDestroy: (handleId: number) => Promise<void>;
   phononGetDiagnostics: () => Promise<PhononDiagnostics>;
+  /**
+   * Clears the persisted capability record and the cached probe, so the
+   * next getSupport probes again. Resolves true if no record is left.
+   */
+  phononResetSupport: () => Promise<boolean>;
 
   //Listeners
   readonly onError: EventEmitter<EventProps>;

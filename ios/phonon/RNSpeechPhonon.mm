@@ -391,8 +391,10 @@ static NSURL *sCapabilityStoreOverride = nil;
   }
 }
 
-+ (void)clearCapabilityRecord {
-  [[NSFileManager defaultManager] removeItemAtURL:[self capabilityStoreURL] error:nil];
++ (BOOL)clearCapabilityRecord {
+  NSURL *url = [self capabilityStoreURL];
+  [[NSFileManager defaultManager] removeItemAtURL:url error:nil];
+  return ![[NSFileManager defaultManager] fileExistsAtPath:url.path];
 }
 
 #pragma mark - Work

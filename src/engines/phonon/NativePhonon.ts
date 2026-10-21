@@ -62,7 +62,8 @@ type PhononMethod =
   | 'phononCopyBuffer'
   | 'phononReleaseBuffer'
   | 'phononDestroy'
-  | 'phononGetDiagnostics';
+  | 'phononGetDiagnostics'
+  | 'phononResetSupport';
 
 function has(method: PhononMethod): boolean {
   return (
@@ -201,6 +202,17 @@ export function getDiagnostics(): Promise<PhononDiagnostics> {
   return TurboSpeech.phononGetDiagnostics();
 }
 
+/**
+ * Clears the persisted capability record and the native cached probe.
+ * Resolves false when the native method is missing (nothing to clear).
+ */
+export function resetSupport(): Promise<boolean> {
+  if (!has('phononResetSupport')) {
+    return Promise.resolve(false);
+  }
+  return TurboSpeech.phononResetSupport();
+}
+
 const NativePhonon = {
   isPresent,
   getSupport,
@@ -215,6 +227,7 @@ const NativePhonon = {
   releaseBuffer,
   destroy,
   getDiagnostics,
+  resetSupport,
 };
 
 export default NativePhonon;

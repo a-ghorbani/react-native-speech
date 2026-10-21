@@ -190,6 +190,42 @@ describe('Speech.getEngineSupport', () => {
   });
 });
 
+describe('Speech.resetEngineSupport', () => {
+  it('is a no-op success for engines that persist nothing', async () => {
+    await expect(Speech.resetEngineSupport(TTSEngine.KOKORO)).resolves.toBe(
+      true,
+    );
+    expect(fake.api.resetSupport).not.toHaveBeenCalled();
+  });
+
+  it('phonon: clears the native record and the cached probe', async () => {
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'library-missing',
+    };
+    await expect(
+      Speech.getEngineSupport(TTSEngine.PHONON),
+    ).resolves.toMatchObject({reason: 'library-missing'});
+    // A fixed local build was installed; the record is still there.
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    await expect(Speech.resetEngineSupport(TTSEngine.PHONON)).resolves.toBe(
+      true,
+    );
+    expect(fake.api.resetSupport).toHaveBeenCalledTimes(1);
+    await expect(
+      Speech.getEngineSupport(TTSEngine.PHONON),
+    ).resolves.toMatchObject({supported: true, reason: 'ok'});
+  });
+
+  it('never throws', async () => {
+    fake.api.resetSupport.mockRejectedValueOnce(new Error('io'));
+    await expect(Speech.resetEngineSupport(TTSEngine.PHONON)).resolves.toBe(
+      false,
+    );
+  });
+});
+
 describe('Speech.initialize keeps the previous engine on failure', () => {
   it.each([TTSEngine.KOKORO, TTSEngine.SUPERTONIC, TTSEngine.KITTEN])(
     '%s',
@@ -299,6 +335,59 @@ describe('Speech routing with Phonon', () => {
     expect(nativePlayer.resume).toHaveBeenCalled();
     fake.plays[0]!.resolve();
     await done;
+  });
+
+  it('a load-failed device is offered again once the model changes', async () => {
+    await Speech.release();
+    fake.api.create.mockClear();
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'load-failed',
+    };
+    // As on a later launch: the record is on disk, nothing cached yet.
+    PhononEngine.clearSupportCache();
+    await expect(Speech.initialize(PHONON)).rejects.toMatchObject({
+      code: 'ERR_PHONON_UNSUPPORTED',
+    });
+    expect(fake.api.create).not.toHaveBeenCalled();
+    // Model re-downloaded: native drops the record, and JS never cached it.
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    await Speech.initialize(PHONON);
+    expect(fake.api.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('two concurrent re-initializations run one after the other', async () => {
+    const pending: Array<() => void> = [];
+    fake.api.create.mockImplementation(
+      (_dir: string, _opts: unknown) =>
+        new Promise(resolve => {
+          const handleId = 900 + pending.length;
+          pending.push(() => resolve({...fake.state.load, handleId}));
+        }),
+    );
+    try {
+      fake.api.destroy.mockClear();
+      const a = Speech.initialize(PHONON);
+      const b = Speech.initialize(PHONON);
+      const settled = Promise.allSettled([a, b]);
+      await flush();
+      // Both destroys ran first (in call order), then exactly one create.
+      expect(pending).toHaveLength(1);
+      pending[0]!();
+      const results = await settled;
+      expect(results.map(r => r.status)).toEqual(['fulfilled', 'fulfilled']);
+      // No second create replaced (and freed) the live handle 900.
+      expect(pending).toHaveLength(1);
+      expect(fake.api.destroy).not.toHaveBeenCalledWith(900);
+      await expect(Speech.isReady()).resolves.toBe(true);
+    } finally {
+      fake.api.create.mockReset();
+      fake.api.create.mockImplementation(async () => ({
+        ...fake.state.load,
+        handleId: 1000,
+      }));
+    }
   });
 
   it('release destroys the native handle', async () => {

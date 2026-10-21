@@ -42,6 +42,7 @@ import {
   PhononEngine,
   normalizePhononLanguage,
   phononWatchdogMs,
+  phononCreateWatchdogMs,
   __resetPhononBrokenStateForTests,
 } from '../PhononEngine';
 import {PhononError} from '../errors';
@@ -210,6 +211,46 @@ describe('PhononEngine.getSupport', () => {
     });
   });
 
+  it('never caches load-failed: native drops it once the model changes', async () => {
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'load-failed',
+      detail: 'backend initialization failed',
+    };
+    await expect(PhononEngine.getSupport()).resolves.toMatchObject({
+      reason: 'load-failed',
+    });
+    // The user re-downloaded the model: native no longer applies the record.
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    await expect(PhononEngine.getSupport()).resolves.toMatchObject({
+      supported: true,
+    });
+    expect(fake.api.getSupport).toHaveBeenCalledTimes(2);
+  });
+
+  it('resetSupport clears native and the cache, never throws', async () => {
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'symbols-missing',
+    };
+    await PhononEngine.getSupport();
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    // Still cached.
+    await expect(PhononEngine.getSupport()).resolves.toMatchObject({
+      reason: 'symbols-missing',
+    });
+    await expect(PhononEngine.resetSupport()).resolves.toBe(true);
+    expect(fake.api.resetSupport).toHaveBeenCalledTimes(1);
+    await expect(PhononEngine.getSupport()).resolves.toMatchObject({
+      reason: 'ok',
+    });
+
+    fake.api.resetSupport.mockRejectedValueOnce(new Error('io'));
+    await expect(PhononEngine.resetSupport()).resolves.toBe(false);
+  });
+
   it('needsCompile and getDiagnostics never throw', async () => {
     fake.api.needsCompile.mockResolvedValueOnce(true);
     await expect(PhononEngine.needsCompile('/m')).resolves.toBe(true);
@@ -235,6 +276,7 @@ describe('initialize', () => {
       language: 'en',
       numThreads: 0,
       computeUnit: 'neuralEngine',
+      spinBudget: 0,
     });
     expect(await engine.isReady()).toBe(true);
     expect(engine.getLoadInfo()).toMatchObject({voices: ['Alba', 'Marius']});
@@ -258,6 +300,7 @@ describe('initialize', () => {
       language: 'en',
       numThreads: 3,
       computeUnit: 'cpu',
+      spinBudget: 0,
     });
   });
 
@@ -333,17 +376,119 @@ describe('initialize', () => {
     expect(fake.api.getSupport).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a concurrent initialize', async () => {
+  it('a load-failed record stops gating once the model changes', async () => {
+    // JS-level view of the native fix: the probe re-checks the recorded model.
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'load-failed',
+    };
     const engine = new PhononEngine();
-    const first = engine.initialize(CONFIG);
-    await expect(engine.initialize(CONFIG)).rejects.toThrow('already loading');
-    await first;
+    await expect(codeOf(engine.initialize(CONFIG))).resolves.toBe(
+      'ERR_PHONON_UNSUPPORTED',
+    );
+    expect(fake.api.create).not.toHaveBeenCalled();
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    await engine.initialize(CONFIG);
+    expect(fake.api.create).toHaveBeenCalledTimes(1);
+    expect(await engine.isReady()).toBe(true);
   });
 
-  it('warns that spinBudget is not plumbed and logs a pending compile', async () => {
+  it('logs expected gating outcomes without console.error', async () => {
+    fake.state.support = {
+      ...fake.state.support,
+      supported: false,
+      reason: 'missing-cpu-features',
+    };
+    await expect(codeOf(new PhononEngine().initialize(CONFIG))).resolves.toBe(
+      'ERR_PHONON_UNSUPPORTED',
+    );
+    fake.state.support = {...fake.state.support, supported: true, reason: 'ok'};
+    PhononEngine.clearSupportCache();
+    fake.api.create.mockRejectedValueOnce(
+      Object.assign(new Error('ptts_new failed'), {code: 'PHONON_LOAD_FAILED'}),
+    );
+    await expect(codeOf(new PhononEngine().initialize(CONFIG))).resolves.toBe(
+      'ERR_PHONON_LOAD',
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.flat().join(' ')).toContain(
+      'missing-cpu-features',
+    );
+    expect(warnSpy.mock.calls.flat().join(' ')).toContain('ptts_new failed');
+
+    // Unexpected failures still go to console.error.
+    fake.api.create.mockRejectedValueOnce(
+      Object.assign(new Error('jni'), {code: 'PHONON_INTERNAL'}),
+    );
+    await new PhononEngine().initialize(CONFIG).catch(() => {});
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('destroy during initialize waits for it, so creates never overlap', async () => {
+    // EngineManager.reinitializeEngine (destroy + initialize) racing an
+    // initialize that is still creating.
+    let finishCreate!: () => void;
+    fake.api.create.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finishCreate = () => resolve({...fake.state.load, handleId: 501});
+        }),
+    );
+    const engine = new PhononEngine();
+    const first = engine.initialize(CONFIG);
+    await flush();
+    let destroyed = false;
+    const second = engine.destroy().then(async () => {
+      destroyed = true;
+      await engine.initialize(CONFIG);
+    });
+    await flush();
+    expect(destroyed).toBe(false);
+    expect(engine.getStatus().isLoading).toBe(true);
+    // release() still refuses mid-load.
+    await expect(engine.release()).resolves.toMatchObject({success: false});
+    expect(fake.api.create).toHaveBeenCalledTimes(1);
+
+    finishCreate();
+    await first;
+    await second;
+    // Handle 501 was destroyed after its create finished; one new create.
+    expect(fake.api.destroy).toHaveBeenCalledWith(501);
+    expect(fake.api.create).toHaveBeenCalledTimes(2);
+    expect(await engine.isReady()).toBe(true);
+    expect(engine.getLoadInfo()!.handleId).not.toBe(501);
+  });
+
+  it('a concurrent initialize waits for the first and creates once', async () => {
+    const engine = new PhononEngine();
+    const first = engine.initialize(CONFIG);
+    const second = engine.initialize(CONFIG);
+    await Promise.all([first, second]);
+    expect(fake.api.create).toHaveBeenCalledTimes(1);
+    expect(await engine.isReady()).toBe(true);
+  });
+
+  it('a failed initialize does not block the next lifecycle call', async () => {
+    fake.api.create.mockRejectedValueOnce(
+      Object.assign(new Error('jni'), {code: 'PHONON_INTERNAL'}),
+    );
+    const engine = new PhononEngine();
+    const first = engine.initialize(CONFIG);
+    const second = engine.initialize(CONFIG);
+    await expect(codeOf(first)).resolves.toBe('ERR_PHONON_INTERNAL');
+    await second;
+    expect(await engine.isReady()).toBe(true);
+  });
+
+  it('forwards spinBudget to native and logs a pending compile', async () => {
     fake.api.needsCompile.mockResolvedValueOnce(true);
     await ready({spinBudget: 200});
-    expect(warnSpy.mock.calls.flat().join(' ')).toContain('spinBudget');
+    expect(fake.api.create).toHaveBeenCalledWith(
+      CONFIG.modelPath,
+      expect.objectContaining({spinBudget: 200}),
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
     expect(logSpy.mock.calls.flat().join(' ')).toContain('Core ML compile');
   });
 });
@@ -633,6 +778,19 @@ describe('synthesize: chunked playback', () => {
       },
     });
     expect(fake.plays).toHaveLength(1);
+  });
+
+  it('a throwing chunk progress callback neither aborts nor leaks', async () => {
+    const engine = await ready({maxChunkSize: 25});
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    engine.setChunkProgressCallback(() => {
+      throw new Error('listener bug');
+    });
+    await engine.synthesize('First sentence here. Second one now.');
+    expect(fake.plays).toHaveLength(2);
+    expect(fake.liveBuffers()).toBe(0);
+    expect(warnSpy.mock.calls.flat().join(' ')).toContain('progress');
   });
 
   it('does not copy PCM without onAudioChunk', async () => {
@@ -942,6 +1100,95 @@ describe('watchdog', () => {
     await expect(PhononEngine.getSupport()).resolves.toMatchObject({
       supported: true,
     });
+  });
+
+  it('after a timeout, release/destroy/reinit do not wait for the stuck worker', async () => {
+    const engine = await ready();
+    jest.useFakeTimers();
+    const done = engine.synthesize('Hello there.');
+    await flush();
+    jest.advanceTimersByTime(10_000);
+    await expect(codeOf(done)).resolves.toBe('ERR_PHONON_TIMEOUT');
+
+    // Native destroy is queued behind the hung synth: it never settles.
+    fake.state.hangDestroy = true;
+    await expect(engine.release()).resolves.toMatchObject({success: true});
+    expect(fake.api.destroy).toHaveBeenCalledTimes(1);
+
+    // EngineManager.reinitializeEngine: destroy() then initialize().
+    await engine.initialize(CONFIG).catch(() => {});
+    await engine.destroy();
+    await expect(codeOf(engine.initialize(CONFIG))).resolves.toBe(
+      'ERR_PHONON_TIMEOUT',
+    );
+  });
+
+  it('a destroy already waiting when the watchdog fires is abandoned', async () => {
+    const engine = await ready();
+    jest.useFakeTimers();
+    const done = engine.synthesize('Hello there.');
+    await flush();
+    fake.state.hangDestroy = true;
+    let released = false;
+    const rel = engine.release().then(r => {
+      released = true;
+      return r;
+    });
+    await flush();
+    await done;
+    expect(released).toBe(false); // waiting on native destroy
+    jest.advanceTimersByTime(10_000);
+    await flush();
+    expect(released).toBe(true);
+    await expect(rel).resolves.toMatchObject({success: true});
+  });
+
+  it('a create stuck behind a hung worker times out instead of loading forever', async () => {
+    // e.g. after an RN reload: the JS broken flag is gone, the native worker is not.
+    expect(phononCreateWatchdogMs(false)).toBe(120_000);
+    expect(phononCreateWatchdogMs(true)).toBe(600_000);
+    let lateCreate!: () => void;
+    fake.api.create.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          lateCreate = () => resolve({...fake.state.load, handleId: 77});
+        }),
+    );
+    jest.useFakeTimers();
+    const engine = new PhononEngine();
+    const init = engine.initialize(CONFIG);
+    await flush();
+    expect(engine.getStatus().isLoading).toBe(true);
+    jest.advanceTimersByTime(120_000);
+    await expect(codeOf(init)).resolves.toBe('ERR_PHONON_TIMEOUT');
+    expect(engine.getStatus()).toMatchObject({isLoading: false});
+    // A handle that shows up after the timeout is freed, never used.
+    lateCreate();
+    await flush();
+    expect(fake.api.destroy).toHaveBeenCalledWith(77);
+    await expect(codeOf(new PhononEngine().initialize(CONFIG))).resolves.toBe(
+      'ERR_PHONON_TIMEOUT',
+    );
+  });
+
+  it('a create that compiles Core ML gets the long budget', async () => {
+    fake.api.needsCompile.mockResolvedValueOnce(true);
+    let finish!: () => void;
+    fake.api.create.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = () => resolve({...fake.state.load, handleId: 78});
+        }),
+    );
+    jest.useFakeTimers();
+    const engine = new PhononEngine();
+    const init = engine.initialize(CONFIG);
+    await flush();
+    jest.advanceTimersByTime(300_000);
+    await flush();
+    finish();
+    await init;
+    expect(await engine.isReady()).toBe(true);
   });
 
   it('a late rejection after a timeout is ignored', async () => {

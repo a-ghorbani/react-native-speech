@@ -38,6 +38,7 @@ class Speech {
         ? {supported: false, reason: 'not-compiled', detail: 'jest mock'}
         : {supported: true, reason: 'ok'},
     );
+  static resetEngineSupport = () => Promise.resolve(true);
 }
 
 const HighlightedText = jestFn(function HighlightedText() {

@@ -28,15 +28,18 @@ target_link_options(native_dict PRIVATE "-Wl,-z,max-page-size=16384")
 
 # --- Phonon JNI shim (opt-in, RNSpeech_phononEnabled) ---
 # librnspeech_phonon.so never links libptts_ffi.so: it dlopen()s it lazily from phononCreate,
-# after the HWCAP gate (docs/phonon/DESIGN.md §2.1). 64-bit ABIs only; on any other ABI
-# System.loadLibrary fails and getSupport reports unsupported-abi.
+# after the HWCAP gate (docs/phonon/DESIGN.md §2.1). Built only for the 64-bit ABIs listed in
+# RN_SPEECH_PHONON_ABIS (RNSpeech_phononAbis, comma-separated); on any other ABI
+# System.loadLibrary fails and getSupport reports unsupported-abi (or library-missing).
 option(RN_SPEECH_PHONON "Build the Phonon JNI shim" OFF)
+set(RN_SPEECH_PHONON_ABIS "arm64-v8a" CACHE STRING "ABIs that package libptts_ffi.so")
+string(REPLACE "," ";" PHONON_ABI_LIST "${RN_SPEECH_PHONON_ABIS}")
 # Checked for every ABI (also so CMake does not warn that 32-bit builds ignore them).
 if(RN_SPEECH_PHONON AND (NOT RN_SPEECH_PHONON_INCLUDE_DIR OR NOT RN_SPEECH_PHONON_ARM64_FEATURES))
   message(FATAL_ERROR "RN_SPEECH_PHONON needs RN_SPEECH_PHONON_INCLUDE_DIR and "
                       "RN_SPEECH_PHONON_ARM64_FEATURES (set by android/phonon.gradle)")
 endif()
-if(RN_SPEECH_PHONON AND ANDROID_ABI MATCHES "^(arm64-v8a|x86_64)$")
+if(RN_SPEECH_PHONON AND ANDROID_ABI MATCHES "^(arm64-v8a|x86_64)$" AND ANDROID_ABI IN_LIST PHONON_ABI_LIST)
   set(PHONON_CPP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../cpp/phonon)
 
   add_library(rnspeech_phonon SHARED

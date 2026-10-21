@@ -88,6 +88,51 @@ class PhononCapabilityStoreTest {
   }
 
   @Test
+  fun modelPathRoundTripsAndDefaultsToEmpty() {
+    val store = PhononCapabilityStore(File(tmp.root, PhononCapabilityStore.FILE_NAME))
+    val r = record(reason = PhononCapabilityStore.REASON_LOAD_FAILED, modelStamp = "s").copy(modelPath = "/m/a")
+    assertTrue(store.write(r))
+    assertEquals(r, store.read())
+    // A record without the field (library failure) decodes with "".
+    File(tmp.root, PhononCapabilityStore.FILE_NAME).writeText(
+      "{\"device\":\"$fingerprint\",\"libraryVersion\":\"0.4.0-r1\",\"reason\":\"library-missing\"}"
+    )
+    assertEquals("", store.read()!!.modelPath)
+  }
+
+  @Test
+  fun probeDropsLoadFailedRecordOnceItsModelChanges() {
+    // What getSupport does (it has no model at hand): re-stamp the recorded folder.
+    val dir = tmp.newFolder("model")
+    val gguf = File(dir, "model.q8.gguf")
+    gguf.writeText("weights")
+    gguf.setLastModified(1_000_000L)
+    val stamp = PhononCapabilityStore.modelStamp(dir)
+    val r = record(reason = PhononCapabilityStore.REASON_LOAD_FAILED, modelStamp = stamp).copy(modelPath = dir.path)
+    val stampOf = { path: String -> PhononCapabilityStore.modelStamp(File(path)) }
+    assertTrue(r.applies(fingerprint, "0.4.0-r1", stampOf))
+    // Re-downloaded model → the engine is offered again.
+    gguf.writeText("new weights")
+    gguf.setLastModified(2_000_000L)
+    assertFalse(r.applies(fingerprint, "0.4.0-r1", stampOf))
+    // Deleted model → also no longer applies.
+    dir.deleteRecursively()
+    assertFalse(r.applies(fingerprint, "0.4.0-r1", stampOf))
+    // Device/library key still decides first.
+    assertFalse(r.copy(modelStamp = stampOf(dir.path)).applies(fingerprint, "0.4.0-r2", stampOf))
+  }
+
+  @Test
+  fun libraryRecordsIgnoreTheModel() {
+    var stamped = 0
+    val stampOf = { _: String -> stamped++; "whatever" }
+    assertTrue(record().applies(fingerprint, "0.4.0-r1", stampOf))
+    // load-failed without a path (older record): device + library only.
+    assertTrue(record(reason = PhononCapabilityStore.REASON_LOAD_FAILED, modelStamp = "x").applies(fingerprint, "0.4.0-r1", stampOf))
+    assertEquals(0, stamped)
+  }
+
+  @Test
   fun modelStampChangesWithTheModel() {
     val dir = tmp.newFolder("phonon-31m-en")
     val empty = PhononCapabilityStore.modelStamp(dir)

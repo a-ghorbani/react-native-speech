@@ -49,6 +49,7 @@ const EXPECTED: Record<string, [string[], string]> = {
   phononReleaseBuffer: [['Number'], 'Boolean'],
   phononDestroy: [['Number'], 'Promise<Void>'],
   phononGetDiagnostics: [[], 'Promise<PhononDiagnostics>'],
+  phononResetSupport: [[], 'Promise<Boolean>'],
 };
 
 function show(a: Annotation): string {
@@ -138,7 +139,7 @@ describe('Phonon TurboModule spec (codegen schema)', () => {
       ].sort(),
     );
     expect(fields('PhononLoadOptions')).toEqual(
-      ['language', 'numThreads', 'computeUnit'].sort(),
+      ['language', 'numThreads', 'computeUnit', 'spinBudget'].sort(),
     );
     expect(fields('PhononLoadResult')).toEqual(
       [

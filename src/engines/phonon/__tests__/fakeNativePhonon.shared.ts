@@ -97,6 +97,8 @@ export function createFakeNativePhonon() {
     load: defaultLoadResult(),
     /** Value of every copyBuffer sample before volume */
     pcmValue: 0.5,
+    /** destroy() never settles (serial worker stuck behind a hung job) */
+    hangDestroy: false,
   };
 
   const synthResult = (
@@ -222,9 +224,15 @@ export function createFakeNativePhonon() {
       buffers.delete(bufferId);
       return true;
     }),
-    destroy: jest.fn(async (_handleId: number) => {
+    destroy: jest.fn((_handleId: number): Promise<void> => {
+      if (state.hangDestroy) {
+        // Queued behind a hung synth on the serial worker: never settles.
+        return new Promise<void>(() => {});
+      }
       buffers.clear();
+      return Promise.resolve();
     }),
+    resetSupport: jest.fn(async () => true),
     getDiagnostics: jest.fn(async () => ({
       memKb: 0,
       peakMemKb: 0,
@@ -257,6 +265,7 @@ export function createFakeNativePhonon() {
       state.support = {...OK_SUPPORT};
       state.load = defaultLoadResult();
       state.pcmValue = 0.5;
+      state.hangDestroy = false;
       for (const fn of Object.values(api)) {
         fn.mockClear();
       }

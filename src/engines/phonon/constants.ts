@@ -27,6 +27,14 @@ export const PHONON_CONSTANTS = {
    * expected synth time.
    */
   ESTIMATED_MS_PER_CHAR: 90,
+
+  // Create watchdog. A create queued behind a hung synth (e.g. after an
+  // RN reload, which resets the JS broken flag but not the native
+  // worker) would otherwise never settle.
+  /** Budget of a native create (Android ~0.6 s, iOS compiled: seconds) */
+  CREATE_WATCHDOG_MS: 120_000,
+  /** Budget of a native create that has to compile Core ML first (iOS) */
+  CREATE_COMPILE_WATCHDOG_MS: 600_000,
 } as const;
 
 /** Languages the Phonon FFI accepts (`ptts_set_language`). */

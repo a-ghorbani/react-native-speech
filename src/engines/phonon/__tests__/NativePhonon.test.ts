@@ -56,6 +56,7 @@ describe('NativePhonon guard (methods missing)', () => {
 
   it('destroy resolves and diagnostics report nothing loaded', async () => {
     await expect(np.destroy(1)).resolves.toBeUndefined();
+    await expect(np.resetSupport()).resolves.toBe(false);
     await expect(np.getDiagnostics()).resolves.toMatchObject({
       libraryLoaded: false,
       handleOpen: false,
@@ -106,6 +107,7 @@ describe('NativePhonon pass-through (methods present)', () => {
     phononReleaseBuffer: jest.fn(() => true),
     phononDestroy: jest.fn(async () => undefined),
     phononGetDiagnostics: jest.fn(async () => ({libraryLoaded: true})),
+    phononResetSupport: jest.fn(async () => true),
   };
   const np = load(turbo);
 
@@ -146,6 +148,8 @@ describe('NativePhonon pass-through (methods present)', () => {
     await np.destroy(7);
     expect(turbo.phononDestroy).toHaveBeenCalledWith(7);
     await expect(np.getDiagnostics()).resolves.toEqual({libraryLoaded: true});
+    await expect(np.resetSupport()).resolves.toBe(true);
+    expect(turbo.phononResetSupport).toHaveBeenCalledTimes(1);
   });
 
   it('propagates native rejections unchanged', async () => {
@@ -172,6 +176,7 @@ describe('NativePhonon pass-through (methods present)', () => {
         'releaseBuffer',
         'destroy',
         'getDiagnostics',
+        'resetSupport',
       ].sort(),
     );
   });

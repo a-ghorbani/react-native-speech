@@ -10,9 +10,12 @@ object PhononCpu {
   /** One required bit: [word] 1 = AT_HWCAP, 2 = AT_HWCAP2; [name] as /proc/cpuinfo prints it. */
   data class Requirement(val word: Int, val bit: Long, val name: String)
 
-  /** Parses the shim's "<word>:<bit>:<name>" entries. Malformed entries are an error. */
+  /**
+   * Parses the shim's "<word>:<bit>:<name>" entries. Malformed entries are an error, and so is
+   * null (the shim failed to build the list): the gate fails closed, never "no requirements".
+   */
   fun parseRequirements(entries: Array<String>?): List<Requirement> =
-    (entries ?: emptyArray()).map { entry ->
+    checkNotNull(entries) { "hwcap requirements unavailable from the shim" }.map { entry ->
       val parts = entry.split(":", limit = 3)
       require(parts.size == 3) { "bad hwcap entry '$entry'" }
       val word = parts[0].toInt()

@@ -4,6 +4,7 @@ import java.util.UUID
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -90,6 +91,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   // Neural Audio Player state
   private var audioTrack: AudioTrack? = null
+  // Play promise of audioTrack: settled on completion, or (like iOS) when the track is stopped
+  // or replaced, so a stopped play never stays pending. Guarded by audioLock.
+  private var audioTrackPromise: Promise? = null
   private var isAudioPlayingState = false
   private var isAudioPausedState = false
   private var isAudioDuckingState = false
@@ -792,6 +796,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       audioTrack = null
       isAudioPlayingState = false
       isAudioPausedState = false
+      // Stopped or replaced before the end marker: resolve, like a finished play.
+      audioTrackPromise?.resolve(null)
+      audioTrackPromise = null
     }
   }
 
@@ -901,6 +908,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
           override fun onMarkerReached(track: AudioTrack?) {
             synchronized(audioLock) {
+              // A late marker of a track that was stopped or replaced (already settled).
+              if (audioTrackPromise !== promise) return
+              audioTrackPromise = null
               isAudioPlayingState = false
               deactivateAudioDuckingSession()
               neuralFocusManager.abandonFocus()
@@ -923,6 +933,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
         // Start playback
         track.play()
+        audioTrackPromise = promise
       }
     } catch (e: Exception) {
       SpeechTrace.endSection()
@@ -1021,6 +1032,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   // Phonon engine: thin delegations. PhononBridge is the real bridge when
   // built with RNSpeech_phononEnabled=true, otherwise a not-compiled stub.
 
+  // This module's liveness token for Phonon work: invalidate() clears it, so only this
+  // module's pending Phonon promises are dropped (other React instances keep theirs).
+  private val phononAlive = AtomicBoolean(true)
+
   override fun phononGetSupport(promise: Promise) {
     PhononBridge.getSupport(reactApplicationContext, promise)
   }
@@ -1030,7 +1045,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   override fun phononCreate(modelDir: String, options: ReadableMap, promise: Promise) {
-    PhononBridge.create(reactApplicationContext, modelDir, options, promise)
+    PhononBridge.create(reactApplicationContext, modelDir, options, phononAlive, promise)
   }
 
   override fun phononAllocRequestId(): Double {
@@ -1045,7 +1060,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     language: String,
     promise: Promise
   ) {
-    PhononBridge.synthesize(handleId.toLong(), requestId.toLong(), text, voice, language, promise)
+    PhononBridge.synthesize(handleId.toLong(), requestId.toLong(), text, voice, language, phononAlive, promise)
   }
 
   override fun phononCancel(upToRequestId: Double): Boolean {
@@ -1073,11 +1088,15 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   }
 
   override fun phononDestroy(handleId: Double, promise: Promise) {
-    PhononBridge.destroy(handleId.toLong(), promise)
+    PhononBridge.destroy(handleId.toLong(), phononAlive, promise)
   }
 
   override fun phononGetDiagnostics(promise: Promise) {
     PhononBridge.getDiagnostics(promise)
+  }
+
+  override fun phononResetSupport(promise: Promise) {
+    PhononBridge.resetSupport(reactApplicationContext, promise)
   }
 
   /** Shuts down the OS TTS engine (setEngine re-initializes it on a live module). */
@@ -1094,10 +1113,13 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     super.invalidate()
     // Real teardown only (never setEngine). Phonon state is process-wide: cancel only,
     // never destroy or join.
-    PhononBridge.onModuleInvalidated()
+    PhononBridge.onModuleInvalidated(phononAlive)
     resetSystemTts()
 
-    // Cleanup neural audio player
+    // Cleanup neural audio player (never settle into the dead JS runtime)
+    synchronized(audioLock) {
+      audioTrackPromise = null
+    }
     cleanupAudio()
     deactivateAudioDuckingSession()
     neuralFocusManager.abandonFocus()

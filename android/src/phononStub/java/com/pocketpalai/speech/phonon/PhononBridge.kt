@@ -1,5 +1,6 @@
 package com.pocketpalai.speech.phonon
 
+import android.content.Context
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
@@ -8,6 +9,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * PhononBridge (flag-off stub). Compiled only when the library is built
@@ -61,6 +63,7 @@ object PhononBridge {
     context: ReactApplicationContext,
     modelDir: String,
     options: ReadableMap,
+    alive: AtomicBoolean,
     promise: Promise
   ) = reject(promise)
 
@@ -72,6 +75,7 @@ object PhononBridge {
     text: String,
     voice: String,
     language: String,
+    alive: AtomicBoolean,
     promise: Promise
   ) = reject(promise)
 
@@ -90,7 +94,7 @@ object PhononBridge {
 
   fun releaseBuffer(bufferId: Long): Boolean = false
 
-  fun destroy(handleId: Long, promise: Promise) {
+  fun destroy(handleId: Long, alive: AtomicBoolean, promise: Promise) {
     promise.resolve(null)
   }
 
@@ -98,8 +102,15 @@ object PhononBridge {
     promise.resolve(Arguments.makeNativeMap(diagnosticsInfo()))
   }
 
+  /** Nothing is ever recorded without Phonon. */
+  fun resetSupport(context: Context, promise: Promise) {
+    promise.resolve(true)
+  }
+
   /** Called from RNSpeechModule.invalidate(); nothing to cancel here. */
-  fun onModuleInvalidated() {}
+  fun onModuleInvalidated(alive: AtomicBoolean) {
+    alive.set(false)
+  }
 
   private fun reject(promise: Promise) {
     promise.reject(NOT_COMPILED, MESSAGE)

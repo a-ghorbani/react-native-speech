@@ -38,7 +38,9 @@ object PhononProbe {
     val nativeBridge: () -> String?,
     /** [AT_HWCAP, AT_HWCAP2]. */
     val hwcaps: () -> LongArray,
-    val requirements: () -> List<PhononCpu.Requirement>
+    val requirements: () -> List<PhononCpu.Requirement>,
+    /** The shim's ARM64_FEATURES (e.g. "+dotprod,+fp16"); "" if unknown. */
+    val arm64Features: () -> String = { "" }
   )
 
   fun evaluate(i: Inputs): Result {
@@ -71,7 +73,17 @@ object PhononProbe {
       return no("translated-abi", "arm64 under translation (abis ${i.supportedAbis.joinToString(",")})", abi)
     }
     val caps = i.hwcaps()
-    val missing = PhononCpu.missing(caps.getOrElse(0) { 0L }, caps.getOrElse(1) { 0L }, i.requirements())
+    val required = try {
+      i.requirements()
+    } catch (e: Exception) {
+      return no("error", "HWCAP gate unavailable: ${e.message ?: e.javaClass.simpleName}", abi)
+    }
+    // Fail closed: an arm64 build compiled with extra features always has requirements, so an
+    // empty list means the gate itself is broken, not that nothing is needed.
+    if (abi == "arm64-v8a" && required.isEmpty() && i.arm64Features().isNotBlank()) {
+      return no("error", "no HWCAP requirements for arm64 features ${i.arm64Features()}", abi)
+    }
+    val missing = PhononCpu.missing(caps.getOrElse(0) { 0L }, caps.getOrElse(1) { 0L }, required)
     if (missing.isNotEmpty()) {
       return no("missing-cpu-features", "missing ${missing.joinToString(",")}", abi)
     }

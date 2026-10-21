@@ -694,7 +694,9 @@ if (supported) {
 }
 ```
 
-Optional fields: `language` (`'en'` default), `defaultVoice`, `numThreads` (Android), `spinBudget` (Android; accepted but ignored for now, logs a warning), `computeUnit` (`'neuralEngine'` default, or `'cpu'`; iOS), `maxChunkSize`, `voicesMetadataPath`.
+Optional fields: `language` (`'en'` default), `defaultVoice`, `numThreads` (Android), `spinBudget` (Android; `XN_SPIN_BUDGET`, fixed by the first `initialize` in a process), `computeUnit` (`'neuralEngine'` default, or `'cpu'`; iOS), `maxChunkSize`, `voicesMetadataPath`.
+
+A `load-failed` (or `library-missing` / `symbols-missing`) outcome is remembered per device, OS build and library version, so the engine stays hidden on later launches; `await Speech.resetEngineSupport(TTSEngine.PHONON)` clears it so the next check probes again.
 
 Limitations: no speed or pitch control (ignored with a warning), no phoneme input, Phonon 31m speaks English only, 3 GB+ RAM. Phonon 40m models are **CC BY-NC 4.0** (non-commercial). Model downloads per platform, voices, support reasons, error codes and the full list of limits are in the [Phonon guide](./PHONON_GUIDE.md).
 

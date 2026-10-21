@@ -42,7 +42,7 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 | `KOKORO` | ONNX (`onnxruntime-react-native`) | iOS, Android | Kokoro-82M (Apache-2.0) | speed | multi-language via dict |
 | `SUPERTONIC` | ONNX (`onnxruntime-react-native`) | iOS, Android | Supertonic v1–v3 (OpenRAIL) | speed | very fast; multilingual on v3 |
 | `KITTEN` | ONNX (`onnxruntime-react-native`) | iOS, Android | KittenML (Apache-2.0) | speed | compact, IPA-driven |
-| `PHONON` | native: CPU on Android, Core ML on iOS | Android arm64 with dotprod (and x86_64), iOS 18+ | Phonon 31m (Apache-2.0); 40m is CC BY-NC | **no** | opt-in build flag, zero native cost when off; see the [Phonon guide](./docs/PHONON_GUIDE.md) |
+| `PHONON` | native: CPU on Android, Core ML on iOS | Android arm64 with dotprod (and x86_64), iOS 18+ | Phonon 31m (Apache-2.0); 40m is CC BY-NC | **no** | opt-in build flag; when off, no Phonon binaries (only ~7 KB of TurboModule codegen glue); see the [Phonon guide](./docs/PHONON_GUIDE.md) |
 
 Check `await Speech.getEngineSupport(engine)` before offering an engine: it never throws and reports why Phonon is unavailable (`not-compiled`, `missing-cpu-features`, `os-too-old`, ...). Phonon's device and OS support has not been validated on the full device matrix yet; see the guide's [verification status](./docs/PHONON_GUIDE.md#requirements-and-supported-devices).
 

@@ -5,8 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicBoolean
 
-/** PhononBridge's glue (create sequence, capability records, epoch, buffers) on a fake host. */
+/** PhononBridge's glue (create sequence, capability records, module tokens, buffers) on a fake host. */
 class PhononSessionTest {
   private class FakeSettle : PhononSession.Settle {
     var resolved: Map<String, Any>? = null
@@ -32,6 +33,7 @@ class PhononSessionTest {
     val env = mutableMapOf<String, String>()
     val released = mutableListOf<Long>()
     val failures = mutableListOf<Triple<String, String, String>>()
+    val failurePaths = mutableListOf<String>()
     val queue = ArrayDeque<Runnable>()
 
     var support = PhononProbe.Result(true, "ok", "", "arm64-v8a")
@@ -61,8 +63,9 @@ class PhononSessionTest {
       cached = null
       support = PhononProbe.Result(true, "ok", "", "arm64-v8a")
     }
-    override fun recordFailure(reason: String, detail: String, modelStamp: String) {
+    override fun recordFailure(reason: String, detail: String, modelPath: String, modelStamp: String) {
       failures += Triple(reason, detail, modelStamp)
+      failurePaths += modelPath
     }
     override fun shimLoaded() = shim
     override fun execute(job: Runnable) {
@@ -124,6 +127,7 @@ class PhononSessionTest {
 
   private val host = FakeHost()
   private val session = PhononSession(host)
+  private val alive = AtomicBoolean(true)
 
   private fun params(stamp: String = "stamp-a", threads: Int = 0, spin: Int = 0) =
     PhononSession.CreateParams("/models/a", stamp, "en", "gpu", threads, spin)
@@ -138,7 +142,7 @@ class PhononSessionTest {
   fun createRejectsWithoutNativeWorkWhenProbeFails() {
     host.support = PhononProbe.Result(false, "missing-cpu-features", "asimddp", "arm64-v8a")
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     assertEquals(PhononSession.UNSUPPORTED, s.code)
     assertTrue(s.message!!.contains("missing-cpu-features"))
     assertTrue(host.queue.isEmpty())
@@ -149,7 +153,7 @@ class PhononSessionTest {
   @Test
   fun createSucceedsAfterLoadAndPassesComputeUnitThrough() {
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     assertFalse(s.settled) // runs on the synth thread
     host.runAll()
     assertEquals(listOf("probe", "loadLibrary", "create:/models/a:en:gpu"), host.calls)
@@ -165,10 +169,11 @@ class PhononSessionTest {
       host.failures.clear()
       host.load = arrayOf(reason, "dlopen: nope")
       val s = FakeSettle()
-      session.create(params(), s)
+      session.create(params(), alive, s)
       host.runAll()
       assertEquals(PhononSession.UNSUPPORTED, s.code)
       assertEquals(listOf(Triple(reason, "dlopen: nope", "")), host.failures)
+      assertEquals("", host.failurePaths.last())
     }
     assertFalse(host.calls.any { it.startsWith("create:") })
   }
@@ -177,7 +182,7 @@ class PhononSessionTest {
   fun malformedLoadResultCountsAsLoadFailed() {
     host.load = null
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     host.runAll()
     assertEquals(PhononCapabilityStore.REASON_LOAD_FAILED, host.failures.single().first)
   }
@@ -187,18 +192,20 @@ class PhononSessionTest {
     host.createResult = arrayOf("PHONON_LOAD_FAILED", "weights are corrupt", "", null, null, null, "")
     val msg = "weights are corrupt"
     val s = FakeSettle()
-    session.create(params(stamp = "stamp-x"), s)
+    session.create(params(stamp = "stamp-x"), alive, s)
     host.runAll()
     assertEquals("PHONON_LOAD_FAILED", s.code)
     assertTrue(PhononCapabilityStore.isPersistentLoadFailure(msg))
     assertEquals(Triple(PhononCapabilityStore.REASON_LOAD_FAILED, msg, "stamp-x"), host.failures.single())
+    // The folder is recorded so the probe can tell when that model changes.
+    assertEquals(listOf("/models/a"), host.failurePaths)
   }
 
   @Test
   fun configLoadFailureIsNotRecorded() {
     host.createResult = arrayOf("PHONON_LOAD_FAILED", "failed to read config.json: No such file", "", null, null, null, "")
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     host.runAll()
     assertEquals("PHONON_LOAD_FAILED", s.code)
     assertTrue(host.failures.isEmpty())
@@ -208,7 +215,7 @@ class PhononSessionTest {
   fun otherCreateErrorsAreNotRecorded() {
     host.createResult = arrayOf("PHONON_BUSY", "busy", "", null, null, null, "")
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     host.runAll()
     assertEquals("PHONON_BUSY", s.code)
     assertTrue(host.failures.isEmpty())
@@ -220,7 +227,7 @@ class PhononSessionTest {
     host.record = loadFailedRecord("stamp-old")
     host.support = PhononProbe.Result(false, PhononCapabilityStore.REASON_LOAD_FAILED, "bad", "arm64-v8a")
     val s = FakeSettle()
-    session.create(params(stamp = "stamp-new"), s)
+    session.create(params(stamp = "stamp-new"), alive, s)
     assertEquals(listOf("reset", "probe"), host.calls)
     host.runAll()
     assertEquals(1, s.resolveCount)
@@ -232,7 +239,7 @@ class PhononSessionTest {
     host.record = loadFailedRecord("stamp-a")
     host.support = PhononProbe.Result(false, PhononCapabilityStore.REASON_LOAD_FAILED, "bad", "arm64-v8a")
     val s = FakeSettle()
-    session.create(params(stamp = "stamp-a"), s)
+    session.create(params(stamp = "stamp-a"), alive, s)
     assertEquals(listOf("probe"), host.calls)
     assertEquals(PhononSession.UNSUPPORTED, s.code)
   }
@@ -243,20 +250,20 @@ class PhononSessionTest {
     host.record = loadFailedRecord("x").copy(reason = PhononCapabilityStore.REASON_LIBRARY_MISSING)
     host.support = PhononProbe.Result(false, PhononCapabilityStore.REASON_LIBRARY_MISSING, "", "arm64-v8a")
     val s = FakeSettle()
-    session.create(params(stamp = "other"), s)
+    session.create(params(stamp = "other"), alive, s)
     assertFalse(host.calls.contains("reset"))
     assertEquals(PhononSession.UNSUPPORTED, s.code)
   }
 
   @Test
   fun threadPolicyIsAppliedOncePerProcess() {
-    session.create(params(threads = 3, spin = 5000), FakeSettle())
+    session.create(params(threads = 3, spin = 5000), alive, FakeSettle())
     host.runAll()
     assertEquals("3", host.env["RAYON_NUM_THREADS"])
     assertEquals("5000", host.env["XN_SPIN_BUDGET"])
     host.env.clear()
     val s = FakeSettle()
-    session.create(params(threads = 6, spin = 9000), s)
+    session.create(params(threads = 6, spin = 9000), alive, s)
     host.runAll()
     assertTrue(host.env.isEmpty())
     assertEquals(3.0, s.resolved!!["numThreads"])
@@ -265,7 +272,7 @@ class PhononSessionTest {
 
   @Test
   fun spinBudgetUnsetLeavesEnvAlone() {
-    session.create(params(), FakeSettle())
+    session.create(params(), alive, FakeSettle())
     host.runAll()
     assertFalse(host.env.containsKey("XN_SPIN_BUDGET"))
   }
@@ -274,7 +281,7 @@ class PhononSessionTest {
   fun unavailableSynthThreadRejectsAtOnce() {
     host.executorDown = true
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     assertEquals(PhononSession.INTERNAL, s.code)
   }
 
@@ -282,18 +289,36 @@ class PhononSessionTest {
   fun jobExceptionRejectsInternal() {
     host.createResult = null
     val s = FakeSettle()
-    session.create(params(), s)
+    session.create(params(), alive, s)
     host.runAll()
     assertEquals(PhononSession.INTERNAL, s.code)
   }
 
-  // ---- epoch --------------------------------------------------------------------------------
+  // ---- module tokens ------------------------------------------------------------------------
+
+  @Test
+  fun invalidatingOneModuleKeepsAnotherModulesPromises() {
+    // Two React instances in one process: invalidating A must not strand B's work.
+    val other = AtomicBoolean(true)
+    val a = FakeSettle()
+    val b = FakeSettle()
+    session.synthesize(1, 5, "hi", "alba", "en", 0.0, alive, a)
+    session.synthesize(1, 6, "hi", "alba", "en", 0.0, other, b)
+    session.onModuleInvalidated(alive)
+    host.runAll()
+    assertFalse(a.settled)
+    assertEquals(6.0, b.resolved!!["requestId"])
+    assertEquals(listOf(7L), host.released) // only A's dropped result
+    assertTrue(other.get())
+    // cancelAll stays process-wide (DESIGN.md §1.5).
+    assertTrue(host.calls.contains("cancelAll"))
+  }
 
   @Test
   fun invalidatedModuleDropsPendingCreate() {
     val s = FakeSettle()
-    session.create(params(), s)
-    session.onModuleInvalidated()
+    session.create(params(), alive, s)
+    session.onModuleInvalidated(alive)
     host.runAll()
     assertFalse(s.settled)
   }
@@ -301,8 +326,8 @@ class PhononSessionTest {
   @Test
   fun invalidatedModuleDropsSynthAndReleasesItsBuffer() {
     val s = FakeSettle()
-    session.synthesize(1, 5, "hi", "alba", "en", 0.0, s)
-    session.onModuleInvalidated()
+    session.synthesize(1, 5, "hi", "alba", "en", 0.0, alive, s)
+    session.onModuleInvalidated(alive)
     host.runAll()
     assertFalse(s.settled)
     assertEquals(listOf(7L), host.released)
@@ -311,17 +336,19 @@ class PhononSessionTest {
   @Test
   fun droppedSynthWithoutBufferReleasesNothing() {
     host.synthBufferId = 0.0
-    session.synthesize(1, 5, "hi", "alba", "en", 0.0, FakeSettle())
-    session.onModuleInvalidated()
+    session.synthesize(1, 5, "hi", "alba", "en", 0.0, alive, FakeSettle())
+    session.onModuleInvalidated(alive)
     host.runAll()
     assertTrue(host.released.isEmpty())
   }
 
   @Test
-  fun workSubmittedAfterInvalidateSettles() {
-    session.onModuleInvalidated()
+  fun workOfTheNextModuleSettles() {
+    session.onModuleInvalidated(alive)
+    // The reloaded RN instance gets a new module, so a new token.
+    val next = AtomicBoolean(true)
     val s = FakeSettle()
-    session.synthesize(1, 9, "hi", "alba", "en", 0.0, s)
+    session.synthesize(1, 9, "hi", "alba", "en", 0.0, next, s)
     host.runAll()
     assertEquals(9.0, s.resolved!!["requestId"])
     assertTrue(host.released.isEmpty())
@@ -331,22 +358,22 @@ class PhononSessionTest {
   fun droppedRejectionIsSilent() {
     host.synthCode = arrayOf("PHONON_CANCELLED", "x")
     val s = FakeSettle()
-    session.synthesize(1, 5, "hi", "alba", "en", 0.0, s)
-    session.onModuleInvalidated()
+    session.synthesize(1, 5, "hi", "alba", "en", 0.0, alive, s)
+    session.onModuleInvalidated(alive)
     host.runAll()
     assertFalse(s.settled)
   }
 
   @Test
   fun onModuleInvalidatedCancelsThenReleasesOrphans() {
-    session.onModuleInvalidated()
+    session.onModuleInvalidated(alive)
     assertEquals(listOf("cancelAll", "releaseOrphans"), host.calls)
   }
 
   @Test
   fun onModuleInvalidatedWithoutShimTouchesNoNatives() {
     host.shim = false
-    session.onModuleInvalidated()
+    session.onModuleInvalidated(alive)
     assertTrue(host.calls.isEmpty())
   }
 
@@ -356,7 +383,7 @@ class PhononSessionTest {
   fun synthesizeWithoutShimRejects() {
     host.shim = false
     val s = FakeSettle()
-    session.synthesize(1, 5, "hi", "alba", "en", 0.0, s)
+    session.synthesize(1, 5, "hi", "alba", "en", 0.0, alive, s)
     assertEquals(PhononSession.UNSUPPORTED, s.code)
     assertTrue(host.queue.isEmpty())
   }
@@ -365,7 +392,7 @@ class PhononSessionTest {
   fun synthesizeErrorCodeRejects() {
     host.synthCode = arrayOf("PHONON_VOICE_NOT_FOUND", "no voice zed")
     val s = FakeSettle()
-    session.synthesize(1, 5, "hi", "zed", "en", 0.0, s)
+    session.synthesize(1, 5, "hi", "zed", "en", 0.0, alive, s)
     host.runAll()
     assertEquals("PHONON_VOICE_NOT_FOUND", s.code)
     assertEquals("no voice zed", s.message)
@@ -375,7 +402,7 @@ class PhononSessionTest {
   fun destroyWithoutShimResolves() {
     host.shim = false
     val s = FakeSettle()
-    session.destroy(1, s)
+    session.destroy(1, alive, s)
     assertEquals(1, s.resolveCount)
     assertNull(s.resolved)
   }
@@ -383,7 +410,7 @@ class PhononSessionTest {
   @Test
   fun destroyRunsOnSynthThread() {
     val s = FakeSettle()
-    session.destroy(3, s)
+    session.destroy(3, alive, s)
     assertFalse(s.settled)
     host.runAll()
     assertEquals(listOf("destroy:3"), host.calls)

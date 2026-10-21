@@ -37,7 +37,8 @@ typedef void (^RNSpeechPhononReject)(NSString *code, NSString *_Nullable message
 + (void)recordCapabilityFailure:(NSString *)reason
                          detail:(NSString *)detail
                        modelDir:(nullable NSString *)modelDir;
-+ (void)clearCapabilityRecord;
+/// Deletes the record; YES if none is left afterwards.
++ (BOOL)clearCapabilityRecord;
 /// Tests only: redirect the store (nil restores the default).
 + (void)setCapabilityStoreURLForTesting:(nullable NSURL *)url;
 /// sha256 of <modelDir>/bundle.json, "none" if unreadable.
