@@ -18,6 +18,14 @@
   never throw; report whether an engine can run on this build and
   device (built-ins always can; add-ons answer through the new optional
   `TTSEngineInterface.getSupport()` / `resetSupport()`).
+- **`Speech.getCurrentEngineId()` / `Speech.getAvailableEngineIds()`**
+  return `EngineId`s, add-ons included. `getCurrentEngine()` /
+  `getAvailableEngines()` are deprecated (typed `TTSEngine`; to be
+  removed or retyped in 3.0).
+- **The engine add-on API is stable within 2.x**: the add-on building
+  blocks exported from the package root, `NeuralPcmSink` (Android) and
+  `RNSpeechAudioOutput.h` (iOS). See
+  [docs/USAGE.md](docs/USAGE.md#engine-add-on-api).
 
 ### Fixed
 

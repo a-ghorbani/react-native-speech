@@ -3,7 +3,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/** Process-wide sink onto RNSpeech's neural player, for engine add-ons. */
+/** Process-wide sink onto RNSpeech's neural player, for engine add-ons. Stable within 2.x. */
 @interface RNSpeechAudioOutput : NSObject
 
 /** nil until an RNSpeech module is alive. */
@@ -12,6 +12,9 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Plays interleaved float32 samples in [-1, 1] the way playAudio plays its decoded PCM: stops the current
  * playback, emits onStart/onFinish, and resolves when playback finishes or is replaced.
+ * Callable from any thread; work runs on RNSpeech's serial audio queue.
+ * silentMode: @"obey" (default; any other value behaves as obey), @"respect" or @"ignore", as
+ * SynthesisOptions.silentMode; ignored when ducking is YES.
  */
 - (void)playFloatSamples:(NSData *)samples
               sampleRate:(double)sampleRate

@@ -30,9 +30,10 @@
  * scenarios such as multi-engine orchestration, custom pipelines, or
  * integrating an engine without going through the unified `Speech` API.
  *
- * These exports are tagged `@internal` — they are part of the public
- * surface but their shape may change between minor releases. Pin the
- * library version if you depend on them.
+ * The engine classes and `engineManager` are `@internal`: their shape
+ * may change between minor releases. The engine add-on API (the building
+ * blocks below them) is stable within 2.x; see docs/USAGE.md
+ * "Engine add-on API".
  */
 
 // Export Speech API as default
@@ -130,10 +131,7 @@ export type {
   StripMarkdownOptions,
 } from './utils/stripMarkdown';
 
-// Export engines for advanced usage.
-// These are part of the public API but their shape is not covered by
-// the same semver guarantees as the default `Speech` API — see the
-// header comment above.
+// Advanced: not covered by semver (see the header comment).
 
 /** @internal Advanced: low-level engine registry. */
 export {engineManager} from './engines/EngineManager';
@@ -146,25 +144,25 @@ export {SupertonicEngine} from './engines/supertonic';
 /** @internal Advanced: Kitten neural engine class. */
 export {KittenEngine} from './engines/kitten';
 
-// Building blocks for engine add-ons (see docs/USAGE.md "Engine add-ons").
-// Add-ons import them from the package root, never by deep path.
+// Engine add-on API, stable within 2.x (docs/USAGE.md "Engine add-on API").
+// Add-ons import it from the package root, never by deep path.
 
-/** @internal Advanced: pipelined synth + play loop for streaming engines. */
+/** Engine add-on API: pipelined synth + play loop for streaming engines. */
 export {EngineStreamSession} from './engines/EngineStreamSession';
 export type {EngineStreamSessionConfig} from './engines/EngineStreamSession';
-/** @internal Advanced: the shared neural audio player. */
+/** Engine add-on API: the shared neural audio player. */
 export {
   NeuralAudioPlayer,
   neuralAudioPlayer,
 } from './engines/NeuralAudioPlayer';
 export type {PlaybackOptions} from './engines/NeuralAudioPlayer';
-/** @internal Advanced: text chunking used by the neural engines. */
+/** Engine add-on API: text chunking used by the neural engines. */
 export {TextChunker} from './utils/TextChunker';
 export type {TextChunk} from './utils/TextChunker';
 export {StreamingChunker} from './engines/StreamingChunker';
 export {findFirstClauseEnd} from './utils/firstClause';
 export {stripMarkdown} from './utils/stripMarkdown';
-/** @internal Advanced: asset and logging helpers. */
+/** Engine add-on API: asset and logging helpers. */
 export {base64ToArrayBuffer, loadAssetAsText} from './utils/AssetLoader';
 export {createComponentLogger} from './utils/logger';
 export type {ReleaseResult, ReleaseError} from './types';
