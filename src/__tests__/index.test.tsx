@@ -47,6 +47,17 @@ import Speech, {
   TTSEngine,
   onAudioInterruption,
   createMarkdownStreamBuffer,
+  EngineStreamSession,
+  NeuralAudioPlayer,
+  neuralAudioPlayer,
+  TextChunker,
+  StreamingChunker,
+  findFirstClauseEnd,
+  stripMarkdown,
+  base64ToArrayBuffer,
+  loadAssetAsText,
+  createComponentLogger,
+  isPhonemeInput,
 } from '../index';
 
 describe('public API surface', () => {
@@ -76,6 +87,31 @@ describe('public API surface', () => {
 
   it('exports createMarkdownStreamBuffer', () => {
     expect(typeof createMarkdownStreamBuffer).toBe('function');
+  });
+
+  it('exports the engine registry API on Speech', () => {
+    expect(typeof Speech.registerEngine).toBe('function');
+    expect(typeof Speech.getEngineSupport).toBe('function');
+    expect(typeof Speech.resetEngineSupport).toBe('function');
+  });
+
+  it('exports the building blocks engine add-ons import', () => {
+    for (const value of [
+      EngineStreamSession,
+      NeuralAudioPlayer,
+      TextChunker,
+      StreamingChunker,
+      findFirstClauseEnd,
+      stripMarkdown,
+      base64ToArrayBuffer,
+      loadAssetAsText,
+      createComponentLogger,
+      isPhonemeInput,
+    ]) {
+      expect(typeof value).toBe('function');
+    }
+    expect(neuralAudioPlayer).toBeInstanceOf(NeuralAudioPlayer);
+    expect(typeof neuralAudioPlayer.playNative).toBe('function');
   });
 
   it('exports TTSEngine enum/values', () => {

@@ -2,10 +2,10 @@
  * Compile-time checks (run by `yarn typecheck`): add-on configs merge into
  * SpeechInitConfig, and built-in configs are still checked per engine.
  */
-import type {SpeechInitConfig} from '../Speech';
+import type {SpeechInitConfig} from '../index';
 import {TTSEngine} from '../types';
 
-declare module '../Speech' {
+declare module '../index' {
   interface CustomEngineConfigs {
     'typed-addon': {modelPath: string; quality?: 'low' | 'high'};
   }

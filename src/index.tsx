@@ -37,6 +37,7 @@
 
 // Export Speech API as default
 export {default} from './Speech';
+export type {SpeechInitConfig, CustomEngineConfigs} from './Speech';
 
 // Export types from native API
 export type {
@@ -57,6 +58,8 @@ export {isPhonemeInput} from './types';
 // Export engine types
 export type {
   TTSEngineInterface,
+  EngineId,
+  EngineSupport,
   EngineStreamHandle,
   AudioBuffer,
   SynthesisOptions,
@@ -142,3 +145,26 @@ export {KokoroEngine} from './engines/kokoro';
 export {SupertonicEngine} from './engines/supertonic';
 /** @internal Advanced: Kitten neural engine class. */
 export {KittenEngine} from './engines/kitten';
+
+// Building blocks for engine add-ons (see docs/USAGE.md "Engine add-ons").
+// Add-ons import them from the package root, never by deep path.
+
+/** @internal Advanced: pipelined synth + play loop for streaming engines. */
+export {EngineStreamSession} from './engines/EngineStreamSession';
+export type {EngineStreamSessionConfig} from './engines/EngineStreamSession';
+/** @internal Advanced: the shared neural audio player. */
+export {
+  NeuralAudioPlayer,
+  neuralAudioPlayer,
+} from './engines/NeuralAudioPlayer';
+export type {PlaybackOptions} from './engines/NeuralAudioPlayer';
+/** @internal Advanced: text chunking used by the neural engines. */
+export {TextChunker} from './utils/TextChunker';
+export type {TextChunk} from './utils/TextChunker';
+export {StreamingChunker} from './engines/StreamingChunker';
+export {findFirstClauseEnd} from './utils/firstClause';
+export {stripMarkdown} from './utils/stripMarkdown';
+/** @internal Advanced: asset and logging helpers. */
+export {base64ToArrayBuffer, loadAssetAsText} from './utils/AssetLoader';
+export {createComponentLogger} from './utils/logger';
+export type {ReleaseResult, ReleaseError} from './types';
