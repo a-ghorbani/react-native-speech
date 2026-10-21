@@ -605,7 +605,9 @@ Triggers: `workflow_dispatch` (`revision`) and tags `phonon-bin-v*`.
 5. `cargo about` notices (MIT/Apache-2.0/BSD/ISC/Unicode/Zlib only).
 6. Deterministic zip: `jniLibs/<abi>/libptts_ffi.so`, `include/{ptts.h,phonon_required_hwcaps.h}`,
    licenses, notices, `BUILDINFO.json`.
-7. Reproducibility leg (warn-only).
+7. Reproducibility leg: a second build from another directory must match `BUILDINFO.json` `libs`.
+   Warn-only (`continue-on-error`) until the first published phonon-bin release has reproduced
+   byte-for-byte in two consecutive runs; then it blocks.
 
 **Job `ios` (macos-15):**
 1. Download upstream `PhononCore.xcframework.zip`, verify sha

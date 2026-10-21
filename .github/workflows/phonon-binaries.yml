@@ -243,8 +243,9 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-      # A second build from another directory must give the same bytes. Warn-only for now
-      # (design §4.1 step 7).
+      # A second build from another directory must give the same bytes (design §4.1 step 7).
+      # Warn-only until the first published phonon-bin release has reproduced byte-for-byte in two
+      # consecutive runs of this job; then drop continue-on-error.
       - name: Reproducibility check
         continue-on-error: true
         run: |
