@@ -177,6 +177,49 @@ script is incompatible), so `build-android-phonon` checks it on the library modu
 (`:pocketpalai_react-native-speech:assembleRelease`, stored then reused, no problem from our
 files) and builds the app without it.
 
+## Device evidence (WP9, design §8.3-§8.5)
+
+| Script | Does |
+|---|---|
+| `stage-android-model.sh <dir>` | the example's Android download on the host (checkpoint + 8 curated voices, sha256-pinned like `PhononModelManager.ts`) into `<dir>/31m-en`, for phones without internet |
+| `collect-android-evidence.sh <serial> <slug> <flavor> --apk <apk>` | one evidence run: install (confirms the HyperOS "Install via USB?" prompt), `device.json`, launch, model push, meminfo before/after, self-test deep link, screenshots + UI dumps at `SCREENSHOT_READY`, maps proof, pid-filtered logcat + crash buffer + new dropbox crashes against the §8.4 regex, the app's `phonon-evidence/<runId>/`, `check.txt` (PASS/FAIL/NOT-RUN per check, §8.3 thresholds). `--scenario S1..S13,U1,U2,U3,F1` picks scenarios, `--dry-run` prints the adb plan, `--selftest` tests the checks offline |
+
+Evidence APKs (JS always bundled, no Metro; `ci.init.gradle -PrnSpeechCiBundleDebug=true` for
+the debug ones):
+
+| Flavor | Build (`cd example/android`, plus `-PRNSpeech_phononAbis=arm64-v8a -PRNSpeech_phononLibDir=$LIBS` when on) |
+|---|---|
+| `flag-on` | `assembleRelease -PreactNativeArchitectures=arm64-v8a -PRNSpeech_phononEnabled=true` |
+| `flag-off` | `assembleRelease -PreactNativeArchitectures=arm64-v8a -PRNSpeech_phononEnabled=false` |
+| `flag-on-32bit` | `assembleRelease -PreactNativeArchitectures=armeabi-v7a -PRNSpeech_phononEnabled=true` (no Phonon library for 32-bit: `unsupported-abi`) |
+| `forced-<reason>` | `assembleDebug ... -PRNSpeech_phononForceReason=<reason>` (debug builds only) |
+| `negative-control` | `assembleDebug ... -PRNSpeech_phononSkipHwcapGate=true` (N1: the debug probe skips the HWCAP gate; never ship it) |
+| debug `flag-on` | `assembleDebug ... -PRNSpeech_phononEnabled=true`: run-as maps, and S11's reload half |
+
+```bash
+# model for phones without internet (else the app downloads it: --model download)
+M="$(scripts/phonon/stage-android-model.sh /tmp/phonon-model)"
+# the default run (S1-S10, S12), one scenario, the S13 sweep, an unsupported flavor
+scripts/phonon/collect-android-evidence.sh <serial> <slug> flag-on --apk flag-on.apk --model "$M"
+scripts/phonon/collect-android-evidence.sh <serial> <slug> flag-on --apk flag-on.apk --model "$M" --scenario S6
+scripts/phonon/collect-android-evidence.sh <serial> <slug> flag-on --apk flag-on.apk --model "$M" --scenario S13
+scripts/phonon/collect-android-evidence.sh <serial> <slug> forced-load-failed --apk forced-load-failed.apk
+```
+
+Notes from the first device run:
+
+- With `extractNativeLibs=false` the libraries are mmapped from `base.apk`, so
+  `/proc/<pid>/maps | grep libptts_ffi` (U1 as first written) is 0 even with the library loaded.
+  The maps proof therefore also counts `base.apk` mappings whose file offset is inside
+  `lib/<abi>/libptts_ffi.so`'s stored range in the APK, and an initialized supported run must
+  see it (else the check is reported blind).
+- Release builds have no `run-as`: the self-test copies its evidence folder to the app's
+  external files dir (`adb pull`), saves its own `maps.txt`, and installs a pushed model with
+  `modelFrom=` (`PhononModelManager.installFromDirectory`: the download's checks, no network).
+- S11 is opt-in (`scenarios=s11`): the script backgrounds the app on `S11_BACKGROUND_REQUEST`;
+  the reload half needs a debug build (release: `NOT-RUN`), and the next JS context finishes the
+  run from a marker file.
+
 ## Not yet run on a Mac
 
 Written and statically checked on Linux only; the first macOS run (CI `ios` job or by hand) must

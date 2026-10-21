@@ -9,10 +9,12 @@
 #      library, +10 KB dex, codegen over budget, JS budget and --strict-js, flag-on report)
 #   3. check-npm-pack.sh --selftest (required files, forbidden paths, size)
 #   4. ci-emulator-selftest.sh --selftest (logcat checks: results, page size, crashes)
-#   5. fetch-ci-model.sh pins the same files as example/src/utils/PhononModelManager.ts
+#   5. fetch-ci-model.sh pins the same files as example/src/utils/PhononModelManager.ts, and
+#      stage-android-model.sh the same curated voices (WP9 device-lab model staging)
 #   6. ci.yml: the existing Android / iOS builds keep the flag off, the Phonon jobs exist with
 #      the design's matrix, steps call scripts that exist, actions are pinned by SHA (needs
 #      python3 + PyYAML; skipped otherwise)
+#   7. collect-android-evidence.sh --selftest (WP9 device evidence checks on fixtures, dry runs)
 #
 # Env: ANDROID_NDK_HOME (NDK clang, for 1). Optional real-APK checks:
 #   PHONON_APK_FLAG_ON=<apk> [PHONON_APK_ABIS=arm64-v8a,x86_64] [PHONON_APK_LIBDIR=<jniLibs>]
@@ -91,6 +93,21 @@ assert sh == ts, (sh, ts)
 assert len(ts) == 4, ts
 EOF
 
+check "stage-android-model.sh voice pins match PHONON_CURATED_VOICES" python3 - "$ROOT/example/src/utils/PhononModelManager.ts" <<EOF
+import re, subprocess, sys
+src = open(sys.argv[1]).read()
+block = src[src.index("export const PHONON_CURATED_VOICES"):]
+block = block[:block.index("];")]
+ts = re.findall(r"name: '([^']+)',\s*voiceId: '([^']+)',.*?sha256: '([0-9a-f]{64})'", block, re.S)
+vrev = re.search(r"repo: 'gradium/phonon-voices',\s*revision: '([0-9a-f]{40})'", src).group(1)
+pins = subprocess.run(["$HERE/stage-android-model.sh", "--pins"], check=True, capture_output=True, text=True).stdout.split("\n")
+sh = [tuple(l.split()) for l in pins if l and not l.startswith("revision")]
+sh_rev = next(l.split()[1] for l in pins if l.startswith("revision"))
+assert sh_rev == vrev, (sh_rev, vrev)
+assert sh == ts, (sh, ts)
+assert len(ts) == 8, ts
+EOF
+
 echo "# 6. ci.yml"
 if python3 -c 'import yaml' 2>/dev/null; then
   check "ci.yml Phonon jobs" python3 - "$ROOT/.github/workflows/ci.yml" "$ROOT" <<'EOF'
@@ -160,6 +177,9 @@ EOF
 else
   echo "skip - ci.yml checks (no PyYAML)"
 fi
+
+echo "# 7. collect-android-evidence.sh"
+check "collect-android-evidence.sh --selftest" "$HERE/collect-android-evidence.sh" --selftest
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi

@@ -81,7 +81,10 @@ export type PhononModelErrorCode =
   | 'http'
   | 'size-mismatch'
   | 'checksum'
-  | 'bad-manifest';
+  | 'bad-manifest'
+  | 'unsupported'
+  | 'busy'
+  | 'missing-file';
 
 export class PhononModelError extends Error {
   readonly code: PhononModelErrorCode;
@@ -553,6 +556,79 @@ export class PhononModelManager {
    * Download one file to `dest` and verify it. `size < 0` / empty
    * `sha256` skip that check. Throws `PhononModelError`.
    */
+  /**
+   * Android: install `variant` from a local folder holding the download's
+   * files at their download paths (a device-lab push,
+   * scripts/phonon/stage-android-model.sh). Same per-file size and sha256
+   * checks, catalog, install marker and atomic swap as downloadModel; only
+   * the transport differs. The source folder is left as it is.
+   */
+  installFromDirectory(
+    sourceDir: string,
+    variant: PhononVariant = DEFAULT_VARIANT,
+    onProgress?: (progress: PhononDownloadProgress) => void,
+  ): Promise<void> {
+    if (this.platform !== 'android') {
+      return Promise.reject(
+        new PhononModelError(
+          'unsupported',
+          'installFromDirectory is Android-only (iOS needs the mirror manifest)',
+        ),
+      );
+    }
+    if (this.inFlight.has(variant)) {
+      return Promise.reject(
+        new PhononModelError('busy', `${variant} is already downloading`),
+      );
+    }
+    const source = stripFileScheme(sourceDir).replace(/\/+$/, '');
+    const task = this.runDownload(variant, onProgress, source).finally(() => {
+      this.inFlight.delete(variant);
+    });
+    this.inFlight.set(variant, task);
+    return task;
+  }
+
+  /** Copy `from` to `dest`, then the download's size and sha256 checks. */
+  private async copyVerified(
+    file: PhononModelFile,
+    from: string,
+    dest: string,
+  ): Promise<number> {
+    if (!(await RNFS.exists(from))) {
+      throw new PhononModelError(
+        'missing-file',
+        `${file.path}: not in ${from}`,
+      );
+    }
+    await RNFS.copyFile(from, dest);
+    return this.verifyFile(file, dest);
+  }
+
+  private async verifyFile(
+    file: PhononModelFile,
+    dest: string,
+  ): Promise<number> {
+    const stat = await RNFS.stat(dest);
+    const size = Number(stat.size);
+    if (file.size >= 0 && size !== file.size) {
+      throw new PhononModelError(
+        'size-mismatch',
+        `${file.path}: expected ${file.size} bytes, got ${size}`,
+      );
+    }
+    if (file.sha256) {
+      const actual = (await RNFS.hash(dest, 'sha256')).toLowerCase();
+      if (actual !== file.sha256) {
+        throw new PhononModelError(
+          'checksum',
+          `${file.path}: sha256 ${actual}, expected ${file.sha256}`,
+        );
+      }
+    }
+    return size;
+  }
+
   private async downloadVerified(
     file: PhononModelFile,
     dest: string,
@@ -574,24 +650,7 @@ export class PhononModelManager {
         `Failed to download ${file.path}: HTTP ${response.statusCode}`,
       );
     }
-    const stat = await RNFS.stat(dest);
-    const size = Number(stat.size);
-    if (file.size >= 0 && size !== file.size) {
-      throw new PhononModelError(
-        'size-mismatch',
-        `${file.path}: expected ${file.size} bytes, got ${size}`,
-      );
-    }
-    if (file.sha256) {
-      const actual = (await RNFS.hash(dest, 'sha256')).toLowerCase();
-      if (actual !== file.sha256) {
-        throw new PhononModelError(
-          'checksum',
-          `${file.path}: sha256 ${actual}, expected ${file.sha256}`,
-        );
-      }
-    }
-    return size;
+    return this.verifyFile(file, dest);
   }
 
   /**
@@ -650,6 +709,8 @@ export class PhononModelManager {
   private async runDownload(
     variant: PhononVariant,
     onProgress?: (progress: PhononDownloadProgress) => void,
+    /** installFromDirectory: copy from this folder instead of downloading */
+    sourceDir?: string,
   ): Promise<void> {
     this.assertDownloadable(variant);
     const files = await this.getFileList(variant);
@@ -684,12 +745,20 @@ export class PhononModelManager {
             dirs.add(dir);
           }
         }
-        console.log(`[PhononModelManager] Downloading ${file.path}...`);
-        const size = await this.downloadVerified(
-          file,
-          `${staging}/${file.path}`,
-          bytes => report(done + bytes, file.path),
+        console.log(
+          `[PhononModelManager] ${sourceDir ? 'Copying' : 'Downloading'} ${file.path}...`,
         );
+        const size = sourceDir
+          ? await this.copyVerified(
+              file,
+              `${sourceDir}/${file.path}`,
+              `${staging}/${file.path}`,
+            )
+          : await this.downloadVerified(
+              file,
+              `${staging}/${file.path}`,
+              bytes => report(done + bytes, file.path),
+            );
         done += size;
         report(done, file.path);
       }
@@ -715,6 +784,7 @@ export class PhononModelManager {
             this.platform === 'ios'
               ? `${this.iosMirror.repo}@${this.iosMirror.revision}`
               : `${CHECKPOINT_31M.repo}@${CHECKPOINT_31M.revision}`,
+          ...(sourceDir ? {copiedFrom: sourceDir} : {}),
           installedAt: new Date().toISOString(),
         }),
         'utf8',

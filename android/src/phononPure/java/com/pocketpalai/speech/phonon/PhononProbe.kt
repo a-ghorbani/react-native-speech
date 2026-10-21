@@ -11,6 +11,9 @@ object PhononProbe {
   /** ActivityManager.MemoryInfo.totalMem floor. */
   const val MIN_TOTAL_MEM_BYTES = 3L shl 30
 
+  /** `detail` of a supported result whose HWCAP gate was skipped (debug negative control). */
+  const val SKIPPED_HWCAP_GATE = "hwcap gate skipped (debug negative control)"
+
   data class Result(
     val supported: Boolean,
     val reason: String,
@@ -40,7 +43,13 @@ object PhononProbe {
     val hwcaps: () -> LongArray,
     val requirements: () -> List<PhononCpu.Requirement>,
     /** The shim's ARM64_FEATURES (e.g. "+dotprod,+fp16"); "" if unknown. */
-    val arm64Features: () -> String = { "" }
+    val arm64Features: () -> String = { "" },
+    /**
+     * BuildConfig.RN_SPEECH_PHONON_SKIP_HWCAP_GATE (always false in release builds): the WP9
+     * negative control N1 reports `ok` without the HWCAP check, to prove the gate is what
+     * prevents the SIGILL on CPUs without the required features. Every other check still runs.
+     */
+    val skipHwcapGate: Boolean = false
   )
 
   fun evaluate(i: Inputs): Result {
@@ -71,6 +80,9 @@ object PhononProbe {
     }
     if (PhononCpu.isTranslated(abi, i.supportedAbis, i.nativeBridge())) {
       return no("translated-abi", "arm64 under translation (abis ${i.supportedAbis.joinToString(",")})", abi)
+    }
+    if (i.skipHwcapGate) {
+      return Result(true, "ok", SKIPPED_HWCAP_GATE, abi)
     }
     val caps = i.hwcaps()
     val required = try {

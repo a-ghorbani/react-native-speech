@@ -21,7 +21,8 @@ class PhononProbeTest {
     nativeBridge: String? = "",
     features: String = PhononCpuTest.PIXEL9,
     required: Array<String>? = PhononCpuTest.DOTPROD_FP16,
-    arm64Features: String = "+dotprod,+fp16"
+    arm64Features: String = "+dotprod,+fp16",
+    skipHwcapGate: Boolean = false
   ) = PhononProbe.Inputs(
     forceReason = forceReason,
     capability = capability,
@@ -34,7 +35,8 @@ class PhononProbeTest {
     nativeBridge = { calls += "nativeBridge"; nativeBridge },
     hwcaps = { calls += "hwcaps"; longArrayOf(PhononCpuTest.hwcapOf(features), 0L) },
     requirements = { PhononCpu.parseRequirements(required) },
-    arm64Features = { arm64Features }
+    arm64Features = { arm64Features },
+    skipHwcapGate = skipHwcapGate
   )
 
   @Test
@@ -152,5 +154,32 @@ class PhononProbeTest {
     assertEquals("missing-cpu-features", r.reason)
     assertEquals("missing asimddp", r.detail)
     assertEquals("arm64-v8a", r.abi)
+  }
+
+  @Test
+  fun skipHwcapGateReportsOkWithoutReadingHwcaps() {
+    // N1 negative control: an SD845 (no asimddp) is let through, without the hwcap read.
+    val r = eval(inputs(features = PhononCpuTest.SD845, skipHwcapGate = true))
+    assertTrue(r.supported)
+    assertEquals("ok", r.reason)
+    assertEquals(PhononProbe.SKIPPED_HWCAP_GATE, r.detail)
+    assertEquals(listOf("loadShim", "nativeAbi", "nativeBridge"), calls)
+  }
+
+  @Test
+  fun skipHwcapGateIsOffByDefaultAndKeepsTheEarlierChecks() {
+    assertEquals("missing-cpu-features", eval(inputs(features = PhononCpuTest.SD845)).reason)
+    assertEquals(
+      "low-memory",
+      eval(inputs(totalMem = 2L shl 30, skipHwcapGate = true)).reason
+    )
+    assertEquals(
+      "unsupported-abi",
+      eval(inputs(is64Bit = false, shimError = UnsatisfiedLinkError("x"), skipHwcapGate = true)).reason
+    )
+    assertEquals(
+      "translated-abi",
+      eval(inputs(supportedAbis = listOf("x86_64", "arm64-v8a"), skipHwcapGate = true)).reason
+    )
   }
 }

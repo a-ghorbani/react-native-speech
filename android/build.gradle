@@ -29,7 +29,8 @@ def getExtOrIntegerDefault(name) {
 // Consumer sets RNSpeech_phononEnabled=true in gradle.properties, or
 // rootProject.ext.RNSpeech_phononEnabled = true (ext.phononEnabled also works).
 // Optional: RNSpeech_phononAbis (default arm64-v8a), RNSpeech_phononLibDir
-// (local jniLibs dir, skips the download), RNSpeech_phononForceReason (debug only).
+// (local jniLibs dir, skips the download), RNSpeech_phononForceReason (debug only),
+// RNSpeech_phononSkipHwcapGate (debug only, WP9 negative control N1: never ship it).
 def getPhononOption(name) {
   def extName = "RNSpeech_" + name
   def value = rootProject.ext.has(extName) ? rootProject.ext.get(extName) : getExtOrDefault(name)
@@ -40,6 +41,13 @@ def phononRequested = (getPhononOption("phononEnabled") ?: "false").toBoolean()
 def phononAbis = (getPhononOption("phononAbis") ?: "arm64-v8a").split(",").collect { it.trim() }.findAll { it }
 def phononLibDir = getPhononOption("phononLibDir") ?: ""
 def phononForceReason = getPhononOption("phononForceReason") ?: ""
+// N1 negative control (docs/phonon/DESIGN.md §8.3): the debug probe skips the HWCAP gate, so a
+// CPU without the required features crashes (SIGILL) on create. Debug builds only; default off.
+def phononSkipHwcapGate = (getPhononOption("phononSkipHwcapGate") ?: "false").toBoolean()
+if (phononSkipHwcapGate) {
+  logger.warn("RNSpeech: RNSpeech_phononSkipHwcapGate=true: DEBUG builds skip the Phonon HWCAP " +
+      "gate (negative-control evidence build; unsupported CPUs will crash). Never ship this.")
+}
 def phononLock = new groovy.json.JsonSlurper().parse(file("../phonon.lock.json"))
 def phononVersion = phononLock.binaries.release.toString().replaceFirst(/^phonon-bin-v/, "")
 def phononEnabled = phononRequested
@@ -108,10 +116,12 @@ android {
     debug {
       // Debug-only override for evidence runs (forces getSupport to report this reason).
       buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"${phononForceReason}\""
+      buildConfigField "boolean", "RN_SPEECH_PHONON_SKIP_HWCAP_GATE", phononSkipHwcapGate.toString()
     }
     release {
       minifyEnabled false
       buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"\""
+      buildConfigField "boolean", "RN_SPEECH_PHONON_SKIP_HWCAP_GATE", "false"
     }
   }
 

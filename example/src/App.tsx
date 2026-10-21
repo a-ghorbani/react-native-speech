@@ -12,6 +12,7 @@ import {C, MONO} from './styles/cyber';
 import {
   isPhononSelfTestRunning,
   parseSelfTestUrl,
+  resumePhononSelfTestAfterReload,
   runPhononSelfTest,
 } from './selftest/phononSelfTest';
 
@@ -42,7 +43,10 @@ function AppContent() {
         console.log(`[SelfTest] SELFTEST_DONE error=${String(err)}`),
       );
     };
-    Linking.getInitialURL()
+    // A self-test that reloaded the JS context (S11) finishes first; the
+    // initial URL is the same deep link and must not start a new run.
+    resumePhononSelfTestAfterReload({showTab: setTab})
+      .then(resumed => (resumed ? null : Linking.getInitialURL()))
       .then(handle)
       .catch(() => {});
     const sub = Linking.addEventListener('url', e => handle(e.url));

@@ -1122,3 +1122,30 @@ this appendix wins.
 - **Lock PR token (4.1).** `create-pull-request` uses the `PHONON_LOCK_PR_TOKEN` secret when set;
   otherwise CI must be triggered by hand on the lock PR (stated in the PR body and
   `scripts/phonon/README.md`).
+
+## Appendix D. WP9 device harness (2026-10-21)
+
+Found while building `collect-android-evidence.sh` and running it once on the SM8850; where they
+differ from §8, this appendix wins.
+
+- **U1 process proof (§8.3).** Uncompressed libraries (`extractNativeLibs=false`, §3.2) are
+  mmapped from `base.apk`, so `/proc/<pid>/maps | grep -c libptts_ffi` is 0 even with the library
+  loaded (measured: 0 on an initialized SM8850 run). The proof counts `base.apk` mappings whose
+  file offset lies inside `lib/<abi>/libptts_ffi.so`'s stored range in the APK, plus named
+  mappings; a supported, initialized run must see the library, otherwise the check is reported
+  blind (FAIL).
+- **Release builds have no `run-as`.** The self-test saves its own `/proc/self/maps` lines
+  (`maps.txt`), copies `phonon-evidence/<runId>/` to the app's external files dir for `adb pull`,
+  and installs a lab-pushed model with `modelFrom=<dir>`
+  (`PhononModelManager.installFromDirectory`: the download's per-file size/sha256 checks,
+  catalog, marker and atomic swap, no network). `download=1` stays the default path.
+- **S11** is an opt-in self-test scenario (`scenarios=s11`): background/foreground is driven by
+  the host on `S11_BACKGROUND_REQUEST`; the RN reload uses `DevSettings.reload()` (debug builds
+  only; release records `S11_reload` as not run) and the next JS context finishes the run from a
+  marker file (`resumePhononSelfTestAfterReload`), checking re-create, next speak and increasing
+  request ids (`lastIssuedId`).
+- **S13** is host-driven (a fresh process per threads x spin point); the self-test adds the
+  process CPU over the S3 runs and over a 2 s idle window after them (`/proc/self/stat`) for the
+  spin comparison.
+- **N1** uses `RNSpeech_phononSkipHwcapGate=true` (debug BuildConfig only, release always
+  `false`, default off): the probe reports `ok` without the HWCAP check; every other check runs.

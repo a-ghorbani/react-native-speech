@@ -22,6 +22,10 @@ const mockState = {
   model: true as boolean,
   /** S6: a chunk starts playing 5 ms after stop() */
   playAfterStop: false,
+  /** /proc/self/maps as the app would read it (Android) */
+  maps: '',
+  /** utime+stime the next /proc/self/stat read reports */
+  cpuTicks: 0,
 };
 
 function mockEmit(set: Set<Listener>, ...args: any[]) {
@@ -156,6 +160,43 @@ jest.mock('@pocketpalai/react-native-speech', () => {
 
 jest.mock('@dr.pogodin/react-native-fs', () => ({
   DocumentDirectoryPath: '/docs',
+  ExternalDirectoryPath: '/ext',
+  exists: jest.fn(async (p: string) => mockState.files.has(p)),
+  readFile: jest.fn(async (p: string) => {
+    if (p === '/proc/self/maps') {
+      return mockState.maps;
+    }
+    if (p === '/proc/self/stat') {
+      mockState.cpuTicks += 50;
+      return `4242 (speech.example) S 1 2 3 4 5 6 7 8 9 10 ${mockState.cpuTicks} 0 0 0`;
+    }
+    if (!mockState.files.has(p)) {
+      throw new Error(`ENOENT ${p}`);
+    }
+    return mockState.files.get(p);
+  }),
+  unlink: jest.fn(async (p: string) => {
+    mockState.files.delete(p);
+  }),
+  copyFile: jest.fn(async (from: string, to: string) => {
+    mockState.files.set(to, mockState.files.get(from) ?? '');
+  }),
+  readDir: jest.fn(async (dir: string) => {
+    const names = new Map<string, boolean>();
+    for (const f of mockState.files.keys()) {
+      if (f.startsWith(`${dir}/`)) {
+        const rest = f.slice(dir.length + 1);
+        const slash = rest.indexOf('/');
+        names.set(slash < 0 ? rest : rest.slice(0, slash), slash >= 0);
+      }
+    }
+    return [...names].map(([name, isDir]) => ({
+      name,
+      path: `${dir}/${name}`,
+      isDirectory: () => isDir,
+      isFile: () => !isDir,
+    }));
+  }),
   mkdir: jest.fn(async () => {}),
   writeFile: jest.fn(async (p: string, c: string) => {
     mockState.files.set(p, c);
@@ -196,11 +237,21 @@ jest.mock('../../utils/PhononModelManager', () => ({
     getVariantDirectory: jest.fn(() => '/docs/phonon/models/31m-en'),
     setIosMirror: jest.fn(),
     downloadModel: jest.fn(async () => {}),
+    installFromDirectory: jest.fn(async () => {}),
   },
 }));
 
 import {
+  AppState,
+  DevSettings,
+  Platform,
+  TurboModuleRegistry,
+} from 'react-native';
+import {
   PHONON_SCENARIOS,
+  countMapsLines,
+  cpuTicksFromStat,
+  relevantMapsLines,
   errorCode,
   parseSelfTestUrl,
   playbackGaps,
@@ -210,6 +261,7 @@ import {
   summarize,
   isPhononSelfTestRunning,
   onPhononSelfTestDone,
+  resumePhononSelfTestAfterReload,
 } from '../phononSelfTest';
 import {phononModelManager} from '../../utils/PhononModelManager';
 
@@ -230,6 +282,21 @@ describe('parseSelfTestUrl', () => {
       runId: '20261021T102030',
     });
     expect([...p.scenarios]).toEqual([...PHONON_SCENARIOS]);
+    expect(p.hold).toBe(1500);
+  });
+
+  it('s11 is opt-in only; hold is clamped', () => {
+    expect(
+      parseSelfTestUrl('speechexample://selftest/phonon', NOW)!.scenarios.has(
+        's11',
+      ),
+    ).toBe(false);
+    const p = parseSelfTestUrl(
+      'speechexample://selftest/phonon?scenarios=s11,s4&hold=999999',
+      NOW,
+    )!;
+    expect([...p.scenarios].sort()).toEqual(['s1', 's11', 's2', 's4']);
+    expect(p.hold).toBe(60000);
   });
 
   it('uses defaults without a query', () => {
@@ -320,6 +387,31 @@ describe('metric helpers', () => {
     expect(errorCode({code: 'ERR_X'})).toBe('ERR_X');
     expect(errorCode(new Error('x'))).toBe('none');
   });
+
+  it('countMapsLines and cpuTicksFromStat', () => {
+    const maps =
+      '7f00-7f10 r--p 0 fd:01 1 /data/app/x/lib/arm64/libptts_ffi.so\n' +
+      '7f10-7f20 r-xp 0 fd:01 1 /data/app/x/lib/arm64/libptts_ffi.so\n' +
+      '7f20-7f30 r-xp 0 fd:01 2 /data/app/x/lib/arm64/librnspeech_phonon.so\n';
+    expect(countMapsLines(maps, 'libptts_ffi')).toBe(2);
+    expect(countMapsLines('', 'libptts_ffi')).toBe(0);
+    // comm with spaces and a paren; utime=7, stime=5 (fields 14, 15).
+    expect(
+      cpuTicksFromStat('99 (a b) c) R 1 2 3 4 5 6 7 8 9 10 7 5 0 0 20'),
+    ).toBe(12);
+    expect(cpuTicksFromStat('garbage')).toBeNull();
+    expect(
+      relevantMapsLines(
+        '1-2 r--p 0 0:0 1 /system/lib64/libc.so\n' +
+          '3-4 r-xp 2000 0:0 2 /data/app/x/base.apk\n' +
+          '5-6 r-xp 0 0:0 3 /data/app/x/lib/arm64/libptts_ffi.so\n',
+      ),
+    ).toEqual([
+      '3-4 r-xp 2000 0:0 2 /data/app/x/base.apk',
+      '5-6 r-xp 0 0:0 3 /data/app/x/lib/arm64/libptts_ffi.so',
+    ]);
+    expect(cpuTicksFromStat('1 (x) R 1')).toBeNull();
+  });
 });
 
 describe('runPhononSelfTest', () => {
@@ -339,6 +431,8 @@ describe('runPhononSelfTest', () => {
     mockState.initCalls = [];
     mockState.model = true;
     mockState.playAfterStop = false;
+    mockState.maps = '';
+    mockState.cpuTicks = 0;
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
   });
@@ -484,6 +578,26 @@ describe('runPhononSelfTest', () => {
     ]);
   });
 
+  it('modelFrom=<dir> installs the default model from a pushed folder', async () => {
+    mockState.model = false;
+    (phononModelManager.downloadModel as jest.Mock).mockClear();
+    (
+      phononModelManager.installFromDirectory as jest.Mock
+    ).mockImplementationOnce(async () => {
+      mockState.model = true;
+    });
+    const params = parseSelfTestUrl(
+      'speechexample://selftest/phonon?modelFrom=%2Fext%2Fpush%2F31m-en&scenarios=s3&runs=1&runId=mf',
+      NOW,
+    )!;
+    const summary = await runPhononSelfTest(params, {sleep});
+    expect(phononModelManager.installFromDirectory).toHaveBeenCalledWith(
+      '/ext/push/31m-en',
+    );
+    expect(phononModelManager.downloadModel).not.toHaveBeenCalled();
+    expect(summary.failed).toBe(0);
+  });
+
   it('S6 passes when no chunk of the stopped call plays after stop()', async () => {
     const params = parseSelfTestUrl(
       'speechexample://selftest/phonon?scenarios=s6&runId=s6ok',
@@ -538,5 +652,324 @@ describe('runPhononSelfTest', () => {
       'already running',
     );
     await first;
+  });
+
+  describe('on Android', () => {
+    beforeEach(() => {
+      jest.replaceProperty(Platform, 'OS', 'android');
+    });
+
+    it('unsupported: maps proof, external copy of the evidence', async () => {
+      mockState.supported = false;
+      mockState.reason = 'missing-cpu-features';
+      mockState.maps =
+        '7f00-7f10 r-xp 0 fd:01 2 /system/lib64/libc.so\n' +
+        '7f00-7f10 r-xp 0 fd:01 3 /data/app/x/base.apk\n';
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?runId=u1a',
+        NOW,
+      )!;
+      const summary = await runPhononSelfTest(params, {sleep});
+      const maps = summary.results.find(r => r.name === 'U_ptts_not_mapped')!;
+      expect(maps.pass).toBe(true);
+      expect(maps.detail).toMatch(/^libptts_ffi=0 \(by name; /);
+      // The host's offset check reads the APK mappings from maps.txt.
+      expect(mockState.files.get('/docs/phonon-evidence/u1a/maps.txt')).toBe(
+        '7f00-7f10 r-xp 0 fd:01 3 /data/app/x/base.apk\n',
+      );
+      expect(summary.failed).toBe(0);
+      // Same folder, readable by adb without run-as.
+      expect(
+        mockState.files.get('/ext/phonon-evidence/u1a/selftest.json'),
+      ).toBe(mockState.files.get('/docs/phonon-evidence/u1a/selftest.json'));
+      expect(
+        mockState.files.get('/ext/phonon-evidence/u1a/bench.jsonl'),
+      ).toContain('"event":"SELFTEST_DONE"');
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /SELFTEST_DONE passed=5 failed=0 .* external=\/ext\/phonon-evidence\/u1a$/,
+        ),
+      );
+    });
+
+    it('unsupported: a mapped libptts_ffi fails the proof', async () => {
+      mockState.supported = false;
+      mockState.maps = '7f00-7f10 r-xp 0 fd:01 1 /data/app/libptts_ffi.so\n';
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?runId=u1b',
+        NOW,
+      )!;
+      const summary = await runPhononSelfTest(params, {sleep});
+      const maps = summary.results.find(r => r.name === 'U_ptts_not_mapped')!;
+      expect(maps.pass).toBe(false);
+    });
+
+    it('S3 records CPU over the runs and the idle window; maps in selftest.json', async () => {
+      mockState.maps = '7f00-7f10 r-xp 0 fd:01 1 /data/app/libptts_ffi.so\n';
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s3&runs=2&runId=cpu',
+        NOW,
+      )!;
+      const summary = await runPhononSelfTest(params, {sleep});
+      const s3 = summary.results.find(r => r.name === 'S3_short_speak')!;
+      // Each /proc/self/stat read advances 50 ticks (10 ms each).
+      expect(s3.data!.cpu).toMatchObject({
+        userHz: 100,
+        runsCpuMs: 500,
+        idleCpuMs: 500,
+        cpuMsPerAudioSec: 250,
+      });
+      expect(selftestJson('cpu').maps).toEqual({
+        libptts_ffi: 1,
+        librnspeech_phonon: 0,
+        apkMappings: 0,
+      });
+    });
+
+    it('a pushed model folder with voices.jsonl is used as the catalog', async () => {
+      mockState.files.set('/ext/m/voices.jsonl', '{}\n');
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s3&runs=1&runId=m&model=%2Fext%2Fm',
+        NOW,
+      )!;
+      await runPhononSelfTest(params, {sleep});
+      expect(mockState.initCalls[0]).toMatchObject({
+        modelPath: '/ext/m',
+        voicesMetadataPath: '/ext/m/voices.jsonl',
+      });
+    });
+  });
+
+  describe('S11 interruptions', () => {
+    let appStateListeners: Array<(s: string) => void>;
+
+    beforeEach(() => {
+      appStateListeners = [];
+      // The host: HOME on the marker, then the deep link again.
+      (console.log as jest.Mock).mockImplementation((line: string) => {
+        if (String(line).includes('S11_BACKGROUND_REQUEST')) {
+          setTimeout(() => {
+            appStateListeners.forEach(l => l('background'));
+            appStateListeners.forEach(l => l('active'));
+          }, 0);
+        }
+      });
+      // No native DevSettings unless a test provides one: the JS fallback.
+      const realGet = TurboModuleRegistry.get.bind(TurboModuleRegistry);
+      jest
+        .spyOn(TurboModuleRegistry, 'get')
+        .mockImplementation((name: string) =>
+          name === 'DevSettings' ? null : realGet(name),
+        );
+      jest
+        .spyOn(AppState, 'addEventListener')
+        .mockImplementation((_type: any, cb: any) => {
+          appStateListeners.push(cb);
+          return {remove: () => {}} as any;
+        });
+    });
+
+    it('background/foreground on the host markers, then a reload that is not available', async () => {
+      (console.log as jest.Mock).mockImplementation((line: string) => {
+        if (String(line).includes('S11_BACKGROUND_REQUEST')) {
+          // The host presses HOME, then sends the deep link again.
+          setTimeout(() => {
+            appStateListeners.forEach(l => l('background'));
+            appStateListeners.forEach(l => l('active'));
+          }, 0);
+        }
+      });
+      const reload = jest
+        .spyOn(DevSettings, 'reload')
+        .mockImplementation(() => {});
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s11&runId=s11rel',
+        NOW,
+      )!;
+      const summary = await runPhononSelfTest(params, {sleep});
+      const bg = summary.results.find(r => r.name === 'S11_background')!;
+      expect(bg.pass).toBe(true);
+      expect(bg.data).toMatchObject({
+        states: ['background', 'active'],
+        speakOutcome: 'resolved',
+        nextSpeakOk: true,
+      });
+      expect(reload).toHaveBeenCalled();
+      const rl = summary.results.find(r => r.name === 'S11_reload')!;
+      expect(rl.pass).toBe(false);
+      expect(rl.detail).toMatch(/^not-run: /);
+      // The marker is gone, so the next app start does not resume.
+      expect(
+        mockState.files.has('/docs/phonon-evidence/.s11-reload-pending.json'),
+      ).toBe(false);
+      expect(summary.results[summary.results.length - 1]!.name).toBe(
+        'S11_reload',
+      );
+    });
+
+    it('reloads through the native DevSettings module (JS DevSettings is dev-only)', async () => {
+      const nativeReload = jest.fn();
+      jest
+        .spyOn(TurboModuleRegistry, 'get')
+        .mockImplementation((name: string) =>
+          name === 'DevSettings'
+            ? ({reloadWithReason: nativeReload} as any)
+            : null,
+        );
+      const jsReload = jest
+        .spyOn(DevSettings, 'reload')
+        .mockImplementation(() => {});
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s11&runId=s11native',
+        NOW,
+      )!;
+      await runPhononSelfTest(params, {sleep});
+      expect(nativeReload).toHaveBeenCalledWith('phonon self-test S11');
+      expect(jsReload).not.toHaveBeenCalled();
+    });
+
+    it('re-creates an engine the app released in the background', async () => {
+      const diag = jest.requireMock('@pocketpalai/react-native-speech')
+        .PhononEngine.getDiagnostics as jest.Mock;
+      const original = diag.getMockImplementation()!;
+      let calls = 0;
+      diag.mockImplementation(async () => ({
+        memKb: 1,
+        peakMemKb: 1,
+        threads: 1,
+        libraryLoaded: true,
+        // The first read after foreground sees the released handle.
+        handleOpen: ++calls !== 1,
+        liveBuffers: 0,
+        orphanBuffers: 0,
+        busy: 'idle',
+        lastIssuedId: mockState.requestId,
+        cancelWatermark: 0,
+      }));
+      (console.log as jest.Mock).mockImplementation((line: string) => {
+        if (String(line).includes('S11_BACKGROUND_REQUEST')) {
+          calls = 0;
+          setTimeout(() => {
+            appStateListeners.forEach(l => l('background'));
+            appStateListeners.forEach(l => l('active'));
+          }, 0);
+        }
+      });
+      jest.spyOn(DevSettings, 'reload').mockImplementation(() => {});
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s11&runId=s11rel2',
+        NOW,
+      )!;
+      mockState.initCalls = [];
+      const summary = await runPhononSelfTest(params, {sleep});
+      diag.mockImplementation(original);
+      const bg = summary.results.find(r => r.name === 'S11_background')!;
+      expect(bg.pass).toBe(true);
+      expect(bg.data).toMatchObject({releasedInBackground: true});
+      // S2 init + the re-create after foreground.
+      expect(
+        mockState.initCalls.filter(c => c.engine === 'phonon'),
+      ).toHaveLength(2);
+    });
+
+    it('fails S11_background when the host never backgrounds the app', async () => {
+      (console.log as jest.Mock).mockImplementation(() => {});
+      // A fast clock: every read is 5 s later, so the 60 s wait runs out.
+      let t = NOW.getTime();
+      jest.spyOn(Date, 'now').mockImplementation(() => (t += 5000));
+      jest.spyOn(DevSettings, 'reload').mockImplementation(() => {});
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s11&runId=s11none',
+        NOW,
+      )!;
+      const summary = await runPhononSelfTest(params, {sleep});
+      const bg = summary.results.find(r => r.name === 'S11_background')!;
+      expect(bg.pass).toBe(false);
+      expect(bg.detail).toContain('no background/foreground');
+    });
+
+    it('a reload persists the run; the next JS context finishes it', async () => {
+      // DevSettings.reload "works": capture the marker, then simulate the
+      // new context by calling the resume entry point.
+      let marker: string | undefined;
+      jest.spyOn(DevSettings, 'reload').mockImplementation(() => {
+        marker = mockState.files.get(
+          '/docs/phonon-evidence/.s11-reload-pending.json',
+        );
+      });
+      const params = parseSelfTestUrl(
+        'speechexample://selftest/phonon?scenarios=s3&runs=1&runId=s11ok',
+        NOW,
+      )!;
+      params.scenarios = new Set([...params.scenarios, 's11']);
+      (console.log as jest.Mock).mockImplementation((line: string) => {
+        if (String(line).includes('S11_BACKGROUND_REQUEST')) {
+          setTimeout(() => {
+            appStateListeners.forEach(l => l('background'));
+            appStateListeners.forEach(l => l('active'));
+          }, 0);
+        }
+      });
+      await runPhononSelfTest(params, {sleep});
+      expect(marker).toBeDefined();
+      const pending = JSON.parse(marker!);
+      expect(pending.runId).toBe('s11ok');
+      expect(pending.results.map((r: any) => r.name)).toEqual([
+        'S1_support',
+        'S2_init',
+        'S3_short_speak',
+        'S11_background',
+      ]);
+
+      // New context: marker present again (the real reload never returns).
+      mockState.files.set(
+        '/docs/phonon-evidence/.s11-reload-pending.json',
+        marker!,
+      );
+      mockState.initCalls = [];
+      const summary = (await resumePhononSelfTestAfterReload({sleep}))!;
+      expect(summary).not.toBeNull();
+      const rl = summary.results.find(r => r.name === 'S11_reload')!;
+      expect(rl.pass).toBe(true);
+      expect(
+        (rl.data!.lastIssuedIdAfterSpeak as number) >
+          (rl.data!.lastIssuedIdBefore as number),
+      ).toBe(true);
+      expect(mockState.initCalls[0]).toMatchObject({
+        engine: 'phonon',
+        modelPath: '/docs/phonon/models/31m-en',
+      });
+      const json = selftestJson('s11ok');
+      expect(json.results.map((r: any) => r.name)).toEqual([
+        'S1_support',
+        'S2_init',
+        'S3_short_speak',
+        'S11_background',
+        'S11_reload',
+      ]);
+      // bench.jsonl continued, not truncated.
+      const bench = mockState.files.get(
+        '/docs/phonon-evidence/s11ok/bench.jsonl',
+      )!;
+      expect(bench).toContain('"event":"SELFTEST_START"');
+      expect(bench).toContain('"event":"PHONON_S11_RELOAD"');
+      expect(
+        mockState.files.has('/docs/phonon-evidence/.s11-reload-pending.json'),
+      ).toBe(false);
+      expect(isPhononSelfTestRunning()).toBe(false);
+      // Nothing left to resume.
+      expect(await resumePhononSelfTestAfterReload({sleep})).toBeNull();
+    });
+
+    it('ignores a stale reload marker', async () => {
+      mockState.files.set(
+        '/docs/phonon-evidence/.s11-reload-pending.json',
+        JSON.stringify({runId: 'old', at: Date.now() - 10 * 60_000}),
+      );
+      expect(await resumePhononSelfTestAfterReload({sleep})).toBeNull();
+      expect(
+        mockState.files.has('/docs/phonon-evidence/.s11-reload-pending.json'),
+      ).toBe(false);
+    });
   });
 });

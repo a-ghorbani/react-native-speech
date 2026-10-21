@@ -59,6 +59,11 @@ jest.mock('@dr.pogodin/react-native-fs', () => ({
   writeFile: jest.fn(async (p: string, content: string) => {
     mockFs.files.set(p, {size: content.length, sha: '', content});
   }),
+  copyFile: jest.fn(async (from: string, to: string) => {
+    const f = mockFs.files.get(from);
+    if (!f) throw new Error(`ENOENT ${from}`);
+    mockFs.files.set(to, {...f});
+  }),
   readFile: jest.fn(async (p: string) => {
     const f = mockFs.files.get(p);
     if (!f) throw new Error(`ENOENT ${p}`);
@@ -260,6 +265,70 @@ describe('Android file list', () => {
       name: 'Zoey',
       filename: 'voices/Zoey.safetensors',
       language: 'en',
+    });
+  });
+});
+
+describe('Android install from a local folder', () => {
+  const SRC = '/ext/push/31m-en';
+  function pushAll(skip?: string) {
+    for (const f of androidModelFiles()) {
+      if (f.path !== skip) {
+        mockFs.files.set(`${SRC}/${f.path}`, {size: f.size, sha: f.sha256});
+      }
+    }
+  }
+
+  it('copies, verifies and installs like a download, without the network', async () => {
+    pushAll();
+    const mgr = new PhononModelManager({platform: 'android'});
+    await mgr.installFromDirectory(`file://${SRC}/`);
+    expect(mockFs.downloads).toEqual([]);
+    expect(filesUnder(ANDROID_DIR)).toEqual(
+      [
+        '.phonon-installed.json',
+        'config.json',
+        'default-voice.safetensors',
+        'model.q8.gguf',
+        'tokenizer.json',
+        'voices.jsonl',
+        ...PHONON_CURATED_VOICES.map(v => `voices/${v.name}.safetensors`),
+      ].sort(),
+    );
+    expect(hasStaging(ANDROID_ROOT)).toBe(false);
+    expect(await mgr.isModelInstalled('31m-en')).toBe(true);
+    const marker = JSON.parse(
+      mockFs.files.get(`${ANDROID_DIR}/.phonon-installed.json`)!.content!,
+    );
+    expect(marker.copiedFrom).toBe(SRC);
+    // The source is left in place.
+    expect(mockFs.files.has(`${SRC}/model.q8.gguf`)).toBe(true);
+  });
+
+  it.each([
+    ['missing-file', () => pushAll('tokenizer.json')],
+    [
+      'checksum',
+      () => {
+        pushAll();
+        mockFs.files.set(`${SRC}/model.q8.gguf`, {
+          size: androidModelFiles().find(f => f.path === 'model.q8.gguf')!.size,
+          sha: sha('0'),
+        });
+      },
+    ],
+  ])('a %s source installs nothing', async (code, setup) => {
+    setup();
+    const mgr = new PhononModelManager({platform: 'android'});
+    await expect(mgr.installFromDirectory(SRC)).rejects.toMatchObject({code});
+    expect(hasStaging(ANDROID_ROOT)).toBe(false);
+    expect(filesUnder(ANDROID_DIR)).toEqual([]);
+  });
+
+  it('is Android-only', async () => {
+    const mgr = new PhononModelManager({platform: 'ios'});
+    await expect(mgr.installFromDirectory(SRC)).rejects.toMatchObject({
+      code: 'unsupported',
     });
   });
 });

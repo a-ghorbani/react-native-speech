@@ -98,6 +98,9 @@ object PhononBridge {
         PhononProbe.Result(false, "error", t.message ?: t.javaClass.simpleName, primaryAbi())
       }
       cachedSupport = result
+      if (result.detail == PhononProbe.SKIPPED_HWCAP_GATE) {
+        Log.w(TAG, "HWCAP gate skipped: debug negative-control build (RNSpeech_phononSkipHwcapGate)")
+      }
       if (!result.supported && loggedReason != result.reason) {
         loggedReason = result.reason
         Log.i(TAG, "unsupported: ${result.reason} (${result.detail})")
@@ -122,7 +125,8 @@ object PhononBridge {
     nativeBridge = { PhononNative.nativeSystemProperty("ro.dalvik.vm.native.bridge") },
     hwcaps = { longArrayOf(PhononNative.nativeHwcap(), PhononNative.nativeHwcap2()) },
     requirements = { PhononCpu.parseRequirements(PhononNative.nativeRequiredHwcaps()) },
-    arm64Features = { PhononNative.nativeArm64Features() }
+    arm64Features = { PhononNative.nativeArm64Features() },
+    skipHwcapGate = BuildConfig.RN_SPEECH_PHONON_SKIP_HWCAP_GATE
   )
 
   private fun loadShim(): Throwable? =
