@@ -10,7 +10,6 @@ import {
   PHONON,
 } from '@pocketpalai/react-native-speech-phonon';
 
-/** Subscribes to per-chunk metrics; returns the unsubscribe function. */
 export type ChunkMetricsSource = (
   listener: (m: PhononChunkMetrics) => void,
 ) => () => void;
