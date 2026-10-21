@@ -263,7 +263,10 @@ export interface TTSEngineInterface<TConfig = void> {
   /** Stop any ongoing synthesis */
   stop(): Promise<void>;
 
-  /** Clean up engine resources */
+  /**
+   * Clean up engine resources. Must tolerate an engine whose initialize()
+   * never completed or failed: a retry after a failed init calls destroy().
+   */
   destroy(): Promise<void>;
 
   /**

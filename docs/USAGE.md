@@ -727,10 +727,11 @@ The `initialize` call type-checks because the add-on's package declares its conf
 
 #### Writing an add-on
 
-An add-on engine is a class implementing `TTSEngineInterface<TConfig>` whose `name` is its id (built-in ids are reserved). `Speech` calls `initialize(config)` on the first `Speech.initialize`, and `destroy()` + `initialize(config)` on later ones, and the current engine changes only once `initialize` resolves. The optional members are picked up when present: `synthesizeStream` (used by `createSpeechStream`), `setChunkProgressCallback` (chunk progress events), `getVoicesWithMetadata`, and `getSupport` / `resetSupport` (must not throw or load the model).
+An add-on engine is a class implementing `TTSEngineInterface<TConfig>` whose `name` is its id (built-in ids are reserved). `Speech` calls `initialize(config)` on the first `Speech.initialize`, and `destroy()` + `initialize(config)` on later ones, and the current engine changes only once the latest `initialize` call resolves (a superseded call still resolves but does not switch the engine). The optional members are picked up when present: `synthesizeStream` (used by `createSpeechStream`), `setChunkProgressCallback` (chunk progress events), `getVoicesWithMetadata`, and `getSupport` / `resetSupport` (must not throw or load the model).
 
 - **Imports:** import only from `@pocketpalai/react-native-speech` (never deep paths); see [Engine add-on API](#engine-add-on-api).
-- **Playback:** play through the shared player so ducking, audio focus, interruptions and `onStart` / `onFinish` behave as for the built-in engines. Audio in JS goes through `neuralAudioPlayer.play(buffer)`. Audio that lives in native memory is played through the core's native PCM sink, wrapped in `neuralAudioPlayer.playNative(() => myNativeModule.play(...))` so `Speech.stop()` / `pause()` reach it.
+- **Playback:** play only through the shared player so ducking, audio focus, interruptions and `onStart` / `onFinish` behave as for the built-in engines. Audio in JS goes through `neuralAudioPlayer.play(buffer)`. Audio that lives in native memory is played through the core's native PCM sinks (`NeuralPcmSink` / `RNSpeechAudioOutput`), wrapped in `neuralAudioPlayer.playNative(() => myNativeModule.play(...))` so `Speech.stop()` / `pause()` reach it. `Speech.pause()` / `resume()` control that shared player only; audio played any other way keeps playing.
+- **`destroy()`:** must tolerate an engine whose `initialize()` never completed or failed: a retry after a failed first `Speech.initialize` calls `destroy()` before initializing again.
 - **Typed config:** extend `CustomEngineConfigs` so `Speech.initialize` type-checks the add-on's config:
 
 ```ts
@@ -754,7 +755,7 @@ On `Speech`:
 | `Speech.registerEngine(engine)` | Registers under `engine.name`. Throws for built-in ids, empty names, or replacing an initialized instance; re-registering the same instance is a no-op. |
 | `Speech.getEngineSupport(id): Promise<EngineSupport>` | Never throws. |
 | `Speech.resetEngineSupport(id): Promise<boolean>` | Never throws; `true` when nothing is persisted. |
-| `Speech.getCurrentEngineId(): EngineId` | Changes only when `initialize()` resolves. |
+| `Speech.getCurrentEngineId(): EngineId` | Changes only once the latest `initialize()` call resolves. |
 | `Speech.getAvailableEngineIds(): EngineId[]` | Built-in ids, then registered add-ons in registration order. |
 
 From the package root:
@@ -769,6 +770,6 @@ From the package root:
 
 Native PCM sinks (both play on the same single neural player as `playAudio`, so a new playback stops and replaces the current one):
 
-- **Android** `com.pocketpalai.speech.NeuralPcmSink`: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)`. `from` returns `null` until RNSpeech's module is loaded. Interleaved LE Int16 PCM. Callable from any thread; playback runs on the module's single audio executor. The promise resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies.
-- **iOS** `<RNSpeech/RNSpeechAudioOutput.h>`: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]`. `shared` is `nil` until an RNSpeech module is alive. Interleaved float32 samples in [-1, 1]; `silentMode` is `@"obey"` (default), `@"respect"` or `@"ignore"`, as `SynthesisOptions.silentMode`. Callable from any thread; work runs on RNSpeech's serial audio queue. It resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `s.dependency "RNSpeech"` to the add-on's podspec.
+- **Android** `com.pocketpalai.speech.NeuralPcmSink`: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)`. `from` returns `null` until RNSpeech's module is loaded. Interleaved LE Int16 PCM; `channels` is 1 or 2 (below 1 plays as mono, above 2 rejects with `audio_error` without stopping the current playback). Callable from any thread; playback runs on the module's single audio executor. The promise resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies.
+- **iOS** `<RNSpeech/RNSpeechAudioOutput.h>`: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]`. `shared` is `nil` until an RNSpeech module is alive. Interleaved float32 samples in [-1, 1]; `channels` as on Android; `silentMode` is `@"obey"` (default), `@"respect"` or `@"ignore"`, as `SynthesisOptions.silentMode`. Callable from any thread; work runs on RNSpeech's serial audio queue. It resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `s.dependency "RNSpeech"` to the add-on's podspec.
 

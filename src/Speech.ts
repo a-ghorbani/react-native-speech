@@ -206,7 +206,10 @@ export default class Speech {
   }
 
   /**
-   * Initialize Speech with a specific engine
+   * Initialize Speech with a specific engine. The current engine switches
+   * only when the latest call succeeds: a call superseded by a later
+   * `initialize()` (started before this one finished) still resolves, but
+   * does not switch the engine.
    * @param config - Configuration object with engine and engine-specific settings
    * @example
    * // Initialize with Kokoro
@@ -486,7 +489,8 @@ export default class Speech {
   }
 
   /**
-   * Id of the current engine. It changes only when `initialize()` resolves.
+   * Id of the current engine. It changes only once the latest `initialize()`
+   * call resolves.
    */
   public static getCurrentEngineId(): EngineId {
     return Speech.currentEngine;
