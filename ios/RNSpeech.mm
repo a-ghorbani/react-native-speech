@@ -491,6 +491,10 @@ RCT_EXPORT_MODULE();
     RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playAudio",
         [NSString stringWithFormat:@"sampleRate=%f channels=%ld", sampleRate, (long)channels]);
     @try {
+      if (![self rejectUnsupportedChannels:channels traceHandle:traceHandle traceName:"playAudio" reject:reject]) {
+        return;
+      }
+
       // Stop any current playback
       [self cleanupAudio];
 
@@ -540,6 +544,10 @@ RCT_EXPORT_MODULE();
     RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playPcm",
         [NSString stringWithFormat:@"samples=%lu", (unsigned long)(samples.length / sizeof(float))]);
     @try {
+      if (![self rejectUnsupportedChannels:channels traceHandle:traceHandle traceName:"playPcm" reject:reject]) {
+        return;
+      }
+
       [self cleanupAudio];
 
       self->_currentAudioUtteranceId++;
@@ -567,6 +575,20 @@ RCT_EXPORT_MODULE();
       reject(@"audio_error", exception.reason, nil);
     }
   });
+}
+
+// Same rule as Android's pcmFrameBytes: below 1 plays as mono, above 2 is rejected.
+// Runs before cleanupAudio so a rejected call leaves the current playback alone. Returns NO after rejecting.
+- (BOOL)rejectUnsupportedChannels:(NSInteger)channels
+                      traceHandle:(RNSpeechTraceHandle)traceHandle
+                        traceName:(const char *)traceName
+                           reject:(RCTPromiseRejectBlock)reject {
+  if (channels <= 2) {
+    return YES;
+  }
+  RNSpeechTraceEnd(traceHandle, traceName);
+  reject(@"audio_error", [NSString stringWithFormat:@"Unsupported channel count: %ld", (long)channels], nil);
+  return NO;
 }
 
 // Runs on _audioQueue after the caller stopped playback and bumped the utterance id.
