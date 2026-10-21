@@ -69,10 +69,9 @@ export interface PhononSynthResult {
   finishedAtMs: number;
 }
 
-/** Playback settings for `playBuffer`; played on the core neural player. */
+/** Playback settings for `playBuffer`; played mono on the core neural player. */
 export interface PhononPlayConfig {
   sampleRate: number;
-  channels: number;
   ducking?: boolean;
   /** iOS only, as in the core player config */
   silentMode?: 'obey' | 'respect' | 'ignore';

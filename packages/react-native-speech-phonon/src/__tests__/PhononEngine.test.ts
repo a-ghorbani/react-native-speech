@@ -672,7 +672,6 @@ describe('synthesize: chunked playback', () => {
     expect(fake.synths).toHaveLength(2);
     expect(fake.plays[0]!.config).toEqual({
       sampleRate: 24000,
-      channels: 1,
       ducking: true,
       volume: 0.8,
     });

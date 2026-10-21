@@ -15,6 +15,11 @@
 
 RCT_EXPORT_MODULE(RNSpeechPhonon)
 
++ (BOOL)requiresMainQueueSetup
+{
+  return NO;
+}
+
 - (instancetype)init
 {
   if (self = [super init]) {
@@ -81,17 +86,24 @@ static int64_t RNSpeechPhononId(double v) {
   return @([_phonon cancelAll]);
 }
 
+// Ordered with RNSpeech's stopAudio/pauseAudio only because neither module declares a
+// methodQueue (RN >= 0.74 runs both on the TurboModule manager's shared serial queue).
 - (void)playBuffer:(double)bufferId
             config:(JS::NativeSpeechPhonon::PhononPlayConfig &)config
            resolve:(RCTPromiseResolveBlock)resolve
             reject:(RCTPromiseRejectBlock)reject {
   double sampleRate = config.sampleRate();
-  NSInteger channels = MAX((NSInteger)config.channels(), (NSInteger)1);
   BOOL ducking = config.ducking().value_or(false);
   NSString *silentMode = config.silentMode() ?: @"obey";
   std::optional<double> volume = config.volume();
   float gain = rnspeech::phonon::ios::playback_gain(volume.value_or(1.0), volume.has_value());
 
+  // Checked before the take, so the buffer stays releasable on failure.
+  RNSpeechAudioOutput *output = [RNSpeechAudioOutput shared];
+  if (output == nil) {
+    reject(@"PHONON_INTERNAL", @"The RNSpeech native module is not available", nil);
+    return;
+  }
   // Taken on the calling thread: consumed even if playback is interrupted; unknown ids reject now.
   int64_t bid = RNSpeechPhononId(bufferId);
   NSData *samples = [_phonon takeBuffer:bid gain:gain];
@@ -100,14 +112,9 @@ static int64_t RNSpeechPhononId(double v) {
            [NSString stringWithFormat:@"unknown Phonon buffer %lld", (long long)bid], nil);
     return;
   }
-  RNSpeechAudioOutput *output = [RNSpeechAudioOutput shared];
-  if (output == nil) {
-    reject(@"PHONON_INTERNAL", @"The RNSpeech native module is not available", nil);
-    return;
-  }
   [output playFloatSamples:samples
                 sampleRate:sampleRate
-                  channels:channels
+                  channels:1
                    ducking:ducking
                 silentMode:silentMode
                    resolve:resolve

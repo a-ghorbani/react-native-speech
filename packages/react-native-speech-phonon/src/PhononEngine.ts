@@ -189,7 +189,7 @@ function playConfig(
   options: PlaybackOptions,
   volume: number | undefined,
 ): PhononPlayConfig {
-  const config: PhononPlayConfig = {sampleRate, channels: 1};
+  const config: PhononPlayConfig = {sampleRate};
   if (options.ducking !== undefined) {
     config.ducking = options.ducking;
   }

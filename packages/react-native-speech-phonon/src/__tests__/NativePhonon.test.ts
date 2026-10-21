@@ -39,7 +39,7 @@ describe('NativePhonon guard (methods missing)', () => {
         np.create('/m', {language: 'en', numThreads: 0, computeUnit: 'cpu'}),
     ],
     ['synthesize', () => np.synthesize(1, 1, 'hi', '', 'en')],
-    ['playBuffer', () => np.playBuffer(1, {sampleRate: 24000, channels: 1})],
+    ['playBuffer', () => np.playBuffer(1, {sampleRate: 24000})],
     ['copyBuffer', () => np.copyBuffer(1)],
   ])('%s rejects PHONON_NOT_COMPILED', async (_name, call) => {
     await expect(call()).rejects.toMatchObject({
@@ -136,7 +136,7 @@ describe('NativePhonon pass-through (methods present)', () => {
     expect(turbo.cancel).toHaveBeenCalledWith(42);
     expect(np.cancelAll()).toBe(true);
 
-    const cfg = {sampleRate: 24000, channels: 1, volume: 0.5};
+    const cfg = {sampleRate: 24000, volume: 0.5};
     await np.playBuffer(9, cfg);
     expect(turbo.playBuffer).toHaveBeenCalledWith(9, cfg);
 

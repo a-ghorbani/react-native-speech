@@ -175,6 +175,7 @@ class PhononSession(private val host: Host) {
   /**
    * Consumes the buffer as PCM16 scaled by [gain] and hands it to [play], which owns [settle]
    * from then on. The caller reads its config first, so nothing throws between take and play.
+   * A null [play] (no core player) rejects before the take, so the buffer stays releasable.
    */
   fun playBuffer(
     bufferId: Long,
@@ -182,8 +183,12 @@ class PhononSession(private val host: Host) {
     sampleRate: Int,
     ducking: Boolean,
     settle: Settle,
-    play: (ByteArray, Int, Boolean) -> Unit
+    play: ((ByteArray, Int, Boolean) -> Unit)?
   ) {
+    if (play == null) {
+      settle.reject(INTERNAL, "The RNSpeech native module is not available")
+      return
+    }
     val pcm = if (host.shimLoaded()) host.takePcm16(bufferId, gain) else null
     if (pcm == null) {
       settle.reject(INVALID_BUFFER, "Unknown Phonon buffer $bufferId")

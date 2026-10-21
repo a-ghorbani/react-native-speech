@@ -46,14 +46,11 @@ class RNSpeechPhononModule(reactContext: ReactApplicationContext) :
   override fun cancelAll(): Boolean = PhononBridge.cancelAll()
 
   override fun playBuffer(bufferId: Double, config: ReadableMap, promise: Promise) {
-    PhononBridge.playBuffer(bufferId.toLong(), config, promise) { pcm, sampleRate, ducking ->
-      val sink = NeuralPcmSink.from(reactApplicationContext)
-      if (sink == null) {
-        promise.reject(PhononSession.INTERNAL, "The RNSpeech native module is not available")
-      } else {
-        sink.playPcm16(pcm, sampleRate, 1, ducking, promise)
-      }
+    val sink = NeuralPcmSink.from(reactApplicationContext)
+    val play = sink?.let { s ->
+      { pcm: ByteArray, sampleRate: Int, ducking: Boolean -> s.playPcm16(pcm, sampleRate, 1, ducking, promise) }
     }
+    PhononBridge.playBuffer(bufferId.toLong(), config, promise, play)
   }
 
   override fun copyBuffer(bufferId: Double, promise: Promise) {

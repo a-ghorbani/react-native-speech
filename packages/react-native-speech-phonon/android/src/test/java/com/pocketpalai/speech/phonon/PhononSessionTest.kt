@@ -452,6 +452,14 @@ class PhononSessionTest {
   }
 
   @Test
+  fun playBufferWithoutPlayerRejectsBeforeTake() {
+    val s = FakeSettle()
+    session.playBuffer(7, 1f, 24000, false, s, null)
+    assertEquals(PhononSession.INTERNAL, s.code)
+    assertTrue(host.calls.isEmpty())
+  }
+
+  @Test
   fun playBufferWithoutShimRejectsWithoutNativeCall() {
     host.shim = false
     val s = FakeSettle()

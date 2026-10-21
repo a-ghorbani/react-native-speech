@@ -227,7 +227,7 @@ object PhononBridge {
     bufferId: Long,
     config: ReadableMap,
     promise: Promise,
-    play: (ByteArray, Int, Boolean) -> Unit
+    play: ((ByteArray, Int, Boolean) -> Unit)?
   ) {
     val gain = config.doubleOr("volume", 1.0).toFloat()
     val sampleRate = config.intOr("sampleRate", 24000).takeIf { it > 0 } ?: 24000

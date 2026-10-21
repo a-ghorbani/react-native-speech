@@ -13,6 +13,7 @@
 //
 
 #import <XCTest/XCTest.h>
+#import <objc/message.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -446,6 +447,24 @@ static const uint32_t kUnitAne = 2;
   XCTAssertGreaterThan([d[@"threads"] doubleValue], 1);
   NSArray *phases = @[ @"idle", @"loading", @"compiling", @"speaking" ];
   XCTAssertTrue([phases containsObject:d[@"busy"]], @"busy %@", d[@"busy"]);
+}
+
+#pragma mark - TurboModule queues
+
+// playBuffer is ordered with RNSpeech's stopAudio/pauseAudio only while both modules run on
+// the TurboModule manager's shared queue (no own methodQueue); setup stays off the main queue.
+- (void)testModuleQueues {
+  if (![self requirePhonon]) return;
+  Class module = NSClassFromString(@"RNSpeechPhononModule");
+  Class core = NSClassFromString(@"RNSpeech");
+  XCTAssertNotNil(module);
+  XCTAssertNotNil(core);
+  for (Class cls in @[ module, core ]) {
+    XCTAssertFalse([cls instancesRespondToSelector:NSSelectorFromString(@"methodQueue")], @"%@", cls);
+    SEL setup = NSSelectorFromString(@"requiresMainQueueSetup");
+    XCTAssertTrue([cls respondsToSelector:setup], @"%@", cls);
+    XCTAssertFalse(((BOOL(*)(id, SEL))objc_msgSend)(cls, setup), @"%@", cls);
+  }
 }
 
 #pragma mark - Optional model smoke (PHONON_TEST_MODEL_DIR)
