@@ -53,14 +53,15 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@pocketpalai/react-native-speech": "^2.7.0",
+    "@pocketpalai/react-native-speech": "~2.7.0",
     "react": "*",
     "react-native": "*"
   },
   "jest": {
     "preset": "@react-native/jest-preset",
     "moduleNameMapper": {
-      "^@pocketpalai/react-native-speech$": "<rootDir>/../../src/index.tsx"
+      "^@pocketpalai/react-native-speech$": "<rootDir>/../../src/index.tsx",
+      "^@pocketpalai/react-native-speech/engine-sdk$": "<rootDir>/../../src/engine-sdk.ts"
     },
     "modulePathIgnorePatterns": [
       "<rootDir>/lib/"

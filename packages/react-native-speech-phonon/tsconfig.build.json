@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@pocketpalai/react-native-speech": ["../../lib/typescript/src/index.d.ts"]
+      "@pocketpalai/react-native-speech": ["../../lib/typescript/src/index.d.ts"],
+      "@pocketpalai/react-native-speech/engine-sdk": [
+        "../../lib/typescript/src/engine-sdk.d.ts"
+      ]
     }
   },
   "exclude": ["lib", "**/__tests__"]

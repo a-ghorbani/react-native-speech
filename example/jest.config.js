@@ -10,6 +10,12 @@ module.exports = {
       'src',
       'index.tsx',
     ),
+    '^@pocketpalai/react-native-speech/engine-sdk$': path.join(
+      __dirname,
+      '..',
+      'src',
+      'engine-sdk.ts',
+    ),
     '^@pocketpalai/react-native-speech-phonon$': path.join(
       __dirname,
       '..',

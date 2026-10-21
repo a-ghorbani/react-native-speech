@@ -72,7 +72,9 @@ the lists above as requirements, not as tested guarantees.
 yarn add @pocketpalai/react-native-speech @pocketpalai/react-native-speech-phonon
 ```
 
-The core package must be `^2.7.0` (the first release with `Speech.registerEngine`). Register the
+The core package must be `~2.7.0`: the add-on builds on the core's experimental engine SDK
+(`@pocketpalai/react-native-speech/engine-sdk` and the native PCM sinks), which may change in a
+core minor release, so each add-on release pins the core minor it was built against. Register the
 engine once, before the first `Speech.initialize` that uses it (for example at module load of
 your app's entry file):
 

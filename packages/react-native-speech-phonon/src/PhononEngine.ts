@@ -23,15 +23,7 @@
 
 import {
   isPhonemeInput,
-  neuralAudioPlayer,
-  EngineStreamSession,
-  TextChunker,
-  findFirstClauseEnd,
-  stripMarkdown,
   createMarkdownStreamBuffer,
-  base64ToArrayBuffer,
-  loadAssetAsText,
-  createComponentLogger,
   type TTSEngineInterface,
   type AudioBuffer,
   type EngineStreamHandle,
@@ -40,9 +32,19 @@ import {
   type ReleaseResult,
   type ReleaseError,
   type SpeechInput,
+} from '@pocketpalai/react-native-speech';
+import {
+  neuralAudioPlayer,
+  EngineStreamSession,
+  TextChunker,
+  findFirstClauseEnd,
+  stripMarkdown,
+  base64ToArrayBuffer,
+  loadAssetAsText,
+  createComponentLogger,
   type PlaybackOptions,
   type TextChunk,
-} from '@pocketpalai/react-native-speech';
+} from '@pocketpalai/react-native-speech/engine-sdk';
 import type {PhononConfig, PhononSynthesisOptions, PhononVoice} from './types';
 import type {
   PhononDiagnostics,

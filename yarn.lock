@@ -2749,7 +2749,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@pocketpalai/react-native-speech-phonon@workspace:packages/react-native-speech-phonon"
   peerDependencies:
-    "@pocketpalai/react-native-speech": ^2.7.0
+    "@pocketpalai/react-native-speech": ~2.7.0
     react: "*"
     react-native: "*"
   languageName: unknown

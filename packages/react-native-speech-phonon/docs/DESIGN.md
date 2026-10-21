@@ -481,7 +481,7 @@ stays; WP9 optionally records a local generic-build RTF on the OnePlus 6.
 
 Installing `@pocketpalai/react-native-speech-phonon` is the opt-in: autolinking adds its native
 module, and the app build then always includes Phonon. The package's `peerDependencies` pin the
-core range that has the registry and the PCM sinks (`^2.7.0`); its Android project depends on the
+core minor whose experimental engine SDK it was built against (`~2.7.0`); its Android project depends on the
 autolinked core project, its pod on `RNSpeech`.
 
 ### 3.1 `phonon.lock.json` (package root, listed in `package.json#files`)
@@ -1034,7 +1034,7 @@ subsystem). Expected outputs: the `ios/` evidence tree above, returned as a tarb
 | R19 | Pause with prefetch. | Bounded by the buffer store. |
 | R20 | (resolved by the split) Always-bundled JS and codegen glue for apps without Phonon. | Apps without the package carry no Phonon JS, codegen or native code. |
 | R25 | Playback crosses a module boundary (`RNSpeechPhonon` → core PCM sink). | One player stays in RNSpeech; re-run the Android device matrix and the iOS build after the split. `NeuralPcmSink.from()` (bridgeless) and `RNSpeechAudioOutput.shared` (nil until RNSpeech exists) are checked on device; both reject `PHONON_INTERNAL` instead of crashing. |
-| R26 | Core / add-on version skew. | `peerDependencies` on the core minor with the registry (`^2.7.0`); separate `phonon-v*` release tags. |
+| R26 | Core / add-on version skew. | `peerDependencies` pin the core minor (`~2.7.0`), since the engine SDK is experimental; separate `phonon-v*` release tags. |
 | R21 | Upstream abort paths outside `catch_unwind` (Core ML completion handler `.expect` in run.rs; xn worker panics). | Precompiled bundle avoids the on-device compile path; watchdog; file upstream issues. |
 | R22 | Untested iOS 18 SoCs (A12/A13) may fail at load. | Persisted `load-failed` hides the engine after one failure; optional allowlist (D4). |
 | R23 | Translated ARM on x86 Android (ChromeOS/WSA/Waydroid). | Reported `translated-abi`, hidden. |
@@ -1240,14 +1240,15 @@ Owner-accepted architecture change; it replaces the opt-in flag of revision 2.
 - **Shape.** `@pocketpalai/react-native-speech-phonon` is a yarn workspace of the core repo
   (`packages/react-native-speech-phonon`) with its own `package.json`, codegen spec
   (`RNSpeechPhononSpec`, module `RNSpeechPhonon`), podspec, Gradle project, CMake shim,
-  `phonon.lock.json`, scripts, host tests and docs. Core is a peer dependency (`^2.7.0`).
+  `phonon.lock.json`, scripts, host tests and docs. Core is a peer dependency (`~2.7.0`).
 - **Core API it builds on** (core-prep PR): `Speech.registerEngine(engine)` keyed by
   `engine.name`; `getEngineSupport` / `resetEngineSupport` through optional
   `TTSEngineInterface.getSupport()` / `resetSupport()`; `CustomEngineConfigs` for typed
   `initialize` configs; `getCurrentEngineId()` / `getAvailableEngineIds()` typed `EngineId`, so
-  add-on ids need no cast; exports of `EngineStreamSession`, `neuralAudioPlayer`, `TextChunker`,
-  `createComponentLogger` and the related types; `NeuralAudioPlayer.playNative(start)`. The
-  package imports only `@pocketpalai/react-native-speech`, never deep paths.
+  add-on ids need no cast; `EngineStreamSession`, `neuralAudioPlayer`, `TextChunker`,
+  `createComponentLogger` and the related types from the experimental
+  `@pocketpalai/react-native-speech/engine-sdk` subpath; `NeuralAudioPlayer.playNative(start)`.
+  The package imports only the core root and `engine-sdk`, never deep paths.
 - **Playback** stays native and goes through the core's single player: Android
   `com.pocketpalai.speech.NeuralPcmSink` (looked up with `NeuralPcmSink.from(reactContext)`),
   iOS `<RNSpeech/RNSpeechAudioOutput.h>`. Audio focus, ducking, interruptions and

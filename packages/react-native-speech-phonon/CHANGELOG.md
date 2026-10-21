@@ -6,7 +6,7 @@
 
 - **Phonon engine (`@pocketpalai/react-native-speech-phonon`).** Gradium's Phonon
   (`gradium-ai/xn-ptts` v0.4.0) as a native neural engine for
-  `@pocketpalai/react-native-speech` (`^2.7.0`): CPU on Android (arm64 with dotprod/fp16, or
+  `@pocketpalai/react-native-speech` (`~2.7.0`): CPU on Android (arm64 with dotprod/fp16, or
   x86_64; AGP ≥ 8.5.1), Core ML on iOS 18+. Installing the package is the opt-in: register it
   with `Speech.registerEngine(new PhononEngine())` and initialize it with
   `{engine: PHONON, modelPath}`. The build fetches sha256-pinned binaries from

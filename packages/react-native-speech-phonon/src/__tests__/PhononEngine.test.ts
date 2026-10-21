@@ -53,11 +53,11 @@ import {
 import {PhononError} from '../errors';
 import type {FakeNativePhonon} from './fakeNativePhonon.shared';
 import type {PhononConfig} from '../types';
-import {
-  neuralAudioPlayer,
-  type AudioBuffer,
-  type ChunkProgressEvent,
+import type {
+  AudioBuffer,
+  ChunkProgressEvent,
 } from '@pocketpalai/react-native-speech';
+import {neuralAudioPlayer} from '@pocketpalai/react-native-speech/engine-sdk';
 import NativeNeuralAudioPlayer from '../../../../src/NativeAudioPlayer';
 
 const fake: FakeNativePhonon = (require('../NativePhonon') as any).__fake;
