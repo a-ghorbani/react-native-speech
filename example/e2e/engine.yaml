@@ -1,7 +1,7 @@
 # Select ${ENGINE} on the SYS tab and wait until it is initialized.
 # Downloads the Kitten ${KITTEN_VARIANT} model when it is missing; other
 # engines must already have a model installed on the device.
-# ${XNNPACK} is 'on' or 'off' (CPU provider only).
+# ${XNNPACK}: 'on' or 'off' (off = CPU provider only).
 appId: speech.example
 ---
 # The app opens on the SYS tab and auto-initializes the default engine
@@ -10,13 +10,14 @@ appId: speech.example
 - extendedWaitUntil:
     visible: '\[ONLINE\]|\[OFFLINE\]|Kitten Model Required'
     timeout: 120000
+# Dismiss the prompt when we need the SYS tab first: another engine, or to
+# untick XNNPACK before init.
 - runFlow:
     when:
       visible: 'Kitten Model Required'
       true: ${ENGINE !== 'Kitten' || XNNPACK === 'off'}
     commands:
       - tapOn: 'LATER'
-# XNNPACK=off: initialize with the CPU provider only.
 - runFlow:
     when:
       visible: '☑ XNNPACK'

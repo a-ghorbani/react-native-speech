@@ -1,7 +1,3 @@
-/**
- * Kokoro release(): an active stream session must be cancelled, like
- * stop() does, so the stream's finalize() does not stay pending.
- */
 jest.mock('@dr.pogodin/react-native-fs', () => ({}), {virtual: true});
 jest.mock('onnxruntime-react-native', () => ({}), {virtual: true});
 jest.mock('../../NeuralAudioPlayer', () => ({

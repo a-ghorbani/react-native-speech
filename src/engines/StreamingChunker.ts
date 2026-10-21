@@ -128,11 +128,7 @@ export class StreamingChunker {
     return undefined;
   }
 
-  /**
-   * Extract the next ready chunk. With `firstChunk: 'clause'` the first
-   * chunk may end at a clause boundary; every later chunk is sentence-
-   * bounded.
-   */
+  /** With `firstChunk: 'clause'`, only the first chunk may end at a clause boundary. */
   private extractReadyChunk(): TextChunk | null {
     const chunk =
       this.firstChunk === 'clause' && !this.firstTaken

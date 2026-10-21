@@ -3,8 +3,9 @@
 # Android device or emulator with Maestro.
 #
 # usage: scripts/e2e-android.sh [--install <apk>] [ENGINE ...]
-#   ENGINE: Kitten (default), Kokoro, Supertonic. Kitten's model is
-#   downloaded if missing; other engines need a model already installed.
+#   ENGINE: Kitten (default), Kokoro, Supertonic, or System (OS engine; the
+#   self-test is expected to fail there). Kitten's model is downloaded if
+#   missing; other neural engines need a model already installed.
 #
 # Env: KITTEN_VARIANT (model to download, default nano-int8),
 #      XNNPACK (on|off, default on).

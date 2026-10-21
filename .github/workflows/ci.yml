@@ -116,18 +116,16 @@ jobs:
           yarn turbo run build:android --cache-dir="${{ env.TURBO_CACHE_DIR }}"
 
   e2e-android:
-    # Drives the example app's self-test (example/e2e) on an emulator with
-    # the real Kitten engine: streaming, progress listeners, markdown
-    # offsets, release() during a stream. The model (~24 MB) is downloaded
-    # by the flow from Hugging Face.
+    # Runs the example app's self-test (example/e2e) on an emulator with the
+    # real Kitten engine; the flow downloads the model (~24 MB) from Hugging
+    # Face.
     runs-on: ubuntu-latest
     timeout-minutes: 75
 
     env:
       KITTEN_VARIANT: nano-int8
-      # ONNX Runtime segfaults creating a session with the XNNPACK provider
-      # on the x86_64 emulator (null deref in libonnxruntime.so); the CPU
-      # provider works. Real (arm64) devices run with XNNPACK on.
+      # ONNX Runtime segfaults creating an XNNPACK session on the x86_64
+      # emulator; arm64 devices are fine.
       XNNPACK: 'off'
       MAESTRO_VERSION: 2.11.0
       MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a

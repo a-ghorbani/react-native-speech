@@ -223,10 +223,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       throw new Error('Supertonic engine not initialized');
     }
 
-    if (this.activeStreamSession) {
-      this.activeStreamSession.cancel().catch(() => {});
-      this.activeStreamSession = null;
-    }
+    this.cancelActiveStream();
 
     this.stopRequested = false;
     this.isSynthesizing = true;
@@ -289,8 +286,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         silentMode: options?.silentMode,
       },
       postProcess,
-      // Always bind: listeners may subscribe after the stream starts, and
-      // emitChunkProgress already no-ops when no callback is set.
+      // Bind unconditionally: a callback may be set after the stream starts.
       onChunkProgress: event => this.emitChunkProgress(event),
     });
 
@@ -575,6 +571,15 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     return this.styleLoader.getVoices(language);
   }
 
+  /** Cancels the active stream session, if any; resolves to whether one was. */
+  private async cancelActiveStream(): Promise<boolean> {
+    const session = this.activeStreamSession;
+    this.activeStreamSession = null;
+    if (!session) return false;
+    await session.cancel().catch(() => {});
+    return true;
+  }
+
   /**
    * Stop current playback and abort any ongoing synthesis.
    * Sets the stop flag and resolves the stop signal immediately,
@@ -587,9 +592,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    if (this.activeStreamSession) {
-      await this.activeStreamSession.cancel().catch(() => {});
-      this.activeStreamSession = null;
+    if (await this.cancelActiveStream()) {
       this.isSynthesizing = false;
     }
     // Fire-and-forget native audio stop
@@ -689,13 +692,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // 1. Signal stop and wait for any ongoing synthesis to complete
     this.stopRequested = true;
 
-    // Cancel an active stream like stop() does. Otherwise its session is
-    // orphaned: once playback is torn down its loop never ends, so the
-    // stream's finalize() stays pending until another stream starts.
-    if (this.activeStreamSession) {
-      await this.activeStreamSession.cancel().catch(() => {});
-      this.activeStreamSession = null;
-    }
+    // Otherwise the stream's finalize() hangs once playback is torn down.
+    await this.cancelActiveStream();
 
     // 2. Stop audio player first
     try {

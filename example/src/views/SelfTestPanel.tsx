@@ -41,7 +41,10 @@ function wait(ms: number) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-/** Run one stream to completion, collecting progress events. */
+/**
+ * Run one stream to completion; `listenAfterMs` > 0 attaches the progress
+ * listener that long after append().
+ */
 async function runStream(
   text: string,
   options: SpeechStreamOptions,
@@ -118,14 +121,12 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
   },
 
   async late_listener() {
-    // Listener attached 300ms after the stream started synthesizing.
     const ev = await runStream(PROSE, {stripMarkdown: false}, 300);
     return report('late_listener', ev.length > 0, `events=${ev.length}`);
   },
 
   async stale_unsubscribe() {
-    // Stream A subscribes, then stream B; A's listener goes away afterwards.
-    // B must still receive its events.
+    // Unsubscribing stream A must not drop stream B's listener.
     const a = Speech.createSpeechStream(undefined, {stripMarkdown: false});
     const unA = a.onProgress(() => {});
     const b = Speech.createSpeechStream(undefined, {stripMarkdown: false});
@@ -138,8 +139,6 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
   },
 
   async global_listener_survives_stream() {
-    // An app-level Speech.onChunkProgress listener registered before a
-    // stream must still fire for speak() after the stream is done.
     const got: ChunkProgressEvent[] = [];
     const un = Speech.onChunkProgress(e => got.push(e));
     try {

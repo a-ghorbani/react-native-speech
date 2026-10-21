@@ -151,7 +151,7 @@ stream.onProgress(event => {
 
 The OS engine does not emit chunk progress, so `stream.onProgress` never fires there.
 
-For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : —` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 
 ```ts
 const stream = Speech.createSpeechStream('af_bella', {firstChunk: 'clause'});
