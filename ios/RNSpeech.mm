@@ -504,31 +504,23 @@ RCT_EXPORT_MODULE();
         return;
       }
 
-      // Convert Int16 PCM to Float32 for AVAudioEngine
-      const int16_t *int16Samples = (const int16_t *)decodedData.bytes;
-      NSUInteger sampleCount = decodedData.length / sizeof(int16_t);
-
-      NSMutableData *floatData = [NSMutableData dataWithLength:sampleCount * sizeof(float)];
-      if (!floatData) {
-        reject(@"audio_error", @"Failed to allocate memory for audio conversion", nil);
-        return;
-      }
-      float *float32Samples = (float *)floatData.mutableBytes;
-
-      // Convert Int16 to Float32 (normalize to -1.0 to 1.0)
-      for (NSUInteger i = 0; i < sampleCount; i++) {
-        float32Samples[i] = int16Samples[i] / 32768.0f;
-      }
-
-      [self playFloatSamplesOnAudioQueue:floatData
-                              sampleRate:sampleRate
-                                channels:channels
-                                 ducking:ducking
-                              silentMode:silentMode
-                             traceHandle:traceHandle
-                               traceName:"playAudio"
-                                 resolve:resolve
-                                  reject:reject];
+      [self playOnAudioQueueWithSampleCount:decodedData.length / sizeof(int16_t)
+                                 sampleRate:sampleRate
+                                   channels:channels
+                                    ducking:ducking
+                                 silentMode:silentMode
+                                traceHandle:traceHandle
+                                  traceName:"playAudio"
+                                    resolve:resolve
+                                     reject:reject
+                                       fill:^(float *const *dst, NSUInteger frameCount, NSUInteger channelCount) {
+        const int16_t *int16Samples = (const int16_t *)decodedData.bytes;
+        for (NSUInteger ch = 0; ch < channelCount; ch++) {
+          for (NSUInteger f = 0; f < frameCount; f++) {
+            dst[ch][f] = int16Samples[f * channelCount + ch] / 32768.0f;
+          }
+        }
+      }];
     }
     @catch (NSException *exception) {
       RNSpeechTraceEnd(traceHandle, "playAudio");
@@ -552,15 +544,23 @@ RCT_EXPORT_MODULE();
 
       self->_currentAudioUtteranceId++;
 
-      [self playFloatSamplesOnAudioQueue:samples
-                              sampleRate:sampleRate
-                                channels:channels
-                                 ducking:ducking
-                              silentMode:silentMode
-                             traceHandle:traceHandle
-                               traceName:"playPcm"
-                                 resolve:resolve
-                                  reject:reject];
+      [self playOnAudioQueueWithSampleCount:samples.length / sizeof(float)
+                                 sampleRate:sampleRate
+                                   channels:channels
+                                    ducking:ducking
+                                 silentMode:silentMode
+                                traceHandle:traceHandle
+                                  traceName:"playPcm"
+                                    resolve:resolve
+                                     reject:reject
+                                       fill:^(float *const *dst, NSUInteger frameCount, NSUInteger channelCount) {
+        const float *interleaved = (const float *)samples.bytes;
+        for (NSUInteger ch = 0; ch < channelCount; ch++) {
+          for (NSUInteger f = 0; f < frameCount; f++) {
+            dst[ch][f] = interleaved[f * channelCount + ch];
+          }
+        }
+      }];
     }
     @catch (NSException *exception) {
       RNSpeechTraceEnd(traceHandle, "playPcm");
@@ -569,19 +569,21 @@ RCT_EXPORT_MODULE();
   });
 }
 
-// Runs on _audioQueue after the caller stopped playback and bumped the utterance id;
-// resolves on completion so chunks play back to back.
-- (void)playFloatSamplesOnAudioQueue:(NSData *)floatSamples
-                          sampleRate:(double)sampleRate
-                            channels:(NSInteger)channels
-                             ducking:(BOOL)ducking
-                          silentMode:(NSString *)silentMode
-                         traceHandle:(RNSpeechTraceHandle)traceHandle
-                           traceName:(const char *)traceName
-                             resolve:(RCTPromiseResolveBlock)resolve
-                              reject:(RCTPromiseRejectBlock)reject {
+// Runs on _audioQueue after the caller stopped playback and bumped the utterance id.
+// `fill` deinterleaves the caller's samples straight into the buffer's channels.
+// Resolves on completion (or when replaced/stopped) so chunks play back to back.
+- (void)playOnAudioQueueWithSampleCount:(NSUInteger)sampleCount
+                             sampleRate:(double)sampleRate
+                               channels:(NSInteger)channels
+                                ducking:(BOOL)ducking
+                             silentMode:(NSString *)silentMode
+                            traceHandle:(RNSpeechTraceHandle)traceHandle
+                              traceName:(const char *)traceName
+                                resolve:(RCTPromiseResolveBlock)resolve
+                                 reject:(RCTPromiseRejectBlock)reject
+                                   fill:(void (NS_NOESCAPE ^)(float *const *dst, NSUInteger frameCount, NSUInteger channelCount))fill {
   NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
-  NSUInteger frameCount = floatSamples.length / sizeof(float) / channelCount;
+  NSUInteger frameCount = sampleCount / channelCount;
   if (frameCount == 0) {
     RNSpeechTraceEnd(traceHandle, traceName);
     resolve(nil);
@@ -601,15 +603,7 @@ RCT_EXPORT_MODULE();
     return;
   }
   pcmBuffer.frameLength = (AVAudioFrameCount)frameCount;
-
-  // Input is interleaved; the standard format is deinterleaved.
-  const float *interleaved = (const float *)floatSamples.bytes;
-  for (NSUInteger ch = 0; ch < channelCount; ch++) {
-    float *dst = pcmBuffer.floatChannelData[ch];
-    for (NSUInteger f = 0; f < frameCount; f++) {
-      dst[f] = interleaved[f * channelCount + ch];
-    }
-  }
+  fill(pcmBuffer.floatChannelData, frameCount, channelCount);
 
   self->_isAudioDucking = ducking;
 
