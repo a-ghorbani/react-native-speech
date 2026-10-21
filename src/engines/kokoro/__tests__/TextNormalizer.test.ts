@@ -142,9 +142,10 @@ describe('TextNormalizer', () => {
     });
 
     test('handles decade suffix', () => {
-      // "22s" is not a bare integer so stays intact after intToWords pass.
-      expect(normalizer.normalize('2022s')).toBe('twenty 22s');
-      expect(normalizer.normalize('1980s')).toBe('nineteen 80s');
+      // Plural integers are converted too — leftover digits would be
+      // dropped by the phonemizer.
+      expect(normalizer.normalize('2022s')).toBe('twenty twenty twos');
+      expect(normalizer.normalize('1980s')).toBe('nineteen eighties');
     });
 
     test('splits time format', () => {
@@ -155,7 +156,9 @@ describe('TextNormalizer', () => {
 
     test('removes commas from numbers', () => {
       expect(normalizer.normalize('1,000')).toBe('one thousand');
-      expect(normalizer.normalize('12,345,678')).toBe('12345678');
+      expect(normalizer.normalize('12,345,678')).toBe(
+        'twelve million three hundred forty five thousand six hundred seventy eight',
+      );
     });
 
     test('converts number ranges', () => {

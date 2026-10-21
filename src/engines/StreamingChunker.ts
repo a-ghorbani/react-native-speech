@@ -14,6 +14,7 @@
 
 import type {FirstChunkMode} from '../types';
 import type {TextChunk} from '../utils/TextChunker';
+import {isAbbreviationPeriod} from '../utils/abbreviations';
 import {SENTENCE_END_RE, findFirstClauseEnd} from '../utils/firstClause';
 
 export {findFirstClauseEnd} from '../utils/firstClause';
@@ -165,6 +166,14 @@ export class StreamingChunker {
     let lastGoodEnd = -1;
 
     while ((m = re.exec(this.buffer)) !== null) {
+      // Once the buffer is past maxChunkSize, abbreviation periods count
+      // as boundaries again so text with no other break still flushes.
+      if (
+        this.buffer.length <= this.maxChunkSize &&
+        isAbbreviationPeriod(this.buffer, m.index)
+      ) {
+        continue;
+      }
       const candidateEnd = m.index + m[0].length;
       if (candidateEnd <= this.maxChunkSize || lastGoodEnd === -1) {
         lastGoodEnd = candidateEnd;

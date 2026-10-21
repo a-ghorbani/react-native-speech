@@ -9,7 +9,7 @@ The library exposes four TTS engines behind a unified `Speech` façade:
 | Engine | Kind | Sample rate | Sessions | Notes |
 |--------|------|-------------|----------|-------|
 | `OS_NATIVE` | Platform TTS (AVSpeechSynthesizer / Android TTS) | device-default | — | always available |
-| `KOKORO` | Neural, ONNX | 24 kHz | 1 | multi-language via dict; BPE tokenizer |
+| `KOKORO` | Neural, ONNX | 24 kHz | 1 | English text via dict (other languages via phoneme input); BPE tokenizer |
 | `SUPERTONIC` | Neural, ONNX (4 models) | 44.1 kHz | 4 | ultra-fast; byte tokens |
 | `KITTEN` | Neural, ONNX | 24 kHz | 1 | StyleTTS 2; IPA tokens |
 

@@ -67,6 +67,29 @@ const DICT: Record<string, string> = {
   ice: 'ˈaɪs',
   cream: 'kɹˈiːm',
   apple: 'ˈæpəl',
+  us: 'ˈʌs',
+  am: 'æm',
+  should: 'ʃˈʊd',
+  boss: 'bˈɑːs',
+  u: 'jˈuː',
+  s: 'ˈɛs',
+  a: 'ˈeɪ',
+  m: 'ˈɛm',
+  g: 'dʒˈiː',
+  p: 'pˈiː',
+  t: 'tˈiː',
+  docker: 'dˈɑːkɚ',
+  file: 'fˈaɪl',
+  fold: 'fˈoʊld',
+  able: 'ˈeɪbəl',
+  snip: 'snˈɪp',
+  ping: 'pˈɪŋ',
+  embedding: 'ɛmbˈɛdɪŋ',
+  name: 'nˈeɪm',
+  names: 'nˈeɪmz',
+  space: 'spˈeɪs',
+  pace: 'pˈeɪs',
+  no: 'nˈoʊ',
 };
 
 describe('HansPhonemizer', () => {
@@ -98,9 +121,73 @@ describe('HansPhonemizer', () => {
     expect(hans00Mock.toIPA).not.toHaveBeenCalled();
   });
 
-  test('possessive fallback: X\u2019s uses dict[X] + ɪz', async () => {
+  test('possessive fallback: X\u2019s uses dict[X] + voiced z', async () => {
     const out = await phon.phonemize("apple's", 'en-us');
-    expect(out).toContain('ˈæpəl' + 'ɪz');
+    expect(out).toBe('ˈæpəl' + 'z');
+  });
+
+  test('possessive suffix follows the base: s after voiceless, ɪz after sibilant', async () => {
+    expect(await phon.phonemize("cat's", 'en-us')).toBe('kˈæts');
+    expect(await phon.phonemize("boss's", 'en-us')).toBe('bˈɑːsɪz');
+  });
+
+  test('hyphenated letter sequence spells out ahead of the dict', async () => {
+    // "U-S-" / "a-m-" come from dotted acronyms; the joined letters are
+    // real dict words ("us", "am") that must not win.
+    const us = await phon.phonemize('the U-S- cat', 'en-us');
+    expect(us).toContain('jˈuː ˈɛs');
+    expect(us).not.toContain('ˈʌs');
+    expect(await phon.phonemize('ten a-m-', 'en-us')).toContain('ˈeɪ ˈɛm');
+  });
+
+  test("plural possessive (cats') reads as the plural", async () => {
+    expect(await phon.phonemize("cats'", 'en-us')).toBe('kˈæts');
+  });
+
+  test('elongated words collapse to the dict word', async () => {
+    expect(await phon.phonemize('NOOOO', 'en-us')).toBe('nˈoʊ');
+  });
+
+  test('hans00 gets lowercase input except for short all-caps acronyms', async () => {
+    await phon.phonemize('COVIDX', 'en-us');
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith('covidx', expect.anything());
+  });
+
+  test("irregular contraction shan't", async () => {
+    expect(await phon.phonemize("shan't", 'en-us')).toBe('ʃˈænt');
+  });
+
+  test('OOV plural of a dict word adds the -s allomorph', async () => {
+    expect(await phon.phonemize('embeddings', 'en-us')).toBe('ɛmbˈɛdɪŋz');
+  });
+
+  test('acronym plural spells letters and adds z', async () => {
+    expect(await phon.phonemize('GPUs', 'en-us')).toBe('dʒˈiː pˈiː jˈuːz');
+  });
+
+  test('hans00 output keeps a single primary stress per word', async () => {
+    hans00Mock.toIPA.mockImplementationOnce(() => 'kˈuˈbɝnɛtˈɛs');
+    expect(await phon.phonemize('kubernetes', 'en-us')).toBe('kˈuˌbɝnɛtˌɛs');
+  });
+
+  test("OOV 'll / 'd after a consonant take a schwa", async () => {
+    expect(await phon.phonemize("cat'll", 'en-us')).toBe('kˈætəl');
+    expect(await phon.phonemize("should'd", 'en-us')).toBe('ʃˈʊdəd');
+  });
+
+  test('OOV contraction uses dict base + suffix', async () => {
+    const out = await phon.phonemize("should've", 'en-us');
+    expect(out).toBe('ʃˈʊdv');
+    expect(hans00Mock.toIPA).not.toHaveBeenCalledWith(
+      "should've",
+      expect.anything(),
+    );
+  });
+
+  test('vowelless OOV token spells out even when hans00 returns IPA', async () => {
+    hans00Mock.toIPA.mockImplementationOnce(() => 'ɡt');
+    const out = await phon.phonemize('gpt', 'en-us');
+    expect(out).toBe('dʒˈiː pˈiː tˈiː');
   });
 
   test('lowercased acronym falls back to letter-by-letter spelling', async () => {

@@ -1,4 +1,5 @@
 import {ensurePunctuation} from '../../phonemization/KittenPreprocessor';
+import {isAbbreviationPeriod} from '../../utils/abbreviations';
 
 /**
  * Split text into per-sentence chunks, preserving original-text positions
@@ -24,6 +25,7 @@ export function chunkTextWithPositions(
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = boundary.exec(text)) !== null) {
+    if (isAbbreviationPeriod(text, match.index)) continue;
     const chunkEnd = match.index + match[1]!.length;
     const advanceTo = match.index + match[0].length;
     pushSentence(text, cursor, chunkEnd, maxLen, out);

@@ -90,7 +90,36 @@ function threeDigitsToWords(n: number): string {
   return parts.join(' ');
 }
 
+/**
+ * Digit strings longer than this are read digit by digit: past ~10^15
+ * the scale words run out and float precision drops digits, so the
+ * cardinal reading would silently be a different number. Such strings
+ * are IDs, card or account numbers in practice.
+ */
+const MAX_CARDINAL_DIGITS = 15;
+const DIGIT_WORDS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+];
+
+function digitsToWords(digits: string): string {
+  return Array.from(digits, d => DIGIT_WORDS[+d]!).join(' ');
+}
+
 export function numberToWords(input: number | string): string {
+  const str = String(input).replace(/^-/, '');
+  if (/^\d+$/.test(str) && str.length > MAX_CARDINAL_DIGITS) {
+    const words = digitsToWords(str);
+    return String(input).startsWith('-') ? `negative ${words}` : words;
+  }
   let n = typeof input === 'number' ? input : parseInt(input, 10);
   if (!Number.isInteger(n)) n = parseInt(String(n), 10);
   if (n === 0) return 'zero';
@@ -127,7 +156,7 @@ export function floatToWords(
   let result: string;
   if (text.includes('.')) {
     const [intPart, decPart] = text.split('.');
-    const intWords = intPart ? numberToWords(parseInt(intPart, 10)) : 'zero';
+    const intWords = intPart ? numberToWords(intPart) : 'zero';
     const digitMap = ['zero', ...ONES.slice(1)];
     const decWords = (decPart || '')
       .split('')
@@ -514,15 +543,23 @@ export function expandPhoneNumbers(text: string): string {
 }
 
 export function replaceNumbers(text: string, replaceFloats = true): string {
-  return text.replace(RE_NUMBER, (match: string) => {
+  return text.replace(RE_NUMBER, (whole: string) => {
+    // RE_NUMBER's [\d,]+ swallows a trailing comma ("Q4, 2023").
+    const trailing = /,+$/.exec(whole)?.[0] ?? '';
+    const match = whole.slice(0, whole.length - trailing.length);
+    if (!match) return whole;
     const raw = match.replace(/,/g, '');
-    try {
+    const toWords = (): string => {
       if (raw.includes('.') && replaceFloats) return floatToWords(raw);
+      if (/^-?\d+$/.test(raw)) return numberToWords(raw);
       const n = parseInt(String(parseFloat(raw)), 10);
       if (!Number.isFinite(n)) return match;
       return numberToWords(n);
+    };
+    try {
+      return toWords() + trailing;
     } catch {
-      return match;
+      return whole;
     }
   });
 }
