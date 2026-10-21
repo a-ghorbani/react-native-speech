@@ -181,6 +181,75 @@ describe('Speech.registerEngine', () => {
   });
 });
 
+describe('overlapping Speech.initialize calls', () => {
+  it('the latest call wins even when an earlier one resolves later', async () => {
+    let finishSlow!: () => void;
+    const slow = fakeEngine('slow-init', {
+      initialize: jest.fn(() => new Promise<void>(r => (finishSlow = r))),
+    });
+    Speech.registerEngine(slow as any);
+    const first = Speech.initialize({engine: 'slow-init'} as any);
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+    expect(Speech.getCurrentEngineId()).toBe(TTSEngine.OS_NATIVE);
+    finishSlow();
+    await first;
+    expect(Speech.getCurrentEngineId()).toBe(TTSEngine.OS_NATIVE);
+    expect(slow.setChunkProgressCallback).toHaveBeenCalled();
+  });
+
+  it('a failed latest call still beats an earlier one resolving later', async () => {
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+    let finishSlow!: () => void;
+    const slow = fakeEngine('slow-init-2', {
+      initialize: jest.fn(() => new Promise<void>(r => (finishSlow = r))),
+    });
+    Speech.registerEngine(slow as any);
+    const first = Speech.initialize({engine: 'slow-init-2'} as any);
+    mockInitFail[TTSEngine.KITTEN] = true;
+    await expect(
+      Speech.initialize({engine: TTSEngine.KITTEN} as any),
+    ).rejects.toThrow('init failed');
+    finishSlow();
+    await first;
+    expect(Speech.getCurrentEngineId()).toBe(TTSEngine.OS_NATIVE);
+  });
+});
+
+describe('Speech.stop with a rejecting engine stop()', () => {
+  it('logs instead of leaving an unhandled rejection', async () => {
+    const seen: unknown[] = [];
+    const onUnhandled = (r: unknown) => seen.push(r);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const e = fakeEngine('stop-rejects', {
+        stop: jest.fn(async () => {
+          throw new Error('stop failed');
+        }),
+      });
+      Speech.registerEngine(e as any);
+      await Speech.initialize({engine: 'stop-rejects'} as any);
+      await Speech.stop();
+      await new Promise(r => setTimeout(r, 10));
+      expect(e.stop).toHaveBeenCalledTimes(1);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(seen).toEqual([]);
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+  });
+
+  it('still stops natively when a JS add-on stop() returns no promise', async () => {
+    const e = fakeEngine('stop-sync', {stop: jest.fn(() => undefined)});
+    Speech.registerEngine(e as any);
+    await Speech.initialize({engine: 'stop-sync'} as any);
+    const nativeStop = jest.requireMock('../NativeSpeech').default.stop;
+    nativeStop.mockClear();
+    await expect(Speech.stop()).resolves.toBeUndefined();
+    expect(nativeStop).toHaveBeenCalledTimes(1);
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+  });
+});
+
 describe('Speech dispatch to a registered engine', () => {
   const fake = fakeEngine('fake');
 

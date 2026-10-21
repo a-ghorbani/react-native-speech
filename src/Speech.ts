@@ -76,6 +76,9 @@ const builtinIds = new Set<string>(Object.values(TTSEngine));
 // through reinitializeEngine so new config (e.g. execution providers) applies.
 const initializeAttempted = new WeakSet<AnyEngine>();
 
+// Bumped by every initialize(); only the latest call may switch the engine.
+let initGeneration = 0;
+
 function registeredEngine(id: EngineId): AnyEngine | undefined {
   return engineManager.hasEngine(id) ? engineManager.getEngine(id) : undefined;
 }
@@ -224,12 +227,13 @@ export default class Speech {
 
     log.info(`Initializing engine: ${engine}`);
 
-    // `currentEngine` switches only after a successful init, so a failed
-    // init keeps the previous engine usable.
+    // `currentEngine` switches only after a successful init of the latest
+    // call, so a failed or superseded init keeps the previous engine.
     const instance = resolveEngine(engine);
     if (!instance) {
       throw new Error(`Unknown engine: ${engine}`);
     }
+    const gen = ++initGeneration;
     const options = engine === TTSEngine.OS_NATIVE ? undefined : engineConfig;
     if (initializeAttempted.has(instance) && engine !== TTSEngine.OS_NATIVE) {
       await engineManager.reinitializeEngine(engine, options);
@@ -237,9 +241,12 @@ export default class Speech {
       initializeAttempted.add(instance);
       await engineManager.initializeEngine(engine, options);
     }
-    engineManager.setDefaultEngine(engine);
     instance.setChunkProgressCallback?.(dispatchChunkProgress);
-
+    if (gen !== initGeneration) {
+      log.debug(`initialize(${engine}) superseded by a later call`);
+      return;
+    }
+    engineManager.setDefaultEngine(engine);
     Speech.currentEngine = engine;
     log.debug(`currentEngine set to: ${Speech.currentEngine}`);
   }
@@ -600,7 +607,10 @@ export default class Speech {
     const engine = Speech.currentEngine;
 
     // Set stop flag synchronously — takes effect in synthesis loop immediately
-    neuralEngine(engine)?.stop();
+    // Promise.resolve: a JS add-on's stop() may not return a promise.
+    Promise.resolve(neuralEngine(engine)?.stop()).catch(err =>
+      log.warn(`${engine} stop failed:`, err),
+    );
 
     // Fire native stops (OS TTS stop is always safe to call)
     await TurboSpeech.stop();
