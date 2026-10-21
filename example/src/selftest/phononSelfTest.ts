@@ -690,9 +690,7 @@ export async function runPhononSelfTest(
     const file = `${evidence.dir}/screenshots/${name}.png`;
     let saved = 'none';
     try {
-      if (typeof Benchmark.captureScreen === 'function') {
-        saved = await Benchmark.captureScreen(file);
-      }
+      saved = await Benchmark.captureScreen(file);
     } catch (e) {
       console.warn(`[SelfTest] captureScreen(${name}) failed:`, e);
     }
