@@ -345,7 +345,7 @@ the engine initializes successfully; on failure the previous value is kept. New 
 
 ```ts
 /** Never throws; never loads native engine code. */
-static getEngineSupport(engine: TTSEngine): Promise<{supported: boolean; reason: string; detail?: string}>;
+static getEngineSupport(engine: EngineId): Promise<{supported: boolean; reason: string; detail?: string}>;
 ```
 
 The core's `Speech.getEngineSupport(id)` reports built-ins as `{supported:true, reason:'ok'}`
@@ -816,7 +816,7 @@ time, finalized last.
   `getEngineSupport`, `currentEngine` fix), `src/index.tsx`, tests.
 * Acceptance: existing suites green; phonon coverage ≥ 90 % lines; unsupported → `initialize`
   rejects without `phononCreate`; `getEngineSupport` never throws; rejected init leaves
-  `Speech.getCurrentEngine()` unchanged (all engines).
+  `Speech.getCurrentEngineId()` unchanged (all engines).
 * Tests (jest.mock `NativePhonon` with a deferred-controlled fake): ordered chunked playback with
   prefetch; stop between native resolve and JS continuation (buffer released, no play); stop
   during in-flight synth → `cancelUpTo(max inflight)`; `stream.cancel()` while synth #2 pending →
@@ -1113,7 +1113,7 @@ js-api-ux lens:
 52. Probe dlopens on UI mount — **accepted**: dlopen moved to create; failures persisted.
 53. Unmeasurable metrics — **accepted**: per-chunk `PHONON_CHUNK` [BENCH] lines; S6 assertions; S7 record-only.
 54. Jest seam / deferreds — **accepted**: `NativePhonon.ts` seam, listed race cases.
-55. Nits — **accepted**: `TTSEngine.PHONON`, handle dedupe dropped, unified compute unit, explicit "unverified" wording.
+55. Nits — **accepted**: `TTSEngine.PHONON` (superseded by the add-on split: the id is the package's `PHONON` export, an `EngineId`), handle dedupe dropped, unified compute unit, explicit "unverified" wording.
 
 ## Appendix B. Owner decisions (2026-10-20)
 
@@ -1244,7 +1244,8 @@ Owner-accepted architecture change; it replaces the opt-in flag of revision 2.
 - **Core API it builds on** (core-prep PR): `Speech.registerEngine(engine)` keyed by
   `engine.name`; `getEngineSupport` / `resetEngineSupport` through optional
   `TTSEngineInterface.getSupport()` / `resetSupport()`; `CustomEngineConfigs` for typed
-  `initialize` configs; exports of `EngineStreamSession`, `neuralAudioPlayer`, `TextChunker`,
+  `initialize` configs; `getCurrentEngineId()` / `getAvailableEngineIds()` typed `EngineId`, so
+  add-on ids need no cast; exports of `EngineStreamSession`, `neuralAudioPlayer`, `TextChunker`,
   `createComponentLogger` and the related types; `NeuralAudioPlayer.playNative(start)`. The
   package imports only `@pocketpalai/react-native-speech`, never deep paths.
 - **Playback** stays native and goes through the core's single player: Android

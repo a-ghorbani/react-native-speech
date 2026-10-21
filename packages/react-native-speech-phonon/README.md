@@ -1,6 +1,6 @@
 # @pocketpalai/react-native-speech-phonon
 
-The Phonon engine for [`@pocketpalai/react-native-speech`](../../README.md). It runs
+The Phonon engine for [`@pocketpalai/react-native-speech`](https://github.com/a-ghorbani/react-native-speech/blob/main/README.md). It runs
 [Gradium's Phonon](https://github.com/gradium-ai/xn-ptts) (`xn-ptts` `v0.4.0`) on the device.
 Unlike the ONNX engines it is entirely native: a Rust library on the CPU on Android, Core ML on
 iOS. It needs no `onnxruntime-react-native`.
@@ -9,7 +9,7 @@ Installing this package is the opt-in. Apps that do not install it get no Phonon
 no binary, no JS and no TurboModule glue.
 
 For API basics shared by every engine (events, `stop`, `pause`, streaming) see
-[USAGE.md](../../docs/USAGE.md). For the design rationale see [docs/DESIGN.md](docs/DESIGN.md).
+[USAGE.md](https://github.com/a-ghorbani/react-native-speech/blob/main/docs/USAGE.md). For the design rationale see [docs/DESIGN.md](https://github.com/a-ghorbani/react-native-speech/blob/main/packages/react-native-speech-phonon/docs/DESIGN.md).
 
 ## At a glance
 
@@ -62,7 +62,7 @@ crashes and never shows a dialog; hide the engine instead.
 
 **Verification status.** The device matrix (Pixel 9, Galaxy S23, Snapdragon 8 Elite Gen5,
 MediaTek MT6899, OnePlus 6 as the unsupported control, CI emulators with 4 KB and 16 KB pages,
-iPhone 13 Pro, iOS simulators) is defined in [docs/DESIGN.md §8.2](docs/DESIGN.md). Its
+iPhone 13 Pro, iOS simulators) is defined in [docs/DESIGN.md §8.2](https://github.com/a-ghorbani/react-native-speech/blob/main/packages/react-native-speech-phonon/docs/DESIGN.md). Its
 results are reported on the pull request once the validation run is complete; until then treat
 the lists above as requirements, not as tested guarantees.
 
@@ -94,6 +94,14 @@ sha256, caches it under `~/.gradle/caches/rnspeech-phonon/<release>/` and packag
 requested ABIs (`libptts_ffi.so` and the small JNI shim `librnspeech_phonon.so` alike; other ABIs
 report `unsupported-abi`). No Rust toolchain is needed. The download is a normal Gradle task and
 works with the configuration cache.
+
+The add-on's Gradle project depends on the core project `:pocketpalai_react-native-speech`, which
+RN CLI autolinking provides. A custom or monorepo setup that names it differently must also
+include it under that name in `settings.gradle`:
+
+```groovy
+include ':pocketpalai_react-native-speech'; project(':pocketpalai_react-native-speech').projectDir = new File(rootDir, '../node_modules/@pocketpalai/react-native-speech/android')
+```
 
 Options, as Gradle properties in the app's `android/gradle.properties` (or
 `rootProject.ext.<name>` in `android/build.gradle`):
@@ -151,14 +159,14 @@ Until this repo publishes its first `phonon-bin-*` release, `phonon.lock.json` h
 naming the lock, unless a local override (`RNSpeech_phononLibDir`,
 `RN_SPEECH_PHONON_XCFRAMEWORK`) is set: on Android when the `fetchPhononBinaries` task runs, on
 iOS at `pod install`. To build the binaries locally, follow
-[scripts/README.md](scripts/README.md#local-builds-and-the-dev-override); from a checkout of
+[scripts/README.md](https://github.com/a-ghorbani/react-native-speech/blob/main/packages/react-native-speech-phonon/scripts/README.md#local-builds-and-the-dev-override); from a checkout of
 this repo the example app has `yarn build:android:phonon` for the Android side. A local build
 reports its `libraryVersion` as `<version>+local`.
 
 ## Models
 
 The library downloads nothing: the app downloads the model files and passes a local folder.
-[`example/src/utils/PhononModelManager.ts`](../../example/src/utils/PhononModelManager.ts) is a
+[`example/src/utils/PhononModelManager.ts`](https://github.com/a-ghorbani/react-native-speech/blob/main/example/src/utils/PhononModelManager.ts) is a
 complete reference (per-file download into a staging folder, size and sha256 check, atomic
 rename, free-space check).
 
@@ -212,7 +220,7 @@ excluded from iCloud backup (`NSURLIsExcludedFromBackupKey`). Voices are part of
 > themselves, behind a "non-commercial" toggle. Check each model's Hugging Face page before
 > redistribution.
 
-See [LICENSES.md](../../docs/LICENSES.md) for every engine's model licence and the native binaries'
+See [LICENSES.md](https://github.com/a-ghorbani/react-native-speech/blob/main/docs/LICENSES.md) for every engine's model licence and the native binaries'
 third-party notices.
 
 ## Usage
