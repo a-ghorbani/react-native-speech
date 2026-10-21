@@ -596,8 +596,7 @@ RCT_EXPORT_MODULE();
   return NO;
 }
 
-// For a playback that fails after cleanupAudio, which leaves the session active for the replacement.
-// Rejects with `message`, or resolves when it is nil.
+// Ends a playback that fails after cleanupAudio, which leaves the session active for the replacement.
 - (void)abandonPlaybackWithTraceHandle:(RNSpeechTraceHandle)traceHandle
                              traceName:(const char *)traceName
                                resolve:(RCTPromiseResolveBlock)resolve
