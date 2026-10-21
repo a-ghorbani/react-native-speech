@@ -152,8 +152,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       expandContractions: false,
       lowercase: false,
       // Handled (more strictly) by normalizeForSpeech: the loose upstream
-      // rule reads "B2B" as "B two billion".
+      // rules read "B2B" as "B two billion" and "5/1" as "five firsts".
       expandScaleSuffixes: false,
+      expandFractions: false,
     });
   }
 
