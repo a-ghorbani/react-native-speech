@@ -268,7 +268,26 @@ check_maps() {
   fi
 }
 
-# check_ui <expected reason> <ui dir>: no Alert dialog; Phonon UI only when supported.
+# abi_dialog_ok <ui xml>: centre of OK on Android's own DeprecatedAbiDialog (package="android",
+# shown to 32-bit apps on 64-bit-first releases), else nothing. Other system dialogs (ANR) never match.
+abi_dialog_ok() {
+  python3 -I - "$1" <<'EOF'
+import re, sys
+nodes = re.findall(r"<node [^>]*>", open(sys.argv[1], encoding="utf-8", errors="replace").read())
+sysn = [n for n in nodes if ' package="android"' in n]
+msg = re.compile(r"isn.{1,6}t compatible with (the latest version of )?Android|(32|64)-bit", re.I)
+if any('resource-id="android:id/alertTitle"' in n for n in sysn) and any(
+        'resource-id="android:id/message"' in n and msg.search(n) for n in sysn):
+    for n in sysn:
+        b = re.search(r' bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', n)
+        if 'resource-id="android:id/button1"' in n and b:
+            x1, y1, x2, y2 = map(int, b.groups())
+            print((x1 + x2) // 2, (y1 + y2) // 2)
+            break
+EOF
+}
+
+# check_ui <expected reason> <ui dir>: no app Alert; Phonon UI only when supported.
 check_ui() {
   local reason="$1" dir="$2" f name st=0 alert phonon
   [[ "$reason" == crash ]] && return 0
@@ -278,6 +297,7 @@ check_ui() {
   if ((${#files[@]} == 0)); then echo "NOT-RUN ui: no UI dump captured"; return 0; fi
   for f in "${files[@]}"; do
     name="$(basename "$f" .xml)"
+    if [[ -n "$(abi_dialog_ok "$f")" ]]; then echo "NOT-RUN ui $name: system DeprecatedAbiDialog covers the app"; continue; fi
     alert="$(grep -o '<node [^>]*resource-id="android:id/alertTitle"[^>]*' "$f" | grep -o 'text="[^"]*"' | head -1 || true)"
     [[ -n "$alert" ]] || alert="$(grep -q 'resource-id="android:id/alertTitle"' "$f" && echo alertTitle || true)"
     phonon="$(grep -o -i 'text="[^"]*phonon[^"]*"' "$f" | sort -u | tr '\n' ' ' || true)"
@@ -480,6 +500,17 @@ EOF
   t fail "an Alert fails" check_ui not-compiled "$d/ui"
   eq "tap center of Later" "$(ui_tap_center "$d/ui/ui-demo.xml" 'later')" "200 230"
 
+  # Android's DeprecatedAbiDialog (s23, U2): every node package="android"; tap OK, not an app Alert.
+  local abi='<hierarchy><node text="SpeechExample" resource-id="android:id/alertTitle" package="android" bounds="[102,1680][978,1750]"/><node text="This app isn'"'"'t compatible with the latest version of Android. Check for an update or contact the app'"'"'s developer." resource-id="android:id/message" package="android" bounds="[102,1786][978,1980]"/><node text="OK" resource-id="android:id/button1" package="android" bounds="[102,2004][978,2112]"/></hierarchy>'
+  mkdir -p "$d/abi"
+  echo "$abi" >"$d/abi/ui-demo.xml"
+  eq "DeprecatedAbiDialog: tap OK" "$(abi_dialog_ok "$d/abi/ui-demo.xml")" "540 2058"
+  t pass "DeprecatedAbiDialog is not an app Alert" check_ui unsupported-abi "$d/abi"
+  eq "DeprecatedAbiDialog: the hidden screen is NOT-RUN" "$(check_ui unsupported-abi "$d/abi" | cut -d' ' -f1)" NOT-RUN
+  echo '<hierarchy><node text="SpeechExample isn'"'"'t responding" resource-id="android:id/alertTitle" package="android" bounds="[0,0][9,9]"/><node text="Close app" resource-id="android:id/aerr_close" package="android" bounds="[0,10][9,19]"/></hierarchy>' >"$d/abi/ui-demo.xml"
+  eq "ANR dialog is not dismissed" "$(abi_dialog_ok "$d/abi/ui-demo.xml")" ""
+  t fail "ANR dialog still fails" check_ui unsupported-abi "$d/abi"
+
   # maps_proof on a synthetic APK: one stored lib/arm64-v8a/libptts_ffi.so.
   python3 -I - "$d/m.apk" <<'EOF'
 import sys, zipfile
@@ -596,12 +627,25 @@ ui_dump() { # <out xml>
   [[ -s "$1" ]]
 }
 
+# dismiss_abi_dialog <ui xml>: tap OK on the system DeprecatedAbiDialog if it is in the dump.
+dismiss_abi_dialog() {
+  local xy
+  xy="$(abi_dialog_ok "$1")"
+  [[ -n "$xy" ]] || return 1
+  log "dismissing the system DeprecatedAbiDialog (tap $xy)"
+  # shellcheck disable=SC2086
+  A shell input tap $xy
+  sleep 1
+}
+
 # A fresh install's "Kitten Model Required" prompt would hide the screen: tap "Later".
 dismiss_kitten_prompt() {
   local xml="$TMP/ui-start.xml" xy
   ((DRY)) && return 0
-  for _ in 1 2 3 4; do
-    if ui_dump "$xml" && grep -q 'Kitten Model Required' "$xml"; then
+  for _ in 1 2 3 4 5; do
+    ui_dump "$xml" || { sleep 2; continue; }
+    dismiss_abi_dialog "$xml" && continue
+    if grep -q 'Kitten Model Required' "$xml"; then
       xy="$(ui_tap_center "$xml" 'later')"
       if [[ -n "$xy" ]]; then
         log "dismissing the Kitten model prompt (tap $xy)"
@@ -727,8 +771,10 @@ run_once() {
     case "$line" in
       *"SCREENSHOT_READY name="*)
         name="$(sed -n 's/.*SCREENSHOT_READY name=\([a-z]*\).*/\1/p' <<<"$line")"
+        if ui_dump "$out/ui/ui-$name.xml" && dismiss_abi_dialog "$out/ui/ui-$name.xml"; then
+          ui_dump "$out/ui/ui-$name.xml" || true
+        fi
         A exec-out screencap -p >"$out/screenshots/$name.png" 2>/dev/null || true
-        ui_dump "$out/ui/ui-$name.xml" || true
         log "screenshot $name"
         ;;
       *"S11_BACKGROUND_REQUEST"*)
