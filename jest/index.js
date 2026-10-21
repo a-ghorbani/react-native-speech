@@ -9,6 +9,7 @@ const mockPromiseArr = (...args) => Promise.resolve([]);
 const {fn: jestFn} = require('jest-mock');
 const eventSub = {remove: jestFn()};
 const eventMock = jestFn(() => eventSub);
+const BUILTIN_ENGINES = ['os-native', 'kokoro', 'supertonic', 'kitten'];
 
 class Speech {
   static maxInputLength = 4000;
@@ -31,6 +32,14 @@ class Speech {
   static onResume = eventMock;
   static onStopped = eventMock;
   static onProgress = eventMock;
+  static registerEngine = jestFn();
+  static getEngineSupport = engine =>
+    Promise.resolve(
+      BUILTIN_ENGINES.includes(engine)
+        ? {supported: true, reason: 'ok'}
+        : {supported: false, reason: 'unknown-engine', detail: String(engine)},
+    );
+  static resetEngineSupport = () => Promise.resolve(true);
 }
 
 const HighlightedText = jestFn(function HighlightedText() {

@@ -24,6 +24,7 @@ jest.mock('../NativeAudioPlayer', () => ({
 jest.mock('../engines/EngineManager', () => ({
   engineManager: {
     registerEngine: jest.fn(),
+    hasEngine: jest.fn(() => false),
     initializeEngine: jest.fn(async () => {}),
     reinitializeEngine: jest.fn(async () => {}),
     setDefaultEngine: jest.fn(),

@@ -114,3 +114,217 @@ describe('Speech.initialize keeps the previous engine on failure', () => {
     expect(Speech.getCurrentEngine()).toBe(TTSEngine.OS_NATIVE);
   });
 });
+
+function fakeEngine<T extends object = {}>(name: string, overrides?: T) {
+  const base = {
+    name,
+    initialize: jest.fn(async () => {}),
+    isReady: jest.fn(async () => true),
+    synthesize: jest.fn(async () => {}),
+    synthesizeStream: jest.fn(() => ({
+      append: jest.fn(),
+      finalize: jest.fn(async () => {}),
+      cancel: jest.fn(async () => {}),
+    })),
+    getAvailableVoices: jest.fn(async () => ['v1']),
+    getVoicesWithMetadata: jest.fn(async () => [{id: 'v1'}]),
+    setChunkProgressCallback: jest.fn(),
+    stop: jest.fn(async () => {}),
+    destroy: jest.fn(async () => {}),
+    release: jest.fn(async () => ({
+      success: true,
+      partialRelease: false,
+      errors: [{component: name, error: new Error('x')}],
+    })),
+  };
+  return {...base, ...overrides} as typeof base & T;
+}
+
+const mockTurbo = (require('../NativeSpeech').default as any).__store as Record<
+  string,
+  jest.Mock
+>;
+const nativePlayer = require('../NativeAudioPlayer').default as Record<
+  string,
+  jest.Mock
+>;
+
+describe('Speech.registerEngine', () => {
+  it('rejects built-in ids and empty names', () => {
+    for (const id of Object.values(TTSEngine)) {
+      expect(() => Speech.registerEngine(fakeEngine(id) as any)).toThrow(
+        'reserved',
+      );
+    }
+    expect(() => Speech.registerEngine(fakeEngine('') as any)).toThrow(
+      'non-empty',
+    );
+  });
+
+  it('is idempotent for the same instance and refuses to replace an initialized one', async () => {
+    const first = fakeEngine('dup');
+    Speech.registerEngine(first as any);
+    Speech.registerEngine(first as any);
+    // Not initialized yet: a new instance may replace it.
+    const second = fakeEngine('dup');
+    Speech.registerEngine(second as any);
+    await Speech.initialize({engine: 'dup'} as any);
+    expect(first.initialize).not.toHaveBeenCalled();
+    expect(second.initialize).toHaveBeenCalledTimes(1);
+    expect(() => Speech.registerEngine(fakeEngine('dup') as any)).toThrow(
+      'already registered and initialized',
+    );
+    Speech.registerEngine(second as any);
+  });
+});
+
+describe('Speech dispatch to a registered engine', () => {
+  const fake = fakeEngine('fake');
+
+  beforeAll(() => {
+    Speech.registerEngine(fake as any);
+  });
+
+  beforeEach(async () => {
+    Object.values(fake).forEach(v => jest.isMockFunction(v) && v.mockClear());
+    Object.values(nativePlayer).forEach(fn => fn.mockClear());
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+  });
+
+  it('initializes with the config, then reinitializes on later calls', async () => {
+    await Speech.initialize({engine: 'fake', modelPath: '/m'} as any);
+    expect(fake.initialize).toHaveBeenCalledWith({modelPath: '/m'});
+    expect(fake.setChunkProgressCallback).toHaveBeenCalledWith(
+      expect.any(Function),
+    );
+    expect(Speech.getCurrentEngine()).toBe('fake');
+    expect(Speech.getAvailableEngines()).toContain('fake');
+
+    await Speech.initialize({engine: 'fake', modelPath: '/n'} as any);
+    expect(fake.destroy).toHaveBeenCalledTimes(1);
+    expect(fake.initialize).toHaveBeenLastCalledWith({modelPath: '/n'});
+  });
+
+  it('a failed init keeps the previous engine', async () => {
+    fake.initialize.mockRejectedValueOnce(new Error('fake init failed'));
+    await expect(Speech.initialize({engine: 'fake'} as any)).rejects.toThrow(
+      'fake init failed',
+    );
+    expect(Speech.getCurrentEngine()).toBe(TTSEngine.OS_NATIVE);
+  });
+
+  it('routes speak, voices, stop, release, pause, resume and streams', async () => {
+    await Speech.initialize({engine: 'fake'} as any);
+
+    await Speech.speak('Hi.', 'v1', {speed: 1.2});
+    expect(fake.synthesize).toHaveBeenCalledWith('Hi.', {
+      voiceId: 'v1',
+      speed: 1.2,
+    });
+    await expect(Speech.getVoices()).resolves.toEqual(['v1']);
+    await expect(Speech.getVoicesWithMetadata('en')).resolves.toEqual([
+      {id: 'v1'},
+    ]);
+    expect(fake.getVoicesWithMetadata).toHaveBeenCalledWith('en');
+
+    await Speech.stop();
+    expect(fake.stop).toHaveBeenCalledTimes(1);
+    expect(mockTurbo.stop).toHaveBeenCalled();
+
+    await expect(Speech.release()).resolves.toMatchObject({
+      errors: [{component: 'fake'}],
+    });
+
+    await Speech.pause();
+    await Speech.resume();
+    expect(nativePlayer.resume).toHaveBeenCalledTimes(1);
+
+    const stream = Speech.createSpeechStream('v1', {speed: 2});
+    stream.append('Hello there. ');
+    await stream.cancel();
+    expect(fake.synthesizeStream).toHaveBeenCalledWith(
+      expect.objectContaining({voiceId: 'v1', speed: 2}),
+    );
+  });
+
+  it('getVoicesWithMetadata rejects for engines without it and for os-native', async () => {
+    const bare = fakeEngine('bare', {getVoicesWithMetadata: undefined});
+    Speech.registerEngine(bare as any);
+    await Speech.initialize({engine: 'bare'} as any);
+    await expect(Speech.getVoicesWithMetadata()).rejects.toThrow(
+      'only available for neural engines',
+    );
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+    await expect(Speech.getVoicesWithMetadata()).rejects.toThrow(
+      'only available for neural engines',
+    );
+  });
+});
+
+describe('Speech.getEngineSupport / resetEngineSupport', () => {
+  it.each(Object.values(TTSEngine))('%s is supported', async engine => {
+    await expect(Speech.getEngineSupport(engine)).resolves.toEqual({
+      supported: true,
+      reason: 'ok',
+    });
+    await expect(Speech.resetEngineSupport(engine)).resolves.toBe(true);
+  });
+
+  it('asks a registered engine, and never throws', async () => {
+    const probe = fakeEngine('probe', {
+      getSupport: jest.fn(async () => ({
+        supported: false,
+        reason: 'missing-cpu-features',
+        detail: 'no dotprod',
+      })),
+      resetSupport: jest.fn(async () => true),
+    });
+    Speech.registerEngine(probe as any);
+    await expect(Speech.getEngineSupport('probe')).resolves.toEqual({
+      supported: false,
+      reason: 'missing-cpu-features',
+      detail: 'no dotprod',
+    });
+    await expect(Speech.resetEngineSupport('probe')).resolves.toBe(true);
+    expect(probe.resetSupport).toHaveBeenCalledTimes(1);
+
+    probe.getSupport.mockRejectedValueOnce(new Error('io'));
+    probe.resetSupport.mockRejectedValueOnce(new Error('io'));
+    await expect(Speech.getEngineSupport('probe')).resolves.toEqual({
+      supported: false,
+      reason: 'error',
+      detail: 'io',
+    });
+    await expect(Speech.resetEngineSupport('probe')).resolves.toBe(false);
+  });
+
+  it('engines without getSupport are supported; unknown ids are not', async () => {
+    Speech.registerEngine(fakeEngine('plain') as any);
+    await expect(Speech.getEngineSupport('plain')).resolves.toEqual({
+      supported: true,
+      reason: 'ok',
+    });
+    await expect(Speech.getEngineSupport('nope')).resolves.toEqual({
+      supported: false,
+      reason: 'unknown-engine',
+      detail: 'nope',
+    });
+    await expect(Speech.resetEngineSupport('nope')).resolves.toBe(true);
+  });
+});
+
+describe('built-in engines', () => {
+  it('are constructed only by their first initialize', async () => {
+    let isolated!: typeof Speech;
+    jest.isolateModules(() => {
+      mockConstructed.length = 0;
+      isolated = require('../Speech').default;
+    });
+    expect(mockConstructed).toEqual([]);
+    await isolated.getEngineSupport(TTSEngine.KOKORO);
+    expect(mockConstructed).toEqual([]);
+    await isolated.initialize({engine: TTSEngine.KOKORO} as any);
+    await isolated.initialize({engine: TTSEngine.KOKORO} as any);
+    expect(mockConstructed).toEqual(['kokoro']);
+  });
+});

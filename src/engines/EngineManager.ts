@@ -4,7 +4,7 @@
  * Manages multiple TTS engines and provides a unified interface
  */
 
-import type {TTSEngine, TTSEngineInterface, EngineStatus} from '../types';
+import type {EngineId, TTSEngineInterface, EngineStatus} from '../types';
 import {createComponentLogger} from '../utils/logger';
 
 const log = createComponentLogger('EngineManager', 'Manager');
@@ -13,9 +13,9 @@ const log = createComponentLogger('EngineManager', 'Manager');
 type AnyEngine = TTSEngineInterface<unknown>;
 
 class TTSEngineManager {
-  private engines: Map<TTSEngine, AnyEngine> = new Map();
-  private defaultEngine: TTSEngine = 'os-native' as TTSEngine;
-  private initialized: Set<TTSEngine> = new Set();
+  private engines: Map<EngineId, AnyEngine> = new Map();
+  private defaultEngine: EngineId = 'os-native';
+  private initialized: Set<EngineId> = new Set();
 
   /**
    * Register a TTS engine
@@ -27,7 +27,7 @@ class TTSEngineManager {
   /**
    * Get an engine by name
    */
-  getEngine(name: TTSEngine): AnyEngine {
+  getEngine(name: EngineId): AnyEngine {
     const engine = this.engines.get(name);
     if (!engine) {
       throw new Error(`Engine '${name}' not registered`);
@@ -38,21 +38,21 @@ class TTSEngineManager {
   /**
    * Check if engine is registered
    */
-  hasEngine(name: TTSEngine): boolean {
+  hasEngine(name: EngineId): boolean {
     return this.engines.has(name);
   }
 
   /**
    * Get all registered engines
    */
-  getAvailableEngines(): TTSEngine[] {
+  getAvailableEngines(): EngineId[] {
     return Array.from(this.engines.keys());
   }
 
   /**
    * Set default engine
    */
-  setDefaultEngine(name: TTSEngine): void {
+  setDefaultEngine(name: EngineId): void {
     if (!this.hasEngine(name)) {
       throw new Error(`Engine '${name}' not registered`);
     }
@@ -62,7 +62,7 @@ class TTSEngineManager {
   /**
    * Get default engine
    */
-  getDefaultEngine(): TTSEngine {
+  getDefaultEngine(): EngineId {
     return this.defaultEngine;
   }
 
@@ -70,7 +70,7 @@ class TTSEngineManager {
    * Initialize an engine (lazy initialization)
    */
   async initializeEngine<TConfig>(
-    name: TTSEngine,
+    name: EngineId,
     config?: TConfig,
   ): Promise<void> {
     if (this.initialized.has(name)) {
@@ -94,7 +94,7 @@ class TTSEngineManager {
    * Destroys existing engine state and re-initializes
    */
   async reinitializeEngine<TConfig>(
-    name: TTSEngine,
+    name: EngineId,
     config?: TConfig,
   ): Promise<void> {
     const engine = this.getEngine(name);
@@ -116,14 +116,14 @@ class TTSEngineManager {
   /**
    * Check if engine is initialized
    */
-  isEngineInitialized(name: TTSEngine): boolean {
+  isEngineInitialized(name: EngineId): boolean {
     return this.initialized.has(name);
   }
 
   /**
    * Get engine status
    */
-  async getEngineStatus(name: TTSEngine): Promise<EngineStatus> {
+  async getEngineStatus(name: EngineId): Promise<EngineStatus> {
     if (!this.hasEngine(name)) {
       return {
         isReady: false,
