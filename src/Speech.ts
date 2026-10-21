@@ -174,9 +174,10 @@ export default class Speech {
   /**
    * Make an engine add-on available to `Speech.initialize({engine: id})`,
    * where `id` is `engine.name`. Registering the same instance again is a
-   * no-op; a different instance may replace one that is not initialized.
+   * no-op; a different instance may replace one that has never been
+   * initialized (`release()` does not lift this).
    * @throws if `engine.name` is a built-in engine id, or another instance
-   *   under that id is initialized
+   *   under that id has been initialized
    * @example
    * Speech.registerEngine(new MyEngine());
    * await Speech.initialize({engine: 'my-engine', modelPath: '...'});
@@ -433,9 +434,14 @@ export default class Speech {
         `${builtinDisplayNames[engine] ?? engine} engine not initialized`,
       );
     }
-    if (!instance?.getVoicesWithMetadata) {
+    if (!instance) {
       throw new Error(
-        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten, and add-ons that provide it)',
+        'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten)',
+      );
+    }
+    if (!instance.getVoicesWithMetadata) {
+      throw new Error(
+        `Engine '${engine}' does not provide getVoicesWithMetadata()`,
       );
     }
     return (await instance.getVoicesWithMetadata(language)) as T;

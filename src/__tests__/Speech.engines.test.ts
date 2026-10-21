@@ -71,6 +71,7 @@ jest.mock('../engines/kitten', () => ({
 }));
 
 import Speech from '../Speech';
+import {neuralAudioPlayer} from '../engines/NeuralAudioPlayer';
 import {TTSEngine} from '../types';
 
 beforeEach(() => {
@@ -144,6 +145,8 @@ const mockTurbo = (require('../NativeSpeech').default as any).__store as Record<
   string,
   jest.Mock
 >;
+const turboPause = () =>
+  (require('../NativeSpeech').default as any).pause as jest.Mock;
 const nativePlayer = require('../NativeAudioPlayer').default as Record<
   string,
   jest.Mock
@@ -235,9 +238,18 @@ describe('Speech dispatch to a registered engine', () => {
       errors: [{component: 'fake'}],
     });
 
-    await Speech.pause();
+    let finish!: () => void;
+    const playing = neuralAudioPlayer.playNative(
+      () => new Promise<void>(res => (finish = res)),
+    );
+    turboPause().mockClear();
+    await expect(Speech.pause()).resolves.toBe(true);
+    expect(nativePlayer.pause).toHaveBeenCalledTimes(1);
+    expect(turboPause()).not.toHaveBeenCalled();
     await Speech.resume();
     expect(nativePlayer.resume).toHaveBeenCalledTimes(1);
+    finish();
+    await playing;
 
     const stream = Speech.createSpeechStream('v1', {speed: 2});
     stream.append('Hello there. ');
@@ -252,12 +264,23 @@ describe('Speech dispatch to a registered engine', () => {
     Speech.registerEngine(bare as any);
     await Speech.initialize({engine: 'bare'} as any);
     await expect(Speech.getVoicesWithMetadata()).rejects.toThrow(
-      'only available for neural engines',
+      "Engine 'bare' does not provide getVoicesWithMetadata()",
     );
     await Speech.initialize({engine: TTSEngine.OS_NATIVE});
     await expect(Speech.getVoicesWithMetadata()).rejects.toThrow(
-      'only available for neural engines',
+      'getVoicesWithMetadata() is only available for neural engines (Kokoro, Supertonic, Kitten)',
     );
+  });
+});
+
+describe('Speech.pause on os-native', () => {
+  it('goes to the system synthesizer, not the neural player', async () => {
+    await Speech.initialize({engine: TTSEngine.OS_NATIVE});
+    nativePlayer.pause!.mockClear();
+    turboPause().mockClear();
+    await Speech.pause();
+    expect(turboPause()).toHaveBeenCalledTimes(1);
+    expect(nativePlayer.pause).not.toHaveBeenCalled();
   });
 });
 
