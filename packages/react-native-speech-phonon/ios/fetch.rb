@@ -231,11 +231,15 @@ module RNSpeechPhonon
     xcf
   end
 
+  def stamped?(dest, stamp)
+    stamp_file = File.join(dest, STAMP)
+    File.file?(stamp_file) && File.read(stamp_file).strip == stamp
+  end
+
   # Skips when dest already carries `stamp`; copies via a temp sibling so an interrupted run never
   # leaves a half copy behind a valid stamp.
   def install_copy(src, dest, stamp)
-    stamp_file = File.join(dest, STAMP)
-    return false if File.file?(stamp_file) && File.read(stamp_file).strip == stamp
+    return false if stamped?(dest, stamp)
 
     tmp = "#{dest}.tmp-#{Process.pid}"
     FileUtils.rm_rf(tmp)
@@ -257,17 +261,20 @@ module RNSpeechPhonon
     log ||= ->(msg) { defined?(Pod::UI) ? Pod::UI.puts(msg) : warn(msg) }
     warn_log = ->(msg) { defined?(Pod::UI) ? Pod::UI.warn(msg) : warn(msg) }
     lk = lock(root)
+    dest = destination(root)
     local = local_override(env)
     if local
       src = resolve_local(local, env: env)
       stamp = "local:#{tree_digest(src)}"
       log.call("[RNSpeechPhonon] Phonon: using local #{src}")
     else
-      src = fetch_release(root, lk, env: env, downloader: downloader, log: log)
       stamp = "release:#{lk.dig('binaries', 'release')}:#{ios_sha(lk)}"
+      # install_copy stamps only a complete copy of a sha-verified, validated release.
+      return dest if stamped?(dest, stamp)
+
+      src = fetch_release(root, lk, env: env, downloader: downloader, log: log)
     end
     validate!(src).each { |w| warn_log.call("[RNSpeechPhonon] #{w}") }
-    dest = destination(root)
     log.call("[RNSpeechPhonon] Phonon: installed #{XCFRAMEWORK}") if install_copy(src, dest, stamp)
     dest
   end

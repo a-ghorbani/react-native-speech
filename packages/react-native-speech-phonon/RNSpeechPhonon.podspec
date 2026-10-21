@@ -3,7 +3,14 @@ require File.join(__dir__, "ios", "fetch.rb")
 
 package = JSON.parse(File.read(File.join(__dir__, "package.json")))
 
-unless RNSpeechPhonon.lock_ready?(__dir__)
+# Pod::Informative prints the message; anything else is reported as a CocoaPods bug.
+informative = lambda do |&block|
+  block.call
+rescue RNSpeechPhonon::Error, SystemCallError => e
+  raise Pod::Informative, "[RNSpeechPhonon] #{e.message}"
+end
+
+unless informative.call { RNSpeechPhonon.lock_ready?(__dir__) }
   raise Pod::Informative, "[RNSpeechPhonon] phonon.lock.json has no published iOS binaries " \
     "(sha256 PLACEHOLDER). Set RN_SPEECH_PHONON_XCFRAMEWORK to a local PhononCore.xcframework, " \
     "or use a release of this package with published binaries."
@@ -24,13 +31,13 @@ Pod::Spec.new do |s|
   s.private_header_files = ["ios/**/*.h", "cpp/**/*.h"]
   s.exclude_files = ["ios/generated/**/*", "ios/PhononCore.xcframework/**/*"]
 
-  RNSpeechPhonon.ensure_xcframework!(__dir__)
+  informative.call { RNSpeechPhonon.ensure_xcframework!(__dir__) }
   s.vendored_frameworks = "ios/PhononCore.xcframework"
 
   s.pod_target_xcconfig = {
     'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/cpp"',
     'GCC_PREPROCESSOR_DEFINITIONS' =>
-      "$(inherited) RN_SPEECH_PHONON_VERSION=#{RNSpeechPhonon.library_version(__dir__)}"
+      "$(inherited) RN_SPEECH_PHONON_VERSION=#{informative.call { RNSpeechPhonon.library_version(__dir__) }}"
   }
 
   s.frameworks = "AVFoundation", "CoreML", "CoreVideo"

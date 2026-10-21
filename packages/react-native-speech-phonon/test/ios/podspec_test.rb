@@ -119,9 +119,29 @@ class PodspecTest < Minitest::Test
     File.write(File.join(stage, JSON.parse(File.read(File.join(@root, 'phonon.lock.json')))
       .dig('binaries', 'ios', 'asset')), 'not the pinned zip')
     ENV['RN_SPEECH_PHONON_RELEASE_URL'] = "file://#{stage}"
-    assert_raises(RNSpeechPhonon::Error) { eval_podspec }
+    err = assert_raises(Pod::Informative) { eval_podspec }
+    assert_match(/\A\[RNSpeechPhonon\] .*sha256 .* pins 0{64}/, err.message)
   ensure
     ENV.delete('RN_SPEECH_PHONON_RELEASE_URL')
+  end
+
+  def test_failed_download_fails_install
+    set_ios_sha('0' * 64)
+    ENV['RN_SPEECH_PHONON_RELEASE_URL'] = "file://#{File.join(@tmp, 'nowhere')}"
+    err = assert_raises(Pod::Informative) { eval_podspec }
+    assert_match(/\A\[RNSpeechPhonon\] download failed: file:/, err.message)
+  ensure
+    ENV.delete('RN_SPEECH_PHONON_RELEASE_URL')
+  end
+
+  def test_read_only_package_fails_install
+    skip 'root ignores file modes' if Process.uid.zero?
+    ENV['RN_SPEECH_PHONON_XCFRAMEWORK'] = local_xcf
+    FileUtils.chmod(0o555, File.join(@root, 'ios'))
+    err = assert_raises(Pod::Informative) { eval_podspec }
+    assert_match(/\A\[RNSpeechPhonon\] Permission denied/, err.message)
+  ensure
+    FileUtils.chmod(0o755, File.join(@root, 'ios'))
   end
 
   def test_sources_never_include_tests

@@ -150,6 +150,16 @@ class PhononFetchTest < Minitest::Test
     refute(@logs.any? { |l| l.include?('installed') })
   end
 
+  def test_verified_copy_needs_no_cache
+    zip = make_zip
+    write_lock(Digest::SHA256.file(zip).hexdigest)
+    RNSpeechPhonon.ensure_xcframework!(@root, env: @env, downloader: file_downloader(zip, []), log: @log)
+    FileUtils.rm_rf(@cache)
+    out = RNSpeechPhonon.ensure_xcframework!(@root, env: @env, downloader: ->(*) { flunk 'downloaded' }, log: @log)
+    assert_equal dest, out
+    refute Dir.exist?(@cache)
+  end
+
   def test_release_download_via_curl_file_url
     zip = make_zip
     write_lock(Digest::SHA256.file(zip).hexdigest)
