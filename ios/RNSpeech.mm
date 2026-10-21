@@ -491,7 +491,7 @@ RCT_EXPORT_MODULE();
     RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playAudio",
         [NSString stringWithFormat:@"sampleRate=%f channels=%ld", sampleRate, (long)channels]);
     @try {
-      if (![self rejectUnsupportedChannels:channels traceHandle:traceHandle traceName:"playAudio" reject:reject]) {
+      if (![self ensureSupportedChannels:channels traceHandle:traceHandle traceName:"playAudio" reject:reject]) {
         return;
       }
 
@@ -504,9 +504,12 @@ RCT_EXPORT_MODULE();
       // Decode base64 audio data
       NSData *decodedData = [[NSData alloc] initWithBase64EncodedString:audioData options:0];
       if (!decodedData) {
-        [self deactivateAudioSession];
-        RNSpeechTraceEnd(traceHandle, "playAudio");
-        reject(@"audio_error", @"Failed to decode base64 audio data", nil);
+        [self abandonPlaybackWithTraceHandle:traceHandle
+                                   traceName:"playAudio"
+                                     resolve:resolve
+                                      reject:reject
+                                     message:@"Failed to decode base64 audio data"
+                                       error:nil];
         return;
       }
 
@@ -546,7 +549,7 @@ RCT_EXPORT_MODULE();
     RNSpeechTraceHandle traceHandle = RNSpeechTraceBegin("playPcm",
         [NSString stringWithFormat:@"samples=%lu", (unsigned long)(samples.length / sizeof(float))]);
     @try {
-      if (![self rejectUnsupportedChannels:channels traceHandle:traceHandle traceName:"playPcm" reject:reject]) {
+      if (![self ensureSupportedChannels:channels traceHandle:traceHandle traceName:"playPcm" reject:reject]) {
         return;
       }
 
@@ -579,18 +582,35 @@ RCT_EXPORT_MODULE();
   });
 }
 
-// Same rule as Android's pcmFrameBytes; returns NO after rejecting. Call before cleanupAudio so a
-// rejection leaves current playback alone.
-- (BOOL)rejectUnsupportedChannels:(NSInteger)channels
-                      traceHandle:(RNSpeechTraceHandle)traceHandle
-                        traceName:(const char *)traceName
-                           reject:(RCTPromiseRejectBlock)reject {
+// Same rule as Android's pcmFrameBytes. Call before cleanupAudio so a rejection leaves current
+// playback alone.
+- (BOOL)ensureSupportedChannels:(NSInteger)channels
+                    traceHandle:(RNSpeechTraceHandle)traceHandle
+                      traceName:(const char *)traceName
+                         reject:(RCTPromiseRejectBlock)reject {
   if (channels <= 2) {
     return YES;
   }
   RNSpeechTraceEnd(traceHandle, traceName);
   reject(@"audio_error", [NSString stringWithFormat:@"Unsupported channel count: %ld", (long)channels], nil);
   return NO;
+}
+
+// For a playback that fails after cleanupAudio, which leaves the session active for the replacement.
+// Rejects with `message`, or resolves when it is nil.
+- (void)abandonPlaybackWithTraceHandle:(RNSpeechTraceHandle)traceHandle
+                             traceName:(const char *)traceName
+                               resolve:(RCTPromiseResolveBlock)resolve
+                                reject:(RCTPromiseRejectBlock)reject
+                               message:(NSString *)message
+                                 error:(NSError *)error {
+  [self deactivateAudioSession];
+  RNSpeechTraceEnd(traceHandle, traceName);
+  if (message) {
+    reject(@"audio_error", message, error);
+  } else {
+    resolve(nil);
+  }
 }
 
 // Runs on _audioQueue after the caller's cleanupAudio and utterance-id bump; `fill` deinterleaves into dst.
@@ -607,11 +627,16 @@ RCT_EXPORT_MODULE();
                                    fill:(void (NS_NOESCAPE ^)(float *const *dst, NSUInteger frameCount, NSUInteger channelCount))fill {
   NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
   NSUInteger frameCount = sampleCount / channelCount;
-  // cleanupAudio keeps the session active for the replacement; every early exit must deactivate it.
+  void (^abandon)(NSString *, NSError *) = ^(NSString *message, NSError *error) {
+    [self abandonPlaybackWithTraceHandle:traceHandle
+                               traceName:traceName
+                                 resolve:resolve
+                                  reject:reject
+                                 message:message
+                                   error:error];
+  };
   if (frameCount == 0) {
-    [self deactivateAudioSession];
-    RNSpeechTraceEnd(traceHandle, traceName);
-    resolve(nil);
+    abandon(nil, nil);
     return;
   }
 
@@ -623,9 +648,7 @@ RCT_EXPORT_MODULE();
                                       frameCapacity:(AVAudioFrameCount)frameCount]
       : nil;
   if (!pcmBuffer) {
-    [self deactivateAudioSession];
-    RNSpeechTraceEnd(traceHandle, traceName);
-    reject(@"audio_error", @"Failed to create audio buffer", nil);
+    abandon(@"Failed to create audio buffer", nil);
     return;
   }
   pcmBuffer.frameLength = (AVAudioFrameCount)frameCount;
@@ -643,9 +666,7 @@ RCT_EXPORT_MODULE();
   if (!self->_audioEngine.isRunning) {
     [self->_audioEngine startAndReturnError:&error];
     if (error) {
-      [self deactivateAudioSession];
-      RNSpeechTraceEnd(traceHandle, traceName);
-      reject(@"audio_error", [NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
+      abandon([NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
       return;
     }
   }
