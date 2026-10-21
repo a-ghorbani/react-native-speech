@@ -128,10 +128,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           }
           is FocusEvent.Lost -> {
             // Permanent loss - stop and abandon.
-            synchronized(audioLock) {
-              cleanupAudio()
-            }
-            neuralFocusManager.abandonFocus()
+            stopNeuralPlayback(releaseDucking = false)
             emitOnAudioInterruption(
               Arguments.createMap().apply {
                 putString("type", "began")
@@ -799,6 +796,15 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun stopNeuralPlayback(releaseDucking: Boolean = true, abandonFocus: Boolean = true) =
+    stopNeuralPlaybackInOrder(
+      releaseDucking,
+      abandonFocus,
+      ::cleanupAudio,
+      ::deactivateAudioDuckingSession,
+      neuralFocusManager::abandonFocus,
+    )
+
   override fun playAudio(audioData: String?, config: ReadableMap, promise: Promise) {
     if (audioData == null) {
       promise.reject("audio_error", "Audio data cannot be null")
@@ -852,9 +858,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           promise.reject("audio_error", "Unsupported channel count: $channels")
           return
         }
-        cleanupAudio()
-        // Release the replaced playback's ducking focus before activate overwrites the request.
-        deactivateAudioDuckingSession()
+        stopNeuralPlayback(abandonFocus = false)
 
         currentAudioUtteranceId++
 
@@ -939,9 +943,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       }
     } catch (e: Exception) {
       SpeechTrace.endSection()
-      cleanupAudio()
-      deactivateAudioDuckingSession()
-      neuralFocusManager.abandonFocus()
+      stopNeuralPlayback()
       promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
     }
   }
@@ -950,9 +952,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     audioExecutor.execute {
       if (audioInvalidated) return@execute
       try {
-        cleanupAudio()
-        deactivateAudioDuckingSession()
-        neuralFocusManager.abandonFocus()
+        stopNeuralPlayback()
         emitOnStopped(getAudioEventData())
         promise.resolve(null)
       } catch (e: Exception) {
@@ -1055,9 +1055,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       audioInvalidated = true
       audioTrackPromise = null
     }
-    cleanupAudio()
-    deactivateAudioDuckingSession()
-    neuralFocusManager.abandonFocus()
+    stopNeuralPlayback()
     audioExecutor.shutdownNow()
   }
 }
