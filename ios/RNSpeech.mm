@@ -504,6 +504,8 @@ RCT_EXPORT_MODULE();
       // Decode base64 audio data
       NSData *decodedData = [[NSData alloc] initWithBase64EncodedString:audioData options:0];
       if (!decodedData) {
+        [self deactivateAudioSession];
+        RNSpeechTraceEnd(traceHandle, "playAudio");
         reject(@"audio_error", @"Failed to decode base64 audio data", nil);
         return;
       }
@@ -606,7 +608,9 @@ RCT_EXPORT_MODULE();
                                    fill:(void (NS_NOESCAPE ^)(float *const *dst, NSUInteger frameCount, NSUInteger channelCount))fill {
   NSUInteger channelCount = (NSUInteger)MAX(channels, (NSInteger)1);
   NSUInteger frameCount = sampleCount / channelCount;
+  // cleanupAudio left the replaced playback's session active; release it on every early exit.
   if (frameCount == 0) {
+    [self deactivateAudioSession];
     RNSpeechTraceEnd(traceHandle, traceName);
     resolve(nil);
     return;
@@ -620,6 +624,7 @@ RCT_EXPORT_MODULE();
                                       frameCapacity:(AVAudioFrameCount)frameCount]
       : nil;
   if (!pcmBuffer) {
+    [self deactivateAudioSession];
     RNSpeechTraceEnd(traceHandle, traceName);
     reject(@"audio_error", @"Failed to create audio buffer", nil);
     return;
@@ -639,6 +644,7 @@ RCT_EXPORT_MODULE();
   if (!self->_audioEngine.isRunning) {
     [self->_audioEngine startAndReturnError:&error];
     if (error) {
+      [self deactivateAudioSession];
       RNSpeechTraceEnd(traceHandle, traceName);
       reject(@"audio_error", [NSString stringWithFormat:@"Failed to start audio engine: %@", error.localizedDescription], error);
       return;
