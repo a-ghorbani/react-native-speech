@@ -8,7 +8,8 @@
 #   prelinked  each architecture is one object (the ld -r prelink), not Rust's ~700 members
 #   exports    the defined external symbols of every architecture are exactly ptts.exp
 #   objc       no undefined _OBJC_CLASS_$ references (nothing that needs iOS 18 at load time)
-#   undefined  every other undefined symbol matches ios-undefined-allow.txt (SDK C symbols only:
+#   undefined  on macOS, each slice links as a dylib against the iOS SDK at minos; elsewhere every
+#              other undefined symbol matches ios-undefined-allow.txt (SDK C symbols only:
 #              no Rust symbol left unresolved by the prelink)
 #   bitcode    no __LLVM segment / __bitcode section
 #   minos      every LC_BUILD_VERSION is minos 15.1 on the right platform (ios / iossimulator)
@@ -190,11 +191,25 @@ verify() {
         undefs="$(grep -v ':$' <<<"$undefs" | grep . | LC_ALL=C sort -u || true)"
         objc="$(grep -c '^_OBJC_CLASS_\$' <<<"$undefs" || true)"
         if ((objc > 0)); then fail objc "$id/$arch: $objc _OBJC_CLASS_\$ references"; else pass objc "$id/$arch: none"; fi
-        unknown="$(grep -v '^_OBJC_CLASS_\$' <<<"$undefs" | grep -vE -f <(grep -E '^\^' "$HERE/ios-undefined-allow.txt") || true)"
-        if [[ -n "$unknown" ]]; then
-          fail undefined "$id/$arch: $(grep -c . <<<"$unknown") not in ios-undefined-allow.txt: $(awk 'NR<=8' <<<"$unknown" | tr '\n' ' ')"
+        if [[ "$(uname)" == Darwin ]]; then
+          # The linker is the authority: every undefined symbol must resolve in the SDK at $MINOS.
+          sim=""; sdk=iphoneos
+          [[ "$id" == *simulator ]] && { sim="-simulator"; sdk=iphonesimulator; }
+          if xcrun --sdk "$sdk" clang -target "$arch-apple-ios$MINOS$sim" -dynamiclib -o "$tmp/link.dylib" \
+            -Wl,-all_load "$thin" -framework CoreML -framework CoreVideo -framework Accelerate \
+            -framework Foundation -lc++ 2>"$tmp/ld.err"; then
+            pass undefined "$id/$arch: $(grep -c . <<<"$undefs" || true) symbols, all resolved by the iOS $MINOS SDK"
+          else
+            unresolved="$(grep -o '"[^"]*", referenced' "$tmp/ld.err" | cut -d'"' -f2 | awk 'NR<=8' | tr '\n' ' ' || true)"
+            fail undefined "$id/$arch: link against the iOS $MINOS SDK failed: ${unresolved:-$(tr '\n' ' ' <"$tmp/ld.err" | cut -c1-200)}"
+          fi
         else
-          pass undefined "$id/$arch: $(grep -c . <<<"$undefs" || true) symbols, all from the SDK"
+          unknown="$(grep -v '^_OBJC_CLASS_\$' <<<"$undefs" | grep -vE -f <(grep -E '^\^' "$HERE/ios-undefined-allow.txt") || true)"
+          if [[ -n "$unknown" ]]; then
+            fail undefined "$id/$arch: $(grep -c . <<<"$unknown") not in ios-undefined-allow.txt: $(awk 'NR<=8' <<<"$unknown" | tr '\n' ' ')"
+          else
+            pass undefined "$id/$arch: $(grep -c . <<<"$undefs" || true) symbols, all in ios-undefined-allow.txt"
+          fi
         fi
       else
         fail objc "$id/$arch: nm -u failed: $(tr '\n' ' ' <"$tmp/nm.err" | cut -c1-120)"

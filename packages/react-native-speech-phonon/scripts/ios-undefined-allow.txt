@@ -2,7 +2,7 @@
 # 'undefined'): one anchored ERE per line, matched against `nm -uj` names (leading underscore
 # included). After the ld -r prelink everything Rust is defined inside the object, so whatever
 # is left must come from the iOS 15 SDK the app links. A symbol not matched here fails the
-# check; add it only after confirming it exists in iOS 15.1 libSystem / the named framework.
+# check. Only used off macOS (selftests); on macOS the check links against the iOS SDK instead.
 #
 # Seeded from the net undefined symbols of upstream's v0.4.0 ios-arm64 archive.
 
