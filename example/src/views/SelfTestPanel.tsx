@@ -4,7 +4,14 @@
  * (logcat: ReactNativeJS) and to the panel.
  */
 import React from 'react';
-import {View, Text, StyleSheet, TouchableOpacity} from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Platform,
+  TurboModuleRegistry,
+} from 'react-native';
 import Speech, {
   createMarkdownStreamBuffer,
   onAudioInterruption,
@@ -154,6 +161,20 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
     } finally {
       un();
     }
+  },
+
+  async primary_abi() {
+    // The library picks CPU-only defaults on x86 from this native constant.
+    if (Platform.OS !== 'android') {
+      return report('primary_abi', true, 'skipped (Android only)');
+    }
+    const abi = (TurboModuleRegistry.get('RNSpeech') as any)?.getConstants()
+      .primaryAbi;
+    return report(
+      'primary_abi',
+      /^(arm64-v8a|armeabi-v7a|x86|x86_64)$/.test(abi ?? ''),
+      `primaryAbi=${abi}`,
+    );
   },
 
   async md_export_offsets() {
