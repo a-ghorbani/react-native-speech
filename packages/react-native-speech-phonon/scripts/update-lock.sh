@@ -44,8 +44,10 @@ if [[ -n "$RELEASE" ]]; then
     echo "release $RELEASE does not match upstream tag $(jq -r '.upstream.tag' "$tmp")" >&2
     exit 1
   fi
+  # A new release name invalidates the old release's hashes.
   jq --arg r "$RELEASE" --arg a "phonon-android-$ver-$rev.zip" --arg i "phonon-ios-$ver-$rev.xcframework.zip" \
-    '.binaries.release = $r | .binaries.android.asset = $a | .binaries.ios.asset = $i' "$tmp" >"$tmp.new"
+    '(if .binaries.release != $r then .binaries.android.sha256 = "PLACEHOLDER" | .binaries.ios.sha256 = "PLACEHOLDER" else . end)
+     | .binaries.release = $r | .binaries.android.asset = $a | .binaries.ios.asset = $i' "$tmp" >"$tmp.new"
   mv "$tmp.new" "$tmp"
 fi
 
