@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.1.0](https://github.com/a-ghorbani/react-native-speech/releases/tag/phonon-v0.1.0) (2026-10-22)
 
 ### Added
 
