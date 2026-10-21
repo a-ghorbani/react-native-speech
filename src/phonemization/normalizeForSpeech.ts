@@ -132,6 +132,14 @@ export function expandLatinAbbreviations(text: string): string {
       // "MS." is usually the degree or Microsoft, not a title.
       .replace(/\bMs\.(?=\s+[A-Z])/g, 'Miss')
       .replace(/\b(?:Prof|PROF)\.(?=\s+[A-Z])/g, 'Professor')
+      // "Main St." is a street; "St. Louis" (before a name) stays saint.
+      .replace(
+        /(?<=\b[A-Z][a-z]+\s)St(?:\.|\b(?!\.))(?!\s+[A-Z])/g,
+        (m: string, offset: number, src: string) =>
+          m.endsWith('.') && /^\s*$/.test(src.slice(offset + m.length))
+            ? 'Street.'
+            : 'Street',
+      )
       .replace(/,,/g, ',')
   );
 }
@@ -139,6 +147,14 @@ export function expandLatinAbbreviations(text: string): string {
 export function verbalizeSymbols(text: string): string {
   return (
     text
+      // Language names before the generic "+"/"#" rules
+      .replace(/\bC\+\+(?!\+)/g, 'C plus plus')
+      .replace(/\b([CF])#(?!\w)/g, '$1 sharp')
+      .replace(/(?<![\w.])\.NET\b/g, 'dot net')
+      // Subtraction only in an equation ("5-3=2", "5 - 3 = 2"); a bare
+      // "5-10" / "5 - 10" stays a range.
+      .replace(/(?<=\d)\s?[-−]\s?(?=\d+(?:\.\d+)?\s*=\s*-?\d)/g, ' minus ')
+      .replace(/(?<=\d)=(?=-?\d)/g, ' equals ')
       // "&" in prose and in compounds ("R&D", "AT&T")
       .replace(/\s*&\s*/g, ' and ')
       // Arrows used in LLM lists ("A → B", "A -> B")
@@ -165,7 +181,10 @@ export function verbalizeSymbols(text: string): string {
       .replace(/(?<=[\w)])\s[<>]\s(?=\S)/g, ', ')
       // Arithmetic: only between operands, so "C++" and list bullets
       // keep their meaning.
-      .replace(/(?<=[\w)])\s*\+\s*(?=[\w(])/g, ' plus ')
+      // Spaced on both sides or neither: "a+b", "1 + 1"; not "C+ grade".
+      .replace(/(?<=[\w)])(?:\s+\+\s+|\+)(?=[\w(])/g, ' plus ')
+      // "5+ years", "20+ km": a number with a trailing plus
+      .replace(/(?<=\d)\+(?=\s|$|[),.;:])/g, ' plus')
       .replace(/(?<=[\w)])\s+=\s+(?=[\w($€£-])/g, ' equals ')
       .replace(/(?<=\d)(?:\s*×\s*|\s+x\s+)(?=\d)/g, ' times ')
       .replace(/(?<=\s|^)~\s*(?=\d)/g, 'about ')
