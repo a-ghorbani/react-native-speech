@@ -4,7 +4,7 @@ Concise notes for integrators and maintainers. For API usage, see [USAGE.md](USA
 
 ## Engines
 
-The library exposes four TTS engines behind a unified `Speech` façade:
+The library exposes five TTS engines behind a unified `Speech` façade:
 
 | Engine | Kind | Sample rate | Sessions | Notes |
 |--------|------|-------------|----------|-------|
@@ -12,8 +12,22 @@ The library exposes four TTS engines behind a unified `Speech` façade:
 | `KOKORO` | Neural, ONNX | 24 kHz | 1 | multi-language via dict; BPE tokenizer |
 | `SUPERTONIC` | Neural, ONNX (4 models) | 44.1 kHz | 4 | ultra-fast; byte tokens |
 | `KITTEN` | Neural, ONNX | 24 kHz | 1 | StyleTTS 2; IPA tokens |
+| `PHONON` | Neural, native (Rust `libptts_ffi`: CPU on Android, Core ML on iOS) | 24 kHz | — | opt-in at build time; see [PHONON_GUIDE.md](PHONON_GUIDE.md) |
 
-All neural engines implement `TTSEngineInterface<TConfig>`. Config is per-engine (`KokoroConfig`, `SupertonicConfig`, `KittenConfig`).
+All neural engines implement `TTSEngineInterface<TConfig>`. Config is per-engine (`KokoroConfig`, `SupertonicConfig`, `KittenConfig`, `PhononConfig`).
+
+### Phonon (native engine)
+
+Phonon does not use ONNX. `PhononEngine` (JS) chunks text and drives a native pipeline through TurboModule methods; all native access goes through `src/engines/phonon/NativePhonon.ts`.
+
+- **PCM stays native.** Native synthesizes each chunk into a buffer store and returns a `bufferId`; JS plays it with `phononPlayBuffer` (the same native neural player as the ONNX engines). PCM crosses into JS only when `onAudioChunk` asks for it.
+- **Request ids and cancel.** Ids come from one process-wide native counter. Cancel is a monotonic watermark (`phononCancel(upTo)`, synchronous), checked before conditioning, before synthesis and in every frame callback. A result from an older JS generation is released, never played.
+- **Threads.** Android: one 8 MB-stack synth thread in a process-wide Kotlin `object`; `RAYON_NUM_THREADS` sizes rayon and xn's spinning pool once per process. iOS: a shared C++ pthread worker (8 MB stack) with an autorelease pool per job.
+- **Lifetime.** Native state is a process-wide singleton that survives RN reloads; module invalidation only cancels.
+- **Loading.** Android probes cheaply (ABI, translation, `AT_HWCAP`, memory, JNI shim) and `dlopen`s `libptts_ffi.so` lazily in `phononCreate`, only after the HWCAP gate. iOS links a prelinked static `PhononCore.xcframework`.
+- **Watchdog.** Every native synthesis races `max(10 s, 4 × expected)`; a timeout marks the engine broken for the process.
+
+Shared C++ lives in `cpp/phonon/` (function table, request/cancel state, buffer store, error mapping, iOS worker); its host tests live in `test/phonon-core/`. The full design is [phonon/DESIGN.md](phonon/DESIGN.md).
 
 ## Threading model
 
@@ -42,6 +56,7 @@ Neural TTS is memory-heavy. Rough steady-state per engine (excluding OS TTS):
 | Kokoro | 150–250 MB |
 | Supertonic | 150–250 MB (4 models, but small) |
 | Kitten | 80–150 MB |
+| Phonon | to be measured on the device matrix (upstream reports ~95 MB while speaking on iOS) |
 
 Minimum device recommendation: 3 GB RAM phone. On 2 GB devices (iPhone SE) one neural engine at a time and prompt `release()` between usages are mandatory.
 

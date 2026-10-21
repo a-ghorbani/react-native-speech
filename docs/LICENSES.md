@@ -8,6 +8,25 @@
 | [`onnxruntime-react-native`](https://github.com/microsoft/onnxruntime) | MIT | Neural inference (optional peer) |
 | [`@dr.pogodin/react-native-fs`](https://github.com/birdofpreyru/react-native-fs) | MIT | File I/O (peer) |
 
+## Native binaries (Phonon, opt-in)
+
+Only when an app enables the Phonon engine (`RNSpeech_phononEnabled=true` /
+`ENV['RN_SPEECH_PHONON'] = '1'`, see [PHONON_GUIDE.md](PHONON_GUIDE.md)) does its build fetch
+and link these binaries. Flag-off apps contain none of them.
+
+| Binary | Built from | License |
+|--------|------------|---------|
+| `libptts_ffi.so` (Android), `PhononCore.xcframework` (iOS) | [gradium-ai/xn-ptts](https://github.com/gradium-ai/xn-ptts) `v0.4.0` (`f07d7952db0c6127d5e4bc3f41c82b3304b6b5aa`) by Gradium | MIT OR Apache-2.0 |
+| Rust crates statically linked into them | see the notices | MIT, Apache-2.0, Unicode-3.0, Zlib (generated list) |
+
+Both upstream license texts (`licenses/xn-ptts-LICENSE-{MIT,APACHE}`) and the generated
+`THIRD_PARTY_NOTICES.md` ship inside every Phonon release zip; the same notices are in
+[phonon/THIRD_PARTY_NOTICES.md](phonon/THIRD_PARTY_NOTICES.md) (generated with cargo-about by
+`scripts/phonon/gen-notices.sh`; do not edit by hand). An app that ships Phonon must include
+these notices, as for any MIT / Apache-2.0 component, for example on its open-source licenses
+screen. The library's JNI shim and C++ glue (`librnspeech_phonon.so`, `cpp/phonon/`) are part of
+this library (MIT).
+
 ## Library data
 
 This library ships **no dictionary or model data**. Consumer apps supply
@@ -29,9 +48,15 @@ integrating:
 | Kokoro | https://huggingface.co/hexgrad/Kokoro-82M | Apache-2.0 | Apache-2.0 | Fully permissive, commercial use allowed. |
 | Supertonic | https://huggingface.co/Supertone/supertonic (v1), https://huggingface.co/Supertone/supertonic-2 (v2) | MIT ([repo](https://github.com/supertone-inc/supertonic)) | [OpenRAIL](https://huggingface.co/blog/open_rail) | Reference code is MIT; the model weights are under an OpenRAIL-style responsible-AI license (use-based restrictions, no absolute commercial ban). Review the model card before shipping. |
 | Kitten | https://huggingface.co/KittenML (upstream); example app uses `palshub/*` mirrors | Apache-2.0 | Apache-2.0 | Fully permissive, commercial use allowed. |
+| Phonon 31m | https://huggingface.co/gradium/phonon-31m-en (Android checkpoint); iOS Core ML bundle precompiled by this repo's CI and mirrored at `palshub/phonon-31m-en-coreml` | MIT OR Apache-2.0 ([xn-ptts](https://github.com/gradium-ai/xn-ptts)) | Apache-2.0 | Permissive, commercial use allowed. The mirror keeps Gradium's attribution. |
+| Phonon voices | https://huggingface.co/gradium/phonon-voices | — | Apache-2.0 | Voice embeddings used by every Phonon model. Check the repo's model card. |
+| Phonon 40m | https://huggingface.co/gradium/phonon-40m-en (also `-fr`, `-de`, `-es`, `-pt`, `-multilingual`), gated | MIT OR Apache-2.0 | **CC BY-NC 4.0** | **Non-commercial only.** Not for commercial apps. The example app never downloads it and never defaults to it. |
+
+> **Phonon 40m is CC BY-NC 4.0.** Shipping it, or downloading it for users, in a commercial
+> app is not allowed by its license. Use Phonon 31m (Apache-2.0) instead.
 
 Example-app download URLs (`example/src/utils/SupertonicModelManager.ts`,
-`example/src/utils/KittenModelManager.ts`) point at those upstream repos or
+`example/src/utils/KittenModelManager.ts`, `example/src/utils/PhononModelManager.ts`) point at those upstream repos or
 author-owned mirrors; the library itself bundles no weights.
 
 Consumer apps are responsible for complying with each upstream model's

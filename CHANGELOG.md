@@ -2,8 +2,36 @@
 
 ## Unreleased
 
+### Added
+
+- **Phonon engine (`TTSEngine.PHONON`, opt-in).** Gradium's Phonon
+  (`gradium-ai/xn-ptts` v0.4.0) as a native neural engine: CPU on
+  Android (arm64 with dotprod/fp16, or x86_64), Core ML on iOS 18+.
+  Enable it with `RNSpeech_phononEnabled=true` (Android, AGP ≥ 8.5.1)
+  and `ENV['RN_SPEECH_PHONON'] = '1'` (iOS Podfile); the build fetches
+  sha256-pinned binaries from `phonon.lock.json`, with local overrides
+  (`RNSpeech_phononLibDir`, `RN_SPEECH_PHONON_XCFRAMEWORK`). Flag off,
+  apps get no Phonon binary or native code; the engine reports
+  `not-compiled`. Flag on adds ~7.6 MB installed per Android ABI. The
+  library downloads no models; Phonon 31m and the voices are
+  Apache-2.0, Phonon 40m is **CC BY-NC 4.0** (non-commercial). No
+  speed or pitch control (ignored with a warning). See
+  [docs/PHONON_GUIDE.md](docs/PHONON_GUIDE.md).
+- **`Speech.getEngineSupport(engine)`**: never throws; reports whether an
+  engine can run on this build and device, with a reason (for Phonon:
+  `not-compiled`, `missing-cpu-features`, `os-too-old`, `low-memory`,
+  ...). Unsupported devices are detected without loading the Phonon
+  library, and load failures are remembered per device so the engine
+  stays hidden.
+- `PhononError` / `PhononUnsupportedError` with stable `ERR_PHONON_*`
+  codes, and the Phonon types (`PhononConfig`, `PhononVoice`,
+  `PhononSupportInfo`, ...).
+
 ### Fixed
 
+- **A rejected `Speech.initialize()` no longer switches the current
+  engine.** The previous engine stays current when the new one fails to
+  initialize (all engines).
 - **CamelCase / PascalCase tokens are split before phonemization.**
   `PrismML` → `Prism ML`, `XMLParser` → `XML Parser`, `iOS` → `i OS`.
   Conservative two-rule splitter — `iPhone`, `McDonald`, `JavaScript`,

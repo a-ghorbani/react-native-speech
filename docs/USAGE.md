@@ -563,7 +563,7 @@ Check out the [example project](../example/).
 
 ## Neural Engines
 
-v2.0 adds three on-device neural engines that share the same public API (`Speech.speak`, `Speech.stop`, progress events, etc.). Pick an engine at `initialize()` time; switch engines by calling `initialize()` again with a different `engine` discriminant.
+v2.0 adds three on-device neural engines (Kokoro, Supertonic, Kitten), and the opt-in native Phonon engine joins them; all share the same public API (`Speech.speak`, `Speech.stop`, progress events, etc.). Pick an engine at `initialize()` time; switch engines by calling `initialize()` again with a different `engine` discriminant.
 
 The library ships no model or dictionary data. Consumer apps must download assets and pass local paths. See `example/src/utils/` for reference model managers and [LICENSES.md](./LICENSES.md) for upstream sources.
 
@@ -573,7 +573,7 @@ Install the optional peer:
 npm install onnxruntime-react-native
 ```
 
-All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
+All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts. Phonon (below) is the exception: it runs natively without ONNX, has no `executionProviders`, and its `maxChunkSize` defaults to 250.
 
 ### Kokoro
 
@@ -669,6 +669,34 @@ await Speech.initialize({
 
 await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
 ```
+
+### Phonon
+
+Gradium's Phonon (`xn-ptts` v0.4.0) runs natively: CPU on Android (arm64 with dotprod, or x86_64), Core ML on iOS 18+. It needs no `onnxruntime-react-native`, but it is **opt-in at build time**:
+
+- Android: `RNSpeech_phononEnabled=true` in `android/gradle.properties` (requires AGP ≥ 8.5.1). Adds ~7.6 MB installed per packaged ABI (`RNSpeech_phononAbis`, default `arm64-v8a`).
+- iOS: `ENV['RN_SPEECH_PHONON'] = '1'` in the Podfile, then `pod install`. `pod install` copies the framework into the installed package, so the package folder must be writable, also with `RN_SPEECH_PHONON_XCFRAMEWORK` (pnpm's default layout is; Yarn PnP needs `nodeLinker: node-modules`).
+- Expo: no config plugin yet; set both by hand in a prebuild project.
+
+Without the flag the engine reports `not-compiled`. Always check support first; unsupported devices should hide the engine:
+
+```ts
+const {supported, reason} = await Speech.getEngineSupport(TTSEngine.PHONON);
+
+if (supported) {
+  await Speech.initialize({
+    engine: TTSEngine.PHONON,
+    // Android: checkpoint folder (config.json, tokenizer.json, model.q8.gguf, ...).
+    // iOS: the INNER Core ML bundle folder that holds bundle.json; writable.
+    modelPath: '/.../phonon-31m-en',
+  });
+  await Speech.speak('Hello from Phonon.'); // default voice; named voices need their voice files
+}
+```
+
+Optional fields: `language` (`'en'` default), `defaultVoice`, `numThreads` (Android), `spinBudget` (Android; accepted but ignored for now, logs a warning), `computeUnit` (`'neuralEngine'` default, or `'cpu'`; iOS), `maxChunkSize`, `voicesMetadataPath`.
+
+Limitations: no speed or pitch control (ignored with a warning), no phoneme input, Phonon 31m speaks English only, 3 GB+ RAM. Phonon 40m models are **CC BY-NC 4.0** (non-commercial). Model downloads per platform, voices, support reasons, error codes and the full list of limits are in the [Phonon guide](./PHONON_GUIDE.md).
 
 ### Chunk progress
 

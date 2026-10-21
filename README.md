@@ -1,9 +1,9 @@
 # @pocketpalai/react-native-speech
 
-On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS (iOS `AVSpeechSynthesizer` / Android `TextToSpeech`) and three neural engines — Kokoro, Supertonic, Kitten — behind a single API, with native audio playback, progress events, and audio-focus handling.
+On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS (iOS `AVSpeechSynthesizer` / Android `TextToSpeech`) and four neural engines — Kokoro, Supertonic, Kitten and the opt-in native Phonon — behind a single API, with native audio playback, progress events, and audio-focus handling.
 
 <div align="center">
-  <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
+  <a href="./docs/USAGE.md">Usage</a> · <a href="./docs/ARCHITECTURE.md">Architecture</a> · <a href="./docs/LICENSES.md">Licenses</a> · <a href="./docs/PHONEMIZATION.md">Phonemization</a> · <a href="./docs/PHONON_GUIDE.md">Phonon</a> · <a href="./MIGRATION.md">Migration</a> · <a href="./example/">Example</a>
 </div>
 <br/>
 
@@ -25,7 +25,7 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Features
 
-- **Four engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality, multi-language), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven).
+- **Five engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality, multi-language), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven), `PHONON` (native, opt-in at build time). See [Engines](#engines).
 - **License-neutral runner**: the library is MIT and ships no model or dictionary data. Consumer apps supply both at runtime. See [LICENSES.md](./docs/LICENSES.md).
 - **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
 - **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.
@@ -33,6 +33,18 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 - **Permissive phonemization**: default is [`phonemize`](https://github.com/hans00/phonemize) (MIT). Optionally supply a mmap'd EPD1 dict via the `NativeDict` API for higher accuracy — see [PHONEMIZATION.md](./docs/PHONEMIZATION.md).
 - **[`HighlightedText`](./docs/USAGE.md#highlightedtext) component**: highlight spoken text as it synthesizes.
 - **TypeScript**: full type definitions; per-engine config is a discriminated union on the `engine` field.
+
+## Engines
+
+| Engine | Runtime | Platforms | Model (licence) | Speed / pitch | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `OS_NATIVE` | AVSpeechSynthesizer / Android TextToSpeech | iOS, Android | system voices | yes | always available |
+| `KOKORO` | ONNX (`onnxruntime-react-native`) | iOS, Android | Kokoro-82M (Apache-2.0) | speed | multi-language via dict |
+| `SUPERTONIC` | ONNX (`onnxruntime-react-native`) | iOS, Android | Supertonic v1–v3 (OpenRAIL) | speed | very fast; multilingual on v3 |
+| `KITTEN` | ONNX (`onnxruntime-react-native`) | iOS, Android | KittenML (Apache-2.0) | speed | compact, IPA-driven |
+| `PHONON` | native: CPU on Android, Core ML on iOS | Android arm64 with dotprod (and x86_64), iOS 18+ | Phonon 31m (Apache-2.0); 40m is CC BY-NC | **no** | opt-in build flag, zero native cost when off; see the [Phonon guide](./docs/PHONON_GUIDE.md) |
+
+Check `await Speech.getEngineSupport(engine)` before offering an engine: it never throws and reports why Phonon is unavailable (`not-compiled`, `missing-cpu-features`, `os-too-old`, ...). Phonon's device and OS support has not been validated on the full device matrix yet; see the guide's [verification status](./docs/PHONON_GUIDE.md#requirements-and-supported-devices).
 
 ## Installation
 
@@ -64,6 +76,10 @@ npm install onnxruntime-react-native
 ```
 
 OS-native TTS works without it.
+
+### Phonon (optional, opt-in at build time)
+
+Phonon needs no `onnxruntime-react-native`, but its native binary is only included when you enable it: `RNSpeech_phononEnabled=true` in `android/gradle.properties` (AGP ≥ 8.5.1), and `ENV['RN_SPEECH_PHONON'] = '1'` in the `ios/Podfile`. Enabled, it adds ~7.6 MB installed per Android ABI. See the [Phonon guide](./docs/PHONON_GUIDE.md).
 
 ## Quickstart
 
@@ -116,6 +132,15 @@ await Speech.initialize({
   dictPath: 'file:///.../en-us.bin', // optional EPD1 dict
 });
 await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
+
+// Phonon (build flag on; check support first)
+if ((await Speech.getEngineSupport(TTSEngine.PHONON)).supported) {
+  await Speech.initialize({
+    engine: TTSEngine.PHONON,
+    modelPath: '/.../phonon-31m-en', // Android: checkpoint folder; iOS: Core ML bundle folder
+  });
+  await Speech.speak('Hello from Phonon.'); // default voice; named voices need their voice files
+}
 ```
 
 Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
@@ -179,12 +204,12 @@ stream.append(tail);
 await stream.finalize();
 ```
 
-Streaming playback works with all neural engines (Kokoro, Supertonic, Kitten) as well as the OS engine; progress events and `firstChunk` are neural-only. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
+Streaming playback works with all neural engines (Kokoro, Supertonic, Kitten, Phonon) as well as the OS engine; progress events and `firstChunk` are neural-only. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 
 ## Architecture (short)
 
 1. `Speech` is the public facade. `Speech.initialize(config)` dispatches on `config.engine` and constructs the matching engine.
-2. Each engine implements `TTSEngineInterface<TConfig>`. Neural engines run ONNX sessions under `onnxruntime-react-native` and stream PCM to the native audio player.
+2. Each engine implements `TTSEngineInterface<TConfig>`. Neural engines run ONNX sessions under `onnxruntime-react-native` and stream PCM to the native audio player. Phonon instead synthesizes in native code and keeps PCM in native buffers that JS plays by id.
 3. Native code handles playback, progress events, and OS-level audio focus / session interruptions.
 
 See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the full picture, including memory and device requirements.
@@ -198,6 +223,7 @@ The library ships no model or dictionary assets. Consumer apps fetch them from t
 - First run per engine has a 200–2000 ms cold-start (model load + compilation).
 - Neural engines recommend a 3 GB+ RAM device. Low-memory devices should prefer the Kitten nano/micro variants or fall back to `OS_NATIVE`.
 - OS TTS interruption handling is limited to what the platform provides — no library-level custom ducking beyond what iOS/Android expose.
+- **Phonon** has no speed or pitch control (ignored with a warning), accepts no phoneme input, and Phonon 31m speaks English only. It runs only on arm64 Android CPUs with dotprod (or x86_64) and on iOS 18+, with 3 GB+ RAM. Details in the [Phonon guide](./docs/PHONON_GUIDE.md#limits).
 - Hermes is supported, but has no `TextDecoder` or WASM — relevant only if you extend the library's text pipeline.
 - **Android 16 KB page sizes (Android 15+):** the library's own `native_dict.so` is 16 KB-aligned, but `onnxruntime-react-native` (≤ 1.24.3 at time of writing) is not — apps that load a neural engine on a 16 KB-page device will fail with `dlopen` errors. Workaround: a one-line linker flag added to its `CMakeLists.txt` via `patch-package`. See [`example/patches/onnxruntime-react-native+1.24.3.patch`](./example/patches/onnxruntime-react-native+1.24.3.patch) and the `postinstall` wiring in [`example/package.json`](./example/package.json) for the full setup. Drop the patch once upstream ships the fix.
 
@@ -228,6 +254,7 @@ Neural model credits (weights are not bundled):
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad (Apache-2.0).
 - [Supertonic](https://github.com/supertone-inc/supertonic) by [Supertone](https://supertone.ai) (code MIT, weights OpenRAIL).
 - [KittenML kitten-tts](https://huggingface.co/KittenML) (Apache-2.0).
+- [Phonon](https://github.com/gradium-ai/xn-ptts) by [Gradium](https://huggingface.co/gradium): runtime code MIT OR Apache-2.0 (the only native code this library redistributes, see [THIRD_PARTY_NOTICES](./docs/phonon/THIRD_PARTY_NOTICES.md)); Phonon 31m weights Apache-2.0, Phonon 40m weights CC BY-NC 4.0 (non-commercial).
 
 Full license details in [LICENSES.md](./docs/LICENSES.md).
 
