@@ -18,7 +18,7 @@ object PhononProbe {
     val supported: Boolean,
     val reason: String,
     val detail: String,
-    /** The shim's compile-time ABI once loaded, else the device's primary ABI. */
+    /** The shim's compile-time ABI once loaded, else the running process's ABI. */
     val abi: String
   )
 
@@ -32,6 +32,8 @@ object PhononProbe {
     val is64Bit: Boolean,
     /** Build.SUPPORTED_ABIS. */
     val supportedAbis: List<String>,
+    /** Build.SUPPORTED_32_BIT_ABIS: a 32-bit process runs the first of these, not SUPPORTED_ABIS[0]. */
+    val supported32BitAbis: List<String> = emptyList(),
     /** BuildConfig.RN_SPEECH_PHONON_ABIS: ABIs whose libptts_ffi.so is packaged. */
     val packagedAbis: List<String>,
     /** System.loadLibrary("rnspeech_phonon"); returns the failure, null on success. */
@@ -53,7 +55,10 @@ object PhononProbe {
   )
 
   fun evaluate(i: Inputs): Result {
-    val deviceAbi = i.supportedAbis.firstOrNull().orEmpty()
+    // Before the shim reports its compile-time ABI: the process's ABI. A 32-bit process on an
+    // arm64 device runs armeabi-v7a although SUPPORTED_ABIS[0] is arm64-v8a.
+    val deviceAbi = (if (i.is64Bit) null else i.supported32BitAbis.firstOrNull())
+      ?: i.supportedAbis.firstOrNull().orEmpty()
     fun no(reason: String, detail: String, abi: String = deviceAbi) =
       Result(false, reason, detail, abi)
 

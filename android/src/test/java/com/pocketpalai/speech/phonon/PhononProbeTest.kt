@@ -15,6 +15,7 @@ class PhononProbeTest {
     totalMem: Long = 8L shl 30,
     is64Bit: Boolean = true,
     supportedAbis: List<String> = listOf("arm64-v8a"),
+    supported32BitAbis: List<String> = emptyList(),
     packagedAbis: List<String> = listOf("arm64-v8a"),
     shimError: Throwable? = null,
     nativeAbi: String = "arm64-v8a",
@@ -29,6 +30,7 @@ class PhononProbeTest {
     totalMemBytes = totalMem,
     is64Bit = is64Bit,
     supportedAbis = supportedAbis,
+    supported32BitAbis = supported32BitAbis,
     packagedAbis = packagedAbis,
     loadShim = { calls += "loadShim"; shimError },
     nativeAbi = { calls += "nativeAbi"; nativeAbi },
@@ -110,6 +112,24 @@ class PhononProbeTest {
     // Exactly 3 GiB passes; unknown (0) skips the check.
     assertTrue(eval(inputs(totalMem = 3L shl 30)).supported)
     assertTrue(eval(inputs(totalMem = 0)).supported)
+  }
+
+  @Test
+  fun a32BitProcessOnAn64BitDeviceReportsItsOwnAbi() {
+    // OnePlus 6 / S23 U2: SUPPORTED_ABIS[0] is arm64-v8a, the process runs armeabi-v7a.
+    val r = eval(
+      inputs(
+        is64Bit = false,
+        supportedAbis = listOf("arm64-v8a", "armeabi-v7a", "armeabi"),
+        supported32BitAbis = listOf("armeabi-v7a", "armeabi"),
+        shimError = UnsatisfiedLinkError("nope")
+      )
+    )
+    assertEquals("unsupported-abi", r.reason)
+    assertEquals("armeabi-v7a", r.abi)
+    assertEquals("32-bit process (armeabi-v7a)", r.detail)
+    // A 64-bit process keeps SUPPORTED_ABIS[0] before the shim loads.
+    assertEquals("arm64-v8a", eval(inputs(forceReason = "low-memory", supported32BitAbis = listOf("armeabi-v7a"))).abi)
   }
 
   @Test

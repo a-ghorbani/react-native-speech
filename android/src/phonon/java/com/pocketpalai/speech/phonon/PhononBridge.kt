@@ -119,6 +119,7 @@ object PhononBridge {
     totalMemBytes = totalMem(context),
     is64Bit = Process.is64Bit(),
     supportedAbis = Build.SUPPORTED_ABIS?.toList() ?: emptyList(),
+    supported32BitAbis = Build.SUPPORTED_32_BIT_ABIS?.toList() ?: emptyList(),
     packagedAbis = BuildConfig.RN_SPEECH_PHONON_ABIS.split(",").map { it.trim() }.filter { it.isNotEmpty() },
     loadShim = ::loadShim,
     nativeAbi = { PhononNative.nativeAbi() },
