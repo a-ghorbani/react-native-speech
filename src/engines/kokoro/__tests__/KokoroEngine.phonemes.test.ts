@@ -169,6 +169,30 @@ describe('KokoroEngine - phoneme input bypasses g2p', () => {
     );
   });
 
+  it('oversized text chunk is split and each piece synthesized', async () => {
+    // Vocab covering the test text so every char becomes a token.
+    const letters = Object.fromEntries(
+      Array.from('abcdefghijklmnopqrstuvwxyz ,.$', (c, i) => [c, i + 10]),
+    );
+    mockLoadAssetAsJSON.mockImplementation(async (path: string) =>
+      path.includes('voices') ? sampleVoiceData : {...sampleVocab, ...letters},
+    );
+    const e = await initEngine();
+
+    // One ~600-char sentence: the chunker never splits a single sentence,
+    // and the mock tokenizer emits one token per char, so this is >500
+    // tokens. It must be re-split at clause boundaries rather than sent to
+    // ONNX whole (the real model throws past ~510 tokens).
+    const clause = 'this clause keeps going for a while';
+    const text = Array(17).fill(clause).join(', ') + '.';
+    await e.synthesize(text, {voiceId: 'af_bella'});
+
+    expect(mockSessionRun.mock.calls.length).toBeGreaterThan(1);
+    for (const [feeds] of mockSessionRun.mock.calls) {
+      expect(feeds.input_ids.dims[1]).toBeLessThanOrEqual(500);
+    }
+  });
+
   it('still runs g2p for plain text input (unchanged behaviour)', async () => {
     const e = await initEngine();
 

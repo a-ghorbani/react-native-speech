@@ -18,6 +18,23 @@ describe('StreamingChunker', () => {
     expect(chunk!.endIndex).toBe(13);
   });
 
+  test('does not split after a non-terminal abbreviation', async () => {
+    const chunker = new StreamingChunker();
+    chunker.append('Ask Dr. Smith, e.g. today. Then go. ');
+    const chunk = await chunker.getNextChunk();
+    expect(chunk!.text).toBe('Ask Dr. Smith, e.g. today. Then go. ');
+  });
+
+  test('abbreviation periods become boundaries once past maxChunkSize', async () => {
+    const chunker = new StreamingChunker(40);
+    chunker.append(
+      'Ask Dr. Smith and Dr. Jones and Dr. Brown and Dr. Lee and ',
+    );
+    const chunk = await chunker.getNextChunk();
+    expect(chunk!.text.length).toBeLessThanOrEqual(40);
+    expect(chunk!.text).toMatch(/Dr\. $/);
+  });
+
   test('blocks until a sentence boundary arrives', async () => {
     const chunker = new StreamingChunker();
     chunker.append('Hello');
@@ -300,6 +317,14 @@ End.`;
 });
 
 describe('findFirstClauseEnd', () => {
+  test('does not end the first clause at an abbreviation', () => {
+    const text = 'Dr. Smith and Mr. Jones agreed, so we went. ';
+    expect(text.slice(0, findFirstClauseEnd(text))).toBe(
+      'Dr. Smith and Mr. Jones agreed, ',
+    );
+    expect(findFirstClauseEnd('Ask Dr. ')).toBe(-1);
+  });
+
   test('returns -1 when no boundary has arrived', () => {
     expect(findFirstClauseEnd('Well, I think')).toBe(-1);
   });

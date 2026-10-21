@@ -4,6 +4,8 @@
  * cut the first chunk at the same place.
  */
 
+import {isAbbreviationPeriod} from './abbreviations';
+
 /**
  * Sentence-boundary regex — matches ASCII punct + trailing whitespace,
  * or CJK punct optionally followed by whitespace. Same rules as
@@ -54,9 +56,14 @@ export function findFirstClauseEnd(text: string): number {
     }
   };
 
-  const sentence = new RegExp(SENTENCE_END_RE.source).exec(text);
-  if (sentence) {
+  // Skip periods after abbreviations ("Dr. Smith") — same rule as the
+  // regular sentence chunkers.
+  const sentenceRe = new RegExp(SENTENCE_END_RE.source, 'g');
+  let sentence: RegExpExecArray | null;
+  while ((sentence = sentenceRe.exec(text)) !== null) {
+    if (isAbbreviationPeriod(text, sentence.index)) continue;
     consider(sentence.index + sentence[0].length);
+    break;
   }
 
   const scanClauses = (re: RegExp, enough: (prefix: string) => boolean) => {

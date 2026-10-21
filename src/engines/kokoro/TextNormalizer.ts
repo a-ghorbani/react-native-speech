@@ -10,7 +10,9 @@
  * Based on: https://github.com/hexgrad/kokoro/blob/main/kokoro.js/src/phonemize.js
  */
 
+import {numberToWords} from '../../phonemization/KittenPreprocessor';
 import {splitCamelCase} from '../../phonemization/splitCamelCase';
+import {isAbbreviationPeriod} from '../../utils/abbreviations';
 
 export class TextNormalizer {
   /**
@@ -243,11 +245,25 @@ export class TextNormalizer {
     );
     result = result.replace(/(?<=[A-Z])\.(?=[A-Z])/gi, '-');
 
-    // 9. Convert any remaining bare integers to words
-    result = result.replace(/\b\d+\b/g, m => {
-      const n = parseInt(m, 10);
-      return n >= 0 && n <= 999999 ? this.intToWords(n) : m;
-    });
+    // 9. Convert any remaining bare integers to words. Digits left here
+    // would be dropped by the phonemizer (silence), so larger numbers and
+    // plurals ("2022s") are covered too.
+    result = result.replace(
+      /\b(\d+)(s?)\b/g,
+      (_m, digits: string, s: string) => {
+        const n = parseInt(digits, 10);
+        const words =
+          n <= 999999
+            ? this.intToWords(n)
+            : numberToWords(digits).replace(/-/g, ' ');
+        if (!s) return words;
+        return words.endsWith('y')
+          ? `${words.slice(0, -1)}ies`
+          : words.endsWith('x')
+            ? `${words}es`
+            : `${words}s`;
+      },
+    );
 
     // 10. Split camelCase / PascalCase tokens so each part is phonemized
     // independently (e.g. "PrismML" → "Prism ML", "iOS's" → "i OS's").
@@ -294,6 +310,7 @@ export class TextNormalizer {
     let lastIndex = 0;
     let match;
     while ((match = sentenceEndPattern.exec(text)) !== null) {
+      if (isAbbreviationPeriod(text, match.index)) continue;
       const endIndex = match.index + match[0].length;
       const sentenceText = text.slice(lastIndex, endIndex);
 

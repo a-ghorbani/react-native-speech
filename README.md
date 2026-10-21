@@ -25,7 +25,7 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ## Features
 
-- **Four engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality, multi-language), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven).
+- **Four engines behind one API**: `OS_NATIVE` (platform TTS), `KOKORO` (high quality; English text, other languages via phoneme input), `SUPERTONIC` (fast, lightweight), `KITTEN` (compact IPA-driven).
 - **License-neutral runner**: the library is MIT and ships no model or dictionary data. Consumer apps supply both at runtime. See [LICENSES.md](./docs/LICENSES.md).
 - **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
 - **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.

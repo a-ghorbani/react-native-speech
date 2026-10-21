@@ -10,6 +10,7 @@
  */
 
 import type {AudioBuffer} from '../../types';
+import {isAbbreviationPeriod} from '../../utils/abbreviations';
 
 /**
  * Split a source-text chunk that's too long for Kitten's BERT (after
@@ -89,6 +90,42 @@ export function splitOversizedSource(text: string): string[] {
 
   // Tier 5: couldn't split — caller will see length === 1 and give up.
   return [trimmed];
+}
+
+/**
+ * Split an oversized chunk into two balanced halves, for callers that
+ * recurse on a half that is still too long — seams grow with log(length)
+ * instead of one per clause. Boundaries are tried in the same order as
+ * `splitOversizedSource` (sentence, clause, newline, word), except that a
+ * period after an abbreviation ("Dr.", "e.g.") is not a sentence end.
+ */
+export function splitInHalves(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const sentences: string[] = [];
+  for (const part of trimmed.split(/(?<=[.!?])\s+/)) {
+    const prev = sentences[sentences.length - 1];
+    if (prev !== undefined && isAbbreviationPeriod(prev, prev.length - 1)) {
+      sentences[sentences.length - 1] = `${prev} ${part}`;
+    } else {
+      sentences.push(part);
+    }
+  }
+  let pieces = sentences;
+  if (pieces.length < 2) pieces = trimmed.split(/(?<=[,;:])\s+/);
+  if (pieces.length < 2) pieces = trimmed.split(/\n+/);
+  pieces = pieces.map(p => p.trim()).filter(Boolean);
+  if (pieces.length < 2) return splitOversizedSource(trimmed);
+  if (pieces.length === 2) return pieces;
+
+  const half = trimmed.length / 2;
+  let head = pieces[0]!;
+  let i = 1;
+  while (i < pieces.length - 1 && head.length + pieces[i]!.length / 2 < half) {
+    head = `${head} ${pieces[i]}`;
+    i++;
+  }
+  return [head, pieces.slice(i).join(' ')];
 }
 
 /**

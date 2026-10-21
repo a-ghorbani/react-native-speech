@@ -45,6 +45,7 @@ import {
   type IPhonemizer,
 } from '../kokoro/Phonemizer';
 import {TextPreprocessor, loadNativeDict} from '../../phonemization';
+import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
 import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
@@ -142,7 +143,18 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.voiceLoader = new VoiceLoader();
     // Real phonemizer is created in initialize() once the dict is loaded.
     this.phonemizer = new NoOpPhonemizer();
-    this.preprocessor = new TextPreprocessor({removePunctuation: false});
+    // Upstream kittentts expands contractions and lowercases because its
+    // espeak backend needs neither. Our dict carries contractions
+    // ("don't" → dˈoʊnt) and the phonemizer uses case to spot acronyms
+    // ("GPT"), so both stay off — expanding turned "don't" into "do not".
+    this.preprocessor = new TextPreprocessor({
+      removePunctuation: false,
+      expandContractions: false,
+      lowercase: false,
+      // Handled (more strictly) by normalizeForSpeech: the loose upstream
+      // rule reads "B2B" as "B two billion".
+      expandScaleSuffixes: false,
+    });
   }
 
   /**
@@ -308,7 +320,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
-        const processed = this.preprocessor.process(text);
+        const processed = this.preprocessor.process(normalizeForSpeech(text));
         return this.synthesizeTextChunk(processed, voiceId, options);
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
@@ -438,7 +450,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       // that whole-text normalization introduces.
       const sentenceChunks = chunkTextWithPositions(sourceText, maxChunkSize);
       chunks = sentenceChunks.map(c => ({
-        text: this.preprocessor.process(c.text),
+        text: this.preprocessor.process(normalizeForSpeech(c.text)),
         startIndex: c.startIndex,
         endIndex: c.endIndex,
       }));

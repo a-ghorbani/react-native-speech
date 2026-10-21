@@ -2,10 +2,12 @@
  * HansPhonemizer — GPL-free phonemizer using dict + hans00/phonemize.
  *
  * Layers (per word):
+ *   0. Hyphenated letter sequences ("U-S-") spelled letter by letter
  *   1. REDUCED_FORMS — context-reduced overrides for function words
  *   2. Pre-generated IPA dictionary lookup (DictSource)
  *   3. Hyphen-split compound handling (per-part REDUCED_FORMS + dict)
- *   4. Possessive fallback ("X's" → dict[X] + "ɪz")
+ *   4. Dict-derived OOV forms: possessives, contractions, acronym plurals,
+ *      plurals, elongations
  *   5. hans00/phonemize G2P fallback for OOV, with stress relocation
  *   6. Per-word destress keyed by English spelling
  */
@@ -279,6 +281,51 @@ function spellOutLetters(
   return out.join(' ');
 }
 
+/**
+ * Hyphen-joined single letters ("U-S-", "a-m-", "A-B") — the form the text
+ * normalizers give dotted acronyms. Spelled before the dict lookup, since
+ * the joined letters often collide with a real word ("us", "am").
+ */
+const LETTER_SEQUENCE = /^(?:[A-Za-z]-)+[A-Za-z]?-?$/;
+
+/**
+ * Contraction suffixes for apostrophe words the dict doesn't know
+ * ("should've", "Claude'll"): dict base + suffix IPA.
+ */
+const CONTRACTION_SUFFIXES: [string, string][] = [
+  ["n't", 'ənt'],
+  ["'ve", 'v'],
+  ["'re", 'ɚ'],
+  ["'ll", 'l'],
+  ["'d", 'd'],
+  ["'m", 'm'],
+];
+
+/** Contractions whose base isn't a word ("shan't" ← "shall not"). */
+const IRREGULAR_CONTRACTIONS: Record<string, string> = {"shan't": 'ʃˈænt'};
+
+/** English -s allomorph after a base pronunciation: ɪz / s / z. */
+function sSuffix(baseIpa: string): string {
+  const last = baseIpa.replace(/[ˈˌː]/g, '').slice(-2);
+  if (/(?:s|z|ʃ|ʒ|tʃ|dʒ)$/.test(last)) return 'ɪz';
+  if (/[ptkfθ]$/.test(last)) return 's';
+  return 'z';
+}
+
+/** hans00 often marks every syllable primary; keep only the first. */
+function singlePrimaryStress(ipa: string): string {
+  return ipa
+    .split(' ')
+    .map(word => {
+      const first = word.indexOf('ˈ');
+      if (first === -1) return word;
+      return (
+        word.slice(0, first + 1) + word.slice(first + 1).replace(/ˈ/g, 'ˌ')
+      );
+    })
+    .join(' ');
+}
+
 function relocateStress(ipa: string): string {
   return ipa
     .split(' ')
@@ -311,6 +358,12 @@ function phonemizeWord(
 ): string {
   const clean = word.toLowerCase().replace(/[^a-z']/g, '');
 
+  // 0. Letter sequences ("U-S-") spell out, ahead of the dict.
+  if (clean.length >= 2 && LETTER_SEQUENCE.test(word)) {
+    const spelled = spellOutLetters(clean, dict, hans00);
+    if (spelled !== null) return spelled;
+  }
+
   // 1. REDUCED_FORMS take priority
   const reduced = REDUCED_FORMS[clean];
   if (reduced) return reduced;
@@ -326,7 +379,7 @@ function phonemizeWord(
 
   // 3. Hyphen-split compounds
   if (!ipa && word.includes('-')) {
-    const parts = word.split('-');
+    const parts = word.split('-').filter(Boolean);
     const partIpas: (string | null)[] = parts.map(p => {
       const c = p.toLowerCase().replace(/[^a-z']/g, '');
       if (!c) return null;
@@ -343,7 +396,34 @@ function phonemizeWord(
   if (!ipa && clean.endsWith("'s")) {
     const base = clean.slice(0, -2);
     const baseIpa = dict.lookup(base);
-    if (baseIpa) ipa = baseIpa + 'ɪz';
+    if (baseIpa) ipa = baseIpa + sSuffix(baseIpa);
+  }
+
+  // 4a. Plural possessive ("teammates'") sounds like the plural.
+  if (!ipa && clean.length > 1 && clean.endsWith("'")) {
+    ipa = dict.lookup(clean.slice(0, -1));
+  }
+
+  // 4b. Other contractions: dict base + suffix ("should've" → should + v).
+  if (!ipa && IRREGULAR_CONTRACTIONS[clean])
+    ipa = IRREGULAR_CONTRACTIONS[clean]!;
+  if (!ipa && clean.includes("'")) {
+    const match = CONTRACTION_SUFFIXES.find(([sfx]) => clean.endsWith(sfx));
+    const baseIpa = match && dict.lookup(clean.slice(0, -match[0].length));
+    if (match && baseIpa) ipa = baseIpa + match[1];
+  }
+
+  // 4c. Acronym plurals ("GPUs", "LLMs"): spell the letters, add z.
+  // Kokoro's normalizer rewrites these as "GPU'S".
+  if (!ipa && /^[A-Z]{2,5}(?:'?s|'S)$/.test(word)) {
+    const spelled = spellOutLetters(clean.replace(/'?s$/, ''), dict, hans00);
+    if (spelled !== null) ipa = spelled + 'z';
+  }
+
+  // 4d. Regular plural of a dict word ("embeddings").
+  if (!ipa && clean.length > 3 && /[^s']s$/.test(clean)) {
+    const baseIpa = dict.lookup(clean.slice(0, -1));
+    if (baseIpa) ipa = baseIpa + sSuffix(baseIpa);
   }
 
   // Two spellout triggers, each independent:
@@ -360,12 +440,34 @@ function phonemizeWord(
   //     by the overlay.
   const forceSpellOut = /^[A-Z]{2,4}$/.test(word);
 
-  // 5. hans00 G2P fallback (full neural-style coverage when available)
+  // 4e. Elongated words ("noooo", "sooo", "whyyy"): collapse letter runs
+  // of 3+ and retry the dict.
+  if (!ipa && /([a-z])\1\1/.test(clean) && !/^(.)\1+$/.test(clean)) {
+    for (const rep of ['$1', '$1$1']) {
+      const collapsed = clean.replace(/([a-z])\1{2,}/g, rep);
+      if (collapsed.length > 1) ipa = dict.lookup(collapsed);
+      if (ipa) break;
+    }
+  }
+
+  // 5. hans00 G2P fallback (full neural-style coverage when available).
+  // Lowercased unless it's the short all-caps acronym case: hans00 spells
+  // any all-caps input letter by letter ("COVID" → C-O-V-I-D).
   if (!ipa && hans00) {
-    let g2p = hans00.toIPA(word, {stripStress: false});
+    let g2p = hans00.toIPA(forceSpellOut ? word : word.toLowerCase(), {
+      stripStress: false,
+    });
     g2p = g2p.replace(/- /g, '').replace(/ɫ/g, 'l');
 
-    const fallbackSpellOut = looksLikeAscii(g2p) && isUnpronounceable(clean);
+    // Vowelless tokens ("gpt", "npm", "sql") are acronyms even when hans00
+    // returns IPA-looking output for them ("gpt" → "ɡt").
+    // Drawn-out interjections ("shhh", "grrr", "zzz") are not acronyms.
+    const fallbackSpellOut =
+      (looksLikeAscii(g2p) && isUnpronounceable(clean)) ||
+      (clean.length >= 2 &&
+        !/[aeiouy]/.test(clean) &&
+        !/([^w])\1\1/.test(clean) &&
+        clean !== 'sh');
     if (forceSpellOut || fallbackSpellOut) {
       const spelled = spellOutLetters(clean, dict, hans00);
       if (spelled !== null) {
@@ -376,7 +478,7 @@ function phonemizeWord(
       }
     }
 
-    ipa = relocateStress(g2p);
+    ipa = singlePrimaryStress(relocateStress(g2p));
   }
 
   // 5b. Dict-only spellout when hans00 isn't available (Hermes debug

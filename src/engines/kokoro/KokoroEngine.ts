@@ -37,7 +37,9 @@ import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
 import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
 import {loadNativeDict} from '../../phonemization';
+import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
+import {concatAudioBuffers, splitInHalves} from '../kitten/splitOversized';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {
@@ -124,6 +126,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  private warnedVoiceLanguages = new Set<string>();
   private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
@@ -545,7 +548,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (raw) {
       phonemes = chunkText;
     } else {
-      const normalized = this.normalizer.normalize(chunkText);
+      const normalized = this.normalizer.normalize(
+        normalizeForSpeech(chunkText),
+      );
 
       // Check stop between pipeline steps
       if (this.stopRequested) {
@@ -574,11 +579,52 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // Tokenize phonemes
     const tokens = this.tokenizer.encode(phonemes);
 
-    // Check token limit
-    if (tokens.length > MAX_TOKEN_LIMIT) {
+    // Over the limit the ONNX graph throws ("/encoder/bert/Expand:
+    // invalid expand shape") and the whole chunk is lost. The char-based
+    // chunker can't guarantee the limit (IPA expansion varies, and one
+    // long sentence is never split), so split the source and recurse —
+    // same recovery as Kitten. Caller-supplied phonemes are left as one
+    // unit (documented phoneme-input contract).
+    if (tokens.length > MAX_TOKEN_LIMIT && raw) {
       log.warn(
-        `Chunk has ${tokens.length} tokens, exceeding limit of ${MAX_TOKEN_LIMIT}. Audio may be truncated.`,
+        `Phoneme input has ${tokens.length} tokens, exceeding limit of ${MAX_TOKEN_LIMIT}; synthesis may fail.`,
       );
+    } else if (tokens.length > MAX_TOKEN_LIMIT) {
+      const pieces = splitInHalves(chunkText);
+      if (pieces.length <= 1) {
+        log.warn(
+          `Unsplittable oversized chunk (${tokens.length} tokens); dropping ${chunkText.length} chars.`,
+        );
+        return {
+          samples: new Float32Array(0),
+          sampleRate: SAMPLE_RATE,
+          channels: 1,
+          duration: 0,
+        };
+      }
+      log.warn(
+        `Oversized chunk (${tokens.length} > ${MAX_TOKEN_LIMIT} tokens); splitting into ${pieces.length} pieces.`,
+      );
+      const buffers: AudioBuffer[] = [];
+      for (const piece of pieces) {
+        if (this.stopRequested) break;
+        const audio = await this.synthesizeTextChunk(
+          piece,
+          voiceId,
+          language,
+          options,
+          raw,
+        );
+        if (audio.samples.length > 0) buffers.push(audio);
+      }
+      return buffers.length > 0
+        ? concatAudioBuffers(buffers)
+        : {
+            samples: new Float32Array(0),
+            sampleRate: SAMPLE_RATE,
+            channels: 1,
+            duration: 0,
+          };
     }
 
     // Generate audio for this chunk
@@ -1052,6 +1098,18 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       case 'b':
         return 'en-gb'; // British English
       default:
+        // es/fr/hi/it/ja/pt/zh voices: the model speaks these languages,
+        // but the built-in dict phonemizer is English-only, so text input
+        // is mispronounced (Latin script) or dropped (other scripts).
+        if (!this.warnedVoiceLanguages.has(langCode)) {
+          this.warnedVoiceLanguages.add(langCode);
+          log.warn(
+            `Voice "${voiceId}" is non-English, but Kokoro's built-in ` +
+              'phonemizer is English-only and will mispronounce text. ' +
+              'Pass pre-phonemized IPA ({phonemes}) for this voice, or use ' +
+              'the Supertonic engine for multilingual text.',
+          );
+        }
         return 'en-us';
     }
   }

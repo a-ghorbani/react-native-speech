@@ -18,7 +18,8 @@
  * Mirrors the spirit of espeak-ng's translate.c case-transition handling.
  */
 
-const RE_RULE_A = /([A-Z]{2,})([A-Z][a-z])/g;
+// The lookahead keeps acronym plurals ("GPUs", "LLMs") whole.
+const RE_RULE_A = /([A-Z]{2,})([A-Z](?!s\b)[a-z])/g;
 const RE_RULE_B = /([a-z])([A-Z]+)(?=[^A-Za-z]|$)/g;
 
 export function splitCamelCase(text: string): string {

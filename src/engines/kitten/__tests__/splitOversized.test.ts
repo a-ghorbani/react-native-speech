@@ -323,3 +323,26 @@ describe('concatAudioBuffers', () => {
     expect(Array.from(result.samples)).toEqual([0.5]);
   });
 });
+
+describe('splitInHalves', () => {
+  const {splitInHalves} = require('../splitOversized');
+
+  it('returns two balanced halves instead of one piece per clause', () => {
+    const text = Array(8).fill('one clause here').join(', ') + '.';
+    const out: string[] = splitInHalves(text);
+    expect(out).toHaveLength(2);
+    expect(out.join(' ')).toBe(text);
+    expect(Math.abs(out[0]!.length - out[1]!.length)).toBeLessThan(20);
+  });
+
+  it('never ends a half on an abbreviation', () => {
+    const text =
+      'The panel included Dr. Alice Jones, Dr. Bob Lee, Dr. Carol Patel, Dr. Dave Kim.';
+    const out: string[] = splitInHalves(text);
+    expect(out.length).toBeGreaterThan(1);
+    for (const piece of out.slice(0, -1)) {
+      expect(piece).not.toMatch(/\bDr\.$/);
+    }
+    expect(out.join(' ')).toBe(text);
+  });
+});
