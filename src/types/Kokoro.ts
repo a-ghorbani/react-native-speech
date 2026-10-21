@@ -100,6 +100,7 @@ export interface KokoroConfig {
    *   - iOS: `[{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'xnnpack', 'cpu']`
    *   - Android: `['xnnpack', 'cpu']` (no NNAPI — deprecated in Android 15;
    *     no GPU/NPU EP is exposed by `onnxruntime-react-native`).
+   *   - Android on x86/x86_64: `['cpu']` (XNNPACK crashes ONNX Runtime there).
    *
    * @example
    * // CoreML with custom flags, fallback to CPU

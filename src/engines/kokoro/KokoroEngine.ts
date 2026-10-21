@@ -11,7 +11,6 @@
  * - Voice blending support
  */
 
-import {Platform} from 'react-native';
 import type {
   TTSEngine,
   TTSEngineInterface,
@@ -22,7 +21,6 @@ import type {
   KokoroVoice,
   ChunkProgressEvent,
   ChunkProgressCallback,
-  ExecutionProvider,
   ReleaseResult,
   ReleaseError,
   OnnxInferenceSession,
@@ -35,7 +33,7 @@ import {BPETokenizer} from './BPETokenizer';
 import {VoiceLoader} from './VoiceLoader';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
-import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
+import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {loadNativeDict} from '../../phonemization';
 import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
@@ -87,26 +85,6 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 }
 
 const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
-
-/**
- * Default execution providers when the caller doesn't specify any.
- *
- *   - iOS: CoreML (Metal/ANE) with sensible flags, xnnpack second, bare
- *     CPU last.
- *   - Android: xnnpack + CPU. NNAPI was removed (deprecated in Android
- *     15) and there is no other public GPU/NPU EP exposed by
- *     `onnxruntime-react-native`.
- */
-function getDefaultExecutionProviders(): ExecutionProvider[] {
-  if (Platform.OS === 'ios') {
-    return [
-      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-      'xnnpack',
-      'cpu',
-    ];
-  }
-  return ['xnnpack', 'cpu'];
-}
 
 export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   readonly name: TTSEngine = 'kokoro' as TTSEngine;

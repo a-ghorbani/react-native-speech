@@ -38,7 +38,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun getTypedExportedConstants(): MutableMap<String, Any> {
     return mutableMapOf(
-      "maxInputLength" to maxInputLength
+      "maxInputLength" to maxInputLength,
+      "primaryAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "")
     )
   }
 

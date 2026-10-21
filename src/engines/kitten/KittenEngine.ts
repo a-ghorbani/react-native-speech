@@ -12,7 +12,6 @@
  * - 8 built-in voices, English only
  */
 
-import {Platform} from 'react-native';
 import type {
   TTSEngine,
   TTSEngineInterface,
@@ -22,7 +21,6 @@ import type {
   ChunkProgressCallback,
   ReleaseResult,
   ReleaseError,
-  ExecutionProvider,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensor,
@@ -48,7 +46,7 @@ import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
-import {DEFAULT_COREML_FLAGS} from '../../types/Kokoro';
+import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {
@@ -93,21 +91,6 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
     }
   }
   return OnnxRuntime;
-}
-
-/**
- * Default execution providers when the caller doesn't specify any.
- * See `KokoroEngine.getDefaultExecutionProviders` for the full rationale.
- */
-function getDefaultExecutionProviders(): ExecutionProvider[] {
-  if (Platform.OS === 'ios') {
-    return [
-      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-      'xnnpack',
-      'cpu',
-    ];
-  }
-  return ['xnnpack', 'cpu'];
 }
 
 export class KittenEngine implements TTSEngineInterface<KittenConfig> {
