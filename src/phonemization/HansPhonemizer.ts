@@ -410,7 +410,17 @@ function phonemizeWord(
   if (!ipa && clean.includes("'")) {
     const match = CONTRACTION_SUFFIXES.find(([sfx]) => clean.endsWith(sfx));
     const baseIpa = match && dict.lookup(clean.slice(0, -match[0].length));
-    if (match && baseIpa) ipa = baseIpa + match[1];
+    if (match && baseIpa) {
+      // After a consonant 'll / 'd take a schwa ("Claude'll" → klˈɔːdəl).
+      const afterConsonant = !IPA_VOWELS.has(
+        baseIpa.replace(/[ˈˌː]/g, '').slice(-1),
+      );
+      ipa =
+        baseIpa +
+        (afterConsonant && (match[0] === "'ll" || match[0] === "'d")
+          ? 'ə' + match[1]
+          : match[1]);
+    }
   }
 
   // 4c. Acronym plurals ("GPUs", "LLMs"): spell the letters, add z.

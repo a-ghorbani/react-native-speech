@@ -170,6 +170,11 @@ describe('HansPhonemizer', () => {
     expect(await phon.phonemize('kubernetes', 'en-us')).toBe('kˈuˌbɝnɛtˌɛs');
   });
 
+  test("OOV 'll / 'd after a consonant take a schwa", async () => {
+    expect(await phon.phonemize("cat'll", 'en-us')).toBe('kˈætəl');
+    expect(await phon.phonemize("should'd", 'en-us')).toBe('ʃˈʊdəd');
+  });
+
   test('OOV contraction uses dict base + suffix', async () => {
     const out = await phon.phonemize("should've", 'en-us');
     expect(out).toBe('ʃˈʊdv');
