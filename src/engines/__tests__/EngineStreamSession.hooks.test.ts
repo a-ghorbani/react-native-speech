@@ -241,4 +241,19 @@ describe('EngineStreamSession hooks', () => {
     await session.finalize();
     expect(plays).toHaveLength(1);
   });
+
+  test('a non-AudioBuffer chunk without hasAudio plays instead of throwing', async () => {
+    const playAudio = jest.fn(async (_h: {id: number}) => {});
+    const config = {
+      synthesizeChunk: async () => ({id: 1}),
+      playAudio,
+      stopPlayback: async () => {},
+      maxChunkSize: 200,
+    };
+    // @ts-expect-error hasAudio is required when the audio is not an AudioBuffer
+    const session = new EngineStreamSession<{id: number}>(config);
+    session.append('Hello there. ');
+    await expect(session.finalize()).resolves.toBeUndefined();
+    expect(playAudio).toHaveBeenCalledTimes(1);
+  });
 });

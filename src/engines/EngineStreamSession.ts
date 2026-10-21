@@ -14,9 +14,10 @@
  *   - `stopPlayback()` — abort native playback
  *
  * Engines whose audio lives natively (passing ids, not samples) use
- * the optional hooks: `hasAudio` decides whether a chunk produced
- * audio, `discard` releases audio that will never be played, and
- * `onCancel` aborts native synthesis synchronously on cancel.
+ * the hooks: `hasAudio` (required for non-`AudioBuffer` audio) decides
+ * whether a chunk produced audio, `discard` releases audio that will
+ * never be played, and `onCancel` aborts native synthesis synchronously
+ * on cancel.
  *
  * OS engine does not use this — SpeechStream falls back to the
  * adaptive batcher there.
@@ -29,7 +30,7 @@ import {createComponentLogger} from '../utils/logger';
 
 const log = createComponentLogger('EngineStream', 'Engine');
 
-export interface EngineStreamSessionConfig<TAudio = AudioBuffer> {
+export interface EngineStreamSessionBaseConfig<TAudio = AudioBuffer> {
   synthesizeChunk: (text: string) => Promise<TAudio>;
   playAudio: (audio: TAudio, options?: PlaybackOptions) => Promise<void>;
   stopPlayback: () => Promise<void>;
@@ -38,11 +39,6 @@ export interface EngineStreamSessionConfig<TAudio = AudioBuffer> {
   playbackOptions?: PlaybackOptions;
   postProcess?: (audio: TAudio) => void;
   onChunkProgress?: (event: ChunkProgressEvent) => void;
-  /**
-   * Whether a synthesized chunk has audio to play. Chunks without audio
-   * are skipped (and passed to `discard`). Default: `samples.length > 0`.
-   */
-  hasAudio?: (audio: TAudio) => boolean;
   /**
    * Called exactly once for every synthesized chunk that will never be
    * played: results that arrive after `cancel()`, skipped no-audio
@@ -57,10 +53,32 @@ export interface EngineStreamSessionConfig<TAudio = AudioBuffer> {
   onCancel?: () => void;
 }
 
+export type EngineStreamSessionConfig<TAudio = AudioBuffer> =
+  EngineStreamSessionBaseConfig<TAudio> &
+    ([TAudio] extends [AudioBuffer]
+      ? {
+          /**
+           * Whether a synthesized chunk has audio to play. Chunks without
+           * audio are skipped (and passed to `discard`). Default:
+           * `samples.length > 0`.
+           */
+          hasAudio?: (audio: TAudio) => boolean;
+        }
+      : {
+          /**
+           * Whether a synthesized chunk has audio to play. Chunks without
+           * audio are skipped (and passed to `discard`). Required when the
+           * audio type is not `AudioBuffer`.
+           */
+          hasAudio: (audio: TAudio) => boolean;
+        });
+
 type ChunkInfo = {text: string; startIndex: number; endIndex: number};
 
+// Unknown shapes (JS callers without hasAudio) are treated as playable.
 function defaultHasAudio(audio: unknown): boolean {
-  return (audio as AudioBuffer).samples.length > 0;
+  const samples = (audio as Partial<AudioBuffer> | null | undefined)?.samples;
+  return samples == null || samples.length > 0;
 }
 
 export interface EngineStreamHandle {
