@@ -98,6 +98,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private var currentAudioUtteranceId = 0
   private val audioExecutor = Executors.newSingleThreadExecutor()
   private val audioLock = Any()
+  // Set by invalidate(); an already-dequeued audio task must not touch the dead runtime.
+  @Volatile private var audioInvalidated = false
   private var audioFocusListenerNeural: AudioManager.OnAudioFocusChangeListener? = null
   private var audioFocusRequestNeural: AudioFocusRequest? = null
 
@@ -840,22 +842,33 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     SpeechTrace.beginSection("TTS:playAudio")
     try {
       synchronized(audioLock) {
-        // Stop any current playback
+        if (audioInvalidated) {
+          SpeechTrace.endSection()
+          return
+        }
+        val frameBytes = pcmFrameBytes(channels)
+        if (frameBytes == null) {
+          SpeechTrace.endSection()
+          promise.reject("audio_error", "Unsupported channel count: $channels")
+          return
+        }
         cleanupAudio()
+        // Abandon the replaced playback's ducking request before a new one overwrites it.
+        deactivateAudioDuckingSession()
 
-        // Increment utterance ID
         currentAudioUtteranceId++
 
         val decodedBytes = pcm()
-        if (decodedBytes.size < 2) {
-          // A static track's 0 marker may never be reached.
+        val frames = decodedBytes.size / frameBytes
+        if (frames == 0) {
+          // A static track's 0 marker is never reached.
+          neuralFocusManager.abandonFocus()
           SpeechTrace.endSection()
           promise.resolve(null)
           return
         }
 
-        // The data is already Int16 PCM, just need to play it
-        val channelConfig = if (channels == 1) {
+        val channelConfig = if (frameBytes == 2) {
           AudioFormat.CHANNEL_OUT_MONO
         } else {
           AudioFormat.CHANNEL_OUT_STEREO
@@ -897,7 +910,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         // Write data to track
         track.write(decodedBytes, 0, decodedBytes.size)
 
-        track.notificationMarkerPosition = decodedBytes.size / (2 * channels.coerceAtLeast(1))
+        track.notificationMarkerPosition = frames
 
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
           override fun onMarkerReached(track: AudioTrack?) {
@@ -932,12 +945,15 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     } catch (e: Exception) {
       SpeechTrace.endSection()
       cleanupAudio()
+      deactivateAudioDuckingSession()
+      neuralFocusManager.abandonFocus()
       promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
     }
   }
 
   override fun stopAudio(promise: Promise) {
     audioExecutor.execute {
+      if (audioInvalidated) return@execute
       try {
         cleanupAudio()
         deactivateAudioDuckingSession()
@@ -952,6 +968,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun pauseAudio(promise: Promise) {
     audioExecutor.execute {
+      if (audioInvalidated) return@execute
       try {
         synchronized(audioLock) {
           if (isAudioPlayingState && !isAudioPausedState) {
@@ -971,6 +988,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun resumeAudio(promise: Promise) {
     audioExecutor.execute {
+      if (audioInvalidated) return@execute
       try {
         synchronized(audioLock) {
           if (isAudioPausedState) {
@@ -991,6 +1009,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   override fun isAudioPlaying(promise: Promise) {
     audioExecutor.execute {
       synchronized(audioLock) {
+        if (audioInvalidated) return@execute
         promise.resolve(isAudioPlayingState)
       }
     }
@@ -1038,11 +1057,13 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
     // Cleanup neural audio player; never settle into the dead JS runtime.
     synchronized(audioLock) {
+      audioInvalidated = true
       audioTrackPromise = null
     }
     cleanupAudio()
     deactivateAudioDuckingSession()
     neuralFocusManager.abandonFocus()
-    audioExecutor.shutdown()
+    // Drop queued tasks (and their promises) instead of running them.
+    audioExecutor.shutdownNow()
   }
 }
