@@ -243,6 +243,8 @@ global pool and xn's own pool (`xn-0.2.11/src/utils.rs`, `threadpool.rs`). xn sp
 `XN_SPIN_BUDGET` iterations (default 5000) before parking. Consequences, all documented:
 * Both pools are fixed for the process lifetime; `destroy` and `ptts_free` do not reclaim threads.
   S8 checks that the thread count is flat after the first init.
+* Their thread-local state outlives handles too. xn-gemm's packed-weight cache would keep every
+  released model's panels, so Android sets `GEMM_PACKED_LHS_CACHE_MB=0` (Appendix E).
 * `THREAD_PRIORITY_AUDIO` only applies to the calling thread (participant 0). Workers may sit on
   little cores; the thread-count default counts big cores only.
 * A panic in an xn worker is outside ptts-ffi's `catch_unwind`, so a barrier could wait forever.
@@ -885,15 +887,17 @@ unlock on shared lab phones).
   `playStartTs` ≤ 150 ms after the first (from `PHONON_CHUNK` lines).
 * **S5 Stream:** 30 tok/s simulated LLM, 400 chars, `firstChunk:'clause'` and `'sentence'`;
   first-audio, gaps, `finalize` resolves.
-* **S6 Stop:** stop at t=1.0 s. Stop → `onStopped` ≤ 150 ms; synth-cancel latency from native
+* **S6 Stop:** stop during playback at t = max(1.0 s, first `onStart` + 0.5 s) (Appendix E).
+  Stop → `onStopped` ≤ 150 ms; synth-cancel latency from native
   log (bound per 1.4); **no `onStart` and no `phononPlayBuffer` after the stop timestamp**;
-  `liveBuffers==0` after 1 s; next speak works.
+  `liveBuffers==0` after 1 s; next speak works. A second trial stops 0.1 s after speak, during
+  first-chunk synthesis: same checks, no `onStopped` expected (no `onStart` was emitted).
 * **S7 Voice switch:** 3 voices; record `voiceChanged`, switch cost
   (`ttfaMs` after switch − same voice), voice ids from `getLastMetrics`; RMS/centroid recorded
   without pass threshold.
 * **S8 Init/release ×10:** memory (RSS / phys_footprint) and **thread count** before/after each;
   pass: final mem ≤ initial + 40 MB, threads flat after first init, `liveBuffers==0`, no crash.
-* **S9 Pause/resume** mid chunk (`pause()` returns true).
+* **S9 Pause/resume** mid chunk, 0.5 s after the first `onStart` (`pause()` returns true).
 * **S10 Audio capture** → WAV, non-silent, duration ±30 %; one `sample.wav` per platform.
 * **S11 Interruptions:** background/foreground; RN reload during synthesis (no crash, invalidate
   returns immediately, next speak works, request ids keep increasing).
@@ -914,7 +918,8 @@ unlock on shared lab phones).
   {`low-memory`, `library-missing`, `symbols-missing`, `load-failed`}: hidden UI, no Alert, direct
   init rejects with the code, other engines work, logcat clean. iOS: same via the plist key.
 * **N1 Negative control (optional, OnePlus 6, debug-only build that skips the HWCAP gate, never
-  shipped):** expect SIGILL tombstone on create. Stored separately; proves the gate is what
+  shipped):** expect a SIGILL tombstone on the first synthesis (create only loads weights; the
+  dotprod kernels first run in inference, measured on the OnePlus 6). Stored separately; proves the gate is what
   prevents the crash.
 * **U-iOS:** `os-too-old` (iOS 17 sim, if available) / `unsupported-abi` (x86_64 sim): app
   launches, no Phonon UI.
@@ -1149,3 +1154,43 @@ differ from §8, this appendix wins.
   spin comparison.
 - **N1** uses `RNSpeech_phononSkipHwcapGate=true` (debug BuildConfig only, release always
   `false`, default off): the probe reports `ok` without the HWCAP check; every other check runs.
+
+## Appendix E. WP9 device-failure fixes (2026-10-21)
+
+Found by the WP9 device runs (SM8850, S23, MT6899, Pixel 9, OnePlus 6); where they differ from
+the sections above, this appendix wins.
+
+- **S8 memory growth was a product bug (1.5).** xn-gemm (`xn-gemm-common-0.20.2`,
+  `packed_cache.rs`) keeps a per-thread cache of packed weight panels keyed on the weight's
+  address, never evicted, with a process-wide budget `GEMM_PACKED_LHS_CACHE_MB` (default 256).
+  The xn/rayon workers outlive every handle, so each release left the old model's panels behind:
+  +8-12 MB per init/release cycle on all four phones, still growing after 20 cycles. A standalone
+  run on the SM8850 (`evidence/android/sm8850/flag-on/scenarios/S8-diagnosis-packed-cache/`):
+  heap in use after `ptts_free` 11.5 -> 101 MB over 10 cycles with the default budget, flat at
+  2.1 MB with `GEMM_PACKED_LHS_CACHE_MB=0`; steady-state speak time +4.7 % (RTF ~0.09 vs 0.35
+  bound). `PhononSession` therefore sets `GEMM_PACKED_LHS_CACHE_MB=0` with the other worker
+  variables before the first create, unless the process already set it (lab A/B). The 40 MB S8
+  bound is unchanged. Upstream follow-up: a `ptts_free` that clears the cache on every worker,
+  or eviction keyed on the handle. iOS is unchanged: the Core ML path links xn (via ptts) but
+  should not run its CPU matmuls; not verified, the iOS S8/soak runs would show it.
+- **S6 stop point (8.3).** In phase 1 the first chunk is synthesized whole before it plays, so
+  first audio for `LONG_TEXT` is 1.1-2.5 s on the WP9 phones and the fixed t=1.0 s stop always
+  landed during synthesis: no `onStart`, hence no `onStopped`, and the 150 ms bound was never
+  exercised. The design was wrong for these devices, not the threshold: S6 now stops at
+  max(1.0 s, first `onStart` + 0.5 s) and judges `onStopped` there, and records a second trial
+  that stops 0.1 s after speak (stop during synthesis: nothing plays after stop, buffers freed,
+  no `onStopped` expected). The collector reads the playback trial's `stopToStoppedMs`.
+- **`onStopped` without playback (1.6).** Unchanged and intended: like every neural engine,
+  Phonon emits `onStopped` only for a stop that ends playback, so every `onStopped` follows an
+  `onStart`. A stop during synthesis cancels silently; the `speak()` promise resolves.
+- **S9 pause point (8.3).** `pause()` is a playback control (all neural engines): it returns
+  `false` while the first chunk is still synthesizing. S9 now pauses 0.5 s after the first
+  `onStart` instead of at t=1.5 s. Queuing a pause requested during synthesis is not in v1.
+- **Speak across a release (S11).** A `speak()` in flight when the engine is released (the
+  example releases on background) resolves with no audio, like a stop: cancellation is not an
+  error (1.8). A `speak()` issued after the release rejects "not initialized".
+- **Support `abi` in a 32-bit process (2.1).** Before the shim loads, `abi` is the process's ABI
+  (`Build.SUPPORTED_32_BIT_ABIS[0]` in a 32-bit process), not `SUPPORTED_ABIS[0]`: U2 reported
+  `arm64-v8a` for an armeabi-v7a process.
+- **N1 (8.3).** The SIGILL comes on the first synthesis, not on create (create only loads
+  weights; measured on the OnePlus 6).

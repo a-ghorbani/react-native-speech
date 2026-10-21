@@ -22,6 +22,12 @@ const mockState = {
   model: true as boolean,
   /** S6: a chunk starts playing 5 ms after stop() */
   playAfterStop: false,
+  /** speak() starts playing this long after the call (0 = at once) */
+  startDelayMs: 0,
+  /** bumped by speak() and stop(): a delayed start of a stopped speak never plays */
+  speakGen: 0,
+  /** a chunk of the latest speak() has started playing */
+  played: false,
   /** /proc/self/maps as the app would read it (Android) */
   maps: '',
   /** utime+stime the next /proc/self/stat read reports */
@@ -33,6 +39,7 @@ function mockEmit(set: Set<Listener>, ...args: any[]) {
 }
 
 function mockPlayChunk(voice = '') {
+  mockState.played = true;
   mockEmit(mockState.chunk, {chunkIndex: mockState.requestId});
   mockEmit(mockState.start);
   const now = Date.now();
@@ -77,6 +84,14 @@ jest.mock('@pocketpalai/react-native-speech', () => {
     }),
     release: jest.fn(async () => ({success: true, errors: []})),
     speak: jest.fn(async (_text: string, voice?: string, opts?: any) => {
+      mockState.played = false;
+      const gen = ++mockState.speakGen;
+      if (mockState.startDelayMs > 0) {
+        await new Promise(r => setTimeout(r, mockState.startDelayMs));
+        if (gen !== mockState.speakGen) {
+          return; // stopped while "synthesizing": nothing plays
+        }
+      }
       mockPlayChunk(voice ?? '');
       opts?.onAudioChunk?.({
         samples: new Float32Array([0.2, -0.2, 0.2, -0.2]),
@@ -86,14 +101,18 @@ jest.mock('@pocketpalai/react-native-speech', () => {
       });
     }),
     stop: jest.fn(async () => {
-      mockEmit(mockState.stopped);
+      mockState.speakGen++;
+      if (mockState.played) {
+        mockEmit(mockState.stopped);
+      }
       if (mockState.playAfterStop) {
         mockState.playAfterStop = false;
         mockPlayChunk();
         mockState.lastMetrics.playStartTs = Date.now() + 5;
       }
     }),
-    pause: jest.fn(async () => true),
+    // Like the neural player: only active playback can be paused.
+    pause: jest.fn(async () => mockState.played),
     resume: jest.fn(async () => true),
     createSpeechStream: jest.fn(() => ({
       append: jest.fn(),
@@ -431,6 +450,9 @@ describe('runPhononSelfTest', () => {
     mockState.initCalls = [];
     mockState.model = true;
     mockState.playAfterStop = false;
+    mockState.startDelayMs = 0;
+    mockState.speakGen = 0;
+    mockState.played = false;
     mockState.maps = '';
     mockState.cpuTicks = 0;
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -622,11 +644,59 @@ describe('runPhononSelfTest', () => {
     const summary = await runPhononSelfTest(params, {sleep});
     const s6 = summary.results.find(r => r.name === 'S6_stop')!;
     expect(s6.pass).toBe(false);
-    expect(s6.data!.chunksPlayedAfterStop).toBe(1);
-    expect((s6.data!.lateChunks as any[])[0].playStartAfterStopMs).toBe(5);
+    // The first trial (stop before audio) is the one that saw the late chunk.
+    const before = s6.data!.beforeAudio as any;
+    expect(before.chunksPlayedAfterStop).toBe(1);
+    expect(before.lateChunks[0].playStartAfterStopMs).toBe(5);
+    expect(s6.data!.chunksPlayedAfterStop).toBe(0);
     // The JS onStart count is recorded alongside.
     expect(s6.data).toHaveProperty('onStartAfterStop');
-    expect(s6.detail).toContain('chunksPlayedAfterStop=1');
+    expect(s6.detail).toContain('chunksPlayedAfterStop=0+1');
+  });
+
+  it('S6 stops during playback when first audio comes after 1.0 s', async () => {
+    // A phone whose first chunk takes longer to synthesize than the old
+    // fixed t=1.0 s stop point (WP9: 1.1-2.5 s for LONG_TEXT).
+    mockState.startDelayMs = 300;
+    const params = parseSelfTestUrl(
+      'speechexample://selftest/phonon?scenarios=s6&runId=s6slow',
+      NOW,
+    )!;
+    const summary = await runPhononSelfTest(params, {sleep});
+    const s6 = summary.results.find(r => r.name === 'S6_stop')!;
+    expect(s6.pass).toBe(true);
+    const d = s6.data as any;
+    expect(d.stopWhen).toBe('playing');
+    expect(d.firstAudioMs).toBeGreaterThanOrEqual(250);
+    expect(d.speakToStopMs).toBeGreaterThanOrEqual(d.firstAudioMs);
+    expect(d.audioStartedBeforeStop).toBe(true);
+    expect(d.stopToStoppedMs).toBeGreaterThanOrEqual(0);
+    expect(d.withinThresholds).toBe(true);
+    // Stop during synthesis: nothing started, nothing played, no onStopped due.
+    expect(d.beforeAudio).toMatchObject({
+      stopWhen: 'before-audio',
+      audioStartedBeforeStop: false,
+      stopToStoppedMs: -1,
+      chunksPlayedAfterStop: 0,
+      onStartAfterStop: 0,
+      ok: true,
+    });
+    expect(d.nextSpeakOk).toBe(true);
+  });
+
+  it('S9 pauses mid chunk, after first audio', async () => {
+    mockState.startDelayMs = 300;
+    const params = parseSelfTestUrl(
+      'speechexample://selftest/phonon?scenarios=s9&runId=s9slow',
+      NOW,
+    )!;
+    const summary = await runPhononSelfTest(params, {sleep});
+    const s9 = summary.results.find(r => r.name === 'S9_pause_resume')!;
+    expect(s9.pass).toBe(true);
+    expect((s9.data as any).firstAudioMs).toBeGreaterThanOrEqual(250);
+    expect((s9.data as any).pauseAfterSpeakMs).toBeGreaterThanOrEqual(
+      (s9.data as any).firstAudioMs,
+    );
   });
 
   it('tells listeners which engine was current before and after', async () => {

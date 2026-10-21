@@ -154,6 +154,16 @@ const STREAM_TEXT =
 
 const SPEAK_TIMEOUT_MS = 90_000;
 const STOP_AT_MS = 1000;
+/**
+ * S6/S9: how far into playback stop()/pause() lands. The first chunk is
+ * synthesized whole before it plays (phase 1), so first audio of LONG_TEXT
+ * is 1-2.5 s on the WP9 phones and a fixed t=1.0 s point landed before it.
+ */
+const INTO_PLAYBACK_MS = 500;
+/** S6 (a): stop this soon after speak, while the first chunk is synthesizing */
+const STOP_BEFORE_AUDIO_MS = 100;
+/** S6/S9: longest wait for the first audio of LONG_TEXT */
+const FIRST_AUDIO_WAIT_MS = 30_000;
 /** S11: how long to wait for the host to background and foreground the app */
 const S11_WAIT_MS = 60_000;
 /** S11: a JS reload that has not happened by then is not available */
@@ -1012,7 +1022,7 @@ export async function runPhononSelfTest(
       }
     }
 
-    // ---- S6 stop at t=1.0 s ----
+    // ---- S6 stop: during playback, and during first-chunk synthesis ----
     if (has('s6')) {
       await runStop(results, evidence, collector);
     }
@@ -1065,22 +1075,48 @@ export async function runPhononSelfTest(
 
     // ---- S9 pause / resume ----
     if (has('s9')) {
+      // Mid chunk: INTO_PLAYBACK_MS after first audio (pause() is a playback
+      // control; before first audio there is nothing to pause and it
+      // returns false, as for every neural engine).
+      let firstAudioAt = -1;
+      const startSub = Speech.onStart(() => {
+        if (firstAudioAt < 0) {
+          firstAudioAt = Date.now();
+        }
+      });
       try {
+        const speakStart = Date.now();
         const speaking = Speech.speak(LONG_TEXT);
-        await wait(1500);
+        const started = await waitUntil(
+          () => firstAudioAt >= 0,
+          FIRST_AUDIO_WAIT_MS,
+        );
+        await wait(INTO_PLAYBACK_MS);
+        const pauseAt = Date.now();
         const paused = await Speech.pause();
         await wait(600);
         const resumed = await Speech.resume();
         await withTimeout(speaking, SPEAK_TIMEOUT_MS, 'speak');
+        const firstAudioMs = started ? firstAudioAt - speakStart : -1;
         report(
           results,
           'S9_pause_resume',
-          paused && resumed,
-          `pause=${paused} resume=${resumed}`,
+          started && paused && resumed,
+          `pause=${paused} resume=${resumed} firstAudioMs=${firstAudioMs} ` +
+            `pauseAfterSpeakMs=${pauseAt - speakStart}`,
+          {
+            paused,
+            resumed,
+            firstAudioMs,
+            pauseAfterSpeakMs: pauseAt - speakStart,
+            pauseAfterFirstAudioMs: started ? pauseAt - firstAudioAt : -1,
+          },
         );
       } catch (e) {
         await Speech.stop().catch(() => undefined);
         report(results, 'S9_pause_resume', false, `threw ${String(e)}`);
+      } finally {
+        startSub.remove();
       }
     }
 
@@ -1342,17 +1378,25 @@ async function runUnsupported(
   });
 }
 
+type StopWhen = 'before-audio' | 'playing';
+
 /**
- * S6: stop 1.0 s after speak; nothing plays afterwards; buffers freed.
- * Judged by the engine's own playback timestamps (`playStartTs` of every
- * chunk of the stopped call): a JS `onStart` emitted before stop() can be
- * delivered after it, so the `onStart` count is recorded but not judged.
+ * One S6 trial on `${LONG_TEXT} ${LONG_TEXT}`:
+ *  - 'playing': stop at max(1.0 s after speak, INTO_PLAYBACK_MS after the
+ *    first onStart), so stop() lands during playback and stop -> onStopped
+ *    is measured (§8.3, Appendix E);
+ *  - 'before-audio': stop STOP_BEFORE_AUDIO_MS after speak, while the first
+ *    chunk is still synthesizing. No audio has started, so no onStopped is
+ *    expected (none of the neural engines emits one without an onStart).
+ * Both are judged by the engine's own playback timestamps (`playStartTs`
+ * of every chunk of the stopped call): a JS `onStart` emitted before
+ * stop() can be delivered after it, so the `onStart` count is recorded but
+ * not judged.
  */
-async function runStop(
-  results: SelfTestResult[],
-  evidence: Evidence,
+async function stopTrial(
   collector: ChunkCollector,
-): Promise<void> {
+  when: StopWhen,
+): Promise<Record<string, unknown> & {ok: boolean; stopToStoppedMs: number}> {
   const starts: number[] = [];
   let stoppedAt = -1;
   const startSub = Speech.onStart(() => {
@@ -1369,7 +1413,18 @@ async function runStop(
     const speaking = Speech.speak(`${LONG_TEXT} ${LONG_TEXT}`).catch(
       () => undefined,
     );
-    await wait(STOP_AT_MS);
+    let firstAudioMs = -1;
+    if (when === 'playing') {
+      const started = await waitUntil(
+        () => starts.length > 0,
+        FIRST_AUDIO_WAIT_MS,
+      );
+      firstAudioMs = started ? starts[0]! - speakStart : -1;
+      const elapsed = Date.now() - speakStart;
+      await wait(Math.max(INTO_PLAYBACK_MS, STOP_AT_MS - elapsed));
+    } else {
+      await wait(STOP_BEFORE_AUDIO_MS);
+    }
     const jsStartedBeforeStop = starts.length > 0;
     const stopAt = Date.now();
     await Speech.stop();
@@ -1384,16 +1439,15 @@ async function runStop(
     const audioStarted = jsStartedBeforeStop || nativeStartedBeforeStop;
     const d = await diagnostics();
     const liveBuffers = d?.liveBuffers ?? -1;
-
-    // Next speak works.
-    let nextOk = false;
-    try {
-      const t = await timedSpeak(SHORT_TEXT);
-      nextOk = t.firstAudioMs >= 0;
-    } catch {
-      nextOk = false;
-    }
-    const data = {
+    // 'playing' must have stopped real playback, and then onStopped is due;
+    // 'before-audio' needs onStopped only if audio had started after all.
+    const stoppedOk =
+      when === 'playing'
+        ? audioStarted && stopMs >= 0
+        : !audioStarted || stopMs >= 0;
+    return {
+      stopWhen: when,
+      firstAudioMs,
       speakToStopMs: stopAt - speakStart,
       audioStartedBeforeStop: audioStarted,
       jsStartedBeforeStop,
@@ -1412,26 +1466,59 @@ async function runStop(
       chunks: chunks.length,
       liveBuffers,
       orphanBuffers: d?.orphanBuffers ?? -1,
+      ok: stoppedOk && lateChunks.length === 0 && liveBuffers === 0,
+    };
+  } finally {
+    startSub.remove();
+    stoppedSub.remove();
+  }
+}
+
+/**
+ * S6: stop during playback (the measured stop -> onStopped, top-level
+ * fields) and stop during synthesis of the first chunk (`beforeAudio`);
+ * nothing plays after either stop, buffers are freed, the next speak works.
+ */
+async function runStop(
+  results: SelfTestResult[],
+  evidence: Evidence,
+  collector: ChunkCollector,
+): Promise<void> {
+  try {
+    const beforeAudio = await stopTrial(collector, 'before-audio');
+    const playing = await stopTrial(collector, 'playing');
+
+    // Next speak works.
+    let nextOk = false;
+    try {
+      const t = await timedSpeak(SHORT_TEXT);
+      nextOk = t.firstAudioMs >= 0;
+    } catch {
+      nextOk = false;
+    }
+    const stopMs = playing.stopToStoppedMs;
+    const data = {
+      ...playing,
+      beforeAudio,
       nextSpeakOk: nextOk,
       withinThresholds: stopMs >= 0 && stopMs <= THRESHOLDS.stopMs,
     };
     await evidence.bench('PHONON_S6', data);
-    // onStopped is only meaningful when audio was playing at stop time.
-    const stoppedOk = !audioStarted || stopMs >= 0;
     report(
       results,
       'S6_stop',
-      stoppedOk && lateChunks.length === 0 && liveBuffers === 0 && nextOk,
-      `stopToStoppedMs=${stopMs} chunksPlayedAfterStop=${lateChunks.length} ` +
-        `onStartAfterStop=${jsStartsAfter} liveBuffers=${liveBuffers} next=${nextOk}`,
+      playing.ok && beforeAudio.ok && nextOk,
+      `stopToStoppedMs=${stopMs} firstAudioMs=${playing.firstAudioMs} ` +
+        `speakToStopMs=${playing.speakToStopMs} ` +
+        `chunksPlayedAfterStop=${playing.chunksPlayedAfterStop}+${beforeAudio.chunksPlayedAfterStop} ` +
+        `onStartAfterStop=${playing.onStartAfterStop}+${beforeAudio.onStartAfterStop} ` +
+        `liveBuffers=${playing.liveBuffers}+${beforeAudio.liveBuffers} ` +
+        `beforeAudio.audioStarted=${beforeAudio.audioStartedBeforeStop} next=${nextOk}`,
       data,
     );
   } catch (e) {
     collector.flush();
     report(results, 'S6_stop', false, `threw ${String(e)}`);
-  } finally {
-    startSub.remove();
-    stoppedSub.remove();
   }
 }
 
