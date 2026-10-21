@@ -114,5 +114,5 @@ e2e-artifacts/
 # jest --coverage output
 coverage/
 
-# Phonon evidence layout (DESIGN.md §8.5) keeps a build/ folder
-!/docs/phonon/evidence/build/
+# Test evidence is reported on the PR, never committed (DESIGN.md §8.5)
+/docs/phonon/evidence/

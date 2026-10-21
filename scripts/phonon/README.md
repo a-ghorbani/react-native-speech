@@ -184,6 +184,9 @@ files) and builds the app without it.
 | `stage-android-model.sh <dir>` | the example's Android download on the host (checkpoint + 8 curated voices, sha256-pinned like `PhononModelManager.ts`) into `<dir>/31m-en`, for phones without internet |
 | `collect-android-evidence.sh <serial> <slug> <flavor> --apk <apk>` | one evidence run: install (confirms the HyperOS "Install via USB?" prompt), `device.json`, launch, model push, meminfo before/after, self-test deep link, screenshots + UI dumps at `SCREENSHOT_READY`, maps proof, pid-filtered logcat + crash buffer + new dropbox crashes against the §8.4 regex, the app's `phonon-evidence/<runId>/`, `check.txt` (PASS/FAIL/NOT-RUN per check, §8.3 thresholds). `--scenario S1..S13,U1,U2,U3,F1` picks scenarios, `--dry-run` prints the adb plan, `--selftest` tests the checks offline |
 
+Output lands in the gitignored `docs/phonon/evidence/` and is never committed: summarise it in a
+PR comment (screenshots via `gh image`).
+
 Evidence APKs (JS always bundled, no Metro; `ci.init.gradle -PrnSpeechCiBundleDebug=true` for
 the debug ones):
 

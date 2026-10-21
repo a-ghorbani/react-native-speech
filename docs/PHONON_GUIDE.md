@@ -65,8 +65,8 @@ crashes and never shows a dialog; hide the engine instead.
 **Verification status.** The device matrix (Pixel 9, Galaxy S23, Snapdragon 8 Elite Gen5,
 MediaTek MT6899, OnePlus 6 as the unsupported control, CI emulators with 4 KB and 16 KB pages,
 iPhone 13 Pro, iOS simulators) is defined in [phonon/DESIGN.md §8.2](phonon/DESIGN.md). Its
-results are recorded under `docs/phonon/evidence/` once the validation run is complete; until
-then treat the lists above as requirements, not as tested guarantees.
+results are reported on the pull request once the validation run is complete; until then treat
+the lists above as requirements, not as tested guarantees.
 
 ## Enabling Phonon
 

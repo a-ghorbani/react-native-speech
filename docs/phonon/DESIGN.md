@@ -817,11 +817,11 @@ time, finalized last.
 * Files: `.github/workflows/ci.yml`, `turbo.json`, `scripts/phonon/{verify-apk.sh,
   apk-size-report.sh}`.
 * Acceptance: jobs in 4.2 green; size job fails as intended with an injected dummy `.so` and with
-  +10 KB of dex (one-off proof, linked in evidence); emulator jobs green on 4 KB and 16 KB images.
+  +10 KB of dex (one-off proof, linked from the PR); emulator jobs green on 4 KB and 16 KB images.
 
 ### WP9 — Device validation & evidence
 * Files: `scripts/phonon/{collect-android-evidence.sh, collect-ios-evidence.sh, run-matrix.sh,
-  summarize-evidence.py}`, `docs/phonon/evidence/**`.
+  summarize-evidence.py}`.
 * Acceptance: §8 complete, thread/spin defaults fixed from data, README table states what is
   verified and what is not (e.g. iOS ANE on hardware if the lab phone is < iOS 18).
 
@@ -835,7 +835,7 @@ As 1.9; median stream first-audio −40 % vs WP9 baseline, no underrun gaps > 20
 
 ### Roles per WP (workflow)
 Each WP runs implementer → critic (design conformance + edge cases) → reviewer (`/code-review`
-at high) → tester (runs the WP's acceptance, attaches evidence). Device steps (WP4/WP5/WP7/WP9)
+at high) → tester (runs the WP's acceptance, reports evidence on the PR). Device steps (WP4/WP5/WP7/WP9)
 claim phones through agistry and release them after each run.
 
 ---
@@ -937,9 +937,12 @@ data_app_native_crash` with no new entries; zero matches for
 `I/Phonon: unsupported: <reason>` and `[Phonon] hidden:` are info-level and expected in U*/F1.
 
 ### 8.5 Evidence layout
+Evidence is never committed. It is collected locally under the gitignored `docs/phonon/evidence/`
+(CI uploads it as workflow artifacts) and summarised in a PR comment, screenshots attached with
+`gh image`. Local layout:
 ```
 docs/phonon/evidence/
-  README.md                 # device × scenario → PASS/FAIL/NOT-RUN + key numbers, date, commit, lib release, what is unverified
+  README.md                 # the PR comment: device × scenario → PASS/FAIL/NOT-RUN + key numbers, date, commit, lib release, what is unverified
   ci/                       # workflow run links, SHA256SUMS, verify-*.txt, nm/otool outputs, emulator logs (4 KB/16 KB)
   build/
     apk-size.json           # {mergeBase, flagOff, flagOn}: native .so list+sizes, dex size, JS bundle size, file-size and download-size
@@ -1165,7 +1168,7 @@ the sections above, this appendix wins.
   address, never evicted, with a process-wide budget `GEMM_PACKED_LHS_CACHE_MB` (default 256).
   The xn/rayon workers outlive every handle, so each release left the old model's panels behind:
   +8-12 MB per init/release cycle on all four phones, still growing after 20 cycles. A standalone
-  run on the SM8850 (`evidence/android/sm8850/flag-on/scenarios/S8-diagnosis-packed-cache/`):
+  run on the SM8850:
   heap in use after `ptts_free` 11.5 -> 101 MB over 10 cycles with the default budget, flat at
   2.1 MB with `GEMM_PACKED_LHS_CACHE_MB=0`; steady-state speak time +4.7 % (RTF ~0.09 vs 0.35
   bound). `PhononSession` therefore sets `GEMM_PACKED_LHS_CACHE_MB=0` with the other worker

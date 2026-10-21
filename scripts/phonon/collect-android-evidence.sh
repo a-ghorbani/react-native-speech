@@ -42,7 +42,7 @@
 #   --runs N --cycles N --threads N --spin N   self-test knobs (defaults: app defaults)
 #   --threads-list L --spin-list L             S13 grid (default 2,3,4,6 and default,200)
 #   --hold MS             how long the app stays on a tab after SCREENSHOT_READY (default 4000)
-#   --out <dir>           default docs/phonon/evidence/android/<slug>/<flavor>, or
+#   --out <dir>           default docs/phonon/evidence/android/<slug>/<flavor> (gitignored), or
 #                         .../<flavor>/scenarios/<ids> for a scenario subset
 #   --run-id <id>         default <flavor>-<ids>-<utc time>
 #   --timeout S           per self-test run (default 600)
