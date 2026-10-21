@@ -581,10 +581,13 @@ jobs:
         include:
           - target: google_apis
             page-size: 4096
+            ram: 4096M
             scenarios: s3,s6
             require: S1_support,S2_init,S3_short_speak,S6_stop
+          # 16 KB pages need more RAM: at 4 GB the low-memory killer took down system_server.
           - target: google_apis_ps16k
             page-size: 16384
+            ram: 6144M
             scenarios: s3
             require: S1_support,S2_init,S3_short_speak
     env:
@@ -660,7 +663,7 @@ jobs:
           api-level: 35
           arch: x86_64
           target: ${{ matrix.target }}
-          ram-size: 4096M
+          ram-size: ${{ matrix.ram }}
           disable-animations: true
           script: packages/react-native-speech-phonon/scripts/ci-emulator-selftest.sh --apk example/android/app/build/outputs/apk/debug/app-debug.apk --model "$HOME/phonon-model/phonon-31m-en" --page-size ${{ matrix.page-size }} --scenarios ${{ matrix.scenarios }} --require ${{ matrix.require }} --out emulator-evidence
 
