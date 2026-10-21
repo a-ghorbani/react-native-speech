@@ -133,11 +133,9 @@ export default class Speech {
     const {engine, ...engineConfig} = config;
 
     log.info(`Initializing engine: ${engine}`);
-    // Store current engine
-    Speech.currentEngine = engine;
-    log.debug(`currentEngine set to: ${Speech.currentEngine}`);
 
-    // Initialize the specific engine
+    // `currentEngine` switches only after a successful init, so a failed
+    // init keeps the previous engine usable.
     if (engine === 'kokoro') {
       if (!kokoroEngine) {
         kokoroEngine = new KokoroEngine();
@@ -202,6 +200,9 @@ export default class Speech {
     } else {
       throw new Error(`Unknown engine: ${engine}`);
     }
+
+    Speech.currentEngine = engine;
+    log.debug(`currentEngine set to: ${Speech.currentEngine}`);
   }
 
   /**
