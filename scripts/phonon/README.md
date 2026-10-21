@@ -16,6 +16,7 @@ CI runs them in `.github/workflows/phonon-binaries.yml`; every one also runs loc
 | `precompile-coreml.sh` | macOS + Xcode | upstream Core ML bundle → `.mlmodelc` + rewritten `bundle.json` + `manifest.tsv` (`bundle_manifest.py`) for the HF mirror |
 | `update-lock.sh` | any | release/asset names and sha256s into `phonon.lock.json` |
 | `test-scripts.sh` | Linux, macOS | tests for all of the above |
+| `verify-apk.sh`, `apk-size-report.sh`, ... | Linux | app-level CI checks, see [CI integration](#ci-integration-ciyml-design-42) |
 
 `arm64-features.sh` is the one feature table (HWCAP bits, instruction patterns) shared by the
 header generator and the verifier. All scripts read `phonon.lock.json`; `PHONON_LOCK=<file>`
@@ -125,6 +126,51 @@ PHONON_ANDROID_STAGE=scripts/out/phonon/android scripts/phonon/test-scripts.sh
 actionlint .github/workflows/phonon-binaries.yml && shellcheck -x scripts/phonon/*.sh
 ```
 
+## CI integration (`ci.yml`, design §4.2)
+
+The scripts the app-level CI jobs run; all of them also run locally, and
+`test-ci-scripts.sh` tests them (plus the structure of `ci.yml`).
+
+| Script | Does |
+|---|---|
+| `verify-apk.sh` | what an APK carries of Phonon. `--phonon on`: per ABI both libraries present, stored uncompressed at 16 KB aligned offsets, PT_LOAD p_align ≥ 0x4000, NEEDED sets, `--libdir` source match (PT_LOAD bytes: AGP re-strips), none under other ABIs, `PhononNative` natives survived R8. `--phonon off`: no Phonon library, no `PhononNative`. `--selftest` |
+| `apk-size-report.sh` | the flag-off gate, merge-base vs head: native libraries identical (the TurboModule codegen libs `libappmodules.so` / `libreact_codegen_*.so` gated separately, ≤ 8 KB), library dex (`apkanalyzer dex packages`, `com.pocketpalai.speech`) ≤ 8 KB, library JS against ~40 KB (warning; `--strict-js` fails), plus the flag-on file/download size; writes `apk-size.json`. `--selftest` |
+| `js-bundle-size.sh` | minified Metro bundle of a one-line entry importing the package (library JS only, the example app's code left out) |
+| `check-npm-pack.sh` | `npm pack` (runs `prepare`, as publishing does): lock and Phonon build glue in; `test/`, `cpp/phonon/tests`, JVM tests, scripts, docs, build output, any `libptts_ffi*` / `PhononCore.xcframework` out; tarball size. `--selftest` |
+| `ci-emulator-selftest.sh` | installs a flag-on debug APK, copies a model in with `run-as`, runs the self-test deep link, checks the `[SelfTest]` results, page size and crashes. `--check-log` checks saved logs; `--selftest` |
+| `fetch-ci-model.sh` | phonon-31m-en checkpoint with the example's sha256 pins, for the emulator jobs' cache |
+| `ci.init.gradle` | CI-only switches without touching the example's build files: `-PrnSpeechCiMinify=true` (R8 on for release), `-PrnSpeechCiBundleDebug=true` (JS bundled into the debug APK) |
+
+While `phonon.lock.json` still says `PLACEHOLDER`, the `phonon-android-libs` job builds
+`libptts_ffi.so` from the pinned upstream commit (cached on the build inputs) and the flag-on
+jobs pass it as `RNSpeech_phononLibDir`; `build-ios-phonon` likewise repackages the upstream
+xcframework with `package-ios.sh` and passes it as `RN_SPEECH_PHONON_XCFRAMEWORK`. Once the lock
+pins a release, both download it like a consumer build.
+
+Reproducing the jobs locally (Linux, after the "Local builds" steps above):
+
+```bash
+export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.2.13676358
+LIBS=$PWD/scripts/out/phonon/android/jniLibs
+(cd example/android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 \
+  -PRNSpeech_phononEnabled=true -PRNSpeech_phononAbis=arm64-v8a,x86_64 -PRNSpeech_phononLibDir=$LIBS \
+  -PrnSpeechCiMinify=true -I $PWD/../../scripts/phonon/ci.init.gradle)
+scripts/phonon/verify-apk.sh --apk example/android/app/build/outputs/apk/release/app-release.apk \
+  --phonon on --abis arm64-v8a,x86_64 --libdir $LIBS
+# size gate: build the same flag-off release at the merge-base (git archive into a temp dir) and head
+scripts/phonon/apk-size-report.sh --base base.apk --head head.apk --flag-on head-on.apk --out apk-size.json
+scripts/phonon/check-npm-pack.sh
+# emulator / device run (any adb device; the 16 KB check needs a ps16k image)
+scripts/phonon/ci-emulator-selftest.sh --apk app-debug.apk --model "$(scripts/phonon/fetch-ci-model.sh /tmp/m)" \
+  --page-size 4096 --scenarios s3,s6 --require S1_support,S2_init,S3_short_speak,S6_stop
+scripts/phonon/test-ci-scripts.sh
+```
+
+The example app as a whole cannot use the configuration cache (onnxruntime-react-native's build
+script is incompatible), so `build-android-phonon` checks it on the library module
+(`:pocketpalai_react-native-speech:assembleRelease`, stored then reused, no problem from our
+files) and builds the app without it.
+
 ## Not yet run on a Mac
 
 Written and statically checked on Linux only; the first macOS run (CI `ios` job or by hand) must
@@ -144,3 +190,9 @@ confirm:
 - `precompile-coreml.sh` with the real `xcrun coremlcompiler compile`; the host-compiled
   `.mlmodelc` loads on an A15 ANE (WP5).
 
+- `ci.yml` `build-ios-phonon` (written on Linux, never run): Xcode 16.4 exists on `macos-15` and
+  ships an iOS 18 simulator; the `simctl` JSON queries find an iOS 18 (and, if any, iOS 17)
+  iPhone; `xcodebuild test -only-testing:SpeechExampleTests/PhononTests` passes; the command-line
+  `OTHER_LDFLAGS=$(inherited) -all_load` override links; the unsigned Release device builds
+  (`CODE_SIGNING_ALLOWED=NO`) succeed and `size -m` prints `Segment __TEXT: <n>` lines the job
+  parses; the iOS 17 smoke finds `[SelfTest]` lines with `log show`.
