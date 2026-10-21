@@ -10,17 +10,15 @@
  * Based on: https://huggingface.co/Supertone/supertonic
  */
 
-import {Platform} from 'react-native';
 import type {
   SupertonicConfig,
   SupertonicVoiceStyle,
   AudioBuffer,
-  ExecutionProvider,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
   OnnxTensorConstructor,
 } from '../../types';
-import {DEFAULT_COREML_FLAGS} from '../../types';
+import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {
   createTextMask,
   createLatentMask,
@@ -61,21 +59,6 @@ function ensureONNXRuntime(): void {
         '  Android: Rebuild the app',
     );
   }
-}
-
-/**
- * Default execution providers when the caller doesn't specify any.
- * See `KokoroEngine.getDefaultExecutionProviders` for the full rationale.
- */
-function getDefaultExecutionProviders(): ExecutionProvider[] {
-  if (Platform.OS === 'ios') {
-    return [
-      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-      'xnnpack',
-      'cpu',
-    ];
-  }
-  return ['xnnpack', 'cpu'];
 }
 
 /**

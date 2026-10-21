@@ -87,6 +87,11 @@ interface ConstantsProps {
    * @platform Android
    */
   maxInputLength?: number;
+  /**
+   * The device's primary ABI (`Build.SUPPORTED_ABIS[0]`, e.g. `arm64-v8a`).
+   * @platform Android
+   */
+  primaryAbi?: string;
 }
 
 export interface AudioInterruptionProps {

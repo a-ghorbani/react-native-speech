@@ -73,8 +73,8 @@ export interface KittenConfig {
   maxChunkSize?: number;
   /**
    * Execution providers for ONNX Runtime inference, in fallback order.
-   * Defaults to CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android when
-   * omitted. See `KokoroConfig.executionProviders` for full semantics.
+   * Defaults to CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android (cpu
+   * only on x86/x86_64) when omitted. See `KokoroConfig.executionProviders` for full semantics.
    */
   executionProviders?: ExecutionProvider[];
 }
