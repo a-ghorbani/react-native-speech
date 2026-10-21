@@ -144,6 +144,27 @@ describe('HansPhonemizer', () => {
     expect(await phon.phonemize("cats'", 'en-us')).toBe('kˈæts');
   });
 
+  test('OOV compound of two dict words joins them, tail secondary', async () => {
+    expect(await phon.phonemize('dockerfile', 'en-us')).toBe('dˈɑːkɚfˌaɪl');
+  });
+
+  test('compound split rejects suffix tails and doubled boundaries', async () => {
+    await phon.phonemize('foldable snipping', 'en-us');
+    // Both fall through to hans00 rather than "fold+eɪbəl" / "snip+pɪŋ".
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'foldable',
+      expect.anything(),
+    );
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'snipping',
+      expect.anything(),
+    );
+  });
+
+  test('compound split keeps the s with an s-cluster tail', async () => {
+    expect(await phon.phonemize('namespace', 'en-us')).toBe('nˈeɪmspˌeɪs');
+  });
+
   test('elongated words collapse to the dict word', async () => {
     expect(await phon.phonemize('NOOOO', 'en-us')).toBe('nˈoʊ');
   });
