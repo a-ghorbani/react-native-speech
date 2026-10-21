@@ -10,10 +10,15 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Speech, {
-  TTSEngine,
+  engineManager,
   type SpeechStream,
   type FirstChunkMode,
+  type EngineId,
 } from '@pocketpalai/react-native-speech';
+import {
+  type PhononEngine,
+  PHONON,
+} from '@pocketpalai/react-native-speech-phonon';
 import {C, MONO} from '../styles/cyber';
 import SelfTestPanel from './SelfTestPanel';
 
@@ -80,6 +85,20 @@ const RATES: Rate[] = [
 
 const FIRST_CHUNK_MODES: FirstChunkMode[] = ['sentence', 'clause'];
 
+/** Native timings of Phonon's last played chunk, for the timing line. */
+function phononLastChunk(): string | null {
+  try {
+    const m = (
+      engineManager.getEngine(PHONON) as unknown as PhononEngine
+    ).getLastMetrics();
+    return m
+      ? `native ttfa ${Math.round(m.ttfaMs)}ms, synth ${Math.round(m.totalMs)}ms, queued ${Math.round(m.queuedMs)}ms`
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function tokenize(text: string): string[] {
   return text.match(/\S+\s*|\s+/g) ?? [text];
 }
@@ -94,10 +113,11 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
   const [firstChunk, setFirstChunk] =
     React.useState<FirstChunkMode>('sentence');
   const [firstAudioMs, setFirstAudioMs] = React.useState<number | null>(null);
+  const [nativeTiming, setNativeTiming] = React.useState<string | null>(null);
   const [isStreaming, setIsStreaming] = React.useState(false);
   const [streamedChars, setStreamedChars] = React.useState(0);
-  const [engineName, setEngineName] = React.useState<TTSEngine>(
-    Speech.getCurrentEngine(),
+  const [engineName, setEngineName] = React.useState<EngineId>(
+    Speech.getCurrentEngineId(),
   );
   const [engineReady, setEngineReady] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -116,7 +136,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
       const ready = await Speech.isReady();
       if (mounted) {
         setEngineReady(ready);
-        setEngineName(Speech.getCurrentEngine());
+        setEngineName(Speech.getCurrentEngineId());
         if (ready) {
           try {
             const meta = await Speech.getVoicesWithMetadata();
@@ -153,6 +173,7 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     cancelledRef.current = false;
     setStreamedChars(0);
     setFirstAudioMs(null);
+    setNativeTiming(null);
     setIsStreaming(true);
 
     const tokens = tokenize(text);
@@ -200,6 +221,9 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
     } finally {
       streamRef.current = null;
       setIsStreaming(false);
+      if (Speech.getCurrentEngineId() === PHONON) {
+        setNativeTiming(phononLastChunk());
+      }
     }
   }, [isStreaming, rate, text, selectedVoice, firstChunk]);
 
@@ -345,6 +369,11 @@ const StreamingView: React.FC<StreamingViewProps> = ({visible = true}) => {
         {firstAudioMs !== null && (
           <Text style={styles.helpText}>
             {'> '}first audio after {firstAudioMs}ms
+          </Text>
+        )}
+        {nativeTiming !== null && (
+          <Text style={styles.helpText}>
+            {'> '}last chunk: {nativeTiming}
           </Text>
         )}
 

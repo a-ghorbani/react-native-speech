@@ -1,4 +1,5 @@
 #import <React/RCTBridgeModule.h>
+#import <UIKit/UIKit.h>
 #import <React/RCTLog.h>
 #import <os/signpost.h>
 #import <os/log.h>
@@ -168,6 +169,46 @@ RCT_EXPORT_METHOD(clearMarkers) {
   }
   // Remove the file too
   [[NSFileManager defaultManager] removeItemAtPath:[self markersFilePath] error:nil];
+}
+
+// Key window as a PNG at `path` (self-test evidence, pulled with devicectl).
+RCT_EXPORT_METHOD(captureScreen:(NSString *)path
+                        resolve:(RCTPromiseResolveBlock)resolve
+                         reject:(RCTPromiseRejectBlock)reject) {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    UIWindow *window = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+      if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+      for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+        if (w.isKeyWindow) { window = w; break; }
+      }
+      if (window) break;
+    }
+    if (!window) {
+      window = UIApplication.sharedApplication.delegate.window;
+    }
+    if (!window || CGRectIsEmpty(window.bounds)) {
+      reject(@"capture_error", @"No key window", nil);
+      return;
+    }
+    UIGraphicsImageRenderer *renderer =
+        [[UIGraphicsImageRenderer alloc] initWithBounds:window.bounds];
+    UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+      [window drawViewHierarchyInRect:window.bounds afterScreenUpdates:NO];
+    }];
+    NSData *png = UIImagePNGRepresentation(image);
+    NSString *dir = [path stringByDeletingLastPathComponent];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    NSError *error = nil;
+    if (![png writeToFile:path options:NSDataWritingAtomic error:&error]) {
+      reject(@"capture_error", error.localizedDescription ?: @"write failed", error);
+      return;
+    }
+    resolve(path);
+  });
 }
 
 RCT_EXPORT_METHOD(startMemoryPolling:(double)intervalMs) {

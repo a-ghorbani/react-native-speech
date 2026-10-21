@@ -42,7 +42,8 @@
     "prepare": "bob build",
     "release": "release-it --only-version",
     "build:dict": "node scripts/build-dict.mjs",
-    "validate:dict": "node scripts/validate-dict.mjs"
+    "validate:dict": "node scripts/validate-dict.mjs",
+    "test:phonon": "yarn workspace @pocketpalai/react-native-speech-phonon test"
   },
   "keywords": [
     "react-native",
@@ -120,21 +121,25 @@
     }
   },
   "workspaces": [
-    "example"
+    "example",
+    "packages/*"
   ],
   "packageManager": "yarn@3.6.1",
   "jest": {
     "preset": "@react-native/jest-preset",
     "modulePathIgnorePatterns": [
       "<rootDir>/example/node_modules",
-      "<rootDir>/lib/"
+      "<rootDir>/lib/",
+      "<rootDir>/packages/"
     ],
     "transformIgnorePatterns": [
       "node_modules/(?!((jest-)?react-native|@react-native(-community)?)/)"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "\\.shared\\.ts$"
+      "\\.shared\\.ts$",
+      "<rootDir>/example/",
+      "<rootDir>/packages/"
     ]
   },
   "commitlint": {
@@ -145,7 +150,8 @@
   "release-it": {
     "git": {
       "commitMessage": "chore: release ${version}",
-      "tagName": "v${version}"
+      "tagName": "v${version}",
+      "tagMatch": "v[0-9]*"
     },
     "npm": {
       "publish": true
@@ -157,6 +163,18 @@
       "@release-it/conventional-changelog": {
         "preset": {
           "name": "angular"
+        },
+        "gitRawCommitsOpts": {
+          "path": [
+            ".",
+            ":(exclude)packages"
+          ]
+        },
+        "commitsOpts": {
+          "path": [
+            ".",
+            ":(exclude)packages"
+          ]
         }
       }
     }

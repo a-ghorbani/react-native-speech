@@ -1,0 +1,144 @@
+{
+  "name": "@pocketpalai/react-native-speech-phonon",
+  "version": "0.1.0",
+  "description": "Phonon on-device neural TTS engine for @pocketpalai/react-native-speech",
+  "source": "./src/index.ts",
+  "main": "./lib/module/index.js",
+  "module": "./lib/module/index.js",
+  "types": "./lib/typescript/src/index.d.ts",
+  "files": [
+    "src",
+    "lib",
+    "jest",
+    "android",
+    "ios",
+    "cpp",
+    "*.podspec",
+    "react-native.config.js",
+    "phonon.lock.json",
+    "docs/THIRD_PARTY_NOTICES.md",
+    "!ios/PhononCore.xcframework",
+    "!android/build",
+    "!android/.cxx",
+    "!android/src/test",
+    "!**/__tests__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "test": "yarn run -T jest",
+    "typecheck": "yarn run -T tsc",
+    "prepare": "yarn run -T bob build",
+    "release": "yarn run -T release-it --only-version"
+  },
+  "keywords": [
+    "react-native",
+    "react-native-speech",
+    "text-to-speech",
+    "tts",
+    "phonon",
+    "offline-tts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/a-ghorbani/react-native-speech.git",
+    "directory": "packages/react-native-speech-phonon"
+  },
+  "author": "a-ghorbani",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/a-ghorbani/react-native-speech/issues"
+  },
+  "homepage": "https://github.com/a-ghorbani/react-native-speech/tree/main/packages/react-native-speech-phonon#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "peerDependencies": {
+    "@pocketpalai/react-native-speech": "~2.7.0",
+    "react": "*",
+    "react-native": ">=0.74.0"
+  },
+  "jest": {
+    "preset": "@react-native/jest-preset",
+    "moduleNameMapper": {
+      "^@pocketpalai/react-native-speech$": "<rootDir>/../../src/index.tsx",
+      "^@pocketpalai/react-native-speech/engine-sdk$": "<rootDir>/../../src/engine-sdk.ts"
+    },
+    "modulePathIgnorePatterns": [
+      "<rootDir>/lib/"
+    ],
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)/)"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "\\.shared\\.ts$"
+    ]
+  },
+  "release-it": {
+    "git": {
+      "commitMessage": "chore(phonon): release ${version}",
+      "tagName": "phonon-v${version}",
+      "tagMatch": "phonon-v*",
+      "requireCommits": true,
+      "requireCommitsFail": false,
+      "commitsPath": "."
+    },
+    "npm": {
+      "publish": true
+    },
+    "github": {
+      "release": true,
+      "releaseName": "phonon-v${version}",
+      "makeLatest": false
+    },
+    "plugins": {
+      "@release-it/conventional-changelog": {
+        "preset": {
+          "name": "angular"
+        },
+        "infile": "CHANGELOG.md",
+        "gitRawCommitsOpts": {
+          "path": "."
+        },
+        "commitsOpts": {
+          "path": "."
+        },
+        "tagOpts": {
+          "prefix": "phonon-v"
+        }
+      }
+    }
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json",
+          "tsc": "../../node_modules/.bin/tsc"
+        }
+      ]
+    ]
+  },
+  "codegenConfig": {
+    "name": "RNSpeechPhononSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "android": {
+      "javaPackageName": "com.pocketpalai.speech.phonon"
+    },
+    "ios": {
+      "modulesProvider": {
+        "RNSpeechPhonon": "RNSpeechPhononModule"
+      }
+    }
+  }
+}

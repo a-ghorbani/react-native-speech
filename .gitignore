@@ -83,6 +83,9 @@ lib/
 ios/generated
 android/generated
 
+# Phonon xcframework (copied from the download cache at pod install)
+packages/react-native-speech-phonon/ios/PhononCore.xcframework/
+
 # React Native Nitro Modules
 nitrogen/
 
@@ -96,6 +99,7 @@ benchmark-android-trace-*.json
 # Local dev caches (downloaded models, harness outputs)
 scripts/.cache/
 scripts/out/
+packages/*/scripts/out/
 
 # Local experiment scratch (excluded from tsc via tsconfig "exclude")
 scripts/experiments/
@@ -107,3 +111,9 @@ package-lock.json
 .agents/
 .claude/
 e2e-artifacts/
+
+# jest --coverage output
+coverage/
+
+# Test evidence is reported on the PR, never committed (DESIGN.md §8.5)
+/packages/react-native-speech-phonon/docs/evidence/

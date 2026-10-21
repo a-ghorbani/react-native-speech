@@ -719,6 +719,8 @@ if (supported) {
 }
 ```
 
+[`@pocketpalai/react-native-speech-phonon`](../packages/react-native-speech-phonon/README.md) is such an add-on (Gradium's native Phonon engine, `engine: 'phonon'`; no speed or pitch control). Phonon 31m is Apache-2.0, but Phonon 40m is CC BY-NC 4.0 (non-commercial).
+
 The `initialize` call type-checks because the add-on's package declares its config through `CustomEngineConfigs` (see [Writing an add-on](#writing-an-add-on)).
 
 `getEngineSupport` never throws: built-in engines report `{supported: true, reason: 'ok'}`, registered add-ons answer through their own probe, and unregistered ids report `reason: 'unknown-engine'`. `resetEngineSupport(id)` clears a negative result an add-on persisted, so the next probe runs again.

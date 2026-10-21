@@ -1,6 +1,18 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+// Temporary until phonon.lock.json is published: RN_SPEECH_PHONON=1 links the Phonon add-on
+// (react-native.config.js). RN autolinking re-runs only when its input files change, so the
+// switch is written to one, blind, so the configuration cache tracks only its content.
+def phononSwitch = file("build/generated/rn-speech-phonon-switch.txt")
+phononSwitch.parentFile.mkdirs()
+phononSwitch.text = System.getenv("RN_SPEECH_PHONON") ?: ""
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex ->
+  ex.autolinkLibrariesFromCommand(
+    ["npx", "@react-native-community/cli", "config"],
+    file(".."),
+    files("../yarn.lock", "../package-lock.json", "../package.json", "../react-native.config.js", phononSwitch)
+  )
+}
 rootProject.name = 'speech.example'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')
