@@ -1,0 +1,145 @@
+buildscript {
+  ext.getExtOrDefault = {name ->
+    return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties['RNSpeech_' + name]
+  }
+
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath "com.android.tools.build:gradle:8.7.2"
+    // noinspection DifferentKotlinGradleVersion
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
+  }
+}
+
+
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
+
+apply plugin: "com.facebook.react"
+
+def getExtOrIntegerDefault(name) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["RNSpeech_" + name]).toInteger()
+}
+
+// Options (rootProject.ext or gradle property): RNSpeech_phononAbis (default arm64-v8a),
+// RNSpeech_phononLibDir (local jniLibs dir, skips the download), and debug-only
+// RNSpeech_phononForceReason / RNSpeech_phononSkipHwcapGate.
+def getPhononOption(name) {
+  def extName = "RNSpeech_" + name
+  def value = rootProject.ext.has(extName) ? rootProject.ext.get(extName) : getExtOrDefault(name)
+  return value == null ? null : value.toString().trim()
+}
+
+def phononAbis = (getPhononOption("phononAbis") ?: "arm64-v8a").split(",").collect { it.trim() }.findAll { it }
+def phononLibDir = getPhononOption("phononLibDir") ?: ""
+def phononForceReason = getPhononOption("phononForceReason") ?: ""
+// Negative control (DESIGN.md §8.3): debug builds skip the HWCAP gate, so unsupported CPUs SIGILL.
+def phononSkipHwcapGate = (getPhononOption("phononSkipHwcapGate") ?: "false").toBoolean()
+if (phononSkipHwcapGate) {
+  logger.warn("RNSpeechPhonon: RNSpeech_phononSkipHwcapGate=true: DEBUG builds skip the Phonon HWCAP " +
+      "gate (negative-control evidence build; unsupported CPUs will crash). Never ship this.")
+}
+def phononLock = new groovy.json.JsonSlurper().parse(file("../phonon.lock.json"))
+def phononVersion = phononLock.binaries.release.toString().replaceFirst(/^phonon-bin-v/, "")
+if (!phononLibDir.isEmpty()) {
+  phononVersion = phononVersion + "+local"
+}
+ext.rnSpeechPhonon = [
+  abis: phononAbis,
+  libDir: phononLibDir,
+  version: phononVersion,
+  lock: phononLock,
+]
+
+android {
+  namespace "com.pocketpalai.speech.phonon"
+
+  compileSdkVersion getExtOrIntegerDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion getExtOrIntegerDefault("minSdkVersion")
+    targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
+    consumerProguardFiles "proguard-rules.pro"
+
+    buildConfigField "String", "RN_SPEECH_PHONON_ABIS", "\"${phononAbis.join(',')}\""
+    buildConfigField "String", "RN_SPEECH_PHONON_VERSION", "\"${phononVersion}\""
+
+    externalNativeBuild {
+      cmake {
+        cppFlags "-std=c++17 -fexceptions -frtti"
+        arguments "-DANDROID_STL=c++_shared"
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path "src/main/cpp/CMakeLists.txt"
+      version "3.22.1"
+    }
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  buildTypes {
+    debug {
+      buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"${phononForceReason}\""
+      buildConfigField "boolean", "RN_SPEECH_PHONON_SKIP_HWCAP_GATE", phononSkipHwcapGate.toString()
+    }
+    release {
+      minifyEnabled false
+      buildConfigField "String", "RN_SPEECH_PHONON_FORCE_REASON", "\"\""
+      buildConfigField "boolean", "RN_SPEECH_PHONON_SKIP_HWCAP_GATE", "false"
+    }
+  }
+
+  testOptions {
+    unitTests.returnDefaultValues = true
+  }
+
+  lintOptions {
+    disable "GradleCompatible"
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_1_8
+    targetCompatibility JavaVersion.VERSION_1_8
+  }
+
+  sourceSets {
+    main {
+      java.srcDirs += [
+        "generated/java",
+        "generated/jni"
+      ]
+    }
+  }
+}
+
+apply from: "phonon.gradle"
+
+repositories {
+  mavenCentral()
+  google()
+}
+
+def kotlin_version = getExtOrDefault("kotlinVersion")
+
+def speechCore = rootProject.findProject(":pocketpalai_react-native-speech")
+if (speechCore == null) {
+  throw new GradleException("@pocketpalai/react-native-speech-phonon needs @pocketpalai/react-native-speech " +
+      "(autolinked as project :pocketpalai_react-native-speech); install it next to this package")
+}
+
+dependencies {
+  implementation speechCore
+  implementation "com.facebook.react:react-android"
+  implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+  testImplementation "junit:junit:4.13.2"
+}
