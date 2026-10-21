@@ -24,6 +24,6 @@ export default defineConfig([
     },
   },
   {
-    ignores: ['node_modules/', 'lib/', 'third-party/'],
+    ignores: ['node_modules/', 'lib/', 'third-party/', '**/build/'],
   },
 ]);
