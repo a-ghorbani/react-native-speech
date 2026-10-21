@@ -3,6 +3,7 @@ package com.pocketpalai.speech
 import java.util.UUID
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -89,6 +90,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   // Neural Audio Player state
   private var audioTrack: AudioTrack? = null
+  // Settled on completion, or (like iOS) when the track is stopped or replaced. Guarded by audioLock.
+  private var audioTrackPromise: Promise? = null
   private var isAudioPlayingState = false
   private var isAudioPausedState = false
   private var isAudioDuckingState = false
@@ -700,7 +703,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
     selectedEngine = engineName
 
-    invalidate()
+    // Not invalidate(): that shuts down the audio executor of a live module.
+    resetSystemTts()
 
     pendingOperations.add(Pair({ promise.resolve(null) }, promise))
     initializeTTS()
@@ -788,6 +792,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       audioTrack = null
       isAudioPlayingState = false
       isAudioPausedState = false
+      audioTrackPromise?.resolve(null)
+      audioTrackPromise = null
     }
   }
 
@@ -801,97 +807,129 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     val channels = if (config.hasKey("channels")) config.getInt("channels") else 1
     val ducking = if (config.hasKey("ducking")) config.getBoolean("ducking") else false
 
-    audioExecutor.execute {
-      SpeechTrace.beginSection("TTS:playAudio")
-      try {
-        synchronized(audioLock) {
-          // Stop any current playback
-          cleanupAudio()
+    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, ducking, promise)
+  }
 
-          // Increment utterance ID
-          currentAudioUtteranceId++
+  /** [pcm] (LE Int16) is invoked on the audio executor. */
+  private fun playPcm16(
+    pcm: () -> ByteArray,
+    sampleRate: Int,
+    channels: Int,
+    ducking: Boolean,
+    promise: Promise
+  ) {
+    try {
+      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, ducking, promise) }
+    } catch (e: RejectedExecutionException) {
+      // invalidate() shut the executor down.
+      promise.reject("audio_error", "Audio player is shut down", e)
+    }
+  }
 
-          // Decode base64 audio data
-          val decodedBytes = Base64.decode(audioData, Base64.DEFAULT)
+  private fun playPcm16Now(
+    pcm: () -> ByteArray,
+    sampleRate: Int,
+    channels: Int,
+    ducking: Boolean,
+    promise: Promise
+  ) {
+    SpeechTrace.beginSection("TTS:playAudio")
+    try {
+      synchronized(audioLock) {
+        // Stop any current playback
+        cleanupAudio()
 
-          // Convert bytes to Int16 samples, then to bytes for AudioTrack
-          // The data is already Int16 PCM, just need to play it
-          val channelConfig = if (channels == 1) {
-            AudioFormat.CHANNEL_OUT_MONO
-          } else {
-            AudioFormat.CHANNEL_OUT_STEREO
+        // Increment utterance ID
+        currentAudioUtteranceId++
+
+        val decodedBytes = pcm()
+        if (decodedBytes.size < 2) {
+          // A static track's 0 marker may never be reached.
+          SpeechTrace.endSection()
+          promise.resolve(null)
+          return
+        }
+
+        // The data is already Int16 PCM, just need to play it
+        val channelConfig = if (channels == 1) {
+          AudioFormat.CHANNEL_OUT_MONO
+        } else {
+          AudioFormat.CHANNEL_OUT_STEREO
+        }
+
+        val bufferSize = AudioTrack.getMinBufferSize(
+          sampleRate,
+          channelConfig,
+          AudioFormat.ENCODING_PCM_16BIT
+        ).coerceAtLeast(decodedBytes.size)
+
+        val audioAttributes = AudioAttributes.Builder()
+          .setUsage(AudioAttributes.USAGE_MEDIA)
+          .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+          .build()
+
+        val audioFormat = AudioFormat.Builder()
+          .setSampleRate(sampleRate)
+          .setChannelMask(channelConfig)
+          .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+          .build()
+
+        val track = AudioTrack.Builder()
+          .setAudioAttributes(audioAttributes)
+          .setAudioFormat(audioFormat)
+          .setBufferSizeInBytes(bufferSize)
+          .setTransferMode(AudioTrack.MODE_STATIC)
+          .build()
+
+        audioTrack = track
+
+        // Setup ducking
+        isAudioDuckingState = ducking
+        activateAudioDuckingSession()
+
+        // Acquire audio focus so we get interruption callbacks.
+        neuralFocusManager.requestFocus()
+
+        // Write data to track
+        track.write(decodedBytes, 0, decodedBytes.size)
+
+        // Set notification marker at end
+        track.notificationMarkerPosition = decodedBytes.size / 2 // 2 bytes per sample
+
+        track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+          override fun onMarkerReached(track: AudioTrack?) {
+            synchronized(audioLock) {
+              // Late marker of a stopped or replaced track (already settled).
+              if (audioTrackPromise !== promise) return
+              audioTrackPromise = null
+              isAudioPlayingState = false
+              deactivateAudioDuckingSession()
+              neuralFocusManager.abandonFocus()
+              SpeechTrace.endSection()
+              emitOnFinish(getAudioEventData())
+              promise.resolve(null)
+            }
           }
 
-          val bufferSize = AudioTrack.getMinBufferSize(
-            sampleRate,
-            channelConfig,
-            AudioFormat.ENCODING_PCM_16BIT
-          ).coerceAtLeast(decodedBytes.size)
+          override fun onPeriodicNotification(track: AudioTrack?) {
+            // Not used
+          }
+        })
 
-          val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
+        isAudioPlayingState = true
+        isAudioPausedState = false
 
-          val audioFormat = AudioFormat.Builder()
-            .setSampleRate(sampleRate)
-            .setChannelMask(channelConfig)
-            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .build()
+        // Emit start event
+        emitOnStart(getAudioEventData())
 
-          val track = AudioTrack.Builder()
-            .setAudioAttributes(audioAttributes)
-            .setAudioFormat(audioFormat)
-            .setBufferSizeInBytes(bufferSize)
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-          audioTrack = track
-
-          // Setup ducking
-          isAudioDuckingState = ducking
-          activateAudioDuckingSession()
-
-          // Acquire audio focus so we get interruption callbacks.
-          neuralFocusManager.requestFocus()
-
-          // Write data to track
-          track.write(decodedBytes, 0, decodedBytes.size)
-
-          // Set notification marker at end
-          track.notificationMarkerPosition = decodedBytes.size / 2 // 2 bytes per sample
-
-          track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(track: AudioTrack?) {
-              synchronized(audioLock) {
-                isAudioPlayingState = false
-                deactivateAudioDuckingSession()
-                neuralFocusManager.abandonFocus()
-                SpeechTrace.endSection()
-                emitOnFinish(getAudioEventData())
-                promise.resolve(null)
-              }
-            }
-
-            override fun onPeriodicNotification(track: AudioTrack?) {
-              // Not used
-            }
-          })
-
-          isAudioPlayingState = true
-          isAudioPausedState = false
-
-          // Emit start event
-          emitOnStart(getAudioEventData())
-
-          // Start playback
-          track.play()
-        }
-      } catch (e: Exception) {
-        SpeechTrace.endSection()
-        cleanupAudio()
-        promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
+        // Start playback
+        track.play()
+        audioTrackPromise = promise
       }
+    } catch (e: Exception) {
+      SpeechTrace.endSection()
+      cleanupAudio()
+      promise.reject("audio_error", "Failed to play audio: ${e.message}", e)
     }
   }
 
@@ -982,16 +1020,23 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  override fun invalidate() {
-    super.invalidate()
+  private fun resetSystemTts() {
     if (::synthesizer.isInitialized) {
       synthesizer.stop()
       synthesizer.shutdown()
       resetQueueState()
     }
     isInitialized = false
+  }
 
-    // Cleanup neural audio player
+  override fun invalidate() {
+    super.invalidate()
+    resetSystemTts()
+
+    // Cleanup neural audio player; never settle into the dead JS runtime.
+    synchronized(audioLock) {
+      audioTrackPromise = null
+    }
     cleanupAudio()
     deactivateAudioDuckingSession()
     neuralFocusManager.abandonFocus()
