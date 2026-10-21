@@ -839,6 +839,11 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
           textRange: {start: chunk.startIndex, end: chunk.endIndex},
           progress: Math.round((chunkIndex / chunks.length) * 100),
         });
+        // The callbacks above may have called stop().
+        if (stale()) {
+          this.releaseChunk(audio);
+          return;
+        }
 
         await raceWithStop(
           this.playChunk(audio, playbackOptions, options?.volume, ctx),

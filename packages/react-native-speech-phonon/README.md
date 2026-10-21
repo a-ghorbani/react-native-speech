@@ -72,6 +72,10 @@ the lists above as requirements, not as tested guarantees.
 yarn add @pocketpalai/react-native-speech @pocketpalai/react-native-speech-phonon
 ```
 
+React Native 0.74 or later with the New Architecture is required: from 0.74 all TurboModules
+share one method queue, which keeps the add-on's playback calls ordered with the core's stop and
+pause on iOS.
+
 The core package must be `~2.7.0`: the add-on builds on the core's experimental engine SDK
 (`@pocketpalai/react-native-speech/engine-sdk` and the native PCM sinks), which may change in a
 core minor release, so each add-on release pins the core minor it was built against. Register the

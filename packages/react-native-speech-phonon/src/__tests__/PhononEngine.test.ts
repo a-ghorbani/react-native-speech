@@ -805,6 +805,28 @@ describe('synthesize: chunked playback', () => {
     expect(warnSpy.mock.calls.flat().join(' ')).toContain('progress');
   });
 
+  it.each(['onAudioChunk', 'progress'] as const)(
+    'stop() from %s never plays the chunk',
+    async source => {
+      fake.state.autoSynth = true;
+      fake.state.autoPlay = true;
+      const engine = await ready({maxChunkSize: 25});
+      const stop = () => {
+        engine.stop();
+      };
+      if (source === 'progress') {
+        engine.setChunkProgressCallback(stop);
+      }
+      await engine.synthesize(
+        TEXT,
+        source === 'onAudioChunk' ? {onAudioChunk: stop} : {},
+      );
+      await flush();
+      expect(fake.api.playBuffer).not.toHaveBeenCalled();
+      expect(fake.liveBuffers()).toBe(0);
+    },
+  );
+
   it('does not copy PCM without onAudioChunk', async () => {
     fake.state.autoSynth = true;
     fake.state.autoPlay = true;

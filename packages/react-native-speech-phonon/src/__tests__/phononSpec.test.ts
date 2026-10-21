@@ -285,7 +285,7 @@ describe('packaging', () => {
     const podspec = read('RNSpeechPhonon.podspec');
     expect(podspec).toContain('s.dependency "RNSpeech"');
     expect(podspec).toMatch(
-      /unless RNSpeechPhonon\.lock_ready\?\(__dir__\)\s+raise Pod::Informative/,
+      /unless informative\.call \{ RNSpeechPhonon\.lock_ready\?\(__dir__\) \}\s+raise Pod::Informative/,
     );
     expect(podspec).not.toContain("ENV['RN_SPEECH_PHONON']");
   });
@@ -302,6 +302,14 @@ describe('packaging', () => {
     expect(mm).toMatch(
       /\+ \(BOOL\)requiresMainQueueSetup\s*\{\s*return NO;\s*\}/,
     );
+  });
+
+  it('requires React Native 0.74+, where TurboModules share one method queue', () => {
+    const semver = require('semver');
+    const range = JSON.parse(read('package.json')).peerDependencies[
+      'react-native'
+    ];
+    expect(semver.gte(semver.minVersion(range), '0.74.0')).toBe(true);
   });
 
   it('playBuffer checks the core output before taking the buffer', () => {
@@ -360,6 +368,11 @@ describe('jest mock', () => {
       supported: false,
       reason: 'not-compiled',
     });
+    const {NOT_COMPILED_SUPPORT} = require('../NativePhonon');
+    const support = await mock.PhononEngine.getSupport();
+    expect(Object.keys(support).sort()).toEqual(
+      Object.keys(NOT_COMPILED_SUPPORT).sort(),
+    );
     await expect(mock.PhononEngine.getDiagnostics()).resolves.toEqual(
       require('../NativePhonon').NOT_COMPILED_DIAGNOSTICS,
     );

@@ -116,8 +116,8 @@ export interface PhononLoadOptions {
   numThreads: number;       // 0 = native default policy (Android only)
   computeUnit: string;      // 'neuralEngine' | 'cpu' (iOS); Android always uses PTTS_UNIT_CPU
 }
-export interface PhononPlayConfig {       // the core player config, plus a native gain
-  sampleRate: number; channels: number; ducking?: boolean;
+export interface PhononPlayConfig {       // the core player config (mono), plus a native gain
+  sampleRate: number; ducking?: boolean;
   silentMode?: 'obey' | 'respect' | 'ignore'; volume?: number;
 }
 export interface PhononDiagnostics {
@@ -153,8 +153,8 @@ Notes:
   `ttfaMs(first after switch) − ttfaMs(same voice)`; there is no separate `voiceMs`.
 * `playBuffer` plays through the core's public PCM sink, which shares one internal entry point
   with the base64 player: Android `NeuralPcmSink.from(reactContext)?.playPcm16(bytes, sampleRate,
-  channels, ducking, promise)`, iOS `[[RNSpeechAudioOutput shared]
-  playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]`. Gain and clamp are
+  1, ducking, promise)`, iOS `[[RNSpeechAudioOutput shared]
+  playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]` with `channels:1`. Gain and clamp are
   applied natively during the float → int16 (Android) conversion; a missing sink rejects
   `PHONON_INTERNAL`. It **takes** (moves out) the buffer; a missing id rejects
   `PHONON_INVALID_BUFFER`.
