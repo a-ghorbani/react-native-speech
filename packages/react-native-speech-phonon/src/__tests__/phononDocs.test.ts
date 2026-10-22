@@ -332,13 +332,14 @@ describe('Phonon docs: versions, models and licences', () => {
     );
   });
 
-  it('has an Unreleased CHANGELOG entry for the package', () => {
+  it("has a CHANGELOG entry for the package's first release", () => {
     const changelog = read('CHANGELOG.md');
-    const start = changelog.indexOf('## Unreleased');
+    const start = changelog.indexOf('## [0.1.0]');
+    expect(start).toBeGreaterThanOrEqual(0);
     const next = changelog.indexOf('\n## ', start + 1);
-    const unreleased = changelog.slice(start, next < 0 ? undefined : next);
-    expect(unreleased).toMatch(/### Added[\s\S]*PhononEngine/);
-    expect(unreleased).toContain('README.md');
+    const first = changelog.slice(start, next < 0 ? undefined : next);
+    expect(first).toMatch(/### Added[\s\S]*PhononEngine/);
+    expect(first).toContain('README.md');
   });
 });
 
