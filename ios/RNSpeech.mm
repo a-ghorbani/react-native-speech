@@ -10,8 +10,14 @@ using namespace JS::NativeSpeech;
 {
   BOOL isDucking;
   NSDictionary *defaultOptions;
-  // Bumped by cleanupAudio; completion handlers of older buffers then only resolve.
+  // Bumped by cleanupAudio, which settles the pending playback; older completion handlers then do nothing.
   NSUInteger _playbackGeneration;
+  // The scheduled playback's promise; only touched on _audioQueue.
+  RCTPromiseResolveBlock _pendingResolve;
+  RNSpeechTraceHandle _pendingTraceHandle;
+  const char *_pendingTraceName;
+  // Its buffer played back, or the engine stopped, while paused; resume settles it.
+  BOOL _settleOnResume;
 }
 
 RCT_EXPORT_MODULE();
@@ -69,6 +75,10 @@ RCT_EXPORT_MODULE();
                                              selector:@selector(handleAudioInterruption:)
                                                  name:AVAudioSessionInterruptionNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleEngineConfigurationChange:)
+                                                 name:AVAudioEngineConfigurationChangeNotification
+                                               object:_audioEngine];
 
     // Best-effort default audio session category so interruption notifications
     // fire reliably. Ducking / silentMode overrides call setCategory explicitly
@@ -87,6 +97,8 @@ RCT_EXPORT_MODULE();
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
+  // Dropped, never resolved into a dead runtime (phonon DESIGN.md §1.5).
+  _pendingResolve = nil;
   [self cleanupAudio];
 }
 
@@ -94,27 +106,43 @@ RCT_EXPORT_MODULE();
   NSNumber *interruptionType = notification.userInfo[AVAudioSessionInterruptionTypeKey];
 
   if (interruptionType.unsignedIntegerValue == AVAudioSessionInterruptionTypeBegan) {
-    if (_isAudioPlaying) {
-      [self pauseAudioInternal];
-    }
     // Pause OS TTS as well (idempotent if not speaking).
     if (self.synthesizer.isSpeaking && !self.synthesizer.isPaused) {
       [self.synthesizer pauseSpeakingAtBoundary:AVSpeechBoundaryImmediate];
     }
-    [self emitOnAudioInterruption:@{@"type": @"began"}];
+    dispatch_async(_audioQueue, ^{
+      if (self->_isAudioPlaying) {
+        [self pauseAudioInternal];
+      }
+      [self emitOnAudioInterruption:@{@"type": @"began"}];
+    });
   } else if (interruptionType.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded) {
     NSNumber *interruptionOption = notification.userInfo[AVAudioSessionInterruptionOptionKey];
     BOOL shouldResume = interruptionOption.unsignedIntegerValue == AVAudioSessionInterruptionOptionShouldResume;
-    if (shouldResume) {
-      if (_isAudioPaused) {
+    if (shouldResume && self.synthesizer.isPaused) {
+      [self.synthesizer continueSpeaking];
+    }
+    dispatch_async(_audioQueue, ^{
+      if (shouldResume && self->_isAudioPaused) {
         [self resumeAudioInternal];
       }
-      if (self.synthesizer.isPaused) {
-        [self.synthesizer continueSpeaking];
-      }
-    }
-    [self emitOnAudioInterruption:@{@"type": @"ended", @"shouldResume": @(shouldResume)}];
+      [self emitOnAudioInterruption:@{@"type": @"ended", @"shouldResume": @(shouldResume)}];
+    });
   }
+}
+
+// The engine stops itself on a configuration change, so the pending completion would never fire.
+- (void)handleEngineConfigurationChange:(NSNotification *)notification {
+  dispatch_async(_audioQueue, ^{
+    if (!self->_pendingResolve || self->_audioEngine.isRunning) {
+      return;
+    }
+    if (self->_isAudioPaused) {
+      self->_settleOnResume = YES;
+    } else {
+      [self finishPlayback];
+    }
+  });
 }
 
 - (void)activateDuckingSession {
@@ -458,6 +486,29 @@ RCT_EXPORT_MODULE();
   [_playerNode stop];
   _isAudioPlaying = NO;
   _isAudioPaused = NO;
+  _settleOnResume = NO;
+  if (_pendingResolve) {
+    RCTPromiseResolveBlock resolve = _pendingResolve;
+    _pendingResolve = nil;
+    RNSpeechTraceEnd(_pendingTraceHandle, _pendingTraceName);
+    resolve(nil);
+  }
+}
+
+// Settles the pending playback as finished. Runs on _audioQueue.
+- (void)finishPlayback {
+  RCTPromiseResolveBlock resolve = _pendingResolve;
+  RNSpeechTraceHandle traceHandle = _pendingTraceHandle;
+  const char *traceName = _pendingTraceName;
+  _pendingResolve = nil;
+  // Stop the engine first, or deactivating the session fails with IsBusy.
+  [self cleanupAudio];
+  [self deactivateAudioSession];
+  RNSpeechTraceEnd(traceHandle, traceName);
+  [self emitOnFinish:[self getAudioEventData]];
+  if (resolve) {
+    resolve(nil);
+  }
 }
 
 - (NSDictionary *)getAudioEventData {
@@ -472,6 +523,19 @@ RCT_EXPORT_MODULE();
 }
 
 - (void)resumeAudioInternal {
+  if (_settleOnResume) {
+    [self finishPlayback];
+    return;
+  }
+  // The system stops the engine on an interruption; play on a stopped engine throws.
+  if (!_audioEngine.isRunning) {
+    NSError *error = nil;
+    if (![_audioEngine startAndReturnError:&error]) {
+      NSLog(@"[Speech] Failed to restart audio engine: %@", error.localizedDescription);
+      [self finishPlayback];
+      return;
+    }
+  }
   [_playerNode play];
   _isAudioPaused = NO;
 }
@@ -613,7 +677,7 @@ RCT_EXPORT_MODULE();
 }
 
 // Runs on _audioQueue after the caller's cleanupAudio and utterance-id bump; `fill` deinterleaves into dst.
-// Resolves on completion, stop or replace, so chunks play back to back.
+// Resolves once the buffer has played back (at resume if paused by then), or on stop or replace.
 - (void)playOnAudioQueueWithSampleCount:(NSUInteger)sampleCount
                              sampleRate:(double)sampleRate
                                channels:(NSInteger)channels
@@ -685,27 +749,28 @@ RCT_EXPORT_MODULE();
           completionHandler:^(AVAudioPlayerNodeCompletionCallbackType callbackType) {
     RNSpeech *strongSelf = weakSelf;
     if (!strongSelf) {
+      // dealloc dropped the promise.
       RNSpeechTraceEnd(traceHandle, traceName);
-      resolve(nil);
       return;
     }
     dispatch_async(strongSelf->_audioQueue, ^{
-      // Also fires when cleanupAudio stops the node; a newer playback or stop then owns the state.
+      // Also fires when cleanupAudio stops the node, which has already settled that playback.
       if (strongSelf->_playbackGeneration != generation) {
-        RNSpeechTraceEnd(traceHandle, traceName);
-        resolve(nil);
         return;
       }
-      strongSelf->_isAudioPlaying = NO;
-      strongSelf->_isAudioPaused = NO;
-      [strongSelf deactivateAudioSession];
-      RNSpeechTraceEnd(traceHandle, traceName);
-      [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
-      resolve(nil);
+      if (strongSelf->_isAudioPaused) {
+        strongSelf->_settleOnResume = YES;
+        return;
+      }
+      [strongSelf finishPlayback];
     });
   }];
 
   [self->_playerNode play];
+  // After play, so a throw there leaves nothing pending; the completion reads these on this queue.
+  self->_pendingResolve = resolve;
+  self->_pendingTraceHandle = traceHandle;
+  self->_pendingTraceName = traceName;
 }
 
 - (void)stopAudio:(RCTPromiseResolveBlock)resolve
@@ -735,8 +800,8 @@ RCT_EXPORT_MODULE();
              reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     if (self->_isAudioPaused) {
-      [self resumeAudioInternal];
       [self emitOnResume:[self getAudioEventData]];
+      [self resumeAudioInternal];
       resolve(@(YES));
     } else {
       resolve(@(NO));
