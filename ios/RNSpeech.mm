@@ -684,21 +684,25 @@ RCT_EXPORT_MODULE();
       completionCallbackType:AVAudioPlayerNodeCompletionDataPlayedBack
           completionHandler:^(AVAudioPlayerNodeCompletionCallbackType callbackType) {
     RNSpeech *strongSelf = weakSelf;
-    if (strongSelf) {
-      dispatch_async(strongSelf->_audioQueue, ^{
-        // Also fires when cleanupAudio stops the node; a newer playback or stop then owns the state.
-        if (strongSelf->_playbackGeneration != generation) {
-          RNSpeechTraceEnd(traceHandle, traceName);
-          resolve(nil);
-          return;
-        }
-        strongSelf->_isAudioPlaying = NO;
-        [strongSelf deactivateAudioSession];
-        RNSpeechTraceEnd(traceHandle, traceName);
-        [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
-        resolve(nil);
-      });
+    if (!strongSelf) {
+      RNSpeechTraceEnd(traceHandle, traceName);
+      resolve(nil);
+      return;
     }
+    dispatch_async(strongSelf->_audioQueue, ^{
+      // Also fires when cleanupAudio stops the node; a newer playback or stop then owns the state.
+      if (strongSelf->_playbackGeneration != generation) {
+        RNSpeechTraceEnd(traceHandle, traceName);
+        resolve(nil);
+        return;
+      }
+      strongSelf->_isAudioPlaying = NO;
+      strongSelf->_isAudioPaused = NO;
+      [strongSelf deactivateAudioSession];
+      RNSpeechTraceEnd(traceHandle, traceName);
+      [strongSelf emitOnFinish:[strongSelf getAudioEventData]];
+      resolve(nil);
+    });
   }];
 
   [self->_playerNode play];
