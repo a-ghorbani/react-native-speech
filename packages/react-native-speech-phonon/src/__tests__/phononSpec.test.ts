@@ -290,6 +290,18 @@ describe('packaging', () => {
     expect(podspec).not.toContain("ENV['RN_SPEECH_PHONON']");
   });
 
+  it('the example links the add-on unconditionally', () => {
+    for (const rel of [
+      '../../example/react-native.config.js',
+      '../../example/android/settings.gradle',
+      '../../example/package.json',
+    ]) {
+      const text = read(rel);
+      expect(text).not.toMatch(/\bRN_SPEECH_PHONON\b(?!_)/);
+      expect(text).not.toContain('speech-phonon-switch');
+    }
+  });
+
   it('playBuffer stays on the TurboModule shared queue and off the main queue', () => {
     // Ordering with RNSpeech's stopAudio relies on neither module declaring a methodQueue.
     const ownQueue =

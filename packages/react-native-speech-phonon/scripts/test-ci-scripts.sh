@@ -8,7 +8,7 @@
 #   4. example/src/utils/phononPins.json is well formed; fetch-ci-model.sh and
 #      stage-android-model.sh fetch, verify and cache what a pins file lists (file:// fixtures)
 #   5. ci.yml: the core Android / iOS builds know nothing of Phonon, the add-on jobs exist with
-#      the design's matrix, steps call scripts that exist, actions are pinned by SHA (needs
+#      the design's matrix, no RN_SPEECH_PHONON switch, steps call scripts that exist, actions are pinned by SHA (needs
 #      python3 + PyYAML; skipped otherwise)
 #   6. collect-android-evidence.sh --selftest (device evidence checks on fixtures, dry runs)
 #
@@ -134,14 +134,16 @@ root = sys.argv[2]
 jobs = wf["jobs"]
 P = "packages/react-native-speech-phonon"
 
-# The core builds (the example without the add-on) know nothing of Phonon.
+# The core builds know no Phonon option.
 for name in ["build-android", "build-ios"]:
     assert "phonon" not in json.dumps(jobs[name]).lower(), name
 
-for name in ["phonon-android-libs", "test-phonon-native", "build-android-phonon",
-             "android-emulator-phonon", "build-ios-phonon"]:
+for name in ["test-phonon-native", "build-android-phonon", "android-emulator-phonon", "build-ios-phonon"]:
     assert name in jobs, name
-assert "android-flag-off-size" not in jobs
+for name in ["android-flag-off-size", "phonon-android-libs"]:
+    assert name not in jobs, name
+# The example always links the add-on; core-only builds drop it with example-without-addon.sh.
+assert not re.search(r"\bRN_SPEECH_PHONON\b(?!_)", open(sys.argv[1]).read())
 
 def runs(job):
     return "\n".join(s.get("run", "") + "\n" + str(s.get("with", {}).get("script", "")) for s in jobs[job]["steps"])
@@ -158,7 +160,6 @@ for job, j in jobs.items():
         assert not u or u.startswith("./") or re.search(r"@[0-9a-f]{40}$", u), f"{job}: {u} not pinned"
 
 emu = jobs["android-emulator-phonon"]
-assert emu["env"]["RN_SPEECH_PHONON"] == "1"
 inc = emu["strategy"]["matrix"]["include"]
 by = {i["target"]: i for i in inc}
 assert set(by) == {"google_apis", "google_apis_ps16k"}, by
@@ -172,12 +173,12 @@ assert str(w["api-level"]) == "35" and w["arch"] == "x86_64" and w["target"] == 
 assert "ci-emulator-selftest.sh" in w["script"] and "${{ matrix.page-size }}" in w["script"], w["script"]
 assert emu.get("strategy", {}).get("fail-fast") is False
 
-assert jobs["build-android-phonon"]["env"]["RN_SPEECH_PHONON"] == "1"
 on = runs("build-android-phonon")
 assert "--configuration-cache" in on and "arm64-v8a,x86_64" in on
 assert "rnSpeechCiMinify=true" in on and "verify-apk.sh" in on and "--phonon on" in on
 
-assert "verify-apk.sh --phonon off" in runs("e2e-android")
+e2e = runs("e2e-android")
+assert "example-without-addon.sh" in e2e and "verify-apk.sh --phonon off" in e2e
 
 nat = runs("test-phonon-native")
 for s in ["test-core.sh", "test-jni-host.sh", "test-ios.sh", P + "/scripts/test-android.sh", "test-ci-scripts.sh"]:
@@ -187,7 +188,7 @@ lib = runs("build-library")
 assert "check-npm-pack.sh --core" in lib and "check-npm-pack.sh --list" in lib
 
 ios = runs("build-ios-phonon")
-for s in ["simctl list runtimes", "RN_SPEECH_PHONON=1", "PhononTests", "-all_load", "__LLVM",
+for s in ["simctl list runtimes", "example-without-addon.sh", "PhononTests", "-all_load", "__LLVM",
           "ios-binary-size.json", "core_test"]:
     assert s in ios, s
 assert jobs["build-ios-phonon"]["runs-on"] == "macos-15"

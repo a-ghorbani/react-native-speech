@@ -100,18 +100,18 @@ export const PHONON_CURATED_VOICES: readonly CuratedVoice[] =
   PINS.voices.curated;
 
 /**
- * Default iOS mirror; override with `setIosMirror`. Unpinned until the
- * mirror is published: then set `revision` to its commit sha and
- * `manifestSha256`. Layout = precompile-coreml.sh's out dir:
+ * Default iOS mirror, pinned to a commit and the manifest's sha256; override
+ * with `setIosMirror`. Layout = precompile-coreml.sh's out dir:
  * `<bundleName>/...` plus `<bundleName>.manifest.tsv` at the repo root.
  */
 export const DEFAULT_PHONON_IOS_MIRROR: PhononIosMirror = {
   baseUrl: HF_BASE_URL,
   repo: 'palshub/phonon-31m-en-coreml',
-  revision: 'main',
+  revision: '0222045816b825e8a004013c7158b111245b4aab',
   bundleName: 'phonon-31m-en-coreml',
   manifestPath: 'phonon-31m-en-coreml.manifest.tsv',
-  manifestSha256: null,
+  manifestSha256:
+    '4f91af242637d13a93f38a574e4f99466a3063aa5a7d24fc34a797f53b12599a',
 };
 
 /** True when `mirror` pins both a commit sha and the manifest's sha256. */

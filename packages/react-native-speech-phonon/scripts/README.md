@@ -44,9 +44,8 @@ from `scripts/`, which is not in the npm package.
 
 ## Local builds and the dev override
 
-No release exists until the owner triggers the workflow, so the lock's sha256s are
-`PLACEHOLDER` and app builds with this package fail (Gradle at `fetchPhononBinaries`, the
-podspec at `pod install`) unless pointed at local binaries.
+App builds download the release pinned in `phonon.lock.json`. To build against binaries made
+from a checkout instead:
 
 Android (Linux or macOS; Rust 1.99.1, cargo-ndk 4.1.2, NDK 28.2.13676358, jq):
 
@@ -69,8 +68,8 @@ Then, in the consumer's `android/gradle.properties` (`scripts/out/` is git-ignor
 RNSpeech_phononLibDir=/abs/path/to/packages/react-native-speech-phonon/scripts/out/android/jniLibs
 ```
 
-The example app in this repo links the add-on natively only with `RN_SPEECH_PHONON=1` and takes
-these binaries with `-PRNSpeech_phononLocal=true` (`yarn example build:android:phonon`).
+The example app in this repo takes these binaries with `-PRNSpeech_phononLocal=true`
+(`yarn example build:android:phonon`).
 
 On an aarch64 Linux host, the NDK's x86_64 tools run under qemu binfmt; that works (the
 reference build above was made that way). `build-android.sh` always passes an explicit
@@ -85,7 +84,6 @@ scripts/package-ios.sh --work scripts/out/ios \
   --notices scripts/out/NOTICES-ios.md \
   --licenses scripts/out/android/licenses                 # or any dir with xn-ptts-LICENSE-*
 # downloads + checks the upstream zip; notices and licenses are required (every zip has them)
-export RN_SPEECH_PHONON=1   # the example's switch, see above
 export RN_SPEECH_PHONON_XCFRAMEWORK=$PWD/scripts/out/ios/PhononCore.xcframework
 (cd ../../example/ios && pod install)
 ```
@@ -147,13 +145,12 @@ The scripts the app-level CI jobs run; all of them also run locally, and
 | `check-npm-pack.sh` | `npm pack` (runs `prepare`, as publishing does): lock and Phonon build glue in; `test/`, `cpp/tests`, JVM tests, scripts, docs other than the notices, build output, any `libptts_ffi*` / `PhononCore.xcframework` out; tarball size. `--core --root ../..`: the core package has no Phonon file or mention. `--selftest` |
 | `ci-emulator-selftest.sh` | installs a debug APK with the add-on, copies a model in with `run-as`, runs the self-test deep link, checks the `[SelfTest]` results, page size and crashes. `--check-log` checks saved logs; `--selftest` |
 | `fetch-ci-model.sh` | phonon-31m-en checkpoint, sha256-pinned in `example/src/utils/phononPins.json`, for the emulator jobs' cache |
+| `example-without-addon.sh` | drops the add-on from `example/package.json`, so the example builds as a core-only app (undo: `git checkout example/package.json`) |
 | `ci.init.gradle` | CI-only switches without touching the example's build files: `-PrnSpeechCiMinify=true` (R8 on for release), `-PrnSpeechCiBundleDebug=true` (JS bundled into the debug APK) |
 
-While `phonon.lock.json` still says `PLACEHOLDER`, the `phonon-android-libs` job builds
-`libptts_ffi.so` from the pinned upstream commit (cached on the build inputs) and the add-on
-jobs pass it as `RNSpeech_phononLibDir`; `build-ios-phonon` likewise repackages the upstream
-xcframework with `package-ios.sh` and passes it as `RN_SPEECH_PHONON_XCFRAMEWORK`. Once the lock
-pins a release, both download it like a consumer build.
+The add-on jobs download the release pinned in `phonon.lock.json`, like a consumer build. Pull
+requests that change the build scripts or the lock build and verify fresh binaries in
+`phonon-binaries.yml`.
 
 Reproducing the jobs locally (Linux, after the "Local builds" steps above):
 
@@ -161,13 +158,15 @@ Reproducing the jobs locally (Linux, after the "Local builds" steps above):
 export ANDROID_NDK_HOME=~/Android/Sdk/ndk/28.2.13676358
 LIBS=$PWD/scripts/out/android/jniLibs
 APK=../../example/android/app/build/outputs/apk/release/app-release.apk
-(cd ../../example/android && RN_SPEECH_PHONON=1 ./gradlew assembleRelease \
+(cd ../../example/android && ./gradlew assembleRelease \
   -PreactNativeArchitectures=arm64-v8a,x86_64 -PRNSpeech_phononAbis=arm64-v8a,x86_64 \
   -PRNSpeech_phononLibDir=$LIBS -PrnSpeechCiMinify=true -I $OLDPWD/scripts/ci.init.gradle)
 scripts/verify-apk.sh --apk $APK --phonon on --abis arm64-v8a,x86_64 --libdir $LIBS
 # the core alone: the example without the add-on carries no Phonon
+scripts/example-without-addon.sh
 (cd ../../example/android && ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a)
 scripts/verify-apk.sh --apk $APK --phonon off
+git checkout ../../example/package.json
 scripts/check-npm-pack.sh
 scripts/check-npm-pack.sh --core --root ../..
 # emulator / device run (any adb device; the 16 KB check needs a ps16k image)
@@ -194,10 +193,10 @@ PR comment (screenshots via `gh image`).
 Evidence APKs (JS always bundled, no Metro; `ci.init.gradle -PrnSpeechCiBundleDebug=true` for
 the debug ones):
 
-| Flavor | Build (`cd example/android`; with the add-on: `RN_SPEECH_PHONON=1` and `-PRNSpeech_phononAbis=arm64-v8a -PRNSpeech_phononLibDir=$LIBS`) |
+| Flavor | Build (`cd example/android`; with the add-on: `-PRNSpeech_phononAbis=arm64-v8a`, plus `-PRNSpeech_phononLibDir=$LIBS` for local binaries) |
 |---|---|
 | `addon` | `assembleRelease -PreactNativeArchitectures=arm64-v8a`, with the add-on |
-| `core` | `assembleRelease -PreactNativeArchitectures=arm64-v8a`, without the add-on |
+| `core` | `assembleRelease -PreactNativeArchitectures=arm64-v8a`, after `scripts/example-without-addon.sh` |
 | `addon-32bit` | `assembleRelease -PreactNativeArchitectures=armeabi-v7a`, with the add-on (no Phonon library for 32-bit: `unsupported-abi`) |
 | `forced-<reason>` | `assembleDebug ... -PRNSpeech_phononForceReason=<reason>` (debug builds only) |
 | `negative-control` | `assembleDebug ... -PRNSpeech_phononSkipHwcapGate=true` (N1: the debug probe skips the HWCAP gate; never ship it) |

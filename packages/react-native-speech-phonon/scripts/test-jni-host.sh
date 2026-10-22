@@ -40,7 +40,6 @@ ARGS=(:pocketpalai_react-native-speech-phonon:testDebugUnitTest --console=plain
 [[ -n "${PHONON_HOST_LIB:-}" ]] && ARGS+=("-PRNSpeech_phononHostLib=$PHONON_HOST_LIB")
 [[ -n "${PHONON_MODEL_DIR:-}" ]] && ARGS+=("-PRNSpeech_phononModelDir=$PHONON_MODEL_DIR")
 
-# The example autolinks the add-on only with RN_SPEECH_PHONON=1 (example/react-native.config.js).
 cd "$ROOT/../../example/android"
-RN_SPEECH_PHONON=1 ./gradlew "${ARGS[@]}"
+./gradlew "${ARGS[@]}"
 echo "report: $ROOT/android/build/reports/tests/testDebugUnitTest/index.html"

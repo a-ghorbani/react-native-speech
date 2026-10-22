@@ -8,6 +8,14 @@ name: Release
 # release-PR flow). Until then this only runs when triggered manually.
 on:
   workflow_dispatch:
+    inputs:
+      package:
+        description: 'core: @pocketpalai/react-native-speech (v* tags); phonon: the add-on (phonon-v* tags)'
+        type: choice
+        options:
+          - core
+          - phonon
+        default: core
   # push:
   #   branches: [main]
 
@@ -23,10 +31,14 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Skip the bot's own "chore: release x.y.z" commit so we don't loop.
+    # Skip the bot's own release commits ("chore: release x.y.z",
+    # "chore(phonon): release x.y.z") so we don't loop.
     # Quoted because the `: ` inside 'chore: release' otherwise makes YAML
     # parse this as a nested mapping → workflow startup_failure.
-    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release') }}"
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release') && !startsWith(github.event.head_commit.message, 'chore(phonon): release') }}"
+    env:
+      # A push run has no inputs: the core.
+      PACKAGE: ${{ inputs.package || 'core' }}
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -52,6 +64,21 @@ jobs:
       # check, which fails under trusted publishing (no token in CI). The real
       # auth + provenance happen inside `npm publish` via OIDC.
       - name: Release
+        if: env.PACKAGE == 'core'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn release-it --ci --npm.skipChecks
+
+      # npm publish runs the add-on's `prepare`, whose types build against the core's lib/.
+      - name: Build the core for the add-on
+        if: env.PACKAGE == 'phonon'
+        run: yarn prepare
+
+      # The add-on's own release-it config: phonon-v* tags, makeLatest false. Its npm package
+      # needs trusted publishing configured for this workflow too.
+      - name: Release the Phonon add-on
+        if: env.PACKAGE == 'phonon'
+        working-directory: packages/react-native-speech-phonon
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: yarn run -T release-it --ci --npm.skipChecks

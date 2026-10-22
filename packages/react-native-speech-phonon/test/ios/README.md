@@ -16,7 +16,7 @@ scripts/test-ios.sh      # all of the below; PHONON_SANITIZE=0 to skip ASan/UBSa
 The Objective-C++ bridge (`ios/RNSpeechPhonon.mm`, `ios/RNSpeechPhononModule.mm`) is tested by `example/ios/SpeechExampleTests/PhononTests.m` (XCTest, macOS):
 
 ```bash
-cd example/ios && RN_SPEECH_PHONON=1 RN_SPEECH_PHONON_XCFRAMEWORK=<PhononCore.xcframework> pod install
+cd example/ios && pod install   # or RN_SPEECH_PHONON_XCFRAMEWORK=<PhononCore.xcframework> pod install
 IOS_SIMULATOR="iPhone 16" scripts/test-ios.sh
 # optional model smoke (inner Core ML bundle folder with bundle.json, readable by the simulator):
 TEST_RUNNER_PHONON_TEST_MODEL_DIR=/abs/phonon-31m-en-coreml scripts/test-ios.sh

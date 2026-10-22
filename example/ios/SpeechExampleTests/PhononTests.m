@@ -5,9 +5,8 @@
 //  XCTest for the iOS Phonon bridge (packages/react-native-speech-phonon/docs/DESIGN.md §8.1).
 //
 //  The bridge is reached through the runtime, not linked, so the process keeps one copy of the
-//  core (the app's libRNSpeechPhonon.a). Builds without the add-on (RN_SPEECH_PHONON unset at
-//  pod install) skip every test unless RN_SPEECH_PHONON_EXPECTED=1 (TEST_RUNNER_ prefix via
-//  xcodebuild), which makes them fail.
+//  core (the app's libRNSpeechPhonon.a). Builds without the add-on skip every test unless
+//  RN_SPEECH_PHONON_EXPECTED=1 (TEST_RUNNER_ prefix via xcodebuild), which makes them fail.
 //
 //  Model smoke: PHONON_TEST_MODEL_DIR = the inner Core ML bundle folder (with bundle.json).
 //

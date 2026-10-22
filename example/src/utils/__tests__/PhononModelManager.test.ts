@@ -181,22 +181,30 @@ function manifestText(files = IOS_FILES): string {
   return files.map(f => `${f.path}\t${f.size}\t${f.sha}`).join('\n') + '\n';
 }
 
-function mirrorUrl(path: string, repo = DEFAULT_PHONON_IOS_MIRROR.repo) {
-  return `https://huggingface.co/${repo}/resolve/main/${path}`;
+function mirrorUrl(
+  path: string,
+  repo = DEFAULT_PHONON_IOS_MIRROR.repo,
+  revision = DEFAULT_PHONON_IOS_MIRROR.revision,
+) {
+  return `https://huggingface.co/${repo}/resolve/${revision}/${path}`;
 }
 
-function serveIos(files = IOS_FILES, repo?: string): void {
+// The served manifest hashes to the default pin.
+function serveIos(files = IOS_FILES, repo?: string, revision?: string): void {
   const text = manifestText(files);
-  mockFs.remote.set(mirrorUrl('phonon-31m-en-coreml.manifest.tsv', repo), {
-    size: text.length,
-    sha: '',
-    content: text,
-  });
+  mockFs.remote.set(
+    mirrorUrl('phonon-31m-en-coreml.manifest.tsv', repo, revision),
+    {
+      size: text.length,
+      sha: DEFAULT_PHONON_IOS_MIRROR.manifestSha256 ?? '',
+      content: text,
+    },
+  );
   for (const f of files) {
-    mockFs.remote.set(mirrorUrl(`phonon-31m-en-coreml/${f.path}`, repo), {
-      size: f.size,
-      sha: f.sha,
-    });
+    mockFs.remote.set(
+      mirrorUrl(`phonon-31m-en-coreml/${f.path}`, repo, revision),
+      {size: f.size, sha: f.sha},
+    );
   }
 }
 
@@ -616,7 +624,6 @@ describe('iOS download (precompiled Core ML mirror)', () => {
       platform: 'ios',
       iosMirror: {manifestSha256: sha('e')},
     });
-    // The served manifest has an empty sha; the pin makes it fail.
     await expect(mgr.downloadModel()).rejects.toMatchObject({code: 'checksum'});
     expect(mockFs.downloads).toHaveLength(1);
   });
@@ -629,7 +636,10 @@ describe('iOS download (precompiled Core ML mirror)', () => {
 
 describe('iOS mirror pinning', () => {
   it('requires a commit sha and the manifest sha256', () => {
-    expect(isPinnedMirror(DEFAULT_PHONON_IOS_MIRROR)).toBe(false);
+    expect(isPinnedMirror(DEFAULT_PHONON_IOS_MIRROR)).toBe(true);
+    expect(
+      isPinnedMirror({...DEFAULT_PHONON_IOS_MIRROR, revision: 'main'}),
+    ).toBe(false);
     expect(
       isPinnedMirror({
         ...DEFAULT_PHONON_IOS_MIRROR,
@@ -646,9 +656,21 @@ describe('iOS mirror pinning', () => {
     ).toBe(true);
   });
 
-  it('warns when downloading from an unpinned mirror', async () => {
+  it('does not warn for the default mirror', async () => {
     serveIos();
     const mgr = new PhononModelManager({platform: 'ios'});
+    await mgr.downloadModel('31m-en');
+    expect(console.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('is not pinned'),
+    );
+  });
+
+  it('warns when downloading from an unpinned mirror', async () => {
+    serveIos(IOS_FILES, undefined, 'main');
+    const mgr = new PhononModelManager({
+      platform: 'ios',
+      iosMirror: {revision: 'main'},
+    });
     await mgr.downloadModel('31m-en');
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('is not pinned'),
