@@ -15,13 +15,13 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 | <center>iOS</center> | <center>Android</center> |
 | :---: | :---: |
-| <video src="https://github.com/user-attachments/assets/c3f6b6e5-a778-4d19-bed5-d2c79843eba1" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/6bb81a2d-2586-412c-805c-f869381570d4" controls width="100%" height="500"></video> |
+| <video src="https://github.com/user-attachments/assets/c3f6b6e5-a778-4d19-bed5-d2c79843eba1" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/218196c8-6a2c-49c4-a918-a37f71b5fcb3" controls width="100%" height="500"></video> |
 
 ### One-shot speak
 
 | <center>iOS</center> | <center>Android</center> |
 | :---: | :---: |
-| <video src="https://github.com/user-attachments/assets/648120eb-0e96-4b59-94f8-64012824942d" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/9e1e530a-28e8-4b92-8a45-7f0074bf13e1" controls width="100%" height="500"></video> |
+| <video src="https://github.com/user-attachments/assets/648120eb-0e96-4b59-94f8-64012824942d" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/da0ccc52-042d-4444-b355-e478f3c8af33" controls width="100%" height="500"></video> |
 
 ## Features
 
