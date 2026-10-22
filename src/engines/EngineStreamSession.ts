@@ -242,6 +242,11 @@ export class EngineStreamSession<
 
         this.emitProgress(currentChunk, chunkIdx);
 
+        // Either callback may have stopped the session; `finally` discards the chunk.
+        if (this.cancelled) {
+          return;
+        }
+
         // Start fetching + synthesizing next chunk in background. Skips
         // any no-audio chunks until it finds one with audio (or chunker
         // drains).

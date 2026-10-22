@@ -190,6 +190,29 @@ describe('EngineStreamSession hooks', () => {
     expect(discard).toHaveBeenCalledTimes(1);
   });
 
+  test.each(['postProcess', 'onChunkProgress'])(
+    'a cancel from %s keeps the chunk from playing',
+    async hook => {
+      let session!: EngineStreamSession<Handle>;
+      const made = makeSession({
+        [hook]: () => {
+          session.cancel();
+        },
+      });
+      session = made.session;
+      const {synth, player, discard} = made;
+      session.append('One here. Two here. ');
+      await flush();
+      const audio = synth.audio();
+      synth.calls[0]!.resolve(audio);
+      await flush();
+      expect(player.plays).toHaveLength(0);
+      expect(synth.calls).toHaveLength(1);
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect(discard).toHaveBeenCalledWith(audio);
+    },
+  );
+
   test('a playback failure discards the pending prefetch', async () => {
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     const {session, synth, player, discard} = makeSession();
