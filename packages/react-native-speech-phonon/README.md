@@ -200,8 +200,8 @@ iOS loads a Core ML bundle folder, not the checkpoint. Use the bundle **precompi
 * The precompiled bundle is produced by this repo's `phonon-binaries.yml` workflow and is
   mirrored unzipped on Hugging Face under the palshub org (`palshub/phonon-31m-en-coreml`),
   together with a `phonon-31m-en-coreml.manifest.tsv` (`path<TAB>size<TAB>sha256` per file).
-  Download each listed file and verify it; no zip library is needed. Until that mirror is
-  published, the example's iOS download needs a mirror passed to `setIosMirror`.
+  Download each listed file and verify it; no zip library is needed. The example pins the
+  mirror to a commit and the manifest's sha256 (`DEFAULT_PHONON_IOS_MIRROR`).
 * Alternatively, upstream's release asset `phonon-31m-en-coreml.zip` (137 MB zip) contains
   uncompiled `.mlpackage`s. Phonon compiles them on the first load, which takes about 10 s on
   an iPhone 16 Pro and longer on older phones, and needs ~320 MB of disk afterwards.
