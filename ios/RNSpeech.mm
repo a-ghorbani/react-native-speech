@@ -97,7 +97,7 @@ RCT_EXPORT_MODULE();
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
-  // Dropped, never resolved into a dead runtime (phonon DESIGN.md §1.5).
+  // Dropped, never resolved into a dead runtime.
   _pendingResolve = nil;
   [self cleanupAudio];
 }
