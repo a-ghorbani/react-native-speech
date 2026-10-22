@@ -123,7 +123,7 @@ Full options (execution providers, chunking, phonemizer selection) are documente
 
 ## Phonon add-on
 
-[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minor it was built against (currently `~2.7.0`). Register the engine once, before the first `initialize` that uses it:
+[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.7.0 <2.9.0`). Register the engine once, before the first `initialize` that uses it:
 
 ```sh
 yarn add @pocketpalai/react-native-speech-phonon

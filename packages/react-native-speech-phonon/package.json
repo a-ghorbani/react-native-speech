@@ -53,7 +53,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "peerDependencies": {
-    "@pocketpalai/react-native-speech": "~2.7.0",
+    "@pocketpalai/react-native-speech": ">=2.7.0 <2.9.0",
     "react": "*",
     "react-native": ">=0.74.0"
   },
