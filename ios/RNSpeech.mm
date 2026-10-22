@@ -677,10 +677,12 @@ RCT_EXPORT_MODULE();
 
   NSUInteger generation = self->_playbackGeneration;
   __weak RNSpeech *weakSelf = self;
+  // The plain handler fires before the tail is audible (#43).
   [self->_playerNode scheduleBuffer:pcmBuffer
                      atTime:nil
                     options:AVAudioPlayerNodeBufferInterrupts
-          completionHandler:^{
+      completionCallbackType:AVAudioPlayerNodeCompletionDataPlayedBack
+          completionHandler:^(AVAudioPlayerNodeCompletionCallbackType callbackType) {
     RNSpeech *strongSelf = weakSelf;
     if (strongSelf) {
       dispatch_async(strongSelf->_audioQueue, ^{
