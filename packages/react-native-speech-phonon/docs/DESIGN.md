@@ -504,8 +504,7 @@ While a sha is `PLACEHOLDER`, an app build **fails** with a message naming the l
 `RNSpeech_phononLibDir` / `RN_SPEECH_PHONON_XCFRAMEWORK` points at local binaries: on Android
 when `fetchPhononBinaries` runs (configuration stays green, so the JVM tests need no binaries),
 on iOS at `pod install`. Someone who installed the package asked for Phonon, so there is no
-silent fallback. The example app links the package natively only with `RN_SPEECH_PHONON=1`
-(`example/react-native.config.js`) until the lock pins a release.
+silent fallback. The example app always links the package natively.
 
 ### 3.2 Android
 
@@ -632,32 +631,33 @@ only on this job.
 
 ### 4.2 `ci.yml` (WP8, WP12)
 
-* Core jobs (`lint`, `test`, `build-library`, `build-android`, `e2e-android`, `build-ios`) build
-  the example **without** the add-on (`RN_SPEECH_PHONON` unset) and know no Phonon option.
+* Core jobs (`lint`, `test`, `build-library`, `build-android`, `e2e-android`, `build-ios`) know
+  no Phonon option; `e2e-android` builds the example without the add-on
+  (`scripts/example-without-addon.sh`).
   `lint` also runs actionlint and shellcheck over this package's scripts; `test` runs this
   package's and the example's jest suites; `build-library` builds both packages, checks the core
   tarball has no Phonon (`check-npm-pack.sh --core`) and the add-on tarball's contents;
   `e2e-android` checks its core-only APK with `verify-apk.sh --phonon off`.
 * `turbo.json` `build:android` / `build:ios` inputs gain the package's `src/**` (the example
-  imports it); env gains `RN_SPEECH_PHONON`.
-* `phonon-android-libs`: builds `libptts_ffi.so` from the pinned commit while the lock says
-  `PLACEHOLDER`; the add-on jobs pass it as `RNSpeech_phononLibDir`.
+  imports it).
+* The add-on jobs download the release pinned in the lock, like a consumer build; script and
+  lock changes are built and verified by `phonon-binaries.yml`.
 * `test-phonon-native`: `scripts/test-core.sh` (ASan/UBSan), `test-jni-host.sh`, `test-ios.sh`,
   `test-ci-scripts.sh`, and the Kotlin JVM tests of the core and of this package
   (`scripts/test-android.sh`).
-* `build-android-phonon` (no turbo cache, `RN_SPEECH_PHONON=1`): ABIs arm64-v8a,x86_64,
+* `build-android-phonon` (no turbo cache): ABIs arm64-v8a,x86_64,
   `--configuration-cache` on the add-on module, R8 release; `verify-apk.sh --phonon on`.
-* `android-emulator-phonon` (ubuntu-latest + KVM, `reactivecircus/android-emulator-runner`,
-  `RN_SPEECH_PHONON=1`): matrix {x86_64 API 35 `google_apis`, x86_64 API 35
+* `android-emulator-phonon` (ubuntu-latest + KVM, `reactivecircus/android-emulator-runner`):
+  matrix {x86_64 API 35 `google_apis`, x86_64 API 35
   `google_apis_ps16k`}. Installs the debug APK, triggers the self-test deep link with a
   CI-cached model, and asserts S1/S3/S6 on the 4 KB image and S1 (`supported:true`,
   `pageSize:16384`) plus S3 on the 16 KB image.
 * The flag-off size gate (`android-flag-off-size`) is gone: without the package there is nothing
   to measure, and the core-only checks above replace it.
 * `build-ios-phonon` (macos-15, Xcode with iOS 18 runtime; the job runs `xcrun simctl list
-  runtimes` and fails if iOS 18 is missing): `RN_SPEECH_PHONON=1 pod install`, simulator build,
+  runtimes` and fails if iOS 18 is missing): `pod install`, simulator build,
   `PhononTests` XCTest, `-all_load` link test, Release device builds with and without the
-  package (`otool -l | grep -c __LLVM == 0`, no `ptts_` / `RNSpeechPhonon` in the core-only
+  package (the latter after `example-without-addon.sh`; `otool -l | grep -c __LLVM == 0`, no `ptts_` / `RNSpeechPhonon` in the core-only
   binary, `size -m` deltas into `ios-binary-size.json`). If an iOS 17 runtime exists, a launch
   smoke (`os-too-old`) runs **non-blocking**.
 
@@ -718,10 +718,9 @@ per-file sha256 live in `example/src/utils/phononPins.json`, which `fetch-ci-mod
   into `Documents/phonon-evidence/<runId>/`, so iOS evidence is pulled as files. On unsupported
   devices it records support, the direct `Speech.initialize({engine: PHONON})` rejection code,
   `libraryLoaded:false`, an OS-native speak smoke, and exits.
-* **Native linking.** The example depends on the package through the workspace. Until the lock
-  pins a release it links it natively only with `RN_SPEECH_PHONON=1` (`react-native.config.js`;
-  without it the JS reports `not-compiled`); `-PRNSpeech_phononLocal=true` uses this checkout's
-  `scripts/build-android.sh` output. The default turns on in the PR that lands real hashes.
+* **Native linking.** The example depends on the package through the workspace and always links
+  it natively; `-PRNSpeech_phononLocal=true` uses this checkout's `scripts/build-android.sh`
+  output.
 * **iOS test target:** lower `SpeechExampleTests` `IPHONEOS_DEPLOYMENT_TARGET` from 26.0 to 15.1
   (both configurations), and add `PhononTests.m` there.
 
@@ -805,7 +804,7 @@ time, finalized last.
 * Files: `RNSpeech.podspec`, `ios/{fetch.rb, RNSpeechPhonon.h, RNSpeechPhonon.mm}`,
   `ios/RNSpeech.mm` (float play path, `phonon*`), `example/ios/SpeechExampleTests/PhononTests.m`,
   project deployment-target fix.
-* Acceptance: `RN_SPEECH_PHONON=1 pod install` verifies/copies the xcframework; placeholder lock →
+* Acceptance: `pod install` verifies/copies the xcframework; placeholder lock →
   off + warning; one `ptts.h`, no `core_test` in the build; arm64 simulator synthesizes;
   x86_64 simulator build links and reports `unsupported-abi`; flag-off app has no `ptts_`
   symbols; `-all_load` link ok; host-compiled `.mlmodelc` loads on A15 ANE (or fallback chosen);
@@ -1268,9 +1267,7 @@ Owner-accepted architecture change; it replaces the opt-in flag of revision 2.
   build (3.1). Runtime support probing (HWCAP, iOS 18, the persisted load-failed record) is
   unchanged.
 - **Example app.** Depends on the package through the workspace and registers `PhononEngine` in
-  `example/src/engines.ts`. Until the lock pins a release it links the package natively only
-  with `RN_SPEECH_PHONON=1`; `example/android/settings.gradle` makes that switch an autolinking
-  input, so changing it re-runs autolinking.
+  `example/src/engines.ts`, and always links it natively.
 - **Releases.** The package has its own release-it config (`phonon-v*` tags); the core's
   `tagMatch` is `v[0-9]*`. Binaries keep their `phonon-bin-v*` releases. The package is released
   only after `phonon-bin-v0.4.0-r1` exists and the lock is updated.

@@ -158,13 +158,13 @@ above. Expo Go is not supported, as for the rest of the library.
 Uninstall the package (and remove the `registerEngine` call). The app then contains no Phonon
 binary, shim, native module or engine JS.
 
-### Before the first binary release
+### Local binaries
 
-Until this repo publishes its first `phonon-bin-*` release, `phonon.lock.json` holds
-`PLACEHOLDER` hashes. While a hash is a placeholder, **the app build fails** with a message
-naming the lock, unless a local override (`RNSpeech_phononLibDir`,
-`RN_SPEECH_PHONON_XCFRAMEWORK`) is set: on Android when the `fetchPhononBinaries` task runs, on
-iOS at `pod install`. To build the binaries locally, follow
+`phonon.lock.json` pins a published `phonon-bin-*` release. To build against binaries made from
+a checkout instead, set `RNSpeech_phononLibDir` (Android) or `RN_SPEECH_PHONON_XCFRAMEWORK`
+(iOS). A lock whose hash is `PLACEHOLDER` (an unreleased branch) fails the build unless one of
+them is set: on Android when the `fetchPhononBinaries` task runs, on iOS at `pod install`. To
+build the binaries locally, follow
 [scripts/README.md](https://github.com/a-ghorbani/react-native-speech/blob/main/packages/react-native-speech-phonon/scripts/README.md#local-builds-and-the-dev-override); from a checkout of
 this repo the example app has `yarn build:android:phonon` for the Android side. A local build
 reports its `libraryVersion` as `<version>+local`.
@@ -414,9 +414,17 @@ Stopping is not an error: a stopped request just ends.
 | Symptom | Check |
 |---|---|
 | `not-compiled` | Rebuild the app after installing the package (on iOS run `pod install` first). |
-| Build fails with `sha256 PLACEHOLDER` | No binary release is pinned yet; set a local override (see [Before the first binary release](#before-the-first-binary-release)). |
+| Build fails with `sha256 PLACEHOLDER` | The lock pins no published release (an unreleased branch); set a local override (see [Local binaries](#local-binaries)). |
 | `library-missing` on Android | The library is not packaged in the APK, or the app uses AGP < 8.5.1 on a 16 KB-page device. (An ABI missing from `RNSpeech_phononAbis` reports `unsupported-abi`.) |
 | `missing-cpu-features` | Expected on CPUs without dotprod (e.g. Snapdragon 845). Use another engine. |
 | `ERR_PHONON_LOAD` on iOS | `modelPath` must be the inner folder with `bundle.json`, and writable. |
 | Engine hidden after one failure | A persisted record (see above). Clear app data, or update the OS / library / model. |
 | `speed` has no effect | Not supported by Phonon v0.4.0. |
+
+## Releasing
+
+Maintainers release the add-on from the **Release** workflow (`.github/workflows/release.yml`)
+with `package: phonon`: release-it runs from this folder (`phonon-v*` tags, the GitHub release is
+not marked Latest) and publishes to npm with trusted publishing. The npm package must have
+trusted publishing configured for that workflow: npmjs.com → package → Settings → Trusted
+publishing, repository `a-ghorbani/react-native-speech`, workflow `release.yml`.

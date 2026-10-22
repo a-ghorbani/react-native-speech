@@ -19,7 +19,7 @@ buildscript {
 }
 
 // -PRNSpeech_phononLocal=true: build the Phonon add-on against its scripts/build-android.sh
-// output in this checkout (with RN_SPEECH_PHONON=1, see react-native.config.js).
+// output in this checkout instead of the released binaries.
 if ((findProperty("RNSpeech_phononLocal") ?: "false").toString().toBoolean()) {
     def localLibs = file("../../packages/react-native-speech-phonon/scripts/out/android/jniLibs")
     if (!localLibs.isDirectory()) {
