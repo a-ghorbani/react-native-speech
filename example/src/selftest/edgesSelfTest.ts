@@ -36,6 +36,7 @@ import {
 } from '@pocketpalai/react-native-speech-phonon';
 import * as RNFS from '@dr.pogodin/react-native-fs';
 import Benchmark from '../benchmark/NativeBenchmark';
+import {emitBenchmark} from '../benchmark/BenchmarkLogger';
 import {
   kittenModelManager,
   type KittenVersion,
@@ -339,6 +340,18 @@ class Recorder {
     return found;
   }
 
+  /** Starts after `t` that never got an onStopped: audio that outlived a stop(). */
+  leakedStartsAfter(t: number): TimedEvent[] {
+    return this.events.filter(
+      e =>
+        e.kind === 'start' &&
+        e.t > t &&
+        !this.events.some(
+          x => x.id === e.id && x.kind === 'stopped' && x.t >= e.t,
+        ),
+    );
+  }
+
   count(kind: string, fromT = 0, toT = Infinity): number {
     return this.events.filter(
       e => e.kind === kind && e.t >= fromT && e.t <= toT,
@@ -498,6 +511,7 @@ export function onEdgesProgress(
 
 function report(ctx: Ctx, name: string, status: EdgeStatus, detail: string) {
   console.log(`[SelfTest] ${name} ${status} ${detail}`);
+  emitBenchmark('EDGE_RESULT', {name, status, detail});
   ctx.results.push({name, status, detail});
   resultListeners.forEach(l => l([...ctx.results], null));
 }
@@ -808,17 +822,10 @@ async function stopRun(
     const settled = await settleWithin([p], 5000);
     await sleep(500);
     rec.stop();
-    const endOf = (id: number | undefined) =>
-      rec.events.find(
-        e => e.id === id && (e.kind === 'finish' || e.kind === 'stopped'),
-      );
     const startsAfter = rec.events.filter(
       e => e.kind === 'start' && e.t > stopT,
     );
-    // Audio that began after stop() and was never stopped kept playing.
-    const leakedStarts = startsAfter.filter(
-      e => endOf(e.id)?.kind !== 'stopped',
-    ).length;
+    const leakedStarts = rec.leakedStartsAfter(stopT).length;
     const finishAfter = rec.events.filter(
       e => e.kind === 'finish' && e.t > stopT,
     );
@@ -1129,7 +1136,7 @@ async function scenarioDisrupt(ctx: Ctx, scenario: 'interrupt' | 'route') {
         ok = r.ok;
         const x = r.data;
         detail =
-          `settled=${x.settled} rescued=${x.settledAfterRescue} settleAfterMs=${x.settleAfterDisruptMs} ` +
+          `settled=${x.settled} rescued=${!x.settled && x.settledAfterRescue} settleAfterMs=${x.settleAfterDisruptMs} ` +
           `chunkEnds=${x.chunkEnds.join(',')} silentSettles=${x.silentSettles} ` +
           `secondChunk=${x.secondChunkStarted} startsDuring=${x.startsDuringDisruption} ` +
           `resumeCalls=${x.resumeCalls} idle=${x.idle} violations=${x.violations.length}` +
@@ -1297,12 +1304,15 @@ async function fuzzIteration(ctx: Ctx, it: number) {
     const order = checkEventOrder(rec.events);
     const hung = unsettled(tracked);
     const startsAfterFinalStop = rec.count('start', finalStopT + 1);
+    const leaked = rec
+      .leakedStartsAfter(finalStopT)
+      .map(e => `#${e.id}@+${e.t - finalStopT}ms`);
     const ok =
       settled &&
       idle &&
       hung.length === 0 &&
       order.violations.length === 0 &&
-      startsAfterFinalStop === 0;
+      leaked.length === 0;
     const summary = {
       it,
       seed: ctx.params.seed,
@@ -1316,6 +1326,7 @@ async function fuzzIteration(ctx: Ctx, it: number) {
       violations: order.violations,
       lateStopped: order.lateStopped,
       startsAfterFinalStop,
+      leaked,
       rejected: tracked
         .filter(t => t.outcome === 'rejected')
         .map(t => `${t.label}:${t.error}`),
@@ -1350,6 +1361,7 @@ async function scenarioFuzz(ctx: Ctx) {
   const failed: number[] = [];
   let lateStopped = 0;
   let rejected = 0;
+  let stoppedRaces = 0;
   const t0 = Date.now();
   for (const it of iters) {
     try {
@@ -1357,6 +1369,7 @@ async function scenarioFuzz(ctx: Ctx) {
       if (!s.ok) failed.push(it);
       lateStopped += s.lateStopped;
       rejected += s.rejected.length;
+      stoppedRaces += s.startsAfterFinalStop - s.leaked.length;
     } catch (e) {
       failed.push(it);
       console.log(`[SelfTest] FUZZ_ITER it=${it} threw ${String(e)}`);
@@ -1371,7 +1384,7 @@ async function scenarioFuzz(ctx: Ctx) {
     failed.length === 0 && next.ok ? 'PASS' : 'FAIL',
     `seed=${ctx.params.seed} iterations=${iters.length} failed=${failed.length}` +
       (failed.length ? ` failedIters=${failed.slice(0, 20).join(',')}` : '') +
-      ` lateStopped=${lateStopped} rejected=${rejected} wallS=${Math.round((Date.now() - t0) / 1000)} ${next.detail}`,
+      ` lateStopped=${lateStopped} stoppedRaces=${stoppedRaces} rejected=${rejected} wallS=${Math.round((Date.now() - t0) / 1000)} ${next.detail}`,
   );
 }
 
@@ -1689,6 +1702,7 @@ export async function runEdgesSelfTest(
       `SELFTEST DONE suite=edges engine=${ctx.engine} passed=${summary.passed} ` +
       `failed=${summary.failed} skipped=${summary.skipped}`;
     console.log(`[SelfTest] ${line} dir=${evidence.dir}`);
+    emitBenchmark('EDGE_DONE', {line, dir: evidence.dir});
     resultListeners.forEach(l => l([...ctx.results], line));
     return summary;
   }
