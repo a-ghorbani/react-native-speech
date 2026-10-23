@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.1...phonon-v0.1.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **phonon:** skip a chunk with nothing to synthesize instead of failing ([#50](https://github.com/a-ghorbani/react-native-speech/issues/50)) ([5dfba45](https://github.com/a-ghorbani/react-native-speech/commit/5dfba45456d2bdcf59c2e28edda465474c6ce4ee))
+
 ## [0.1.1](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.0...phonon-v0.1.1) (2026-10-22)
 
 

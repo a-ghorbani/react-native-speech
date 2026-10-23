@@ -1,6 +1,6 @@
 {
   "name": "@pocketpalai/react-native-speech-phonon",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Phonon on-device neural TTS engine for @pocketpalai/react-native-speech",
   "source": "./src/index.ts",
   "main": "./lib/module/index.js",
