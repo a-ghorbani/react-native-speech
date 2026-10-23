@@ -244,6 +244,28 @@ describe('Speech routing with Phonon', () => {
     expect(fake.synths[0]!.voice).toBe('Alba');
   });
 
+  it('a stream ending in an emoji finishes without an error', async () => {
+    fake.state.autoPlay = true;
+    const onError = jest.fn();
+    const stream = Speech.createSpeechStream(undefined, {onError});
+    const progress = jest.fn();
+    stream.onProgress(progress);
+    stream.append('Sure, here you go. ');
+    stream.append(' 😊');
+    const done = stream.finalize();
+    await flush();
+    fake.synths[0]!.resolve();
+    await flush();
+    fake.synths[1]!.reject(
+      Object.assign(new Error('nothing to synthesize: the text is empty'), {
+        code: 'PHONON_SPEAK_FAILED',
+      }),
+    );
+    await expect(done).resolves.toBeUndefined();
+    expect(onError).not.toHaveBeenCalled();
+    expect(progress).toHaveBeenCalledTimes(1);
+  });
+
   it('stop cancels in-flight synthesis natively', async () => {
     const done = Speech.speak('Hello there.');
     await flush();

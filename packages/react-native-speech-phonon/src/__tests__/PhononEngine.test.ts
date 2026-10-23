@@ -89,6 +89,13 @@ function lastSynth() {
   return s;
 }
 
+/** What native rejects with for text that normalizes to nothing (an emoji). */
+function nothingToSynthesize(): Error {
+  return Object.assign(new Error('nothing to synthesize: the text is empty'), {
+    code: 'PHONON_SPEAK_FAILED',
+  });
+}
+
 function codeOf(p: Promise<unknown>): Promise<string | undefined> {
   return p.then(
     () => undefined,
@@ -846,6 +853,15 @@ describe('synthesize: chunked playback', () => {
     expect(err.code).toBe('ERR_PHONON_SYNTH');
   });
 
+  it('speaks nothing, without an error, when native finds nothing to synthesize', async () => {
+    const engine = await ready();
+    const done = engine.synthesize(' 😊');
+    await flush();
+    lastSynth().reject(nothingToSynthesize());
+    await expect(done).resolves.toBeUndefined();
+    expect(fake.plays).toHaveLength(0);
+  });
+
   it('surfaces a prefetch failure after the current chunk plays', async () => {
     const engine = await ready({maxChunkSize: 25});
     const done = engine.synthesize(TEXT);
@@ -1332,6 +1348,44 @@ describe('synthesizeStream', () => {
     await flush();
     expect(fake.plays).toHaveLength(1);
     expect(fake.liveBuffers()).toBe(0);
+  });
+
+  it('an emoji-only tail ends the stream normally', async () => {
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    const progress: ChunkProgressEvent[] = [];
+    engine.setChunkProgressCallback(e => progress.push(e));
+    const stream = engine.synthesizeStream();
+    stream.append('Sure, here you go. ');
+    stream.append(' 😊');
+    const done = stream.finalize();
+    await flush();
+    fake.synths[0]!.resolve();
+    await flush();
+    expect(fake.synths[1]!.text.trim()).toBe('😊');
+    fake.synths[1]!.reject(nothingToSynthesize());
+    await expect(done).resolves.toBeUndefined();
+    expect(fake.plays).toHaveLength(1);
+    expect(progress.map(e => e.chunkText.trim())).toEqual([
+      'Sure, here you go.',
+    ]);
+    expect(fake.liveBuffers()).toBe(0);
+  });
+
+  it('still fails the stream on other synthesis errors', async () => {
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    const stream = engine.synthesizeStream();
+    stream.append('Sure, here you go. ');
+    stream.append('And more.');
+    const done = stream.finalize();
+    await flush();
+    fake.synths[0]!.resolve();
+    await flush();
+    fake.synths[1]!.reject(
+      Object.assign(new Error('speak failed'), {code: 'PHONON_SPEAK_FAILED'}),
+    );
+    await expect(codeOf(done)).resolves.toBe('ERR_PHONON_SYNTH');
   });
 
   it('cancel while the prefetch is in flight discards its buffer', async () => {

@@ -81,6 +81,15 @@ export function nativeCodeOf(e: unknown): string | undefined {
   return undefined;
 }
 
+/** Native found no speakable text, e.g. emoji only. */
+export function isNothingToSynthesize(e: unknown): boolean {
+  return (
+    nativeCodeOf(e) === 'PHONON_SPEAK_FAILED' &&
+    e instanceof Error &&
+    e.message.includes('nothing to synthesize')
+  );
+}
+
 /**
  * Map any rejection to a `PhononError`. `PhononError`s pass through;
  * unknown codes and plain errors become `ERR_PHONON_INTERNAL`.
