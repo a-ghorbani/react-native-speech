@@ -307,7 +307,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       try {
         await session.finalize();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
@@ -320,7 +322,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       try {
         await session.cancel();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
