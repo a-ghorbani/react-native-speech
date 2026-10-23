@@ -58,6 +58,7 @@ import {PHONON, PHONON_CONSTANTS, PHONON_LANGUAGES} from './constants';
 import {
   PhononError,
   PhononUnsupportedError,
+  isNothingToSynthesize,
   nativeCodeOf,
   toPhononError,
 } from './errors';
@@ -928,6 +929,10 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
         log.debug(
           `ignoring error of stale request ${requestId}: ${nativeCodeOf(e) ?? e}`,
         );
+        return empty(requestId);
+      }
+      if (isNothingToSynthesize(e)) {
+        log.debug(`nothing to synthesize in ${JSON.stringify(text)}; skipping`);
         return empty(requestId);
       }
       throw toPhononError(e);
