@@ -56,6 +56,8 @@ cleanup() {
   "${ADB[@]}" logcat -d >"$OUT/logcat.txt" 2>/dev/null || true
   grep '\[SelfTest\]' "$OUT/logcat.txt" >"$OUT/selftest.txt" || true
   "${ADB[@]}" pull "/sdcard/Android/data/$APP/files/edges-evidence/$RUN_ID" "$OUT/" >/dev/null 2>&1 || true
+  # Revoking kills the app, and Android would relaunch it with the same deep link.
+  "${ADB[@]}" shell am force-stop "$APP" || true
   if [[ $had_mic -eq 0 ]]; then
     "${ADB[@]}" shell pm revoke "$APP" android.permission.RECORD_AUDIO || true
   fi
