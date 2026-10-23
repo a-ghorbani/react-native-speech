@@ -57,7 +57,11 @@ import {
   visibleEngines,
 } from '../utils/engineSupport';
 import {saveChunksAsWav} from '../utils/wavWriter';
-import {onPhononSelfTestDone} from '../selftest/phononSelfTest';
+import {
+  isPhononSelfTestRunning,
+  onPhononSelfTestDone,
+} from '../selftest/phononSelfTest';
+import {isEdgesSelfTestRunning} from '../selftest/edgesSelfTest';
 import {
   ENGLISH_DEFAULT_TEXT,
   IPA_SAMPLE_TEXT,
@@ -621,6 +625,8 @@ const RootView: React.FC = () => {
   // Release engine resources when app goes to background
   React.useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
+      // A self-test run owns the engine (and the screen may turn off mid-run).
+      if (isPhononSelfTestRunning() || isEdgesSelfTestRunning()) return;
       if (nextState === 'background') {
         // Release neural engine resources when app is backgrounded
         Speech.release().catch(err =>

@@ -27,6 +27,12 @@ import {
   parseSelfTestUrl,
   runPhononSelfTest,
 } from '../selftest/phononSelfTest';
+import {
+  isEdgesSelfTestRunning,
+  onEdgesProgress,
+  parseEdgesUrl,
+  runEdgesSelfTest,
+} from '../selftest/edgesSelfTest';
 
 const PROSE =
   'Sure, here is a quick overview of how the whole process works, step by step, so you can follow along easily. ' +
@@ -277,6 +283,38 @@ const SelfTestPanel: React.FC = () => {
     }
   }, []);
 
+  // Deep-link edges runs report here too, so the e2e flow can read the summary.
+  React.useEffect(
+    () =>
+      onEdgesProgress((edgeResults, line) => {
+        setResults(
+          edgeResults.map(r => ({
+            name: r.name,
+            pass: r.status !== 'FAIL',
+            detail: r.detail,
+          })),
+        );
+        setSummary(line);
+      }),
+    [],
+  );
+
+  // Short fuzz and soak against the engine already initialized on SYS.
+  const runEdges = React.useCallback(async () => {
+    const params = parseEdgesUrl(
+      'speechexample://selftest?suite=edges&engine=current&iterations=20&soak=50&runs=2',
+    );
+    if (!params || isEdgesSelfTestRunning()) return;
+    setRunning(true);
+    setResults([]);
+    setSummary(null);
+    try {
+      await runEdgesSelfTest(params);
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+
   const runAll = React.useCallback(async () => {
     setRunning(true);
     setResults([]);
@@ -360,6 +398,12 @@ const SelfTestPanel: React.FC = () => {
           onPress={runTiming}
           style={styles.btn}>
           <Text style={styles.btnText}>TIMING</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          disabled={running}
+          onPress={runEdges}
+          style={styles.btn}>
+          <Text style={styles.btnText}>EDGES</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={runInterruption} style={styles.btn}>
           <Text style={styles.btnText}>INTERRUPT</Text>
