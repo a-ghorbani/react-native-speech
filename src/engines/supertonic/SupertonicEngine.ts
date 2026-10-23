@@ -300,7 +300,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       try {
         await session.finalize();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
@@ -313,7 +315,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       try {
         await session.cancel();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
