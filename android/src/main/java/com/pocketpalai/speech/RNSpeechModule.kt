@@ -48,6 +48,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     const val NAME = "RNSpeech"
     private const val MAX_INIT_RETRIES = 3
     private const val INIT_TIMEOUT_MS = 5000L
+    private const val DUCKED_VOLUME = 0.2f
 
     private val defaultOptions: Map<String, Any> = mapOf(
       "rate" to 0.5f,
@@ -110,6 +111,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           is FocusEvent.LostTransient -> {
             // Pause neural playback on transient loss; leave state so JS can resume.
             synchronized(audioLock) {
+              audioTrack?.setVolume(1f)
               if (isAudioPlayingState && !isAudioPausedState) {
                 try {
                   audioTrack?.pause()
@@ -135,6 +137,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               }
             )
           }
+          is FocusEvent.Duck -> synchronized(audioLock) { audioTrack?.setVolume(DUCKED_VOLUME) }
+          is FocusEvent.Unduck -> synchronized(audioLock) { audioTrack?.setVolume(1f) }
           is FocusEvent.Gained -> {
             // Don't auto-resume; let JS decide based on the event.
             emitOnAudioInterruption(
@@ -909,6 +913,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
         // Acquire audio focus so we get interruption callbacks.
         neuralFocusManager.requestFocus()
+        if (neuralFocusManager.isDucked) track.setVolume(DUCKED_VOLUME)
 
         track.write(decodedBytes, 0, decodedBytes.size)
 

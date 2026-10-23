@@ -12,18 +12,66 @@ import android.os.Build
 sealed class FocusEvent {
   /** Focus (re)gained after a loss. */
   object Gained : FocusEvent()
-  /** Transient loss (may duck or full transient). Host should pause. */
+  /** Full transient loss. Host should pause. */
   object LostTransient : FocusEvent()
   /** Permanent loss. Host should stop and abandon. */
   object Lost : FocusEvent()
+  /** May-duck transient loss. Host should lower its volume and keep playing. */
+  object Duck : FocusEvent()
+  /** Focus regained after a [Duck]. Host should restore its volume. */
+  object Unduck : FocusEvent()
+}
+
+/**
+ * Maps focus changes to [FocusEvent]s. [FocusEvent.Gained] fires only when focus returns after a
+ * pause or stop, [FocusEvent.Unduck] only after a duck, and nothing on the initial grant.
+ */
+internal class FocusEventMapper {
+  private enum class Loss { NONE, DUCKED, LOST }
+
+  @Volatile private var loss = Loss.NONE
+
+  val isDucked: Boolean
+    get() = loss == Loss.DUCKED
+
+  fun onFocusChange(focusChange: Int): FocusEvent? = when (focusChange) {
+    AudioManager.AUDIOFOCUS_LOSS -> {
+      loss = Loss.LOST
+      FocusEvent.Lost
+    }
+    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+      loss = Loss.LOST
+      FocusEvent.LostTransient
+    }
+    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+      if (loss == Loss.NONE) {
+        loss = Loss.DUCKED
+        FocusEvent.Duck
+      } else {
+        null
+      }
+    }
+    AudioManager.AUDIOFOCUS_GAIN -> {
+      val event = when (loss) {
+        Loss.NONE -> null
+        Loss.DUCKED -> FocusEvent.Unduck
+        Loss.LOST -> FocusEvent.Gained
+      }
+      loss = Loss.NONE
+      event
+    }
+    else -> null
+  }
+
+  fun reset() {
+    loss = Loss.NONE
+  }
 }
 
 /**
  * Helper class to manage audio focus for neural TTS playback.
  *
  * Consumers install a [listener] and call [requestFocus] / [abandonFocus].
- * The manager tracks whether we were in a loss state and fires [FocusEvent.Gained]
- * only when focus returns after a loss (not on the initial grant).
  */
 class AudioFocusManager(context: Context) {
 
@@ -31,31 +79,21 @@ class AudioFocusManager(context: Context) {
     context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
   private var audioFocusRequest: AudioFocusRequest? = null
   private var hasAudioFocus = false
-  private var wasLost = false
+
+  private val mapper = FocusEventMapper()
+
+  val isDucked: Boolean
+    get() = mapper.isDucked
 
   var listener: ((FocusEvent) -> Unit)? = null
 
   private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
     when (focusChange) {
-      AudioManager.AUDIOFOCUS_LOSS -> {
-        hasAudioFocus = false
-        wasLost = true
-        listener?.invoke(FocusEvent.Lost)
-      }
-      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-        hasAudioFocus = false
-        wasLost = true
-        listener?.invoke(FocusEvent.LostTransient)
-      }
-      AudioManager.AUDIOFOCUS_GAIN -> {
-        hasAudioFocus = true
-        if (wasLost) {
-          wasLost = false
-          listener?.invoke(FocusEvent.Gained)
-        }
-      }
+      AudioManager.AUDIOFOCUS_GAIN -> hasAudioFocus = true
+      AudioManager.AUDIOFOCUS_LOSS,
+      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> hasAudioFocus = false
     }
+    mapper.onFocusChange(focusChange)?.let { listener?.invoke(it) }
   }
 
   /** Returns true if focus was granted. */
@@ -87,7 +125,7 @@ class AudioFocusManager(context: Context) {
 
     hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     if (hasAudioFocus) {
-      wasLost = false
+      mapper.reset()
     }
     return hasAudioFocus
   }
@@ -108,6 +146,6 @@ class AudioFocusManager(context: Context) {
     }
 
     hasAudioFocus = false
-    wasLost = false
+    mapper.reset()
   }
 }
