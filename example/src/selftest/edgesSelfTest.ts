@@ -7,7 +7,7 @@
  *
  * Query parameters (all optional):
  *   engine=kitten|kokoro|supertonic|phonon|current   (default kitten)
- *   scenarios=cold,resolve,stop,pause_tail,interrupt,route,mic,fuzz,soak
+ *   scenarios=cold,resolve,stop,pause_tail,interrupt,duck,route,mic,fuzz,soak
  *   seed=1  iterations=200  fuzzIter=<i> (replay one fuzz iteration)
  *   soak=500  runs=3  tolMs=50  settleTimeoutMs=20000  memGrowthMb=100
  *   reinit=1 (release + initialize the engine; 0 keeps an initialized one)
@@ -52,7 +52,10 @@ import {
   parseQuery,
   type SelfTestTab,
 } from './phononSelfTest';
-import Probe, {type OutputInfo} from './NativePlaybackProbe';
+import Probe, {
+  type FocusProbeResult,
+  type OutputInfo,
+} from './NativePlaybackProbe';
 import {isPlaybackTapInstalled, onPlayCall, type PlayCall} from './playbackTap';
 import {
   checkEventOrder,
@@ -80,6 +83,7 @@ export const EDGE_SCENARIOS = [
   'stop',
   'pause_tail',
   'interrupt',
+  'duck',
   'route',
   'mic',
   'fuzz',
@@ -1158,6 +1162,128 @@ async function scenarioDisrupt(ctx: Ctx, scenario: 'interrupt' | 'route') {
   if (scenario === 'route') ctx.output = await readOutput();
 }
 
+// --- E4b: notification ducking -------------------------------------------------
+
+type DuckKind = 'focus_notification' | 'real_notification';
+
+/**
+ * A notification-style MAY_DUCK focus request 1 s into playback. The app
+ * never resumes: speech is expected to keep playing (ducked at most).
+ */
+async function duckRun(ctx: Ctx, mode: 'speak' | 'stream', kind: DuckKind) {
+  const probe = Probe!;
+  const rec = new Recorder(phononCollectorFor(ctx.engine));
+  try {
+    const {rec: p} =
+      mode === 'speak'
+        ? await speakTracked(SHORT, rec)
+        : streamTracked(PREVIEW, rec);
+    const start = await rec.waitStart(0, 30_000);
+    if (!start) throw new Error('no onStart within 30 s');
+    await sleep(start.t + 1000 - rec.now());
+    const t = rec.mark('duck_call', {kind});
+    const r: FocusProbeResult =
+      kind === 'focus_notification'
+        ? await probe.interrupt('notification', 1000)
+        : await probe.postNotification!(1500);
+    const endT = rec.mark('duck_end');
+    const settled = await settleWithin([p], 12_000);
+    let rescued = false;
+    if (!settled) {
+      rescued = true;
+      rec.mark('rescue_resume');
+      await Speech.resume().catch(() => false);
+      if (!(await settleWithin([p], ctx.params.settleTimeoutMs))) {
+        await Speech.stop().catch(() => undefined);
+        await settleWithin([p], 5000);
+      }
+    }
+    await sleep(200);
+    rec.stop();
+    const chunks = rec.chunks();
+    const first = chunks[0];
+    const states = (r.samples ?? []).flatMap(x => x.players);
+    const data = {
+      mode,
+      kind,
+      probe: {...r, samples: undefined},
+      pausedSamples: states.filter(x => x === 3).length,
+      startedSamples: states.filter(x => x === 2).length,
+      samples: (r.samples ?? [])
+        .map(x => `${x.t}:${x.players.join('/')}`)
+        .join(' '),
+      pauses: rec.count('pause'),
+      began: rec.count('interruption_began'),
+      ended: rec.count('interruption_ended'),
+      resumes: rec.count('resume'),
+      settled,
+      rescued,
+      firstChunkExtraMs:
+        first?.settleT !== undefined
+          ? Math.round(first.settleT - first.callT - first.pcmMs)
+          : null,
+      chunkEnds: chunks.map(c => c.end ?? 'none'),
+      duckAtMs: t - start.t,
+      duckMs: endT - t,
+      timeline: rec.events
+        .filter(e => e.kind !== 'chunk')
+        .map(e => `${e.t}:${e.kind}${e.id !== undefined ? `#${e.id}` : ''}`)
+        .join(' '),
+    };
+    const ok =
+      data.pauses === 0 &&
+      data.began === 0 &&
+      settled &&
+      (data.firstChunkExtraMs ?? 0) < 500;
+    await logRun(
+      ctx,
+      {scenario: 'duck', ...data, ok, promise: p, ...rec.toJSON()},
+      {scenario: 'duck', ...data, ok},
+    );
+    return {ok, data};
+  } finally {
+    rec.stop();
+  }
+}
+
+async function scenarioDuck(ctx: Ctx) {
+  if (Platform.OS !== 'android' || !Probe) {
+    report(ctx, 'E4b_duck', 'SKIP', 'Android focus probe only');
+    return;
+  }
+  const kinds: DuckKind[] = Probe.postNotification
+    ? ['focus_notification', 'real_notification']
+    : ['focus_notification'];
+  for (const kind of kinds) {
+    for (const mode of ['speak', 'stream'] as const) {
+      let passes = 0;
+      const notes: string[] = [];
+      for (let run = 1; run <= ctx.params.runs; run++) {
+        try {
+          const {ok, data} = await duckRun(ctx, mode, kind);
+          if (ok) passes++;
+          notes.push(
+            `run${run}:pause=${data.pauses},began=${data.began},ended=${data.ended},` +
+              `pausedSamples=${data.pausedSamples}/${data.pausedSamples + data.startedSamples},` +
+              `extraMs=${data.firstChunkExtraMs},rescued=${data.rescued}`,
+          );
+        } catch (e) {
+          notes.push(`run${run}:threw ${String(e)}`);
+          await Speech.resume().catch(() => false);
+          await Speech.stop().catch(() => undefined);
+        }
+        await sleep(500);
+      }
+      report(
+        ctx,
+        `E4b_duck_${kind}_${mode}`,
+        passes === ctx.params.runs ? 'PASS' : 'FAIL',
+        `pass=${passes}/${ctx.params.runs} ${notes.join(' ')}`,
+      );
+    }
+  }
+}
+
 // --- E6: mic reopen ------------------------------------------------------------
 
 async function scenarioMic(ctx: Ctx) {
@@ -1665,6 +1791,7 @@ export async function runEdgesSelfTest(
       await guard('E3_pause_tail', () => scenarioPauseTail(ctx));
     if (has('interrupt'))
       await guard('E4_interrupt', () => scenarioDisrupt(ctx, 'interrupt'));
+    if (has('duck')) await guard('E4b_duck', () => scenarioDuck(ctx));
     if (has('route'))
       await guard('E5_route', () => scenarioDisrupt(ctx, 'route'));
     if (has('mic')) await guard('E6_mic', () => scenarioMic(ctx));

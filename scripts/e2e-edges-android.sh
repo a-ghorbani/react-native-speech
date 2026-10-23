@@ -7,8 +7,9 @@
 #   --cold: force-stop the app first, so the run starts in a fresh process
 #
 # JS timers stop while the screen is off, so the screen is kept on for the run
-# (stay on while plugged in, restored afterwards, plus a wake key every poll). Grants RECORD_AUDIO for
-# the mic scenario and revokes it afterwards. Uses
+# (stay on while plugged in, restored afterwards, plus a wake key every poll).
+# Grants RECORD_AUDIO (mic scenario) and POST_NOTIFICATIONS (duck scenario)
+# and revokes the ones the app did not already have. Uses
 # $ANDROID_SERIAL when several devices are connected; EDGES_TIMEOUT (s,
 # default 5400) bounds the wait for the DONE line. Writes logcat, the
 # [SelfTest] lines and the pulled edges-evidence/ folder to e2e-artifacts/edges/.
@@ -40,11 +41,15 @@ if [[ -n "$APK" ]]; then
   "${ADB[@]}" install -r "$APK"
 fi
 
-had_mic=0
-if "${ADB[@]}" shell dumpsys package "$APP" | grep -q 'android.permission.RECORD_AUDIO: granted=true'; then
-  had_mic=1
-fi
-"${ADB[@]}" shell pm grant "$APP" android.permission.RECORD_AUDIO || true
+PERMS=(android.permission.RECORD_AUDIO android.permission.POST_NOTIFICATIONS)
+granted=$("${ADB[@]}" shell dumpsys package "$APP" || true)
+to_revoke=()
+for perm in "${PERMS[@]}"; do
+  if ! grep -q "$perm: granted=true" <<<"$granted"; then
+    to_revoke+=("$perm")
+  fi
+  "${ADB[@]}" shell pm grant "$APP" "$perm" || true
+done
 
 stay_on=$("${ADB[@]}" shell settings get global stay_on_while_plugged_in | tr -d '\r')
 "${ADB[@]}" shell svc power stayon true
@@ -58,9 +63,9 @@ cleanup() {
   "${ADB[@]}" pull "/sdcard/Android/data/$APP/files/edges-evidence/$RUN_ID" "$OUT/" >/dev/null 2>&1 || true
   # Revoking kills the app, and Android would relaunch it with the same deep link.
   "${ADB[@]}" shell am force-stop "$APP" || true
-  if [[ $had_mic -eq 0 ]]; then
-    "${ADB[@]}" shell pm revoke "$APP" android.permission.RECORD_AUDIO || true
-  fi
+  for perm in ${to_revoke[@]+"${to_revoke[@]}"}; do
+    "${ADB[@]}" shell pm revoke "$APP" "$perm" || true
+  done
 }
 trap cleanup EXIT
 

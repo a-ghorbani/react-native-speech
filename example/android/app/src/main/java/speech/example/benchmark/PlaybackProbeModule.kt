@@ -1,6 +1,9 @@
 package speech.example.benchmark
 
 import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
@@ -8,6 +11,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.AudioTrack
@@ -26,6 +30,11 @@ class PlaybackProbeModule(reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
 
   override fun getName(): String = "RNPlaybackProbe"
+
+  companion object {
+    private const val CHIME_CHANNEL = "edges_chime"
+    private const val CHIME_ID = 4545
+  }
 
   private val executor = Executors.newSingleThreadExecutor()
   private val audioManager: AudioManager
@@ -116,28 +125,108 @@ class PlaybackProbeModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  /** States of the library's speech tracks (USAGE_MEDIA/CONTENT_TYPE_SPEECH): 2 started, 3 paused, 4 stopped. */
+  private fun speechPlayerStates(): WritableArray = Arguments.createArray().apply {
+    val getState = try {
+      AudioPlaybackConfiguration::class.java.getMethod("getPlayerState")
+    } catch (_: Throwable) {
+      null
+    }
+    audioManager.activePlaybackConfigurations
+      .filter {
+        it.audioAttributes.usage == AudioAttributes.USAGE_MEDIA &&
+          it.audioAttributes.contentType == AudioAttributes.CONTENT_TYPE_SPEECH
+      }
+      .forEach {
+        val state = try {
+          getState?.invoke(it) as? Int ?: -1
+        } catch (_: Throwable) {
+          -1
+        }
+        pushInt(state)
+      }
+  }
+
+  /** Speech player states every 100 ms for `holdMs`; `t` is ms since `t0`. */
+  private fun sampleWhile(holdMs: Long, t0: Long): WritableArray {
+    val samples = Arguments.createArray()
+    val deadline = System.currentTimeMillis() + holdMs
+    while (System.currentTimeMillis() < deadline) {
+      samples.pushMap(Arguments.createMap().apply {
+        putDouble("t", (System.currentTimeMillis() - t0).toDouble())
+        putArray("players", speechPlayerStates())
+      })
+      Thread.sleep(100)
+    }
+    return samples
+  }
+
   @ReactMethod
   fun interrupt(kind: String, holdMs: Double, promise: Promise) {
     executor.execute {
       try {
         val gain = when (kind) {
           "transient" -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-          "duck" -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+          "duck", "notification" -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
           else -> AudioManager.AUDIOFOCUS_GAIN
         }
+        val attrs = if (kind == "notification") {
+          AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        } else {
+          AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        }
         val request = AudioFocusRequest.Builder(gain)
-          .setAudioAttributes(
-            AudioAttributes.Builder()
-              .setUsage(AudioAttributes.USAGE_MEDIA)
-              .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-              .build()
-          )
+          .setAudioAttributes(attrs)
           .setOnAudioFocusChangeListener { }
           .build()
+        val t0 = System.currentTimeMillis()
+        val before = speechPlayerStates()
         val granted = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        Thread.sleep(holdMs.toLong())
+        val samples = sampleWhile(holdMs.toLong(), t0)
         audioManager.abandonAudioFocusRequest(request)
-        promise.resolve(Arguments.createMap().apply { putBoolean("granted", granted) })
+        promise.resolve(Arguments.createMap().apply {
+          putBoolean("granted", granted)
+          putArray("before", before)
+          putArray("samples", samples)
+        })
+      } catch (e: Exception) {
+        promise.reject("probe_error", e.message, e)
+      }
+    }
+  }
+
+  /** Posts a notification on a default-sound channel, keeps it `holdMs`, then cancels it. */
+  @ReactMethod
+  fun postNotification(holdMs: Double, promise: Promise) {
+    executor.execute {
+      try {
+        val nm = reactApplicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(
+          NotificationChannel(CHIME_CHANNEL, "Self-test chime", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        val notification = Notification.Builder(reactApplicationContext, CHIME_CHANNEL)
+          .setSmallIcon(android.R.drawable.ic_dialog_info)
+          .setContentTitle("Playback self-test")
+          .setContentText("Notification chime during speech")
+          .build()
+        val t0 = System.currentTimeMillis()
+        val before = speechPlayerStates()
+        nm.notify(CHIME_ID, notification)
+        val samples = sampleWhile(holdMs.toLong(), t0)
+        nm.cancel(CHIME_ID)
+        promise.resolve(Arguments.createMap().apply {
+          putBoolean("enabled", nm.areNotificationsEnabled())
+          putInt("ringerMode", audioManager.ringerMode)
+          putInt("interruptionFilter", nm.currentInterruptionFilter)
+          putArray("before", before)
+          putArray("samples", samples)
+        })
       } catch (e: Exception) {
         promise.reject("probe_error", e.message, e)
       }
