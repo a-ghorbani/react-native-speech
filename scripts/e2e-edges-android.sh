@@ -32,7 +32,7 @@ ADB=(adb)
 [[ -n "${ANDROID_SERIAL:-}" ]] && ADB=(adb -s "$ANDROID_SERIAL")
 
 RUN_ID="edges-$(date +%Y%m%d-%H%M%S)"
-OUT="e2e-artifacts/edges/$RUN_ID"
+OUT="e2e-artifacts/edges/${ANDROID_SERIAL:-device}-$RUN_ID"
 mkdir -p "$OUT"
 
 if [[ -n "$APK" ]]; then
@@ -47,7 +47,7 @@ fi
 "${ADB[@]}" shell pm grant "$APP" android.permission.RECORD_AUDIO || true
 
 stay_on=$("${ADB[@]}" shell settings get global stay_on_while_plugged_in | tr -d '\r')
-"${ADB[@]}" shell svc power stayon usb
+"${ADB[@]}" shell svc power stayon true
 "${ADB[@]}" shell input keyevent KEYCODE_WAKEUP
 "${ADB[@]}" shell wm dismiss-keyguard || true
 
@@ -79,6 +79,7 @@ while [[ $(date +%s) -lt $deadline ]]; do
     break
   fi
   "${ADB[@]}" shell input keyevent KEYCODE_WAKEUP || true
+  "${ADB[@]}" shell wm dismiss-keyguard || true
   if ! "${ADB[@]}" shell pidof "$APP" >/dev/null; then
     echo "app process died (crash?); see $OUT/logcat.txt"
     break
