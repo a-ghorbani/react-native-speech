@@ -12,8 +12,8 @@
 #     platform variant, hence ios-arm64_x86_64-simulator rather than a separate slice);
 #   * no headers and no modulemap: the one ptts.h is cpp/ptts.h.
 #
-# Env: SOURCE_DATE_EPOCH (zip mtimes; the workflow passes the upstream commit time),
-#      LLVM_OBJCOPY (only if bitcode survives bitcode_strip).
+# Env: LLVM_OBJCOPY (only if bitcode survives bitcode_strip).
+# Zip mtimes are the slices' BUILDINFO.json build.sourceDateEpoch (the upstream commit time).
 # Usage: package-ios.sh --slices <build-ios.sh out> --notices <md> --licenses <dir with xn-ptts-LICENSE-*>
 #        [--out-dir <dir>] [--work <dir>]
 #
@@ -150,8 +150,7 @@ jq --arg minos "$MINOS" --arg sdk "$SDK_VERSION" --arg xcode "$(xcodebuild -vers
     toolchain: {xcode: $xcode}, libs: $libs}' "$SLICES/BUILDINFO.json" >"$PKG/BUILDINFO.json"
 cp "$PKG/BUILDINFO.json" "$OUT_DIR/BUILDINFO-ios.json"
 
-# Fixed mtimes (the workflow passes the upstream commit time) for a reproducible zip.
-EPOCH="${SOURCE_DATE_EPOCH:-315532800}"
+EPOCH="$(jq -er '.build.sourceDateEpoch' "$SLICES/BUILDINFO.json")"
 STAMP="$(TZ=UTC date -r "$EPOCH" +%Y%m%d%H%M.%S)"
 find "$PKG" -exec env TZ=UTC touch -h -t "$STAMP" {} +
 rm -f "$OUT_DIR/$ASSET"

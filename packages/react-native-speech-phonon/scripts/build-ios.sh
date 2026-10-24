@@ -6,11 +6,6 @@
 #   <out>/ios-arm64-simulator/libptts_ffi.a  aarch64-apple-ios-sim
 #   <out>/BUILDINFO.json                     upstream pin and build provenance
 #
-# The dependency tree is upstream's Cargo.lock under --locked, vendored and patched outside the
-# checkout, which is never written to. Upstream's release profile and rustc's default target CPU,
-# as in upstream's own build; per-target flags so the checkout's target-cpu=native never applies.
-# package-ios.sh --slices <out> turns the output into the release xcframework.
-#
 # Usage: build-ios.sh --upstream <xn-ptts checkout> [--out <dir>] [--vendor-cache <dir>]
 # --vendor-cache keeps the vendored sources across runs, keyed on the Cargo.lock sha256 in
 # <dir>/.complete; without it they are vendored into <out>.work.
@@ -79,29 +74,26 @@ else
   CACHE="$(cd "$(dirname "$CACHE")" && pwd)/$(basename "$CACHE")"
   if [[ "$(cat "$CACHE/.complete" 2>/dev/null)" != "$LOCK_SHA" ]]; then
     if [[ -d "$CACHE" && ! -f "$CACHE/.complete" && -n "$(ls -A "$CACHE")" ]]; then
-      echo "--vendor-cache $CACHE is not empty and has no .complete; not deleting it" >&2
+      echo "--vendor-cache $CACHE is not a vendor cache (no .complete); not replacing it" >&2
       exit 1
     fi
+    rm -rf "$CACHE.partial"
+    (cd "$UPSTREAM" && cargo vendor --locked --versioned-dirs "$CACHE.partial" >/dev/null)
+    echo "$LOCK_SHA" >"$CACHE.partial/.complete"
     rm -rf "$CACHE"
-    (cd "$UPSTREAM" && cargo vendor --locked --versioned-dirs "$CACHE" >/dev/null)
-    echo "$LOCK_SHA" >"$CACHE/.complete"
+    mv "$CACHE.partial" "$CACHE"
   fi
-  cp -al "$CACHE" "$WORK/vendor" 2>/dev/null || { rm -rf "$WORK/vendor"; cp -R "$CACHE" "$WORK/vendor"; }
+  cp -R "$CACHE" "$WORK/vendor"
   rm -f "$WORK/vendor/.complete"
 fi
 
-# 3. The patch, with zero fuzz, and the patched files' checksums. Files that change are replaced,
-# never written through a hard link into the cache.
+# 3. The patch, with zero fuzz, and the patched files' checksums.
 PATCHED="$(sed -n 's|^+++ b/||p' "$PATCH" | cut -f1)"
 for f in $PATCHED; do
-  crate="${f%%/*}"
-  if [[ ! -d "$WORK/vendor/$crate" ]]; then
-    echo "patch targets $crate, not in the vendored sources (xn-gemm version changed?)" >&2
+  if [[ ! -d "$WORK/vendor/${f%%/*}" ]]; then
+    echo "patch targets ${f%%/*}, not in the vendored sources (xn-gemm version changed?)" >&2
     exit 1
   fi
-  for g in "$WORK/vendor/$f" "$WORK/vendor/$crate/.cargo-checksum.json"; do
-    cp -p "$g" "$g.new" && mv "$g.new" "$g"
-  done
 done
 patch -d "$WORK/vendor" -p1 -F0 -N --dry-run -i "$PATCH" >/dev/null
 patch -d "$WORK/vendor" -p1 -F0 -N -i "$PATCH"

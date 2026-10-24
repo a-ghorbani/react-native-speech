@@ -14,9 +14,9 @@
 #      and a tampered bundle that must be rejected.
 #   7. update-lock.sh: names-only, sums, bad release names, missing assets.
 #   8. phonon-binaries.yml: publishing is gated off pull requests, the lock PR has a branch to
-#      target on a tag push, a re-run finds its own release, the iOS zip gets SOURCE_DATE_EPOCH,
-#      the linters run, and an iOS-only run builds iOS from source and carries Android forward
-#      (needs python3 + PyYAML; skipped otherwise).
+#      target on a tag push, a re-run finds its own release, the iOS zip gets the build's
+#      SOURCE_DATE_EPOCH, the linters run, an iOS-only run builds iOS from source and carries
+#      Android forward (needs python3 + PyYAML; skipped otherwise).
 #   9. build-ios.sh: the patch touches exactly xn-gemm's three microkernel.rs, a vendored xn-gemm of
 #      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
 #  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
@@ -286,14 +286,13 @@ rel = steps[i_rel]["run"]
 assert "gh release download" in rel and "cmp -s" in rel and "exit 0" in rel, "re-run must find its own release"
 assert set(pub["needs"]) >= {"meta", "lint", "android", "ios"}, pub["needs"]
 EOF
-  check "ios zip gets the upstream SOURCE_DATE_EPOCH" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
+  check "ios zip gets the build's SOURCE_DATE_EPOCH" python3 - "$REPO/.github/workflows/phonon-binaries.yml" "$HERE" <<'EOF'
 import sys, yaml
 jobs = yaml.safe_load(open(sys.argv[1]))["jobs"]
-assert jobs["notices"]["outputs"]["epoch"] == "${{ steps.epoch.outputs.epoch }}"
-assert any(s.get("id") == "epoch" and "log -1 --format=%ct" in s["run"] for s in jobs["notices"]["steps"])
-rep = next(s for s in jobs["ios"]["steps"] if "package-ios.sh" in s.get("run", ""))
-assert rep["env"]["SOURCE_DATE_EPOCH"] == "${{ needs.notices.outputs.epoch }}", rep.get("env")
 assert "notices" in jobs["ios"]["needs"]
+pkg = open(sys.argv[2] + "/package-ios.sh").read()
+assert "EPOCH=\"$(jq -er '.build.sourceDateEpoch' \"$SLICES/BUILDINFO.json\")\"" in pkg
+assert "build: {" in open(sys.argv[2] + "/build-ios.sh").read() and "sourceDateEpoch: $epoch" in open(sys.argv[2] + "/build-ios.sh").read()
 EOF
   check "linters run on every event" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
 import sys, yaml
