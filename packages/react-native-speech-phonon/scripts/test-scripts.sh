@@ -18,6 +18,8 @@
 #      and the linters run (needs python3 + PyYAML; skipped otherwise).
 #   9. build-ios.sh: the patch touches exactly xn-gemm's three microkernel.rs, a vendored xn-gemm of
 #      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
+#  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
+#      written for a placeholder or mismatched sha256, upstream commit or BUILDINFO.
 #
 # Needs bash >= 4 (gen-hwcaps-header.sh, verify-android-so.sh); on a Mac, Homebrew's bash (the
 # GitHub macOS runners have it first on PATH).
@@ -327,6 +329,36 @@ mkdir -p "$T/vc2" && echo keep >"$T/vc2/mine"
 check_fails "a --vendor-cache without .complete is refused" env PHONON_LOCK="$T/lock-ios.json" \
   "$HERE/build-ios.sh" --upstream "$up" --out "$T/ib" --vendor-cache "$T/vc2"
 check "and left as it was" test -f "$T/vc2/mine"
+
+echo "# 10. carry-android.sh"
+prev="$(jq -er '.binaries.android.asset' "$LOCK")"
+commit="$(jq -er '.upstream.commit' "$LOCK")"
+mkdir -p "$T/carry/z" "$T/carry/from"
+echo "{\"upstream\": {\"commit\": \"$commit\"}}" >"$T/carry/z/BUILDINFO.json"
+(cd "$T/carry/z" && zip -qX "$T/carry/from/$prev" BUILDINFO.json)
+cp "$T/carry/z/BUILDINFO.json" "$T/carry/from/BUILDINFO-android.json"
+jq --arg s "$(sha "$T/carry/from/$prev")" '.binaries.android.sha256 = $s' "$LOCK" >"$T/carry/lock.json"
+check "carry forward" "$HERE/carry-android.sh" --lock "$T/carry/lock.json" --release phonon-bin-v0.4.0-r9 \
+  --from "$T/carry/from" --out-dir "$T/carry/out"
+check "same bytes under the new name" cmp "$T/carry/from/$prev" "$T/carry/out/phonon-android-0.4.0-r9.zip"
+check "SHA256SUMS lists it" grep -qx "$(sha "$T/carry/from/$prev")  phonon-android-0.4.0-r9.zip" "$T/carry/out/SHA256SUMS"
+check "BUILDINFO-android.json carried" cmp "$T/carry/from/BUILDINFO-android.json" "$T/carry/out/BUILDINFO-android.json"
+carry_refuses() {
+  local name="$1" lock="$2"
+  check_fails "$name" "$HERE/carry-android.sh" --lock "$lock" --release phonon-bin-v0.4.0-r9 \
+    --from "$T/carry/from" --out-dir "$T/carry/$name"
+  check "$name: nothing written" test ! -e "$T/carry/$name"
+}
+jq '.binaries.android.sha256 = "PLACEHOLDER"' "$LOCK" >"$T/carry/lock-ph.json"
+carry_refuses placeholder "$T/carry/lock-ph.json"
+jq --arg s "$(printf 'c%.0s' {1..64})" '.binaries.android.sha256 = $s' "$LOCK" >"$T/carry/lock-sha.json"
+carry_refuses sha-mismatch "$T/carry/lock-sha.json"
+jq '.upstream.commit = "0000000000000000000000000000000000000000"' "$T/carry/lock.json" >"$T/carry/lock-commit.json"
+carry_refuses commit-mismatch "$T/carry/lock-commit.json"
+cp "$T/carry/from/BUILDINFO-android.json" "$T/carry/good-info.json"
+echo '{}' >"$T/carry/from/BUILDINFO-android.json"
+carry_refuses buildinfo-mismatch "$T/carry/lock.json"
+cp "$T/carry/good-info.json" "$T/carry/from/BUILDINFO-android.json"
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi
