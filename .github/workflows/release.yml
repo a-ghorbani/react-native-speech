@@ -69,6 +69,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: yarn release-it --ci --npm.skipChecks
 
+      - name: Refuse a lock pinning iOS binaries with AMX or undecodable words
+        if: env.PACKAGE == 'phonon'
+        env:
+          NDK_VERSION: '28.2.13676358'
+        run: |
+          { yes || true; } | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" >/dev/null
+          export LLVM_OBJDUMP="$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
+          test -x "$LLVM_OBJDUMP"
+          echo "LLVM_OBJDUMP=$LLVM_OBJDUMP" >>"$GITHUB_ENV"
+          packages/react-native-speech-phonon/scripts/check-pinned-ios.sh
+
       # npm publish runs the add-on's `prepare`, whose types build against the core's lib/.
       - name: Build the core for the add-on
         if: env.PACKAGE == 'phonon'

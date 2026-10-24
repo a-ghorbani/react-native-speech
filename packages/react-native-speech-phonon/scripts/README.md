@@ -1,6 +1,6 @@
 # Phonon binaries
 
-Scripts that build, repackage and verify the Phonon native binaries this package downloads at
+Scripts that build, package and verify the Phonon native binaries this package downloads at
 consumer build time (`docs/DESIGN.md` §2.3, §3, §4.1). Paths below are relative to the package
 (`packages/react-native-speech-phonon/`). CI runs them in the repo's
 `.github/workflows/phonon-binaries.yml`; every one also runs locally.
@@ -12,8 +12,11 @@ consumer build time (`docs/DESIGN.md` §2.3, §3, §4.1). Paths below are relati
 | `gen-hwcaps-header.sh` | any | `phonon_required_hwcaps.h` from the feature list (called by `build-android.sh`) |
 | `gen-notices.sh` | Linux, macOS | third-party notices with cargo-about (`about.toml`, `about.hbs`) |
 | `package-android.sh` | Linux, macOS | deterministic `phonon-android-<ver>-r<N>.zip` + `SHA256SUMS` |
-| `package-ios.sh` | macOS + Xcode | upstream `PhononCore.xcframework` → prelinked, headerless, minos 15.1, with an x86_64 simulator stub (`ptts_stub.c`), zipped |
-| `verify-ios-xcframework.sh` | macOS, or Linux with NDK LLVM tools | layout, archs, one prelinked object per arch, 8 exports (`ptts.exp`), no `_OBJC_CLASS_$` refs, every other undefined symbol in `ios-undefined-allow.txt` (SDK C symbols only), no bitcode, minos 15.1. `--selftest` |
+| `build-ios.sh` | macOS + Xcode | `libptts_ffi.a` for aarch64-apple-ios / -sim from the pinned xn-ptts commit, with `patches/xn-gemm-no-amx.patch` applied to the vendored sources (upstream's `Cargo.lock`, `--locked --offline`, checkout untouched), staged with `BUILDINFO.json` |
+| `package-ios.sh` | macOS + Xcode | `build-ios.sh` slices (`--slices`) → prelinked, headerless, minos 15.1, with an x86_64 simulator stub (`ptts_stub.c`), zipped |
+| `verify-ios-xcframework.sh` | macOS, or Linux with NDK LLVM tools | layout, archs, one prelinked object per arch, 8 exports (`ptts.exp`), no `_OBJC_CLASS_$` refs, every other undefined symbol in `ios-undefined-allow.txt` (SDK C symbols only), no bitcode, minos 15.1, `amx` (no `<unknown>`, no Apple AMX word; LLVM 19 `llvm-objdump` from `LLVM_OBJDUMP` or the NDK, never `xcrun`'s). `--amx-only` runs that check alone (python3 and llvm-objdump only). `--selftest` |
+| `check-pinned-ios.sh` | Linux, macOS | the add-on release guard (`release.yml`): the lock-pinned iOS zip, sha256-checked, through `verify-ios-xcframework.sh --amx-only` |
+| `carry-android.sh` | any | an iOS-only run's Android output: the current release's zip, sha256- and BUILDINFO-checked against the lock, copied byte-for-byte to the new release's name |
 | `precompile-coreml.sh` | macOS + Xcode | upstream Core ML bundle → `.mlmodelc` + rewritten `bundle.json` + `manifest.tsv` (`bundle_manifest.py`) for the HF mirror |
 | `update-lock.sh` | any | release/asset names and sha256s into `phonon.lock.json` |
 | `test-scripts.sh` | Linux, macOS | tests for all of the above |
@@ -75,15 +78,19 @@ On an aarch64 Linux host, the NDK's x86_64 tools run under qemu binfmt; that wor
 reference build above was made that way). `build-android.sh` always passes an explicit
 `target-cpu`, so the checkout's `.cargo/config.toml` `target-cpu=native` never applies.
 
-iOS (macOS with Xcode 16+):
+iOS (macOS with Xcode 16+; Rust 1.99.1 with the aarch64-apple-ios/-sim targets, jq, and
+`brew install llvm@19` for the verifier's `amx` check):
 
 ```bash
+export LLVM_OBJDUMP="$(brew --prefix llvm@19)/bin/llvm-objdump"
+scripts/build-ios.sh --upstream /tmp/xn-ptts \
+  --vendor-cache scripts/out/vendor-cache                 # -> scripts/out/ios-build
 scripts/gen-notices.sh --upstream /tmp/xn-ptts --out scripts/out/NOTICES-ios.md \
   --target aarch64-apple-ios --target aarch64-apple-ios-sim
-scripts/package-ios.sh --work scripts/out/ios \
+scripts/package-ios.sh --slices scripts/out/ios-build --work scripts/out/ios \
   --notices scripts/out/NOTICES-ios.md \
   --licenses scripts/out/android/licenses                 # or any dir with xn-ptts-LICENSE-*
-# downloads + checks the upstream zip; notices and licenses are required (every zip has them)
+# notices and licenses are required (every zip has them)
 export RN_SPEECH_PHONON_XCFRAMEWORK=$PWD/scripts/out/ios/PhononCore.xcframework
 (cd ../../example/ios && pod install)
 ```
@@ -115,7 +122,10 @@ pin the same upstream commit, which is checked before anything is published. The
 before the release is created, and a re-run that finds its own release (same `SHA256SUMS`) goes
 on to the PR instead of failing. The precompiled Core ML bundle is a workflow artifact
 (`phonon-31m-en-coreml-precompiled`) to mirror to the palshub HF repo. Releases are immutable:
-rebuilding means a new `-r<N>`. Pull requests that touch these files only lint (actionlint with
+rebuilding means a new `-r<N>`. A revision that changes iOS only is dispatched with
+`platforms=ios`, never tagged: the `android` job then carries the current release's zip forward
+under the new name (`carry-android.sh`), so the lock PR leaves `binaries.android.sha256` as it
+was. Pull requests that touch these files only lint (actionlint with
 shellcheck, pinned), build and verify.
 
 The lock PR is opened with the `PHONON_LOCK_PR_TOKEN` secret (a PAT or GitHub App token with
@@ -226,24 +236,10 @@ Notes from the first device run:
   the reload half needs a debug build (release: `NOT-RUN`), and the next JS context finishes the
   run from a marker file.
 
-## Not yet run on a Mac
+## Still to confirm on a Mac
 
-Written and statically checked on Linux only; the first macOS run (CI `ios` job or by hand) must
-confirm:
-
-- `test-scripts.sh` passes under the runner's bash with Xcode's tools (iOS verifier self-test
-  with `xcrun clang` / `libtool`; package-android.sh on BSD `date` / `touch` / `shasum`).
-- `package-ios.sh`: `xcrun ld -r ... -exported_symbols_list ptts.exp -filelist members.txt` over
-  all ~707 members per slice links without duplicate-symbol errors (it links in members archive
-  resolution would have left out, e.g. compiler_builtins); `verify-ios-xcframework.sh`'s
-  `undefined` check passes (only iOS 15-safe SDK C symbols left undefined; extend
-  `ios-undefined-allow.txt` only after checking a symbol exists in iOS 15.1); whether
-  `bitcode_strip` takes the members or the `llvm-objcopy` fallback is needed (Homebrew llvm on
-  macos-15, else `brew install llvm`); `xcodebuild -create-xcframework` names the fat simulator
-  library `ios-arm64_x86_64-simulator`; the ditto zip has `PhononCore.xcframework/` at its root.
 - An app links the result with `-all_load` (WP8) on device and simulator.
-- `precompile-coreml.sh` with the real `xcrun coremlcompiler compile`; the host-compiled
-  `.mlmodelc` loads on an A15 ANE (WP5).
+- The host-compiled `.mlmodelc` loads on an A15 ANE (WP5).
 
 - `ci.yml` `build-ios-phonon` (written on Linux, never run): Xcode 16.4 exists on `macos-15` and
   ships an iOS 18 simulator; the `simctl` JSON queries find an iOS 18 (and, if any, iOS 17)

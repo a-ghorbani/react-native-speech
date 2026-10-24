@@ -427,4 +427,9 @@ Maintainers release the add-on from the **Release** workflow (`.github/workflows
 with `package: phonon`: release-it runs from this folder (`phonon-v*` tags, the GitHub release is
 not marked Latest) and publishes to npm with trusted publishing. The npm package must have
 trusted publishing configured for that workflow: npmjs.com → package → Settings → Trusted
-publishing, repository `a-ghorbani/react-native-speech`, workflow `release.yml`.
+publishing, repository `a-ghorbani/react-native-speech`, workflow `release.yml`. The workflow
+first checks the iOS binaries `phonon.lock.json` pins for Apple AMX instructions
+(`scripts/check-pinned-ios.sh`, also release-it's `before:init` hook, so a local `yarn release`
+runs it too; `--dry-run` skips hooks) and refuses to release if it finds any. Locally it needs LLVM's
+`llvm-objdump`: set `LLVM_OBJDUMP` (on macOS, `$(brew --prefix llvm@19)/bin/llvm-objdump`) or
+`ANDROID_NDK_HOME`.

@@ -6,16 +6,24 @@
 #      and the header compiles for both shim ABIs.
 #   2. ptts.exp names exactly the functions cpp/ptts.h declares.
 #   3. verify-android-so.sh --selftest.
-#   4. verify-ios-xcframework.sh --selftest; package-ios.sh refuses to run without notices and
-#      licenses.
+#   4. verify-ios-xcframework.sh --selftest (including a planted AMX word); package-ios.sh refuses
+#      to run without slices, notices and licenses.
 #   5. package-android.sh is deterministic and lays the zip out as designed (GNU and BSD
 #      date/touch/shasum alike).
 #   6. precompile-coreml.sh + bundle_manifest.py on a synthetic bundle with a stand-in compiler,
 #      and a tampered bundle that must be rejected.
 #   7. update-lock.sh: names-only, sums, bad release names, missing assets.
 #   8. phonon-binaries.yml: publishing is gated off pull requests, the lock PR has a branch to
-#      target on a tag push, a re-run finds its own release, the iOS zip gets SOURCE_DATE_EPOCH,
-#      and the linters run (needs python3 + PyYAML; skipped otherwise).
+#      target on a tag push, a re-run finds its own release, the iOS zip gets the build's
+#      SOURCE_DATE_EPOCH, the linters run, an iOS-only run builds iOS from source and carries
+#      Android forward (needs python3 + PyYAML; skipped otherwise).
+#   9. build-ios.sh: the patch touches exactly xn-gemm's three microkernel.rs, a vendored xn-gemm of
+#      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
+#  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
+#      written for a placeholder or mismatched sha256, upstream commit or BUILDINFO.
+#  11. check-pinned-ios.sh passes a clean pinned zip and refuses a placeholder or mismatched
+#      sha256, a failed download, a zip without the framework or libraries, and a missing
+#      llvm-objdump; release.yml and the add-on's release-it before:init hook run it.
 #
 # Needs bash >= 4 (gen-hwcaps-header.sh, verify-android-so.sh); on a Mac, Homebrew's bash (the
 # GitHub macOS runners have it first on PATH).
@@ -106,11 +114,15 @@ else
   echo "skip - ios verifier self-test (no Xcode, no ANDROID_NDK_HOME)"
 fi
 mkdir -p "$T/lic" && echo MIT >"$T/lic/xn-ptts-LICENSE-MIT" && echo '# notices' >"$T/ios-notices.md"
-check_fails "package-ios.sh without --notices" "$HERE/package-ios.sh" --licenses "$T/lic"
-check_fails "package-ios.sh without --licenses" "$HERE/package-ios.sh" --notices "$T/ios-notices.md"
+check_fails "package-ios.sh without --slices" "$HERE/package-ios.sh" --notices "$T/ios-notices.md" --licenses "$T/lic"
 # shellcheck disable=SC2016 # expanded by the inner bash
-check "package-ios.sh names the missing licenses" bash -c '"$1" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--licenses .* is required"' \
-  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/nothing"
+check "package-ios.sh names the missing slices" bash -c '"$1" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--slices .* is required"' \
+  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/lic"
+check_fails "package-ios.sh without --notices" "$HERE/package-ios.sh" --slices "$T/nothing" --licenses "$T/lic"
+check_fails "package-ios.sh without --licenses" "$HERE/package-ios.sh" --slices "$T/nothing" --notices "$T/ios-notices.md"
+# shellcheck disable=SC2016 # expanded by the inner bash
+check "package-ios.sh names the missing licenses" bash -c '"$1" --slices "$4" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--licenses .* is required"' \
+  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/nothing" "$T/nothing"
 
 echo "# 5. package-android.sh"
 stage="$T/stage"
@@ -277,14 +289,13 @@ rel = steps[i_rel]["run"]
 assert "gh release download" in rel and "cmp -s" in rel and "exit 0" in rel, "re-run must find its own release"
 assert set(pub["needs"]) >= {"meta", "lint", "android", "ios"}, pub["needs"]
 EOF
-  check "ios zip gets the upstream SOURCE_DATE_EPOCH" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
+  check "ios zip gets the build's SOURCE_DATE_EPOCH" python3 - "$REPO/.github/workflows/phonon-binaries.yml" "$HERE" <<'EOF'
 import sys, yaml
 jobs = yaml.safe_load(open(sys.argv[1]))["jobs"]
-assert jobs["notices"]["outputs"]["epoch"] == "${{ steps.epoch.outputs.epoch }}"
-assert any(s.get("id") == "epoch" and "log -1 --format=%ct" in s["run"] for s in jobs["notices"]["steps"])
-rep = next(s for s in jobs["ios"]["steps"] if "package-ios.sh" in s.get("run", ""))
-assert rep["env"]["SOURCE_DATE_EPOCH"] == "${{ needs.notices.outputs.epoch }}", rep.get("env")
 assert "notices" in jobs["ios"]["needs"]
+pkg = open(sys.argv[2] + "/package-ios.sh").read()
+assert "EPOCH=\"$(jq -er '.build.sourceDateEpoch' \"$SLICES/BUILDINFO.json\")\"" in pkg
+assert "build: {" in open(sys.argv[2] + "/build-ios.sh").read() and "sourceDateEpoch: $epoch" in open(sys.argv[2] + "/build-ios.sh").read()
 EOF
   check "linters run on every event" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
 import sys, yaml
@@ -294,9 +305,178 @@ run = "\n".join(s.get("run", "") for s in lint["steps"])
 assert "sha256sum -c" in run, "actionlint download must be pinned"
 assert "actionlint .github/workflows/phonon-binaries.yml" in run and "shellcheck -x packages/react-native-speech-phonon/scripts/*.sh" in run, run
 EOF
+  check "iOS-only runs carry Android forward" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
+import sys, yaml
+text = open(sys.argv[1]).read()
+wf = yaml.safe_load(text)
+on = wf.get(True, wf.get("on"))
+plat = on["workflow_dispatch"]["inputs"]["platforms"]
+assert plat["type"] == "choice" and plat["options"] == ["all", "ios"] and plat["default"] == "all", plat
+jobs = wf["jobs"]
+assert jobs["meta"]["outputs"]["platforms"] == "${{ steps.meta.outputs.platforms }}"
+meta = "\n".join(s.get("run", "") for s in jobs["meta"]["steps"])
+assert 'platforms="$PLATFORMS"' in meta and "all|ios) ;;" in meta, "meta must pass and validate platforms"
+steps = jobs["android"]["steps"]
+names = [s.get("name") for s in steps]
+i_prev = next(i for i, s in enumerate(steps) if "prev-lock.json" in s.get("run", ""))
+assert i_prev < names.index("Use release asset names"), names
+carry = next(s for s in steps if "carry-android.sh" in s.get("run", ""))
+assert carry["if"] == "needs.meta.outputs.platforms == 'ios'", carry.get("if")
+for name in ["Build libptts_ffi.so", "Verify libptts_ffi.so", "Download notices", "Package", "Reproducibility check"]:
+    assert steps[names.index(name)].get("if") == "needs.meta.outputs.platforms == 'all'", name
+assert "if" not in steps[names.index("Script tests")], "script tests run in every mode"
+ios = jobs["ios"]["steps"]
+runs = [s.get("run", "") for s in ios]
+i_build = next(i for i, r in enumerate(runs) if "build-ios.sh" in r)
+i_pkg = next(i for i, r in enumerate(runs) if "package-ios.sh" in r)
+assert i_build < i_pkg and '--slices "$RUNNER_TEMP/ios-build"' in runs[i_pkg], "ios: build, then package the slices"
+tool = "\n".join(runs[:next(i for i, s in enumerate(ios) if s.get("name") == "Script tests")])
+assert "llvm@19" in tool and "LLVM_OBJDUMP=" in tool, "selftest needs LLVM_OBJDUMP"
+assert "--upstream-zip" not in text
+EOF
 else
   echo "skip - workflow checks (no PyYAML)"
 fi
+
+echo "# 9. build-ios.sh"
+patch_files="$(sed -n 's|^+++ b/||p' "$HERE/patches/xn-gemm-no-amx.patch" | cut -f1 | LC_ALL=C sort | tr '\n' ' ')"
+check "patch targets xn-gemm-f{16,32,64} 0.20.2" test "$patch_files" == \
+  "xn-gemm-f16-0.20.2/src/microkernel.rs xn-gemm-f32-0.20.2/src/microkernel.rs xn-gemm-f64-0.20.2/src/microkernel.rs "
+check_fails "build-ios.sh without --upstream" "$HERE/build-ios.sh" --out "$T/ib"
+up="$T/xn-ptts"
+mkdir -p "$up/ptts-ffi/include"
+cp "$ROOT/cpp/ptts.h" "$up/ptts-ffi/include/ptts.h"
+echo '# fixture' >"$up/Cargo.lock"
+git -C "$up" init -q
+git -C "$up" add -A
+git -C "$up" -c user.name=t -c user.email=t@t commit -qm fixture
+jq --arg c "$(git -C "$up" rev-parse HEAD)" '.upstream.commit = $c' "$LOCK" >"$T/lock-ios.json"
+mkdir -p "$T/vc/xn-gemm-f16-0.21.0/src"
+sha "$up/Cargo.lock" >"$T/vc/.complete"
+check_fails "another xn-gemm version stops the build" env PHONON_LOCK="$T/lock-ios.json" \
+  "$HERE/build-ios.sh" --upstream "$up" --out "$T/ib" --vendor-cache "$T/vc"
+cp "$T/out" "$T/ib.err"
+check "the failure names xn-gemm-f16-0.20.2" grep -q "patch targets xn-gemm-f16-0.20.2, not in the vendored sources" "$T/ib.err"
+mkdir -p "$T/vc2" && echo keep >"$T/vc2/mine"
+check_fails "a --vendor-cache without .complete is refused" env PHONON_LOCK="$T/lock-ios.json" \
+  "$HERE/build-ios.sh" --upstream "$up" --out "$T/ib" --vendor-cache "$T/vc2"
+check "and left as it was" test -f "$T/vc2/mine"
+
+echo "# 10. carry-android.sh"
+prev="$(jq -er '.binaries.android.asset' "$LOCK")"
+commit="$(jq -er '.upstream.commit' "$LOCK")"
+mkdir -p "$T/carry/z" "$T/carry/from"
+echo "{\"upstream\": {\"commit\": \"$commit\"}}" >"$T/carry/z/BUILDINFO.json"
+(cd "$T/carry/z" && zip -qX "$T/carry/from/$prev" BUILDINFO.json)
+cp "$T/carry/z/BUILDINFO.json" "$T/carry/from/BUILDINFO-android.json"
+jq --arg s "$(sha "$T/carry/from/$prev")" '.binaries.android.sha256 = $s' "$LOCK" >"$T/carry/lock.json"
+check "carry forward" "$HERE/carry-android.sh" --lock "$T/carry/lock.json" --release phonon-bin-v0.4.0-r9 \
+  --from "$T/carry/from" --out-dir "$T/carry/out"
+check "same bytes under the new name" cmp "$T/carry/from/$prev" "$T/carry/out/phonon-android-0.4.0-r9.zip"
+check "SHA256SUMS lists it" grep -qx "$(sha "$T/carry/from/$prev")  phonon-android-0.4.0-r9.zip" "$T/carry/out/SHA256SUMS"
+check "BUILDINFO-android.json carried" cmp "$T/carry/from/BUILDINFO-android.json" "$T/carry/out/BUILDINFO-android.json"
+carry_refuses() {
+  local name="$1" lock="$2"
+  check_fails "$name" "$HERE/carry-android.sh" --lock "$lock" --release phonon-bin-v0.4.0-r9 \
+    --from "$T/carry/from" --out-dir "$T/carry/$name"
+  check "$name: nothing written" test ! -e "$T/carry/$name"
+}
+jq '.binaries.android.sha256 = "PLACEHOLDER"' "$LOCK" >"$T/carry/lock-ph.json"
+carry_refuses placeholder "$T/carry/lock-ph.json"
+jq --arg s "$(printf 'c%.0s' {1..64})" '.binaries.android.sha256 = $s' "$LOCK" >"$T/carry/lock-sha.json"
+carry_refuses sha-mismatch "$T/carry/lock-sha.json"
+jq '.upstream.commit = "0000000000000000000000000000000000000000"' "$T/carry/lock.json" >"$T/carry/lock-commit.json"
+carry_refuses commit-mismatch "$T/carry/lock-commit.json"
+cp "$T/carry/from/BUILDINFO-android.json" "$T/carry/good-info.json"
+echo '{}' >"$T/carry/from/BUILDINFO-android.json"
+carry_refuses buildinfo-mismatch "$T/carry/lock.json"
+cp "$T/carry/good-info.json" "$T/carry/from/BUILDINFO-android.json"
+
+echo "# 11. check-pinned-ios.sh"
+pin_lock() { jq --arg s "$2" '.binaries.ios.sha256 = $s' "$LOCK" >"$1"; }
+pin_zip() {
+  local name="$1" plist="$2" d="$T/pin/$1"
+  mkdir -p "$d/PhononCore.xcframework/ios-arm64"
+  printf '\xcf\xfa\xed\xfe\x0c\x00\x00\x01' >"$d/PhononCore.xcframework/ios-arm64/libptts_ffi.a"
+  python3 -I - "$d/PhononCore.xcframework/Info.plist" "$plist" <<'EOF'
+import plistlib, sys
+libs = [{"LibraryIdentifier": "ios-arm64", "LibraryPath": "libptts_ffi.a",
+         "SupportedArchitectures": ["arm64"], "SupportedPlatform": "ios"}] if sys.argv[2] == "lib" else []
+plistlib.dump({"AvailableLibraries": libs}, open(sys.argv[1], "wb"))
+EOF
+  (cd "$d" && zip -qr "$T/pin/$name.zip" PhononCore.xcframework)
+  echo "$T/pin/$name.zip"
+}
+# pinned_fails <name> <lock> <expected message (ERE)> <command...>
+pinned_fails() {
+  local name="$1" lock="$2" why="$3"; shift 3
+  check_fails "$name" env PHONON_LOCK="$lock" LLVM_OBJDUMP="$T/pin/no-objdump" "$@"
+  cp "$T/out" "$T/pin.err"
+  check "$name: $why" grep -Eq "$why" "$T/pin.err"
+}
+mkdir -p "$T/pin"
+z="$(pin_zip onelib lib)"
+onelib="$z"
+pin_lock "$T/pin/ph.json" PLACEHOLDER
+pinned_fails "placeholder sha256 refused" "$T/pin/ph.json" "pins no iOS sha256" "$HERE/check-pinned-ios.sh" --zip "$z"
+pin_lock "$T/pin/other.json" "$(printf 'c%.0s' {1..64})"
+pinned_fails "sha256 mismatch refused" "$T/pin/other.json" "sha256 [0-9a-f]+, .* pins" "$HERE/check-pinned-ios.sh" --zip "$z"
+pin_lock "$T/pin/ok.json" "$(sha "$z")"
+pinned_fails "failed download refused" "$T/pin/ok.json" "could not download" env PHONON_RELEASE_BASE_URL="file://$T/pin/nowhere" \
+  "$HERE/check-pinned-ios.sh"
+pinned_fails "missing llvm-objdump refused" "$T/pin/ok.json" "^FAIL amx: ios-arm64/arm64: .*no-objdump failed" \
+  "$HERE/check-pinned-ios.sh" --zip "$z"
+check_fails "no llvm-objdump anywhere refused" env PHONON_LOCK="$T/pin/ok.json" LLVM_OBJDUMP= ANDROID_NDK_HOME= \
+  ANDROID_NDK_ROOT= PATH="$(dirname "$(command -v jq)"):/usr/bin:/bin" "$HERE/check-pinned-ios.sh" --zip "$z"
+cp "$T/out" "$T/pin.err"
+check "no llvm-objdump anywhere refused: names it" grep -q '^FAIL amx: ios-arm64/arm64: no llvm-objdump' "$T/pin.err"
+z="$(pin_zip nolibs none)"
+pin_lock "$T/pin/nolibs.json" "$(sha "$z")"
+pinned_fails "framework without libraries refused" "$T/pin/nolibs.json" "no library architectures" "$HERE/check-pinned-ios.sh" --zip "$z"
+cat >"$T/pin/stub-objdump" <<'EOF'
+#!/bin/sh
+case "$1" in
+  --section-headers) printf 'Idx Name Size VMA Type\n  0 __text 00000004 0000000000000000 TEXT\n' ;;
+  *) printf '0000000000000000 <_f>:\n       0: d65f03c0     \tret\n' ;;
+esac
+EOF
+chmod +x "$T/pin/stub-objdump"
+rel="$(jq -er '.binaries.release' "$LOCK")"
+mkdir -p "$T/pin/releases/$rel"
+cp "$onelib" "$T/pin/releases/$rel/$(jq -er '.binaries.ios.asset' "$LOCK")"
+check "a clean pinned zip passes" env PHONON_LOCK="$T/pin/ok.json" LLVM_OBJDUMP="$T/pin/stub-objdump" \
+  PHONON_RELEASE_BASE_URL="file://$T/pin/releases" "$HERE/check-pinned-ios.sh"
+cp "$T/out" "$T/pin.out"
+check "and says so" grep -q "no AMX or undecodable instructions" "$T/pin.out"
+mkdir -p "$T/pin/empty" && echo x >"$T/pin/empty/x" && (cd "$T/pin/empty" && zip -q "$T/pin/empty.zip" x)
+pin_lock "$T/pin/empty.json" "$(sha "$T/pin/empty.zip")"
+pinned_fails "zip without the framework refused" "$T/pin/empty.json" "has no PhononCore.xcframework" "$HERE/check-pinned-ios.sh" --zip "$T/pin/empty.zip"
+if python3 -c 'import yaml' 2>/dev/null; then
+  check "release.yml checks the pinned iOS zip before the add-on release" python3 - "$REPO/.github/workflows/release.yml" <<'EOF'
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["release"]["steps"]
+names = [s.get("name") for s in steps]
+guard = [i for i, s in enumerate(steps) if "check-pinned-ios.sh" in s.get("run", "")]
+assert len(guard) == 1, "one guard step"
+g = steps[guard[0]]
+assert g.get("if") == "env.PACKAGE == 'phonon'", g.get("if")
+assert "continue-on-error" not in g, "the guard must fail the release"
+assert "shell" not in g and "set +e" not in g["run"], "the guard runs under bash -e"
+lines = [l.strip() for l in g["run"].splitlines() if l.strip()]
+assert [l for l in lines if "check-pinned-ios.sh" in l] == lines[-1:], "the guard is the step's last command"
+assert lines[-1] == "packages/react-native-speech-phonon/scripts/check-pinned-ios.sh", "exit status swallowed: " + lines[-1]
+assert 'echo "LLVM_OBJDUMP=$LLVM_OBJDUMP" >>"$GITHUB_ENV"' in lines, "the release-it hook needs the pinned objdump"
+assert "LLVM_OBJDUMP=" in g["run"] and "ndk;" in g["run"] and 'test -x "$LLVM_OBJDUMP"' in g["run"], "pinned objdump"
+i_rel = names.index("Release the Phonon add-on")
+assert guard[0] < i_rel and steps[i_rel]["if"] == "env.PACKAGE == 'phonon'"
+core = steps[names.index("Release")]
+assert core["if"] == "env.PACKAGE == 'core'" and "check-pinned-ios" not in core["run"]
+EOF
+else
+  echo "skip - release.yml check (no PyYAML)"
+fi
+check "release-it runs the guard before anything else" test \
+  "$(jq -r '."release-it".hooks."before:init"' "$ROOT/package.json")" == scripts/check-pinned-ios.sh
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi

@@ -25,8 +25,8 @@ Summary of decisions:
 | Generic (non-dotprod) build | Not shipped in v1; soname hook kept. |
 | Persisted capability | A load/symbol failure is recorded as a negative capability record keyed by (device fingerprint, OS build, lib release, model stamp). Afterwards `getSupport` returns `supported:false` and the engine is hidden. Re-evaluated when any key changes. |
 | Opt-in | Install the package (autolinking). Apps without it carry no Phonon JS, codegen glue, native binary, shim, Kotlin or ObjC code. JS without the linked native module reports `not-compiled`. A lock without published hashes fails the app build. |
-| Binaries | Built/repackaged by our GH Actions `phonon-binaries.yml`, released as `phonon-bin-v0.4.0-r<N>` (`make_latest=false`), sha256-pinned in `phonon.lock.json`, fetched at consumer build time. No Rust for consumers. |
-| iOS binary | Repackaged xcframework: each slice prelinked with `ld -r` exporting only the 8 `ptts_*` symbols, bitcode stripped, no headers/modulemap, plus an `ios-x86_64-simulator` **stub** slice. Frameworks: CoreML, CoreVideo (no Accelerate, no weak-link). |
+| Binaries | Built from the pinned upstream commit by our GH Actions `phonon-binaries.yml`, released as `phonon-bin-v0.4.0-r<N>` (`make_latest=false`), sha256-pinned in `phonon.lock.json`, fetched at consumer build time. No Rust for consumers. |
+| iOS binary | Built from source with xn-gemm's Apple AMX kernels compiled out (`scripts/patches/xn-gemm-no-amx.patch`; App Store ITMS-90755), each slice prelinked with `ld -r` exporting only the 8 `ptts_*` symbols, bitcode stripped, no headers/modulemap, plus an `ios-x86_64-simulator` **stub** slice. Frameworks: CoreML, CoreVideo (no Accelerate, no weak-link). |
 | iOS model | Core ML bundle **precompiled in CI** (`.mlmodelc`), mirrored unzipped to an HF repo we control, downloaded per file and verified against `bundle.json` sha256. No zip library. |
 | Threads | Android: process-wide Kotlin `object` with one 8 MB-stack synth thread. `RAYON_NUM_THREADS` sizes **both** rayon and xn's own spinning worker pool, fixed for the process lifetime. iOS: shared C++ pthread worker (8 MB stack) with `@autoreleasepool` per job and per N frames; no rayon on the Core ML path. |
 | Hang safety | JS watchdog on every `synthesize`: `max(10 s, 4 × expected)`. On timeout the engine is marked broken for the process and reports `ERR_PHONON_TIMEOUT`. |
@@ -490,7 +490,8 @@ autolinked core project, its pod on `RNSpeech`.
 ```json
 {
   "upstream": { "repo": "gradium-ai/xn-ptts", "tag": "v0.4.0",
-                "commit": "f07d7952db0c6127d5e4bc3f41c82b3304b6b5aa" },
+                "commit": "f07d7952db0c6127d5e4bc3f41c82b3304b6b5aa",
+                "coreml": { "asset": "phonon-31m-en-coreml.zip", "sha256": "..." } },
   "arm64Features": "+dotprod,+fp16",
   "binaries": {
     "release": "phonon-bin-v0.4.0-r1",
@@ -505,6 +506,11 @@ While a sha is `PLACEHOLDER`, an app build **fails** with a message naming the l
 when `fetchPhononBinaries` runs (configuration stays green, so the JVM tests need no binaries),
 on iOS at `pod install`. Someone who installed the package asked for Phonon, so there is no
 silent fallback. The example app always links the package natively.
+
+The Android asset can be carried forward across revisions: an iOS-only binaries run (§4.1)
+publishes the previous release's Android zip, same bytes, under the new release's name, so
+`binaries.android.sha256` stays identical while `release` and both `asset` names change. Build
+facts (toolchain, flags, patches) live in each zip's `BUILDINFO.json`, not in the lock.
 
 ### 3.2 Android
 
@@ -568,7 +574,14 @@ s.dependency 'RNSpeech'                      # <RNSpeech/RNSpeechAudioOutput.h>
 `RNSpeechPhononModule` (`RCT_EXPORT_MODULE(RNSpeechPhonon)`, codegen `modulesProvider`) is the
 TurboModule; the internal `RNSpeechPhonon` class keeps the bridge logic.
 * Host tests live in `test/core/`, outside every glob.
-* The repackaged xcframework has **no headers and no modulemap** (`-library` only); the single
+* `libptts_ffi.a` is built from the pinned commit (§4.1, `ios` step 1), not taken from upstream's
+  prebuilt `PhononCore.xcframework`: xn-gemm-{f16,f32,f64} 0.20.2 compile their Apple AMX
+  microkernels on every aarch64 target, even with the `experimental-apple-amx` feature off, and
+  App Store review rejects the undocumented AMX opcodes (ITMS-90755; r1 had 1131 per arm64
+  slice). `scripts/patches/xn-gemm-no-amx.patch` gates the three `amx` modules on that feature;
+  it is the only source difference from upstream, under upstream's `Cargo.lock` and `--locked`.
+  Drop it once upstream gates the modules itself.
+* The xcframework has **no headers and no modulemap** (`-library` only); the single
   `ptts.h` is `cpp/ptts.h`. CI checks the app build log has no `core_test` and the
   built products contain exactly one `ptts.h`.
 * An `ios-x86_64-simulator` stub slice (8 `ptts_*` symbols; `ptts_new` returns NULL) means no
@@ -577,11 +590,14 @@ TurboModule; the internal `RNSpeechPhonon` class keeps the bridge logic.
 * `ios/PhononCore.xcframework/` is in `.gitignore` and excluded from `package.json#files`.
   It is copied from the cache at pod install (CocoaPods needs vendored paths inside the pod).
   Read-only stores (pnpm/Yarn PnP) must use `RN_SPEECH_PHONON_XCFRAMEWORK`; documented.
-* `libptts_ffi.a` linking facts (verified on the release slice): no `_OBJC_CLASS_$` references, only
-  CF*/CVPixelBuffer* C symbols (iOS 15-safe), no autolink commands, no Accelerate use. So no weak
-  linking; the deployment target stays at `min_ios_version_supported`. The prelink step sets
-  `-platform_version ios 15.1 18.0`, removing ~316 "built for newer iOS" warnings; every entry is
-  behind `@available(iOS 18)`. CI asserts this with Xcode `nm -u`.
+* `libptts_ffi.a` linking facts, checked by `verify-ios-xcframework.sh` on every build: exactly
+  the 8 `ptts_*` exports; no `_OBJC_CLASS_$` references; every other undefined symbol (C and
+  libSystem symbols such as `__NSGetArgc`, `_accept`, `__dyld_*`) resolves in the iOS 15.1 SDK
+  (on macOS a `-dynamiclib` link against CoreML, CoreVideo, Accelerate, Foundation and libc++;
+  on Linux `ios-undefined-allow.txt`, which lags behind); no bitcode; minos 15.1; no Apple AMX
+  or undecodable words. So no weak linking; the deployment target stays at
+  `min_ios_version_supported`. The prelink step sets `-platform_version ios 15.1 18.0`, removing
+  ~316 "built for newer iOS" warnings; every entry is behind `@available(iOS 18)`.
 
 ---
 
@@ -589,7 +605,18 @@ TurboModule; the internal `RNSpeechPhonon` class keeps the bridge logic.
 
 ### 4.1 `.github/workflows/phonon-binaries.yml`
 
-Triggers: `workflow_dispatch` (`revision`) and tags `phonon-bin-v*`.
+Triggers:
+* `workflow_dispatch` with `revision`, `platforms` (`all` | `ios`, default `all`) and `publish`
+  (default off);
+* a pushed `phonon-bin-v*` tag: platforms `all`, publishes;
+* `pull_request` touching the workflow, `scripts/**`, `cpp/ptts.h` or the lock: platforms `all`,
+  never publishes.
+
+With `platforms=ios` the `android` job builds nothing: it carries the current release's Android
+zip forward (`carry-android.sh`, see below), so both jobs give artifacts of the same shape and
+`publish` is unchanged. **Ship an iOS-only revision by dispatch with `platforms=ios`, never by a
+tag:** a tag rebuilds Android, and since the reproducibility leg is warn-only its bytes (and the
+lock's Android sha) could change.
 
 **Job `android` (ubuntu-24.04):**
 1. Checkout upstream at `upstream.commit` (verify `rev-parse`).
@@ -609,20 +636,42 @@ Triggers: `workflow_dispatch` (`revision`) and tags `phonon-bin-v*`.
    Warn-only (`continue-on-error`) until the first published phonon-bin release has reproduced
    byte-for-byte in two consecutive runs; then it blocks.
 
+With `platforms=ios`, steps 3–7 are skipped; pinned Rust, the NDK and `test-scripts.sh` still run.
+Instead the job downloads `<binaries.release>/<binaries.android.asset>` and that release's
+`BUILDINFO-android.json`, read from the lock as it was before the release rename, and
+`carry-android.sh` copies the zip byte-for-byte to the new release's asset name with its
+`SHA256SUMS` line. Nothing is written unless the zip's sha256 equals the lock's
+`binaries.android.sha256` (never `PLACEHOLDER`), its `BUILDINFO.json` names the lock's
+`upstream.commit`, and the downloaded `BUILDINFO-android.json` is that file byte-for-byte.
+
 **Job `ios` (macos-15):**
-1. Download upstream `PhononCore.xcframework.zip`, verify sha
-   `a10382948448087bc9f63231de3c2970d606979fd69bef7acb95d2dfa3a41cef`.
-2. For each of `ios-arm64` and `ios-arm64-simulator`: `xcrun bitcode_strip -r`, then
+1. Checkout upstream at `upstream.commit` (verify `rev-parse`); pinned Rust (`1.99.1`, targets
+   aarch64-apple-ios/-sim); `brew install llvm@19`, exported as `LLVM_OBJDUMP` for step 5. The
+   cache holds `~/.cargo/registry` only, keyed on the Rust version and the `Cargo.lock` hash: the
+   vendored tree (~850 MB) is rebuilt from it every run. `scripts/build-ios.sh`:
+   `cargo vendor --locked --versioned-dirs` outside the checkout; `patches/xn-gemm-no-amx.patch`
+   with zero fuzz (a vendored xn-gemm of another version stops the build, naming the crate); the
+   patched files' entries in `.cargo-checksum.json` recomputed; `cargo build --release --locked
+   --offline -p ptts-ffi` per target, source replacement only through `--config`.
+   `IPHONEOS_DEPLOYMENT_TARGET=18.0`, upstream's release profile and rustc's default target CPU
+   (as upstream's own build; per-target `CARGO_TARGET_*_RUSTFLAGS` keep the checkout's
+   `target-cpu=native` out), `--remap-path-prefix`, `SOURCE_DATE_EPOCH`, `CARGO_INCREMENTAL=0`.
+   The checkout must be unchanged afterwards. `BUILDINFO.json` `build` records rustc, targets,
+   deployment target, the `Cargo.lock` sha256, the flags and the patch's path and sha256.
+2. `package-ios.sh --slices` runs steps 2–6. For each of `ios-arm64` and `ios-arm64-simulator`: `xcrun bitcode_strip -r`, then
    `xcrun ld -r -arch arm64 -platform_version ios[-simulator] 15.1 18.0
    -exported_symbols_list ptts.exp -o ptts.o <members>`, `libtool -static -o libptts_ffi.a ptts.o`.
 3. Build the x86_64 simulator stub slice from `scripts/ptts_stub.c`.
 4. `xcodebuild -create-xcframework -library ...` (no `-headers`).
 5. Verify: `nm -gU` = exactly 8 symbols per slice; `nm -u` has no `_OBJC_CLASS_$`; no
-   `__LLVM`/`__bitcode`; minos 15.1; `lipo -info`.
-6. **Core ML precompile:** download `phonon-31m-en-coreml.zip` (pin sha), `xcrun coremlcompiler
+   `__LLVM`/`__bitcode`; minos 15.1; `lipo -info`; `amx`: per architecture, `llvm-objdump -d`
+   (LLVM 19, never `xcrun`'s; `--mattr=+all` on arm64) shows no `<unknown>` and no word with
+   `(w & 0xfffffc00) == 0x00201000`, matched on the encoding column whatever the mnemonic, and a
+   non-empty `__text` must parse to instructions.
+6. Zip with ditto plus licenses/notices; mtimes from `BUILDINFO.json` `build.sourceDateEpoch`.
+7. **Core ML precompile:** download `phonon-31m-en-coreml.zip` (pin sha), `xcrun coremlcompiler
    compile` each `.mlpackage`, produce a bundle with `.mlmodelc` dirs plus `bundle.json` and a
    per-file manifest (`path,size,sha256`) as a workflow artifact for the HF mirror (5).
-7. Zip with ditto plus licenses/notices.
 
 **Job `publish`:** GitHub release `phonon-bin-v<ver>-<rev>` with `make_latest: false` (does not
 displace release-it's `v*` releases), `SHA256SUMS`, BUILDINFO; opens a PR updating
@@ -664,6 +713,17 @@ only on this job.
 **Licenses.** Unchanged: MIT for us, both upstream license texts, generated notices in every zip,
 `docs/THIRD_PARTY_NOTICES.md`, README note. Models are never bundled; 31m and voices are
 Apache-2.0; 40m is CC BY-NC (example never defaults to it).
+
+### 4.3 Add-on release guard
+
+`check-pinned-ios.sh` downloads the iOS zip `phonon.lock.json` pins, checks its sha256 and runs
+the verifier's `amx` check on every slice. It fails closed: placeholder sha, failed download, sha
+mismatch, no `llvm-objdump`, any AMX or `<unknown>` word. It runs as the add-on's release-it
+`before:init` hook, so every release-it run of the add-on (the `release.yml` `package=phonon`
+job or a local `yarn release`) stops on a lock whose pinned iOS binary contains AMX. release-it
+skips hooks on `--dry-run`; run the script by hand there.
+`release.yml` also runs it first, with NDK 28.2's `llvm-objdump` exported as `LLVM_OBJDUMP` for
+the hook; locally, set `LLVM_OBJDUMP` (or `ANDROID_NDK_HOME`, or have `llvm-objdump` on `PATH`).
 
 ---
 
@@ -1043,6 +1103,7 @@ subsystem). Expected outputs: the `ios/` evidence tree above, returned as a tarb
 | R22 | Untested iOS 18 SoCs (A12/A13) may fail at load. | Persisted `load-failed` hides the engine after one failure; optional allowlist (D4). |
 | R23 | Translated ARM on x86 Android (ChromeOS/WSA/Waydroid). | Reported `translated-abi`, hidden. |
 | R24 | Consumers on AGP < 8.5.1 with 16 KB kernels. | dlopen/loadLibrary failure → `library-missing`, hidden; doc requires AGP ≥ 8.5.1. |
+| R27 | App Store ITMS-90755: upstream's prebuilt iOS lib carried xn-gemm's Apple AMX kernels (r1: 1131 words per arm64 slice), runtime-gated but scanned statically. | iOS built from source with the kernels compiled out (§3.3); the `amx` verifier check gates every slice. Residual: 0 `<unknown>` is necessary, not proof that review accepts; only a TestFlight upload shows it. r2 codegen differs slightly from r1, so a lab-iPhone playback check precedes the release. |
 
 ### Decisions needing the owner
 * **D1:** HF repo (org/name) to host the precompiled iOS Core ML bundle mirror.
