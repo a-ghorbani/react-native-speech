@@ -128,8 +128,6 @@ jobs:
   notices:
     needs: meta
     runs-on: ubuntu-24.04
-    outputs:
-      epoch: ${{ steps.epoch.outputs.epoch }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -141,11 +139,6 @@ jobs:
           ref: ${{ needs.meta.outputs.commit }}
           path: xn-ptts
           persist-credentials: false
-
-      # SOURCE_DATE_EPOCH for the ios zip (the build scripts read it from their own checkout).
-      - name: Upstream commit time
-        id: epoch
-        run: echo "epoch=$(git -C xn-ptts log -1 --format=%ct HEAD)" >>"$GITHUB_OUTPUT"
 
       - name: Cache cargo
         uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
@@ -189,8 +182,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      # The current release's names and sha256, before they are renamed below.
-      - name: Keep the current lock
+      - name: Copy the lock before the release rename
         run: cp packages/react-native-speech-phonon/phonon.lock.json "$RUNNER_TEMP/prev-lock.json"
 
       - name: Checkout upstream
@@ -362,10 +354,7 @@ jobs:
       # Prelink, stub slice, xcframework; package-ios.sh runs verify-ios-xcframework.sh before
       # zipping.
       - name: Package PhononCore.xcframework
-        env:
-          SOURCE_DATE_EPOCH: ${{ needs.notices.outputs.epoch }}
         run: |
-          test -n "$SOURCE_DATE_EPOCH"
           packages/react-native-speech-phonon/scripts/package-ios.sh --slices "$RUNNER_TEMP/ios-build" \
             --notices "$RUNNER_TEMP/notices/NOTICES-ios.md" \
             --licenses "$RUNNER_TEMP/notices/licenses" --work "$RUNNER_TEMP/ios" --out-dir dist
