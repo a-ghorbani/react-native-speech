@@ -17,6 +17,8 @@
 #              word ((w & 0xfffffc00) == 0x00201000), which App Store review rejects (ITMS-90755)
 #
 # Usage: verify-ios-xcframework.sh <PhononCore.xcframework>
+#        verify-ios-xcframework.sh --amx-only <PhononCore.xcframework>   # needs python3 and
+#                                                 # llvm-objdump only (the add-on release guard)
 #        verify-ios-xcframework.sh --selftest   # builds dummy xcframeworks that must pass / fail
 #
 # Runs on macOS (xcrun nm / otool / ar) and on Linux with LLVM tools (llvm-nm,
@@ -44,7 +46,7 @@ if [[ "$(uname)" == Darwin ]]; then
   NM=(xcrun nm)
   AR=(xcrun ar -t)
   LOADCMDS=(xcrun otool -l)
-else
+elif [[ "${1:-}" != --amx-only ]]; then
   NM=("$(find_llvm llvm-nm)")
   LOADCMDS=("$(find_llvm llvm-objdump)" --macho --private-headers)
   AR=("$(find_llvm llvm-ar)" t)
@@ -136,15 +138,18 @@ EOF
 
 # check_amx <label> <arch> <thin archive> <tmp dir>
 check_amx() {
-  local label="$1" arch="$2" thin="$3" tmp="$4" mattr=() text counts n amx unk syms
+  local label="$1" arch="$2" thin="$3" tmp="$4" sections text counts n amx unk syms ok=1
   [[ -n "$OBJDUMP" ]] || { fail amx "$label: no llvm-objdump (set LLVM_OBJDUMP)"; return; }
-  [[ "$arch" == arm64 ]] && mattr=(--mattr=+all)
-  if ! text="$("$OBJDUMP" --section-headers "$thin" 2>/dev/null)" \
-    || ! "$OBJDUMP" -d "${mattr[@]}" "$thin" >"$tmp/amx.dis" 2>/dev/null; then
+  case "$arch" in
+    arm64) "$OBJDUMP" -d --mattr=+all "$thin" >"$tmp/amx.dis" 2>/dev/null || ok=0 ;;
+    x86_64) "$OBJDUMP" -d "$thin" >"$tmp/amx.dis" 2>/dev/null || ok=0 ;;
+    *) fail amx "$label: unknown architecture"; return ;;
+  esac
+  if ((!ok)) || ! sections="$("$OBJDUMP" --section-headers "$thin" 2>/dev/null)"; then
     fail amx "$label: $OBJDUMP failed"
     return
   fi
-  text="$(awk '$2 == "__text" && $3 ~ /[1-9a-f]/ { n++ } END { print n + 0 }' <<<"$text")"
+  text="$(awk '$2 == "__text" && $3 ~ /[1-9a-f]/ { n++ } END { print n + 0 }' <<<"$sections")"
   counts="$(awk -v arm64="$([[ "$arch" == arm64 ]] && echo 1)" '
     /^[0-9a-f]+ <.*>:$/ { sym = substr($0, index($0, "<") + 1); sym = substr(sym, 1, length(sym) - 2); next }
     arm64 && /^ *[0-9a-f]+: [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] +\t/ {
@@ -167,6 +172,27 @@ check_amx() {
   else
     pass amx "$label: $n instructions, 0 AMX, 0 unknown"
   fi
+}
+
+# verify_amx <xcframework>: only the amx check, on every architecture of every library.
+verify_amx() {
+  local xcf="${1%/}" tmp id path arch archs checked=0
+  echo "== $xcf (amx only, $OBJDUMP)"
+  [[ -f "$xcf/Info.plist" ]] || { fail amx "no Info.plist"; return; }
+  tmp="$(mktemp -d)"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$tmp'" RETURN
+  while IFS='|' read -r id path _; do
+    [[ -n "$id" ]] || continue
+    [[ -f "$xcf/$id/$path" ]] || { fail amx "$id: $path missing"; continue; }
+    archs="$(machotool archs "$xcf/$id/$path")"
+    for arch in $archs; do
+      machotool thin "$xcf/$id/$path" "$arch" "$tmp/$id-$arch.a"
+      check_amx "$id/$arch" "$arch" "$tmp/$id-$arch.a" "$tmp"
+      checked=$((checked + 1))
+    done
+  done <<<"$(plist_libs "$xcf")"
+  ((checked > 0)) || fail amx "no library architectures in $xcf"
 }
 
 verify() {
@@ -285,7 +311,7 @@ verify() {
 # Self-test: dummy xcframeworks from ptts_stub.c (xcrun clang, or SDK-less LLVM clang), one that
 # passes and negatives that each fail exactly the check they target.
 selftest() {
-  local dir clang ar out st=0
+  local dir clang ar out expect_out st=0
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap "rm -rf '$dir'" RETURN
@@ -349,17 +375,19 @@ with open(sys.argv[1], "wb") as f:
 EOF
     echo "$x"
   }
+  # expect <xcframework> <pass | check> <name> [--amx-only]: sets expect_out to the output.
   expect() {
-    local x="$1" want="$2" rc
-    out="$("$0" "$x" 2>&1)" && rc=0 || rc=$?
+    local x="$1" want="$2" name="$3" rc out
+    out="$("$0" ${4:+"$4"} "$x" 2>&1)" && rc=0 || rc=$?
+    expect_out="$out"
     if [[ "$want" == pass ]]; then
-      if ((rc == 0)); then echo "selftest ok: $3 passes"; else echo "selftest BROKEN: $3 should pass"; echo "$out"; st=1; fi
+      if ((rc == 0)); then echo "selftest ok: $name passes"; else echo "selftest BROKEN: $name should pass"; echo "$out"; st=1; fi
       return
     fi
     if ((rc != 0)) && grep -q "^FAIL $want:" <<<"$out" && ! grep '^FAIL' <<<"$out" | grep -qv "^FAIL $want:"; then
-      echo "selftest ok: $3 fails '$want' only"
+      echo "selftest ok: $name fails '$want' only"
     else
-      echo "selftest BROKEN: $3 should fail '$want' and nothing else (rc=$rc)"; echo "$out"; st=1
+      echo "selftest BROKEN: $name should fail '$want' and nothing else (rc=$rc)"; echo "$out"; st=1
     fi
   }
   cat >"$dir/amx.h" <<'EOF'
@@ -367,14 +395,28 @@ EOF
 static __attribute__((used)) void phonon_selftest_amx(void) { __asm__(".inst 0x00201000"); }
 #endif
 EOF
+  cat >"$dir/unknown.h" <<'EOF'
+#ifdef __aarch64__
+static __attribute__((used)) void phonon_selftest_unknown(void) { __asm__(".inst 0x00200c00"); }
+#else
+static __attribute__((used)) void phonon_selftest_unknown(void) { __asm__(".byte 0x06"); }
+#endif
+EOF
   local x
   x="$(make good "$MINOS" "$MINOS")"; expect "$x" pass good
-  if ! grep -Eq '^PASS amx: ios-arm64/arm64: [1-9][0-9]* instructions' <<<"$out"; then
-    echo "selftest BROKEN: good dummy parsed no instructions"; echo "$out"; st=1
+  if ! grep -Eq '^PASS amx: ios-arm64/arm64: [1-9][0-9]* instructions' <<<"$expect_out"; then
+    echo "selftest BROKEN: good dummy parsed no instructions"; echo "$expect_out"; st=1
   fi
+  expect "$x" pass "good (--amx-only)" --amx-only
   x="$(make amx "$MINOS" "$MINOS" -include "$dir/amx.h")"; expect "$x" amx "AMX word"
-  if ! grep -Eq '^FAIL amx: ios-arm64/arm64: [1-9][0-9]* AMX words' <<<"$out"; then
-    echo "selftest BROKEN: the planted AMX word was not counted"; echo "$out"; st=1
+  if ! grep -Eq '^FAIL amx: ios-arm64/arm64: [1-9][0-9]* AMX words' <<<"$expect_out"; then
+    echo "selftest BROKEN: the planted AMX word was not counted"; echo "$expect_out"; st=1
+  fi
+  expect "$x" amx "AMX word (--amx-only)" --amx-only
+  x="$(make unknown "$MINOS" "$MINOS" -include "$dir/unknown.h")"; expect "$x" amx "undecodable word"
+  if ! grep -Eq '^FAIL amx: ios-arm64/arm64: 0 AMX words, [1-9][0-9]* <unknown>' <<<"$expect_out" \
+    || ! grep -Eq '^FAIL amx: ios-arm64_x86_64-simulator/x86_64: 0 AMX words, [1-9][0-9]* <unknown>' <<<"$expect_out"; then
+    echo "selftest BROKEN: the planted undecodable words were not counted on arm64 and x86_64"; echo "$expect_out"; st=1
   fi
   x="$(make minos16 16.0 "$MINOS")"; expect "$x" minos "device minos 16.0"
   x="$(make extra "$MINOS" "$MINOS" -DWITH_EXTRA_EXPORT)"
@@ -409,8 +451,9 @@ EOF
 
 case "${1:-}" in
   --selftest) selftest; exit $? ;;
+  --amx-only) [[ -n "${2:-}" ]] || { echo "--amx-only <PhononCore.xcframework>" >&2; exit 2; }; verify_amx "$2" ;;
   -h|--help|"") awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 2 ;;
+  *) verify "$1" ;;
 esac
-verify "$1"
 if ((FAILED)); then echo "verify-ios-xcframework: FAILED"; exit 1; fi
 echo "verify-ios-xcframework: OK"
