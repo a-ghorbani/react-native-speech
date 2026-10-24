@@ -322,7 +322,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       try {
         await session.finalize();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
@@ -335,7 +337,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       try {
         await session.cancel();
       } finally {
-        this.activeStreamSession = null;
+        if (this.activeStreamSession === session) {
+          this.activeStreamSession = null;
+        }
         this.isSynthesizing = false;
         if (this.synthesisCompleteResolver) {
           this.synthesisCompleteResolver();
