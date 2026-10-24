@@ -13,6 +13,8 @@
 #              no Rust symbol left unresolved by the prelink)
 #   bitcode    no __LLVM segment / __bitcode section
 #   minos      every LC_BUILD_VERSION is minos 15.1 on the right platform (ios / iossimulator)
+#   amx        llvm-objdump -d finds no <unknown> word and, on arm64 (--mattr=+all), no Apple AMX
+#              word ((w & 0xfffffc00) == 0x00201000), which App Store review rejects (ITMS-90755)
 #
 # Usage: verify-ios-xcframework.sh <PhononCore.xcframework>
 #        verify-ios-xcframework.sh --selftest   # builds dummy xcframeworks that must pass / fail
@@ -20,6 +22,8 @@
 # Runs on macOS (xcrun nm / otool / ar) and on Linux with LLVM tools (llvm-nm,
 # llvm-objdump --macho, llvm-ar from $ANDROID_NDK_HOME or PATH), so the checks themselves can be
 # exercised off a Mac. Needs python3 for Info.plist.
+# Env: LLVM_OBJDUMP (the amx disassembler; default: llvm-objdump from the NDK or PATH, never
+#      xcrun's).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -106,6 +110,8 @@ elif cmd == "thin":
 EOF
 }
 
+OBJDUMP="${LLVM_OBJDUMP:-$(find_llvm llvm-objdump)}"
+
 FAILED=0
 pass() { echo "PASS $1: $2"; }
 fail() { echo "FAIL $1: $2"; FAILED=1; }
@@ -126,6 +132,41 @@ for lib in p.get("AvailableLibraries", []):
         lib.get("HeadersPath", ""),
     ]))
 EOF
+}
+
+# check_amx <label> <arch> <thin archive> <tmp dir>
+check_amx() {
+  local label="$1" arch="$2" thin="$3" tmp="$4" mattr=() text counts n amx unk syms
+  [[ -n "$OBJDUMP" ]] || { fail amx "$label: no llvm-objdump (set LLVM_OBJDUMP)"; return; }
+  [[ "$arch" == arm64 ]] && mattr=(--mattr=+all)
+  if ! text="$("$OBJDUMP" --section-headers "$thin" 2>/dev/null)" \
+    || ! "$OBJDUMP" -d "${mattr[@]}" "$thin" >"$tmp/amx.dis" 2>/dev/null; then
+    fail amx "$label: $OBJDUMP failed"
+    return
+  fi
+  text="$(awk '$2 == "__text" && $3 ~ /[1-9a-f]/ { n++ } END { print n + 0 }' <<<"$text")"
+  counts="$(awk -v arm64="$([[ "$arch" == arm64 ]] && echo 1)" '
+    /^[0-9a-f]+ <.*>:$/ { sym = substr($0, index($0, "<") + 1); sym = substr(sym, 1, length(sym) - 2); next }
+    arm64 && /^ *[0-9a-f]+: [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] +\t/ {
+      n++; bad = 0
+      if ($2 ~ /^00201[0-3]/) { amx++; bad = 1 }
+      if ($0 ~ /\t<unknown>/) { unk++; bad = 1 }
+    }
+    !arm64 && /^ *[0-9a-f]+: [0-9a-f][0-9a-f] / {
+      n++; bad = 0
+      if ($0 ~ /\t<unknown>/) { unk++; bad = 1 }
+    }
+    bad && !(sym in seen) && nsyms < 5 { seen[sym] = 1; syms = syms (nsyms++ ? " " : "") sym; bad = 0 }
+    END { print n + 0, amx + 0, unk + 0, syms }' "$tmp/amx.dis")"
+  rm -f "$tmp/amx.dis"
+  read -r n amx unk syms <<<"$counts"
+  if ((text > 0 && n == 0)); then
+    fail amx "$label: __text is not empty but 0 instructions parsed"
+  elif ((amx > 0 || unk > 0)); then
+    fail amx "$label: $amx AMX words, $unk <unknown>; first: $syms"
+  else
+    pass amx "$label: $n instructions, 0 AMX, 0 unknown"
+  fi
 }
 
 verify() {
@@ -235,6 +276,8 @@ verify() {
         }
         END { if (n == 0) print "no LC_BUILD_VERSION" }' <<<"$lc" | LC_ALL=C sort | uniq -c | awk 'NR<=5' | tr -s ' ' | tr '\n' ';')"
       if [[ -n "$bad" ]]; then fail minos "$id/$arch: $bad"; else pass minos "$id/$arch: $MINOS"; fi
+
+      check_amx "$id/$arch" "$arch" "$thin" "$tmp"
     done
   done <<<"$libs"
 }
@@ -242,7 +285,7 @@ verify() {
 # Self-test: dummy xcframeworks from ptts_stub.c (xcrun clang, or SDK-less LLVM clang), one that
 # passes and negatives that each fail exactly the check they target.
 selftest() {
-  local dir clang ar st=0
+  local dir clang ar out st=0
   dir="$(mktemp -d)"
   # shellcheck disable=SC2064
   trap "rm -rf '$dir'" RETURN
@@ -307,7 +350,7 @@ EOF
     echo "$x"
   }
   expect() {
-    local x="$1" want="$2" out rc
+    local x="$1" want="$2" rc
     out="$("$0" "$x" 2>&1)" && rc=0 || rc=$?
     if [[ "$want" == pass ]]; then
       if ((rc == 0)); then echo "selftest ok: $3 passes"; else echo "selftest BROKEN: $3 should pass"; echo "$out"; st=1; fi
@@ -319,12 +362,23 @@ EOF
       echo "selftest BROKEN: $3 should fail '$want' and nothing else (rc=$rc)"; echo "$out"; st=1
     fi
   }
+  cat >"$dir/amx.h" <<'EOF'
+#ifdef __aarch64__
+static __attribute__((used)) void phonon_selftest_amx(void) { __asm__(".inst 0x00201000"); }
+#endif
+EOF
   local x
   x="$(make good "$MINOS" "$MINOS")"; expect "$x" pass good
+  if ! grep -Eq '^PASS amx: ios-arm64/arm64: [1-9][0-9]* instructions' <<<"$out"; then
+    echo "selftest BROKEN: good dummy parsed no instructions"; echo "$out"; st=1
+  fi
+  x="$(make amx "$MINOS" "$MINOS" -include "$dir/amx.h")"; expect "$x" amx "AMX word"
+  if ! grep -Eq '^FAIL amx: ios-arm64/arm64: [1-9][0-9]* AMX words' <<<"$out"; then
+    echo "selftest BROKEN: the planted AMX word was not counted"; echo "$out"; st=1
+  fi
   x="$(make minos16 16.0 "$MINOS")"; expect "$x" minos "device minos 16.0"
   x="$(make extra "$MINOS" "$MINOS" -DWITH_EXTRA_EXPORT)"
   # Two members per arch: both 'prelinked' and 'exports' must fail, so check each separately.
-  local out
   out="$("$0" "$x" 2>&1 || true)"
   if grep -q '^FAIL exports:' <<<"$out" && grep -q '^FAIL prelinked:' <<<"$out"; then
     echo "selftest ok: extra export fails 'exports' and 'prelinked'"
