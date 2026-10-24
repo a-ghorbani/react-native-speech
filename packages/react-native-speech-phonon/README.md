@@ -430,6 +430,6 @@ trusted publishing configured for that workflow: npmjs.com → package → Setti
 publishing, repository `a-ghorbani/react-native-speech`, workflow `release.yml`. The workflow
 first checks the iOS binaries `phonon.lock.json` pins for Apple AMX instructions
 (`scripts/check-pinned-ios.sh`, also release-it's `before:init` hook, so a local `yarn release`
-or `--dry-run` runs it too) and refuses to release if it finds any. Locally it needs LLVM's
+runs it too; `--dry-run` skips hooks) and refuses to release if it finds any. Locally it needs LLVM's
 `llvm-objdump`: set `LLVM_OBJDUMP` (on macOS, `$(brew --prefix llvm@19)/bin/llvm-objdump`) or
 `ANDROID_NDK_HOME`.

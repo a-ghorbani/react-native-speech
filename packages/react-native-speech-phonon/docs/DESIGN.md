@@ -720,7 +720,8 @@ Apache-2.0; 40m is CC BY-NC (example never defaults to it).
 the verifier's `amx` check on every slice. It fails closed: placeholder sha, failed download, sha
 mismatch, no `llvm-objdump`, any AMX or `<unknown>` word. It runs as the add-on's release-it
 `before:init` hook, so every release-it run of the add-on (the `release.yml` `package=phonon`
-job, a local `yarn release`, a `--dry-run`) stops on a lock whose pinned iOS binary contains AMX.
+job or a local `yarn release`) stops on a lock whose pinned iOS binary contains AMX. release-it
+skips hooks on `--dry-run`; run the script by hand there.
 `release.yml` also runs it first, with NDK 28.2's `llvm-objdump` exported as `LLVM_OBJDUMP` for
 the hook; locally, set `LLVM_OBJDUMP` (or `ANDROID_NDK_HOME`, or have `llvm-objdump` on `PATH`).
 
