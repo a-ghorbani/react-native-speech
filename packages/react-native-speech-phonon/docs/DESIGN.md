@@ -710,16 +710,19 @@ only on this job.
   binary, `size -m` deltas into `ios-binary-size.json`). If an iOS 17 runtime exists, a launch
   smoke (`os-too-old`) runs **non-blocking**.
 
-### 4.3 `release.yml` (add-on)
-
-With `package=phonon`, before release-it, `check-pinned-ios.sh` downloads the iOS zip
-`phonon.lock.json` pins, checks its sha256 and runs the verifier's `amx` check on every slice
-(NDK 28.2 `llvm-objdump`). It fails closed (placeholder sha, failed download, sha mismatch, no
-objdump, any AMX or `<unknown>` word), so the add-on cannot ship a lock that pins r1.
-
 **Licenses.** Unchanged: MIT for us, both upstream license texts, generated notices in every zip,
 `docs/THIRD_PARTY_NOTICES.md`, README note. Models are never bundled; 31m and voices are
 Apache-2.0; 40m is CC BY-NC (example never defaults to it).
+
+### 4.3 Add-on release guard
+
+`check-pinned-ios.sh` downloads the iOS zip `phonon.lock.json` pins, checks its sha256 and runs
+the verifier's `amx` check on every slice. It fails closed: placeholder sha, failed download, sha
+mismatch, no `llvm-objdump`, any AMX or `<unknown>` word. It runs as the add-on's release-it
+`before:init` hook, so every release-it run of the add-on (the `release.yml` `package=phonon`
+job, a local `yarn release`, a `--dry-run`) stops on a lock whose pinned iOS binary contains AMX.
+`release.yml` also runs it first, with NDK 28.2's `llvm-objdump` exported as `LLVM_OBJDUMP` for
+the hook; locally, set `LLVM_OBJDUMP` (or `ANDROID_NDK_HOME`, or have `llvm-objdump` on `PATH`).
 
 ---
 
