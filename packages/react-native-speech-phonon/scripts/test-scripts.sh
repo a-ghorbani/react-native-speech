@@ -21,6 +21,9 @@
 #      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
 #  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
 #      written for a placeholder or mismatched sha256, upstream commit or BUILDINFO.
+#  11. check-pinned-ios.sh refuses a placeholder or mismatched sha256, a failed download, a zip
+#      without the framework or libraries, and a missing llvm-objdump; release.yml runs it
+#      before the add-on's release-it.
 #
 # Needs bash >= 4 (gen-hwcaps-header.sh, verify-android-so.sh); on a Mac, Homebrew's bash (the
 # GitHub macOS runners have it first on PATH).
@@ -388,6 +391,69 @@ cp "$T/carry/from/BUILDINFO-android.json" "$T/carry/good-info.json"
 echo '{}' >"$T/carry/from/BUILDINFO-android.json"
 carry_refuses buildinfo-mismatch "$T/carry/lock.json"
 cp "$T/carry/good-info.json" "$T/carry/from/BUILDINFO-android.json"
+
+echo "# 11. check-pinned-ios.sh"
+pin_lock() { jq --arg s "$2" '.binaries.ios.sha256 = $s' "$LOCK" >"$1"; }
+pin_zip() {
+  local name="$1" plist="$2" d="$T/pin/$1"
+  mkdir -p "$d/PhononCore.xcframework/ios-arm64"
+  printf '\xcf\xfa\xed\xfe\x0c\x00\x00\x01' >"$d/PhononCore.xcframework/ios-arm64/libptts_ffi.a"
+  python3 -I - "$d/PhononCore.xcframework/Info.plist" "$plist" <<'EOF'
+import plistlib, sys
+libs = [{"LibraryIdentifier": "ios-arm64", "LibraryPath": "libptts_ffi.a",
+         "SupportedArchitectures": ["arm64"], "SupportedPlatform": "ios"}] if sys.argv[2] == "lib" else []
+plistlib.dump({"AvailableLibraries": libs}, open(sys.argv[1], "wb"))
+EOF
+  (cd "$d" && zip -qr "$T/pin/$name.zip" PhononCore.xcframework)
+  echo "$T/pin/$name.zip"
+}
+# pinned_fails <name> <lock> <expected message (ERE)> <command...>
+pinned_fails() {
+  local name="$1" lock="$2" why="$3"; shift 3
+  check_fails "$name" env PHONON_LOCK="$lock" LLVM_OBJDUMP="$T/pin/no-objdump" "$@"
+  cp "$T/out" "$T/pin.err"
+  check "$name: $why" grep -Eq "$why" "$T/pin.err"
+}
+mkdir -p "$T/pin"
+z="$(pin_zip onelib lib)"
+pin_lock "$T/pin/ph.json" PLACEHOLDER
+pinned_fails "placeholder sha256 refused" "$T/pin/ph.json" "pins no iOS sha256" "$HERE/check-pinned-ios.sh" --zip "$z"
+pin_lock "$T/pin/other.json" "$(printf 'c%.0s' {1..64})"
+pinned_fails "sha256 mismatch refused" "$T/pin/other.json" "sha256 [0-9a-f]+, .* pins" "$HERE/check-pinned-ios.sh" --zip "$z"
+pin_lock "$T/pin/ok.json" "$(sha "$z")"
+pinned_fails "failed download refused" "$T/pin/ok.json" "could not download" env PHONON_RELEASE_BASE_URL="file://$T/pin/nowhere" \
+  "$HERE/check-pinned-ios.sh"
+pinned_fails "missing llvm-objdump refused" "$T/pin/ok.json" "^FAIL amx: ios-arm64/arm64: .*no-objdump failed" \
+  "$HERE/check-pinned-ios.sh" --zip "$z"
+check_fails "no llvm-objdump anywhere refused" env PHONON_LOCK="$T/pin/ok.json" LLVM_OBJDUMP= ANDROID_NDK_HOME= \
+  ANDROID_NDK_ROOT= PATH="$(dirname "$(command -v jq)"):/usr/bin:/bin" "$HERE/check-pinned-ios.sh" --zip "$z"
+cp "$T/out" "$T/pin.err"
+check "no llvm-objdump anywhere refused: names it" grep -q '^FAIL amx: ios-arm64/arm64: no llvm-objdump' "$T/pin.err"
+z="$(pin_zip nolibs none)"
+pin_lock "$T/pin/nolibs.json" "$(sha "$z")"
+pinned_fails "framework without libraries refused" "$T/pin/nolibs.json" "no library architectures" "$HERE/check-pinned-ios.sh" --zip "$z"
+mkdir -p "$T/pin/empty" && echo x >"$T/pin/empty/x" && (cd "$T/pin/empty" && zip -q "$T/pin/empty.zip" x)
+pin_lock "$T/pin/empty.json" "$(sha "$T/pin/empty.zip")"
+pinned_fails "zip without the framework refused" "$T/pin/empty.json" "has no PhononCore.xcframework" "$HERE/check-pinned-ios.sh" --zip "$T/pin/empty.zip"
+if python3 -c 'import yaml' 2>/dev/null; then
+  check "release.yml checks the pinned iOS zip before the add-on release" python3 - "$REPO/.github/workflows/release.yml" <<'EOF'
+import sys, yaml
+steps = yaml.safe_load(open(sys.argv[1]))["jobs"]["release"]["steps"]
+names = [s.get("name") for s in steps]
+guard = [i for i, s in enumerate(steps) if "check-pinned-ios.sh" in s.get("run", "")]
+assert len(guard) == 1, "one guard step"
+g = steps[guard[0]]
+assert g.get("if") == "env.PACKAGE == 'phonon'", g.get("if")
+assert "continue-on-error" not in g, "the guard must fail the release"
+assert "LLVM_OBJDUMP=" in g["run"] and "ndk;" in g["run"] and 'test -x "$LLVM_OBJDUMP"' in g["run"], "pinned objdump"
+i_rel = names.index("Release the Phonon add-on")
+assert guard[0] < i_rel and steps[i_rel]["if"] == "env.PACKAGE == 'phonon'"
+core = steps[names.index("Release")]
+assert core["if"] == "env.PACKAGE == 'core'" and "check-pinned-ios" not in core["run"]
+EOF
+else
+  echo "skip - release.yml check (no PyYAML)"
+fi
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi
