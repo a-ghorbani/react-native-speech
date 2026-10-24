@@ -75,6 +75,9 @@
     ]
   },
   "release-it": {
+    "hooks": {
+      "before:init": "scripts/check-pinned-ios.sh"
+    },
     "git": {
       "commitMessage": "chore(phonon): release ${version}",
       "tagName": "phonon-v${version}",

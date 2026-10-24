@@ -21,9 +21,9 @@
 #      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
 #  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
 #      written for a placeholder or mismatched sha256, upstream commit or BUILDINFO.
-#  11. check-pinned-ios.sh refuses a placeholder or mismatched sha256, a failed download, a zip
-#      without the framework or libraries, and a missing llvm-objdump; release.yml runs it
-#      before the add-on's release-it.
+#  11. check-pinned-ios.sh passes a clean pinned zip and refuses a placeholder or mismatched
+#      sha256, a failed download, a zip without the framework or libraries, and a missing
+#      llvm-objdump; release.yml and the add-on's release-it before:init hook run it.
 #
 # Needs bash >= 4 (gen-hwcaps-header.sh, verify-android-so.sh); on a Mac, Homebrew's bash (the
 # GitHub macOS runners have it first on PATH).
@@ -416,6 +416,7 @@ pinned_fails() {
 }
 mkdir -p "$T/pin"
 z="$(pin_zip onelib lib)"
+onelib="$z"
 pin_lock "$T/pin/ph.json" PLACEHOLDER
 pinned_fails "placeholder sha256 refused" "$T/pin/ph.json" "pins no iOS sha256" "$HERE/check-pinned-ios.sh" --zip "$z"
 pin_lock "$T/pin/other.json" "$(printf 'c%.0s' {1..64})"
@@ -432,6 +433,21 @@ check "no llvm-objdump anywhere refused: names it" grep -q '^FAIL amx: ios-arm64
 z="$(pin_zip nolibs none)"
 pin_lock "$T/pin/nolibs.json" "$(sha "$z")"
 pinned_fails "framework without libraries refused" "$T/pin/nolibs.json" "no library architectures" "$HERE/check-pinned-ios.sh" --zip "$z"
+cat >"$T/pin/stub-objdump" <<'EOF'
+#!/bin/sh
+case "$1" in
+  --section-headers) printf 'Idx Name Size VMA Type\n  0 __text 00000004 0000000000000000 TEXT\n' ;;
+  *) printf '0000000000000000 <_f>:\n       0: d65f03c0     \tret\n' ;;
+esac
+EOF
+chmod +x "$T/pin/stub-objdump"
+rel="$(jq -er '.binaries.release' "$LOCK")"
+mkdir -p "$T/pin/releases/$rel"
+cp "$onelib" "$T/pin/releases/$rel/$(jq -er '.binaries.ios.asset' "$LOCK")"
+check "a clean pinned zip passes" env PHONON_LOCK="$T/pin/ok.json" LLVM_OBJDUMP="$T/pin/stub-objdump" \
+  PHONON_RELEASE_BASE_URL="file://$T/pin/releases" "$HERE/check-pinned-ios.sh"
+cp "$T/out" "$T/pin.out"
+check "and says so" grep -q "no AMX or undecodable instructions" "$T/pin.out"
 mkdir -p "$T/pin/empty" && echo x >"$T/pin/empty/x" && (cd "$T/pin/empty" && zip -q "$T/pin/empty.zip" x)
 pin_lock "$T/pin/empty.json" "$(sha "$T/pin/empty.zip")"
 pinned_fails "zip without the framework refused" "$T/pin/empty.json" "has no PhononCore.xcframework" "$HERE/check-pinned-ios.sh" --zip "$T/pin/empty.zip"
@@ -449,6 +465,7 @@ assert "shell" not in g and "set +e" not in g["run"], "the guard runs under bash
 lines = [l.strip() for l in g["run"].splitlines() if l.strip()]
 assert [l for l in lines if "check-pinned-ios.sh" in l] == lines[-1:], "the guard is the step's last command"
 assert lines[-1] == "packages/react-native-speech-phonon/scripts/check-pinned-ios.sh", "exit status swallowed: " + lines[-1]
+assert 'echo "LLVM_OBJDUMP=$LLVM_OBJDUMP" >>"$GITHUB_ENV"' in lines, "the release-it hook needs the pinned objdump"
 assert "LLVM_OBJDUMP=" in g["run"] and "ndk;" in g["run"] and 'test -x "$LLVM_OBJDUMP"' in g["run"], "pinned objdump"
 i_rel = names.index("Release the Phonon add-on")
 assert guard[0] < i_rel and steps[i_rel]["if"] == "env.PACKAGE == 'phonon'"
@@ -458,6 +475,8 @@ EOF
 else
   echo "skip - release.yml check (no PyYAML)"
 fi
+check "release-it runs the guard before anything else" test \
+  "$(jq -r '."release-it".hooks."before:init"' "$ROOT/package.json")" == scripts/check-pinned-ios.sh
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi
