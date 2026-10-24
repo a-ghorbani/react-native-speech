@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify the repackaged PhononCore.xcframework (package-ios.sh output) before release
+# Verify the packaged PhononCore.xcframework (package-ios.sh output) before release
 # (design §3.3, §4.1):
 #
 #   layout     exactly two libraries: ios-arm64 [arm64] and ios-arm64_x86_64-simulator
