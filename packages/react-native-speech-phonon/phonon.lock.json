@@ -10,9 +10,9 @@
   },
   "arm64Features": "+dotprod,+fp16",
   "binaries": {
-    "release": "phonon-bin-v0.4.0-r1",
+    "release": "phonon-bin-v0.4.0-r2",
     "android": {
-      "asset": "phonon-android-0.4.0-r1.zip",
+      "asset": "phonon-android-0.4.0-r2.zip",
       "sha256": "005be447b7ff6e4cd8201dc9cedc163bc5d8769f3d3ea2ef8461a14a921ebbf9",
       "abis": [
         "arm64-v8a",
@@ -20,8 +20,8 @@
       ]
     },
     "ios": {
-      "asset": "phonon-ios-0.4.0-r1.xcframework.zip",
-      "sha256": "e2c120620c114e2539d9de5ee99d5f2a6f347de546173d8f88e448ff4e43a203"
+      "asset": "phonon-ios-0.4.0-r2.xcframework.zip",
+      "sha256": "ad5b03b8a72e3a84637be9a25a5ba6cecc73c2bbc74e4815ed512ffda705231f"
     }
   }
 }
