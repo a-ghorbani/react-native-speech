@@ -15,7 +15,8 @@
 #   7. update-lock.sh: names-only, sums, bad release names, missing assets.
 #   8. phonon-binaries.yml: publishing is gated off pull requests, the lock PR has a branch to
 #      target on a tag push, a re-run finds its own release, the iOS zip gets SOURCE_DATE_EPOCH,
-#      and the linters run (needs python3 + PyYAML; skipped otherwise).
+#      the linters run, and an iOS-only run builds iOS from source and carries Android forward
+#      (needs python3 + PyYAML; skipped otherwise).
 #   9. build-ios.sh: the patch touches exactly xn-gemm's three microkernel.rs, a vendored xn-gemm of
 #      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
 #  10. carry-android.sh: the previous zip under the new name with the same bytes, and nothing
@@ -301,6 +302,35 @@ assert "if" not in lint and "needs" not in lint, lint
 run = "\n".join(s.get("run", "") for s in lint["steps"])
 assert "sha256sum -c" in run, "actionlint download must be pinned"
 assert "actionlint .github/workflows/phonon-binaries.yml" in run and "shellcheck -x packages/react-native-speech-phonon/scripts/*.sh" in run, run
+EOF
+  check "iOS-only runs carry Android forward" python3 - "$REPO/.github/workflows/phonon-binaries.yml" <<'EOF'
+import sys, yaml
+text = open(sys.argv[1]).read()
+wf = yaml.safe_load(text)
+on = wf.get(True, wf.get("on"))
+plat = on["workflow_dispatch"]["inputs"]["platforms"]
+assert plat["type"] == "choice" and plat["options"] == ["all", "ios"] and plat["default"] == "all", plat
+jobs = wf["jobs"]
+assert jobs["meta"]["outputs"]["platforms"] == "${{ steps.meta.outputs.platforms }}"
+meta = "\n".join(s.get("run", "") for s in jobs["meta"]["steps"])
+assert 'platforms="$PLATFORMS"' in meta and "all|ios) ;;" in meta, "meta must pass and validate platforms"
+steps = jobs["android"]["steps"]
+names = [s.get("name") for s in steps]
+i_prev = next(i for i, s in enumerate(steps) if "prev-lock.json" in s.get("run", ""))
+assert i_prev < names.index("Use release asset names"), names
+carry = next(s for s in steps if "carry-android.sh" in s.get("run", ""))
+assert carry["if"] == "needs.meta.outputs.platforms == 'ios'", carry.get("if")
+for name in ["Build libptts_ffi.so", "Verify libptts_ffi.so", "Download notices", "Package", "Reproducibility check"]:
+    assert steps[names.index(name)].get("if") == "needs.meta.outputs.platforms == 'all'", name
+assert "if" not in steps[names.index("Script tests")], "script tests run in every mode"
+ios = jobs["ios"]["steps"]
+runs = [s.get("run", "") for s in ios]
+i_build = next(i for i, r in enumerate(runs) if "build-ios.sh" in r)
+i_pkg = next(i for i, r in enumerate(runs) if "package-ios.sh" in r)
+assert i_build < i_pkg and '--slices "$RUNNER_TEMP/ios-build"' in runs[i_pkg], "ios: build, then package the slices"
+tool = "\n".join(runs[:next(i for i, s in enumerate(ios) if s.get("name") == "Script tests")])
+assert "llvm@19" in tool and "LLVM_OBJDUMP=" in tool, "selftest needs LLVM_OBJDUMP"
+assert "--upstream-zip" not in text
 EOF
 else
   echo "skip - workflow checks (no PyYAML)"
