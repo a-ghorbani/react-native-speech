@@ -16,6 +16,8 @@
 #   8. phonon-binaries.yml: publishing is gated off pull requests, the lock PR has a branch to
 #      target on a tag push, a re-run finds its own release, the iOS zip gets SOURCE_DATE_EPOCH,
 #      and the linters run (needs python3 + PyYAML; skipped otherwise).
+#   9. build-ios.sh: the patch touches exactly xn-gemm's three microkernel.rs, a vendored xn-gemm of
+#      another version stops the build at the patch step, and a foreign --vendor-cache is kept.
 #
 # Needs bash >= 4 (gen-hwcaps-header.sh, verify-android-so.sh); on a Mac, Homebrew's bash (the
 # GitHub macOS runners have it first on PATH).
@@ -297,6 +299,30 @@ EOF
 else
   echo "skip - workflow checks (no PyYAML)"
 fi
+
+echo "# 9. build-ios.sh"
+patch_files="$(sed -n 's|^+++ b/||p' "$HERE/patches/xn-gemm-no-amx.patch" | cut -f1 | LC_ALL=C sort | tr '\n' ' ')"
+check "patch targets xn-gemm-f{16,32,64} 0.20.2" test "$patch_files" == \
+  "xn-gemm-f16-0.20.2/src/microkernel.rs xn-gemm-f32-0.20.2/src/microkernel.rs xn-gemm-f64-0.20.2/src/microkernel.rs "
+check_fails "build-ios.sh without --upstream" "$HERE/build-ios.sh" --out "$T/ib"
+up="$T/xn-ptts"
+mkdir -p "$up/ptts-ffi/include"
+cp "$ROOT/cpp/ptts.h" "$up/ptts-ffi/include/ptts.h"
+echo '# fixture' >"$up/Cargo.lock"
+git -C "$up" init -q
+git -C "$up" add -A
+git -C "$up" -c user.name=t -c user.email=t@t commit -qm fixture
+jq --arg c "$(git -C "$up" rev-parse HEAD)" '.upstream.commit = $c' "$LOCK" >"$T/lock-ios.json"
+mkdir -p "$T/vc/xn-gemm-f16-0.21.0/src"
+sha "$up/Cargo.lock" >"$T/vc/.complete"
+check_fails "another xn-gemm version stops the build" env PHONON_LOCK="$T/lock-ios.json" \
+  "$HERE/build-ios.sh" --upstream "$up" --out "$T/ib" --vendor-cache "$T/vc"
+cp "$T/out" "$T/ib.err"
+check "the failure names xn-gemm-f16-0.20.2" grep -q "patch targets xn-gemm-f16-0.20.2, not in the vendored sources" "$T/ib.err"
+mkdir -p "$T/vc2" && echo keep >"$T/vc2/mine"
+check_fails "a --vendor-cache without .complete is refused" env PHONON_LOCK="$T/lock-ios.json" \
+  "$HERE/build-ios.sh" --upstream "$up" --out "$T/ib" --vendor-cache "$T/vc2"
+check "and left as it was" test -f "$T/vc2/mine"
 
 echo
 if ((FAILS)); then echo "$FAILS test(s) failed"; exit 1; fi

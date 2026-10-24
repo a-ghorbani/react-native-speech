@@ -1,0 +1,36 @@
+diff -ru a/xn-gemm-f16-0.20.2/src/microkernel.rs b/xn-gemm-f16-0.20.2/src/microkernel.rs
+--- a/xn-gemm-f16-0.20.2/src/microkernel.rs
++++ b/xn-gemm-f16-0.20.2/src/microkernel.rs
+@@ -95,7 +95,7 @@
+     }
+ }
+ 
+-#[cfg(target_arch = "aarch64")]
++#[cfg(all(target_arch = "aarch64", feature = "experimental-apple-amx"))]
+ pub mod amx {
+     pub mod f16 {
+         pub type T = half::f16;
+diff -ru a/xn-gemm-f32-0.20.2/src/microkernel.rs b/xn-gemm-f32-0.20.2/src/microkernel.rs
+--- a/xn-gemm-f32-0.20.2/src/microkernel.rs
++++ b/xn-gemm-f32-0.20.2/src/microkernel.rs
+@@ -458,7 +458,7 @@
+     }
+ }
+ 
+-#[cfg(target_arch = "aarch64")]
++#[cfg(all(target_arch = "aarch64", feature = "experimental-apple-amx"))]
+ pub mod amx {
+     pub mod f32 {
+         pub type T = f32;
+diff -ru a/xn-gemm-f64-0.20.2/src/microkernel.rs b/xn-gemm-f64-0.20.2/src/microkernel.rs
+--- a/xn-gemm-f64-0.20.2/src/microkernel.rs
++++ b/xn-gemm-f64-0.20.2/src/microkernel.rs
+@@ -416,7 +416,7 @@
+     }
+ }
+ 
+-#[cfg(target_arch = "aarch64")]
++#[cfg(all(target_arch = "aarch64", feature = "experimental-apple-amx"))]
+ pub mod amx {
+     pub mod f64 {
+         pub type T = f64;
