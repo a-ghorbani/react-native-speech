@@ -14,7 +14,8 @@ consumer build time (`docs/DESIGN.md` §2.3, §3, §4.1). Paths below are relati
 | `package-android.sh` | Linux, macOS | deterministic `phonon-android-<ver>-r<N>.zip` + `SHA256SUMS` |
 | `build-ios.sh` | macOS + Xcode | `libptts_ffi.a` for aarch64-apple-ios / -sim from the pinned xn-ptts commit, with `patches/xn-gemm-no-amx.patch` applied to the vendored sources (upstream's `Cargo.lock`, `--locked --offline`, checkout untouched), staged with `BUILDINFO.json` |
 | `package-ios.sh` | macOS + Xcode | `build-ios.sh` slices (`--slices`) → prelinked, headerless, minos 15.1, with an x86_64 simulator stub (`ptts_stub.c`), zipped |
-| `verify-ios-xcframework.sh` | macOS, or Linux with NDK LLVM tools | layout, archs, one prelinked object per arch, 8 exports (`ptts.exp`), no `_OBJC_CLASS_$` refs, every other undefined symbol in `ios-undefined-allow.txt` (SDK C symbols only), no bitcode, minos 15.1, `amx` (no `<unknown>`, no Apple AMX word; LLVM 19 `llvm-objdump` from `LLVM_OBJDUMP` or the NDK, never `xcrun`'s). `--selftest` |
+| `verify-ios-xcframework.sh` | macOS, or Linux with NDK LLVM tools | layout, archs, one prelinked object per arch, 8 exports (`ptts.exp`), no `_OBJC_CLASS_$` refs, every other undefined symbol in `ios-undefined-allow.txt` (SDK C symbols only), no bitcode, minos 15.1, `amx` (no `<unknown>`, no Apple AMX word; LLVM 19 `llvm-objdump` from `LLVM_OBJDUMP` or the NDK, never `xcrun`'s). `--amx-only` runs that check alone (python3 and llvm-objdump only). `--selftest` |
+| `check-pinned-ios.sh` | Linux, macOS | the add-on release guard (`release.yml`): the lock-pinned iOS zip, sha256-checked, through `verify-ios-xcframework.sh --amx-only` |
 | `carry-android.sh` | any | an iOS-only run's Android output: the current release's zip, sha256- and BUILDINFO-checked against the lock, copied byte-for-byte to the new release's name |
 | `precompile-coreml.sh` | macOS + Xcode | upstream Core ML bundle → `.mlmodelc` + rewritten `bundle.json` + `manifest.tsv` (`bundle_manifest.py`) for the HF mirror |
 | `update-lock.sh` | any | release/asset names and sha256s into `phonon.lock.json` |
@@ -235,11 +236,7 @@ Notes from the first device run:
   the reload half needs a debug build (release: `NOT-RUN`), and the next JS context finishes the
   run from a marker file.
 
-## Not yet run on a Mac
-
-The `phonon-binaries.yml` `ios` job has run `test-scripts.sh`, `build-ios.sh`, `package-ios.sh`
-(prelink, bitcode_strip, `undefined` against the iOS 15.1 SDK, `amx` with Homebrew LLVM 19) and
-`precompile-coreml.sh` on macos-15. Still to confirm on a Mac:
+## Still to confirm on a Mac
 
 - An app links the result with `-all_load` (WP8) on device and simulator.
 - The host-compiled `.mlmodelc` loads on an A15 ANE (WP5).

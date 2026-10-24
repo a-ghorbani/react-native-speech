@@ -590,11 +590,14 @@ TurboModule; the internal `RNSpeechPhonon` class keeps the bridge logic.
 * `ios/PhononCore.xcframework/` is in `.gitignore` and excluded from `package.json#files`.
   It is copied from the cache at pod install (CocoaPods needs vendored paths inside the pod).
   Read-only stores (pnpm/Yarn PnP) must use `RN_SPEECH_PHONON_XCFRAMEWORK`; documented.
-* `libptts_ffi.a` linking facts (verified on the release slice): no Apple AMX words, no `_OBJC_CLASS_$` references, only
-  CF*/CVPixelBuffer* C symbols (iOS 15-safe), no autolink commands, no Accelerate use. So no weak
-  linking; the deployment target stays at `min_ios_version_supported`. The prelink step sets
-  `-platform_version ios 15.1 18.0`, removing ~316 "built for newer iOS" warnings; every entry is
-  behind `@available(iOS 18)`. CI asserts this with Xcode `nm -u`.
+* `libptts_ffi.a` linking facts, checked by `verify-ios-xcframework.sh` on every build: exactly
+  the 8 `ptts_*` exports; no `_OBJC_CLASS_$` references; every other undefined symbol (C and
+  libSystem symbols such as `__NSGetArgc`, `_accept`, `__dyld_*`) resolves in the iOS 15.1 SDK
+  (on macOS a `-dynamiclib` link against CoreML, CoreVideo, Accelerate, Foundation and libc++;
+  on Linux `ios-undefined-allow.txt`, which lags behind); no bitcode; minos 15.1; no Apple AMX
+  or undecodable words. So no weak linking; the deployment target stays at
+  `min_ios_version_supported`. The prelink step sets `-platform_version ios 15.1 18.0`, removing
+  ~316 "built for newer iOS" warnings; every entry is behind `@available(iOS 18)`.
 
 ---
 
@@ -655,7 +658,7 @@ Instead the job downloads `<binaries.release>/<binaries.android.asset>` and that
    `target-cpu=native` out), `--remap-path-prefix`, `SOURCE_DATE_EPOCH`, `CARGO_INCREMENTAL=0`.
    The checkout must be unchanged afterwards. `BUILDINFO.json` `build` records rustc, targets,
    deployment target, the `Cargo.lock` sha256, the flags and the patch's path and sha256.
-2. `package-ios.sh --slices`: for each of `ios-arm64` and `ios-arm64-simulator`: `xcrun bitcode_strip -r`, then
+2. `package-ios.sh --slices` runs steps 2–6. For each of `ios-arm64` and `ios-arm64-simulator`: `xcrun bitcode_strip -r`, then
    `xcrun ld -r -arch arm64 -platform_version ios[-simulator] 15.1 18.0
    -exported_symbols_list ptts.exp -o ptts.o <members>`, `libtool -static -o libptts_ffi.a ptts.o`.
 3. Build the x86_64 simulator stub slice from `scripts/ptts_stub.c`.
@@ -665,10 +668,10 @@ Instead the job downloads `<binaries.release>/<binaries.android.asset>` and that
    (LLVM 19, never `xcrun`'s; `--mattr=+all` on arm64) shows no `<unknown>` and no word with
    `(w & 0xfffffc00) == 0x00201000`, matched on the encoding column whatever the mnemonic, and a
    non-empty `__text` must parse to instructions.
-6. **Core ML precompile:** download `phonon-31m-en-coreml.zip` (pin sha), `xcrun coremlcompiler
+6. Zip with ditto plus licenses/notices; mtimes from `BUILDINFO.json` `build.sourceDateEpoch`.
+7. **Core ML precompile:** download `phonon-31m-en-coreml.zip` (pin sha), `xcrun coremlcompiler
    compile` each `.mlpackage`, produce a bundle with `.mlmodelc` dirs plus `bundle.json` and a
    per-file manifest (`path,size,sha256`) as a workflow artifact for the HF mirror (5).
-7. Zip with ditto plus licenses/notices.
 
 **Job `publish`:** GitHub release `phonon-bin-v<ver>-<rev>` with `make_latest: false` (does not
 displace release-it's `v*` releases), `SHA256SUMS`, BUILDINFO; opens a PR updating
@@ -706,6 +709,13 @@ only on this job.
   package (the latter after `example-without-addon.sh`; `otool -l | grep -c __LLVM == 0`, no `ptts_` / `RNSpeechPhonon` in the core-only
   binary, `size -m` deltas into `ios-binary-size.json`). If an iOS 17 runtime exists, a launch
   smoke (`os-too-old`) runs **non-blocking**.
+
+### 4.3 `release.yml` (add-on)
+
+With `package=phonon`, before release-it, `check-pinned-ios.sh` downloads the iOS zip
+`phonon.lock.json` pins, checks its sha256 and runs the verifier's `amx` check on every slice
+(NDK 28.2 `llvm-objdump`). It fails closed (placeholder sha, failed download, sha mismatch, no
+objdump, any AMX or `<unknown>` word), so the add-on cannot ship a lock that pins r1.
 
 **Licenses.** Unchanged: MIT for us, both upstream license texts, generated notices in every zip,
 `docs/THIRD_PARTY_NOTICES.md`, README note. Models are never bundled; 31m and voices are
