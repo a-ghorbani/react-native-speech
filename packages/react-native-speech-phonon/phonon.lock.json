@@ -3,10 +3,6 @@
     "repo": "gradium-ai/xn-ptts",
     "tag": "v0.4.0",
     "commit": "f07d7952db0c6127d5e4bc3f41c82b3304b6b5aa",
-    "xcframework": {
-      "asset": "PhononCore.xcframework.zip",
-      "sha256": "a10382948448087bc9f63231de3c2970d606979fd69bef7acb95d2dfa3a41cef"
-    },
     "coreml": {
       "asset": "phonon-31m-en-coreml.zip",
       "sha256": "10f3a99fd39256db44f826267ef21d78cca959b16c0554926344c09fde27b436"

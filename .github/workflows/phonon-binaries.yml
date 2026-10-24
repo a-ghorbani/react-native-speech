@@ -296,7 +296,8 @@ jobs:
           SOURCE_DATE_EPOCH: ${{ needs.notices.outputs.epoch }}
         run: |
           test -n "$SOURCE_DATE_EPOCH"
-          packages/react-native-speech-phonon/scripts/package-ios.sh --notices "$RUNNER_TEMP/notices/NOTICES-ios.md" \
+          packages/react-native-speech-phonon/scripts/package-ios.sh --slices "$RUNNER_TEMP/ios-build" \
+            --notices "$RUNNER_TEMP/notices/NOTICES-ios.md" \
             --licenses "$RUNNER_TEMP/notices/licenses" --work "$RUNNER_TEMP/ios" --out-dir dist
           mv dist/SHA256SUMS dist/SHA256SUMS-ios
           cat dist/SHA256SUMS-ios

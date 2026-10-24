@@ -6,8 +6,8 @@
 #      and the header compiles for both shim ABIs.
 #   2. ptts.exp names exactly the functions cpp/ptts.h declares.
 #   3. verify-android-so.sh --selftest.
-#   4. verify-ios-xcframework.sh --selftest; package-ios.sh refuses to run without notices and
-#      licenses.
+#   4. verify-ios-xcframework.sh --selftest (including a planted AMX word); package-ios.sh refuses
+#      to run without slices, notices and licenses.
 #   5. package-android.sh is deterministic and lays the zip out as designed (GNU and BSD
 #      date/touch/shasum alike).
 #   6. precompile-coreml.sh + bundle_manifest.py on a synthetic bundle with a stand-in compiler,
@@ -108,11 +108,15 @@ else
   echo "skip - ios verifier self-test (no Xcode, no ANDROID_NDK_HOME)"
 fi
 mkdir -p "$T/lic" && echo MIT >"$T/lic/xn-ptts-LICENSE-MIT" && echo '# notices' >"$T/ios-notices.md"
-check_fails "package-ios.sh without --notices" "$HERE/package-ios.sh" --licenses "$T/lic"
-check_fails "package-ios.sh without --licenses" "$HERE/package-ios.sh" --notices "$T/ios-notices.md"
+check_fails "package-ios.sh without --slices" "$HERE/package-ios.sh" --notices "$T/ios-notices.md" --licenses "$T/lic"
 # shellcheck disable=SC2016 # expanded by the inner bash
-check "package-ios.sh names the missing licenses" bash -c '"$1" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--licenses .* is required"' \
-  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/nothing"
+check "package-ios.sh names the missing slices" bash -c '"$1" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--slices .* is required"' \
+  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/lic"
+check_fails "package-ios.sh without --notices" "$HERE/package-ios.sh" --slices "$T/nothing" --licenses "$T/lic"
+check_fails "package-ios.sh without --licenses" "$HERE/package-ios.sh" --slices "$T/nothing" --notices "$T/ios-notices.md"
+# shellcheck disable=SC2016 # expanded by the inner bash
+check "package-ios.sh names the missing licenses" bash -c '"$1" --slices "$4" --notices "$2" --licenses "$3" 2>&1 | grep -q -- "--licenses .* is required"' \
+  _ "$HERE/package-ios.sh" "$T/ios-notices.md" "$T/nothing" "$T/nothing"
 
 echo "# 5. package-android.sh"
 stage="$T/stage"
