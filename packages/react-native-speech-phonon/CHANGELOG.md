@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.2...phonon-v0.1.3) (2026-10-24)
+
+
+### Bug Fixes
+
+* **phonon:** build the iOS binaries from source without Apple AMX ([#53](https://github.com/a-ghorbani/react-native-speech/issues/53)) ([f2fc556](https://github.com/a-ghorbani/react-native-speech/commit/f2fc556d9aa6b92dd617fd11f96f3a51ef9c8861))
+
 ## [0.1.2](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.1...phonon-v0.1.2) (2026-10-23)
 
 
