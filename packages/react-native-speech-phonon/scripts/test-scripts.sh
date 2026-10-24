@@ -445,6 +445,10 @@ assert len(guard) == 1, "one guard step"
 g = steps[guard[0]]
 assert g.get("if") == "env.PACKAGE == 'phonon'", g.get("if")
 assert "continue-on-error" not in g, "the guard must fail the release"
+assert "shell" not in g and "set +e" not in g["run"], "the guard runs under bash -e"
+lines = [l.strip() for l in g["run"].splitlines() if l.strip()]
+assert [l for l in lines if "check-pinned-ios.sh" in l] == lines[-1:], "the guard is the step's last command"
+assert lines[-1] == "packages/react-native-speech-phonon/scripts/check-pinned-ios.sh", "exit status swallowed: " + lines[-1]
 assert "LLVM_OBJDUMP=" in g["run"] and "ndk;" in g["run"] and 'test -x "$LLVM_OBJDUMP"' in g["run"], "pinned objdump"
 i_rel = names.index("Release the Phonon add-on")
 assert guard[0] < i_rel and steps[i_rel]["if"] == "env.PACKAGE == 'phonon'"

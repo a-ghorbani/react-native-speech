@@ -413,6 +413,27 @@ EOF
     echo "selftest BROKEN: the planted AMX word was not counted"; echo "$expect_out"; st=1
   fi
   expect "$x" amx "AMX word (--amx-only)" --amx-only
+  local amx_x="$x" sim="ios-arm64_x86_64-simulator/libptts_ffi.a"
+  x="$(make simonly "$MINOS" "$MINOS")"
+  machotool thin "$amx_x/$sim" arm64 "$dir/amx-sim-arm64.a"
+  machotool thin "$x/$sim" x86_64 "$dir/sim-x86_64.a"
+  machotool create "$x/$sim" "$dir/sim-x86_64.a" "$dir/amx-sim-arm64.a"
+  expect "$x" amx "AMX word in the second architecture only" --amx-only
+  if ! grep -q '^FAIL amx: ios-arm64_x86_64-simulator/arm64: [1-9]' <<<"$expect_out" \
+    || ! grep -q '^PASS amx: ios-arm64/arm64' <<<"$expect_out"; then
+    echo "selftest BROKEN: not every architecture of a fat library was checked"; echo "$expect_out"; st=1
+  fi
+  x="$(make good2 "$MINOS" "$MINOS")"
+  printf '#!/bin/sh\n"%s" "$@" | tr "\\t" " "\n' "$OBJDUMP" >"$dir/objdump-notab"
+  chmod +x "$dir/objdump-notab"
+  out="$(LLVM_OBJDUMP="$dir/objdump-notab" "$0" --amx-only "$x" 2>&1 || true)"
+  if grep -q '^FAIL amx: ios-arm64/arm64: __text is not empty but 0 instructions parsed' <<<"$out"; then
+    echo "selftest ok: unparseable disassembly fails 'amx'"
+  else
+    echo "selftest BROKEN: unparseable disassembly passed"; echo "$out"; st=1
+  fi
+  rm "$x/ios-arm64/libptts_ffi.a"
+  expect "$x" amx "listed library missing" --amx-only
   x="$(make unknown "$MINOS" "$MINOS" -include "$dir/unknown.h")"; expect "$x" amx "undecodable word"
   if ! grep -Eq '^FAIL amx: ios-arm64/arm64: 0 AMX words, [1-9][0-9]* <unknown>' <<<"$expect_out" \
     || ! grep -Eq '^FAIL amx: ios-arm64_x86_64-simulator/x86_64: 0 AMX words, [1-9][0-9]* <unknown>' <<<"$expect_out"; then
