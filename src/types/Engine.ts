@@ -119,8 +119,8 @@ export interface SynthesisOptions {
    */
   stripMarkdown?: boolean;
   /**
-   * Streaming, and Phonon `speak()`. With `'clause'`, the first chunk flushes at the
-   * earliest of a sentence end, a `, ; : — –` boundary after at least 3
+   * Streaming, and `speak()` on engines that split the first chunk (an
+   * add-on may). With `'clause'`, the first chunk flushes at the earliest of a sentence end, a `, ; : — –` boundary after at least 3
    * words, a `，；：、` boundary after at least 4 CJK characters, or
    * `firstChunkMaxWords` complete words, so audio starts sooner. Later
    * chunks keep sentence boundaries. Ignored by the OS engine.
