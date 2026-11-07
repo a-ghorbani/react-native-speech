@@ -869,6 +869,18 @@ describe('createMarkdownStreamBuffer: firstChunkMaxWords', () => {
     expect(md.push('one two three four')).toBe('one two ');
   });
 
+  test('stays armed after a boundary-less first line under the limit', () => {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: 'clause',
+      firstChunkMaxWords: 20,
+    });
+    const line =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen\n';
+    expect(md.push(line)).toBe(line);
+    // 14 words emitted; the cut lands after 6 more.
+    expect(md.push('a b c d e f g h')).toBe('a b c d e f ');
+  });
+
   test.each([0, -1, 2.5, NaN, Infinity, '20', null])('rejects %p', value => {
     expect(() =>
       createMarkdownStreamBuffer({
