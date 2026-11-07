@@ -260,9 +260,9 @@ if (!support.supported) {
 unsupported build or device rejects with `ERR_PHONON_UNSUPPORTED` without loading anything, and
 the previously current engine stays current.
 
-`speak`, `stop`, `pause`, `resume`, `isSpeaking`, `createSpeechStream` (including
-`firstChunk: 'clause'` and `firstChunkMaxWords`), `HighlightedText` / chunk progress, `onAudioChunk`, `volume` and audio
-interruptions work as for the other neural engines. `Speech.release()` releases the model.
+`speak`, `stop`, `pause`, `resume`, `isSpeaking`, `createSpeechStream`, `HighlightedText` / chunk
+progress, `onAudioChunk`, `volume` and audio interruptions work as for the other neural engines.
+`firstChunk: 'clause'` and `firstChunkMaxWords` apply to both `speak` and `createSpeechStream`. `Speech.release()` releases the model.
 
 On iOS with an uncompiled bundle, the first `initialize` compiles the models (see above). You can
 check beforehand:

@@ -535,6 +535,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     options?: PhononSynthesisOptions,
   ): Promise<void> {
     this.assertUsable();
+    assertFirstChunkMaxWords(options?.firstChunkMaxWords);
 
     if (isPhonemeInput(input)) {
       throw new Error(
@@ -582,6 +583,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
 
   synthesizeStream(options?: PhononSynthesisOptions): EngineStreamHandle {
     this.assertUsable();
+    assertFirstChunkMaxWords(options?.firstChunkMaxWords);
     const ctxBase = this.prepareCall(options);
 
     // Re-entry: unwind() runs its synchronous part (generation bump,
@@ -1303,7 +1305,6 @@ function raceWithStop<T>(
  * at its first clause boundary so audio starts sooner.
  */
 function splitFirstClause(chunks: TextChunk[], maxWords?: number): void {
-  assertFirstChunkMaxWords(maxWords);
   const first = chunks[0];
   if (!first) {
     return;

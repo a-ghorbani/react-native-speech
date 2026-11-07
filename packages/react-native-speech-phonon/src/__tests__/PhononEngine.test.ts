@@ -1381,17 +1381,29 @@ describe('synthesizeStream', () => {
     },
   );
 
-  it('rejects an invalid firstChunkMaxWords on the non-stream path', async () => {
-    fake.state.autoSynth = true;
-    fake.state.autoPlay = true;
+  it('rejects an invalid firstChunkMaxWords without stopping the current call', async () => {
     const engine = await ready();
+    const running = engine.synthesize('First call.');
+    await flush();
+    const msg = 'firstChunkMaxWords must be a positive integer (got 0)';
     await expect(
       engine.synthesize('One two three.', {
         firstChunk: 'clause',
         firstChunkMaxWords: 0,
       }),
-    ).rejects.toThrow('firstChunkMaxWords must be a positive integer (got 0)');
-    expect(fake.synths).toHaveLength(0);
+    ).rejects.toThrow(msg);
+    await expect(
+      engine.synthesize('One two three.', {firstChunkMaxWords: 0}),
+    ).rejects.toThrow(msg);
+    expect(() =>
+      engine.synthesizeStream({firstChunk: 'clause', firstChunkMaxWords: 0}),
+    ).toThrow(msg);
+    expect(fake.api.cancelUpTo).not.toHaveBeenCalled();
+    expect(fake.synths.map(s => s.text)).toEqual(['First call.']);
+    fake.state.autoPlay = true;
+    lastSynth().resolve();
+    await running;
+    expect(fake.plays).toHaveLength(1);
   });
 
   it('fires onAudioChunk with volume before each played chunk', async () => {
