@@ -37,6 +37,7 @@ import {
   neuralAudioPlayer,
   EngineStreamSession,
   TextChunker,
+  assertFirstChunkMaxWords,
   findFirstClauseEnd,
   stripMarkdown,
   base64ToArrayBuffer,
@@ -600,7 +601,10 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
 
     const stripMd = options?.stripMarkdown !== false;
     const mdBuffer = stripMd
-      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      ? createMarkdownStreamBuffer({
+          firstChunk: options?.firstChunk,
+          firstChunkMaxWords: options?.firstChunkMaxWords,
+        })
       : null;
 
     const playbackOptions = {
@@ -621,6 +625,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
       onCancel: () => this.cancelIds(ctx.ids),
       maxChunkSize,
       firstChunk: options?.firstChunk,
+      firstChunkMaxWords: options?.firstChunkMaxWords,
       postProcess: options?.onAudioChunk
         ? chunk => this.observeChunk(chunk, options)
         : undefined,
@@ -784,7 +789,7 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
     const chunks = TextChunker.chunkBySentences(cleanText, maxChunkSize);
     if (options?.firstChunk === 'clause') {
-      splitFirstClause(chunks);
+      splitFirstClause(chunks, options.firstChunkMaxWords);
     }
     log.debug(`Split into ${chunks.length} chunks`);
 
@@ -1297,12 +1302,13 @@ function raceWithStop<T>(
  * `firstChunk: 'clause'` for the non-stream path: split the first chunk
  * at its first clause boundary so audio starts sooner.
  */
-function splitFirstClause(chunks: TextChunk[]): void {
+function splitFirstClause(chunks: TextChunk[], maxWords?: number): void {
+  assertFirstChunkMaxWords(maxWords);
   const first = chunks[0];
   if (!first) {
     return;
   }
-  const end = findFirstClauseEnd(first.text);
+  const end = findFirstClauseEnd(first.text, maxWords);
   if (end <= 0 || first.text.slice(end).trim().length === 0) {
     return;
   }

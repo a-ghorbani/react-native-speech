@@ -650,6 +650,25 @@ describe('synthesize: input and options', () => {
     expect(fake.synths.map(s => s.text)).toEqual(['Short one.']);
   });
 
+  it('splits the first chunk at firstChunkMaxWords words', async () => {
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    const text =
+      'Did you read the Anthropic article saying small models like us could spread into toasters and smart TVs?';
+    await engine.synthesize(text, {
+      firstChunk: 'clause',
+      firstChunkMaxWords: 25,
+    });
+    expect(fake.synths.map(s => s.text)).toEqual([text]);
+    fake.synths.length = 0;
+    await engine.synthesize(text, {firstChunk: 'clause'});
+    expect(fake.synths.map(s => s.text)).toEqual([
+      'Did you read the Anthropic article saying small models like us could ',
+      'spread into toasters and smart TVs?',
+    ]);
+  });
+
   it('strips markdown unless told not to', async () => {
     fake.state.autoSynth = true;
     fake.state.autoPlay = true;
@@ -1314,6 +1333,65 @@ describe('synthesizeStream', () => {
     stream.append('Well, as I said before, this is it. The end.');
     await stream.finalize();
     expect(fake.synths[0]!.text.trim()).toBe('Well, as I said before,');
+  });
+
+  it('honors firstChunkMaxWords in a stream', async () => {
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    const sentence =
+      "Oh no, the house is now a giant graveyard and I'm so scared we'll be stuck.";
+    for (const firstChunkMaxWords of [25, undefined]) {
+      fake.synths.length = 0;
+      const stream = engine.synthesizeStream({
+        firstChunk: 'clause',
+        firstChunkMaxWords,
+      });
+      for (const tok of `${sentence} Next one.`.match(/\S+\s*/g) ?? []) {
+        stream.append(tok);
+      }
+      await stream.finalize();
+      expect(fake.synths[0]!.text.trim()).toBe(
+        firstChunkMaxWords
+          ? sentence
+          : "Oh no, the house is now a giant graveyard and I'm so",
+      );
+    }
+  });
+
+  it.each([true, false])(
+    'cuts a stream after firstChunkMaxWords words before the sentence ends (stripMarkdown %p)',
+    async stripMarkdown => {
+      fake.state.autoSynth = true;
+      fake.state.autoPlay = true;
+      const engine = await ready();
+      const stream = engine.synthesizeStream({
+        firstChunk: 'clause',
+        firstChunkMaxWords: 5,
+        stripMarkdown,
+      });
+      for (const tok of 'Did you read the Anthropic article saying small'.match(
+        /\S+\s*/g,
+      )!) {
+        stream.append(tok);
+      }
+      await flush();
+      expect(fake.synths[0]?.text).toBe('Did you read the Anthropic ');
+      await stream.finalize();
+    },
+  );
+
+  it('rejects an invalid firstChunkMaxWords on the non-stream path', async () => {
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    await expect(
+      engine.synthesize('One two three.', {
+        firstChunk: 'clause',
+        firstChunkMaxWords: 0,
+      }),
+    ).rejects.toThrow('firstChunkMaxWords must be a positive integer (got 0)');
+    expect(fake.synths).toHaveLength(0);
   });
 
   it('fires onAudioChunk with volume before each played chunk', async () => {

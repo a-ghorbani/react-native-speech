@@ -76,7 +76,7 @@ React Native 0.74 or later with the New Architecture is required: from 0.74 all 
 share one method queue, which keeps the add-on's playback calls ordered with the core's stop and
 pause on iOS.
 
-The core package must be `>=2.7.0 <2.9.0`: the add-on builds on the core's experimental engine SDK
+The core package must be `>=2.9.0 <2.10.0`: the add-on builds on the core's experimental engine SDK
 (`@pocketpalai/react-native-speech/engine-sdk` and the native PCM sinks), which may change in a
 core minor release, so each add-on release pins the core minors it was tested against. Register the
 engine once, before the first `Speech.initialize` that uses it (for example at module load of
@@ -261,7 +261,7 @@ unsupported build or device rejects with `ERR_PHONON_UNSUPPORTED` without loadin
 the previously current engine stays current.
 
 `speak`, `stop`, `pause`, `resume`, `isSpeaking`, `createSpeechStream` (including
-`firstChunk: 'clause'`), `HighlightedText` / chunk progress, `onAudioChunk`, `volume` and audio
+`firstChunk: 'clause'` and `firstChunkMaxWords`), `HighlightedText` / chunk progress, `onAudioChunk`, `volume` and audio
 interruptions work as for the other neural engines. `Speech.release()` releases the model.
 
 On iOS with an uncompiled bundle, the first `initialize` compiles the models (see above). You can
