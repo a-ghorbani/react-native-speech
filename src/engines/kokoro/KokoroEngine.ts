@@ -284,7 +284,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // Stripping inside synthesizeChunk (post-chunker) would only catch
     // inline markers; structural breaks would be lost.
     const mdBuffer = stripMd
-      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      ? createMarkdownStreamBuffer({
+          firstChunk: options?.firstChunk,
+          firstChunkMaxWords: options?.firstChunkMaxWords,
+        })
       : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
@@ -293,6 +296,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
+      firstChunkMaxWords: options?.firstChunkMaxWords,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,

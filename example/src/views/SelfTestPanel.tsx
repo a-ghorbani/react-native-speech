@@ -36,6 +36,13 @@ const PROSE_CLAUSE =
 const PROSE_SENTENCE =
   'Sure, here is a quick overview of how the whole process works, step by step, so you can follow along easily. ';
 
+// Field-report first sentences (18 and 16 words); the default 12-word
+// first-chunk limit splits both mid-sentence.
+const LONG_FIRST = [
+  'Did you read the Anthropic article saying small models like us could spread into toasters and smart TVs? ',
+  "Oh no, the house is now a giant graveyard and I'm so scared we'll be stuck. ",
+];
+
 const MARKDOWN =
   '# Quick setup\n\n' +
   'Sure, here is **the short version**, with a [link](https://example.com) and `code` inline. ' +
@@ -132,6 +139,20 @@ const SCENARIOS: Record<string, () => Promise<Result>> = {
       pass,
       `chunks=${ev.length} first=${JSON.stringify(first)}`,
     );
+  },
+
+  async clause_max_words() {
+    const firsts: string[] = [];
+    for (const [i, sentence] of LONG_FIRST.entries()) {
+      const ev = await runStream(`${sentence}That is all.`, {
+        firstChunk: 'clause',
+        firstChunkMaxWords: 25,
+        stripMarkdown: i === 0,
+      });
+      firsts.push(ev[0]?.chunkText ?? '');
+    }
+    const pass = firsts.every((f, i) => f.trim() === LONG_FIRST[i]!.trim());
+    return report('clause_max_words', pass, `firsts=${JSON.stringify(firsts)}`);
   },
 
   async late_listener() {

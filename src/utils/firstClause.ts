@@ -40,8 +40,20 @@ const HAS_LETTER_RE = /[\p{L}\p{N}]/u;
 const CLAUSE_MIN_WORDS = 3;
 /** Minimum CJK characters before a CJK clause mark may end it. */
 const CLAUSE_MIN_CJK_CHARS = 4;
-/** Upper bound on first-chunk words when no boundary has appeared. */
-const CLAUSE_MAX_WORDS = 12;
+/** Default upper bound on first-chunk words when no boundary has appeared. */
+export const DEFAULT_FIRST_CHUNK_MAX_WORDS = 12;
+
+/** Throws unless `value` is `undefined` or an integer >= 1. */
+export function assertFirstChunkMaxWords(value: unknown): void {
+  if (value === undefined || (Number.isInteger(value) && Number(value) >= 1)) {
+    return;
+  }
+  const shown =
+    typeof value === 'string' ? JSON.stringify(value) : String(value);
+  throw new Error(
+    `firstChunkMaxWords must be a positive integer (got ${shown})`,
+  );
+}
 
 /** Whitespace-separated tokens containing a letter or digit. */
 function countWords(text: string): number {
@@ -59,10 +71,13 @@ function countCjkChars(text: string): number {
  *     `CLAUSE_MIN_WORDS` words,
  *   - a CJK clause mark (`，；：、`) after at least `CLAUSE_MIN_CJK_CHARS`
  *     CJK characters,
- *   - the end of the `CLAUSE_MAX_WORDS`-th whitespace-terminated word.
+ *   - the end of the `maxWords`-th whitespace-terminated word.
  * Returns -1 when none is present yet.
  */
-export function findFirstClauseEnd(text: string): number {
+export function findFirstClauseEnd(
+  text: string,
+  maxWords: number = DEFAULT_FIRST_CHUNK_MAX_WORDS,
+): number {
   let end = -1;
   const consider = (candidate: number) => {
     if (end === -1 || candidate < end) {
@@ -100,7 +115,7 @@ export function findFirstClauseEnd(text: string): number {
   let words = 0;
   let m: RegExpExecArray | null;
   while ((m = wordRe.exec(text)) !== null) {
-    if (HAS_LETTER_RE.test(m[0]) && ++words === CLAUSE_MAX_WORDS) {
+    if (HAS_LETTER_RE.test(m[0]) && ++words === maxWords) {
       consider(m.index + m[0].length);
       break;
     }

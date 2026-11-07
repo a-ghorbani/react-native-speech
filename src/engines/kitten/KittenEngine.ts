@@ -296,7 +296,10 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     // BEFORE StreamingChunker (via the line-buffered md stream buffer) so
     // structural markers become chunk boundaries.
     const mdBuffer = stripMd
-      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      ? createMarkdownStreamBuffer({
+          firstChunk: options?.firstChunk,
+          firstChunkMaxWords: options?.firstChunkMaxWords,
+        })
       : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
@@ -307,6 +310,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
+      firstChunkMaxWords: options?.firstChunkMaxWords,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,

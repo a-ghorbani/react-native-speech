@@ -378,6 +378,106 @@ describe('findFirstClauseEnd', () => {
   });
 });
 
+// The two first sentences from the field report: 19 and 16 words, no comma
+// after >= 3 words, so the default 12-word cap splits them mid-sentence.
+const REPORTED = [
+  'Did you read the Anthropic article saying small models like us could spread into toasters and smart TVs? ',
+  "Oh no, the house is now a giant graveyard and I'm so scared we'll be stuck. ",
+];
+
+describe('findFirstClauseEnd maxWords', () => {
+  test('default cuts the reported sentences at word 12', () => {
+    const [a, b] = REPORTED as [string, string];
+    expect(a.slice(0, findFirstClauseEnd(a))).toBe(
+      'Did you read the Anthropic article saying small models like us could ',
+    );
+    expect(b.slice(0, findFirstClauseEnd(b))).toBe(
+      "Oh no, the house is now a giant graveyard and I'm so ",
+    );
+  });
+
+  test.each(REPORTED)('a limit of 25 keeps %j whole', text => {
+    expect(findFirstClauseEnd(text, 25)).toBe(text.length);
+  });
+
+  test('cuts at the given word count without a natural break', () => {
+    const text = 'one two three four five six seven. ';
+    expect(text.slice(0, findFirstClauseEnd(text, 5))).toBe(
+      'one two three four five ',
+    );
+  });
+
+  test('a natural break within the limit still ends the chunk early', () => {
+    const comma = 'Sure thing friend, here it is and more words follow. ';
+    expect(comma.slice(0, findFirstClauseEnd(comma, 25))).toBe(
+      'Sure thing friend, ',
+    );
+    const sentence = 'Hi there. Then a much longer second sentence. ';
+    expect(sentence.slice(0, findFirstClauseEnd(sentence, 25))).toBe(
+      'Hi there. ',
+    );
+  });
+});
+
+async function drain(chunker: StreamingChunker): Promise<string[]> {
+  const out: string[] = [];
+  let c;
+  while ((c = await chunker.getNextChunk()) !== null) out.push(c.text);
+  return out;
+}
+
+describe('StreamingChunker firstChunkMaxWords', () => {
+  const tokens = (t: string) => t.match(/\S+\s*/g) ?? [];
+
+  test.each(REPORTED)(
+    'a limit of 25 streams %j as one first chunk',
+    async sentence => {
+      const chunker = new StreamingChunker(400, 'clause', 25);
+      const pending = chunker.getNextChunk();
+      for (const tok of tokens(sentence + 'Next one. ')) chunker.append(tok);
+      expect((await pending)!.text).toBe(sentence);
+    },
+  );
+
+  test('the default still cuts at word 12', async () => {
+    const chunker = new StreamingChunker(400, 'clause');
+    for (const tok of tokens(REPORTED[0]!)) chunker.append(tok);
+    chunker.finalize();
+    expect((await drain(chunker))[0]).toBe(
+      'Did you read the Anthropic article saying small models like us could ',
+    );
+  });
+
+  test.each([0, -1, 2.5, NaN])('rejects a limit of %p', value => {
+    expect(() => new StreamingChunker(400, 'clause', value)).toThrow(
+      `firstChunkMaxWords must be a positive integer (got ${value})`,
+    );
+  });
+
+  test('the limit is ignored in sentence mode', async () => {
+    const chunker = new StreamingChunker(400, 'sentence', 3);
+    chunker.append('one two three four five');
+    expect(chunker.tryPeek()).toBeUndefined();
+  });
+
+  test.each(REPORTED)(
+    'markdown buffer + chunker with a limit of 25 keep %j whole',
+    async sentence => {
+      const md = createMarkdownStreamBuffer({
+        firstChunk: 'clause',
+        firstChunkMaxWords: 25,
+      });
+      const chunker = new StreamingChunker(400, 'clause', 25);
+      for (const tok of tokens(sentence + 'Next one.')) {
+        chunker.append(md.push(tok));
+      }
+      chunker.append(md.flush());
+      chunker.finalize();
+      expect((await drain(chunker))[0]!.trim()).toBe(sentence.trim());
+    },
+  );
+});
+
 describe("StreamingChunker firstChunk: 'clause'", () => {
   const text = 'Sure thing friend, here it is, and more. Second sentence, ok. ';
 
