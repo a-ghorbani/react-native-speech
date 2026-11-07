@@ -181,7 +181,7 @@ The OS engine does not emit chunk progress, so `stream.onProgress` never fires t
 
 For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 
-A first sentence longer than the word limit, with no early comma, is split mid-sentence, which can be heard as a pause. Raise `firstChunkMaxWords` to keep long first sentences whole at the cost of later first audio, for example per device speed. It must be an integer of at least 1; other values throw.
+A first sentence longer than the word limit, with no early comma, is split mid-sentence, which can be heard as a pause. Raise `firstChunkMaxWords` to keep long first sentences whole, at the cost of later first audio. It must be an integer of at least 1; other values throw.
 
 ```ts
 const stream = Speech.createSpeechStream('af_bella', {
