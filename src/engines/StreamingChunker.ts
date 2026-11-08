@@ -15,7 +15,11 @@
 import type {FirstChunkMode} from '../types';
 import type {TextChunk} from '../utils/TextChunker';
 import {isAbbreviationPeriod} from '../utils/abbreviations';
-import {SENTENCE_END_RE, findFirstClauseEnd} from '../utils/firstClause';
+import {
+  SENTENCE_END_RE,
+  assertFirstChunkMaxWords,
+  findFirstClauseEnd,
+} from '../utils/firstClause';
 
 export {findFirstClauseEnd} from '../utils/firstClause';
 
@@ -26,6 +30,7 @@ export class StreamingChunker {
   private cancelled = false;
   private maxChunkSize: number;
   private firstChunk: FirstChunkMode;
+  private firstChunkMaxWords: number | undefined;
   private firstTaken = false;
 
   private waiter: ((chunk: TextChunk | null) => void) | null = null;
@@ -33,9 +38,12 @@ export class StreamingChunker {
   constructor(
     maxChunkSize: number = 400,
     firstChunk: FirstChunkMode = 'sentence',
+    firstChunkMaxWords?: number,
   ) {
+    assertFirstChunkMaxWords(firstChunkMaxWords);
     this.maxChunkSize = maxChunkSize;
     this.firstChunk = firstChunk;
+    this.firstChunkMaxWords = firstChunkMaxWords;
   }
 
   append(text: string): void {
@@ -142,7 +150,7 @@ export class StreamingChunker {
   }
 
   private extractFirstClause(): TextChunk | null {
-    const end = findFirstClauseEnd(this.buffer);
+    const end = findFirstClauseEnd(this.buffer, this.firstChunkMaxWords);
     if (end <= 0) {
       return null;
     }

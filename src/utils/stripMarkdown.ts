@@ -22,7 +22,11 @@
  */
 
 import type {FirstChunkMode} from '../types';
-import {findFirstClauseEnd} from './firstClause';
+import {
+  DEFAULT_FIRST_CHUNK_MAX_WORDS,
+  assertFirstChunkMaxWords,
+  findFirstClauseEnd,
+} from './firstClause';
 
 /**
  * Options for markdown stripping. All default to sensible TTS behavior.
@@ -40,11 +44,19 @@ export interface StripMarkdownOptions {
    * instead of waiting for a full sentence. Ignored by `stripMarkdown`.
    */
   firstChunk?: FirstChunkMode;
+  /**
+   * Stream buffer only. Word limit for the `'clause'` first piece (see
+   * `SynthesisOptions.firstChunkMaxWords`); pass the same value as the
+   * stream so both cut at the same place. Ignored by `stripMarkdown`.
+   * @default 12
+   */
+  firstChunkMaxWords?: number;
 }
 
 const DEFAULTS: Required<StripMarkdownOptions> = {
   dropCodeBlocks: true,
   firstChunk: 'sentence',
+  firstChunkMaxWords: DEFAULT_FIRST_CHUNK_MAX_WORDS,
 };
 
 /**
@@ -313,6 +325,7 @@ const CONTINUATION = '\u2060';
 export function createMarkdownStreamBuffer(
   options: StripMarkdownOptions = {},
 ): MarkdownStreamBuffer {
+  assertFirstChunkMaxWords(options.firstChunkMaxWords);
   const opts = {...DEFAULTS, ...options};
   let buffer = '';
   let inFence = false;
@@ -332,7 +345,7 @@ export function createMarkdownStreamBuffer(
   function noteEmitted(text: string): void {
     if (!firstPending || !text) return;
     firstEmitted += text;
-    if (findFirstClauseEnd(firstEmitted) > 0) {
+    if (findFirstClauseEnd(firstEmitted, opts.firstChunkMaxWords) > 0) {
       firstPending = false;
       firstEmitted = '';
     }
@@ -408,7 +421,8 @@ export function createMarkdownStreamBuffer(
           // Count words already emitted (e.g. a boundary-less first line)
           // so the cut lands where the downstream chunker would cut.
           const clauseEnd =
-            findFirstClauseEnd(firstEmitted + buffer) - firstEmitted.length;
+            findFirstClauseEnd(firstEmitted + buffer, opts.firstChunkMaxWords) -
+            firstEmitted.length;
           // Skip the cut if it would split an inline marker pair, or the
           // line holds a `|` (a table row needs the whole line to strip).
           if (

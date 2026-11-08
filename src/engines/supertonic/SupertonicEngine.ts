@@ -241,7 +241,10 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // StreamingChunker sees it so structural markdown becomes sentence
     // boundaries the chunker recognizes (mirrors Kokoro/Kitten).
     const mdBuffer = stripMd
-      ? createMarkdownStreamBuffer({firstChunk: options?.firstChunk})
+      ? createMarkdownStreamBuffer({
+          firstChunk: options?.firstChunk,
+          firstChunkMaxWords: options?.firstChunkMaxWords,
+        })
       : null;
 
     // Compose volume adjust + onAudioChunk into a single postProcess hook.
@@ -281,6 +284,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
+      firstChunkMaxWords: options?.firstChunkMaxWords,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,

@@ -33,6 +33,7 @@ export interface EngineStreamSessionBaseConfig<TAudio = AudioBuffer> {
   stopPlayback: () => Promise<void>;
   maxChunkSize: number;
   firstChunk?: FirstChunkMode;
+  firstChunkMaxWords?: number;
   playbackOptions?: PlaybackOptions;
   postProcess?: (audio: TAudio) => void;
   onChunkProgress?: (event: ChunkProgressEvent) => void;
@@ -101,7 +102,11 @@ export class EngineStreamSession<
   constructor(config: EngineStreamSessionConfig<TAudio>) {
     this.config = config;
     this.hasAudio = config.hasAudio ?? defaultHasAudio;
-    this.chunker = new StreamingChunker(config.maxChunkSize, config.firstChunk);
+    this.chunker = new StreamingChunker(
+      config.maxChunkSize,
+      config.firstChunk,
+      config.firstChunkMaxWords,
+    );
     this.loopPromise = this.runLoop();
   }
 

@@ -478,3 +478,41 @@ describe('Speech.getCurrentEngineId / getAvailableEngineIds', () => {
     expect(isolated.getCurrentEngineId()).toBe('addon');
   });
 });
+
+describe('firstChunkMaxWords validation', () => {
+  it('passes a valid limit through to the engine', async () => {
+    const e = fakeEngine('limit-ok');
+    Speech.registerEngine(e as any);
+    await Speech.initialize({engine: 'limit-ok'} as any);
+    const opts = {firstChunk: 'clause' as const, firstChunkMaxWords: 25};
+    await Speech.speak('Hi.', 'v1', opts);
+    expect(e.synthesize).toHaveBeenCalledWith(
+      'Hi.',
+      expect.objectContaining(opts),
+    );
+    Speech.createSpeechStream('v1', opts);
+    expect(e.synthesizeStream).toHaveBeenCalledWith(
+      expect.objectContaining(opts),
+    );
+  });
+
+  it.each([0, -3, 2.5, NaN, Infinity, '20', null])(
+    'rejects %p before the engine runs',
+    async value => {
+      const id = `limit-bad-${String(value)}`;
+      const e = fakeEngine(id);
+      Speech.registerEngine(e as any);
+      await Speech.initialize({engine: id} as any);
+      const opts = {firstChunk: 'clause', firstChunkMaxWords: value} as any;
+      const msg = /^firstChunkMaxWords must be a positive integer \(got /;
+      await expect(Speech.speak('Hi.', 'v1', opts)).rejects.toThrow(msg);
+      expect(() => Speech.createSpeechStream('v1', opts)).toThrow(msg);
+      // Also with the sentence default, where the limit would be unused.
+      expect(() =>
+        Speech.createSpeechStream('v1', {firstChunkMaxWords: value} as any),
+      ).toThrow(msg);
+      expect(e.synthesize).not.toHaveBeenCalled();
+      expect(e.synthesizeStream).not.toHaveBeenCalled();
+    },
+  );
+});

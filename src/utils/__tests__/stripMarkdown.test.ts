@@ -830,6 +830,67 @@ describe("createMarkdownStreamBuffer: firstChunk 'clause'", () => {
   });
 });
 
+describe('createMarkdownStreamBuffer: firstChunkMaxWords', () => {
+  const head =
+    'Did you read the Anthropic article saying small models like us could spread into';
+
+  test('default releases the first 12 words', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push(head)).toBe(
+      'Did you read the Anthropic article saying small models like us could ',
+    );
+  });
+
+  test('a limit of 25 holds the sentence until it ends', () => {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: 'clause',
+      firstChunkMaxWords: 25,
+    });
+    expect(md.push(head)).toBe('');
+    expect(md.push(' toasters and smart TVs? Next')).toBe(
+      head + ' toasters and smart TVs? ',
+    );
+  });
+
+  test('cuts at a smaller limit', () => {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: 'clause',
+      firstChunkMaxWords: 5,
+    });
+    expect(md.push(head)).toBe('Did you read the Anthropic ');
+  });
+
+  test('counts words of a boundary-less first line toward the limit', () => {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: 'clause',
+      firstChunkMaxWords: 4,
+    });
+    expect(md.push('Okay then\n')).toBe('Okay then\n');
+    expect(md.push('one two three four')).toBe('one two ');
+  });
+
+  test('stays armed after a boundary-less first line under the limit', () => {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: 'clause',
+      firstChunkMaxWords: 20,
+    });
+    const line =
+      'one two three four five six seven eight nine ten eleven twelve thirteen fourteen\n';
+    expect(md.push(line)).toBe(line);
+    // 14 words emitted; the cut lands after 6 more.
+    expect(md.push('a b c d e f g h')).toBe('a b c d e f ');
+  });
+
+  test.each([0, -1, 2.5, NaN, Infinity, '20', null])('rejects %p', value => {
+    expect(() =>
+      createMarkdownStreamBuffer({
+        firstChunk: 'clause',
+        firstChunkMaxWords: value as number,
+      }),
+    ).toThrow(/^firstChunkMaxWords must be a positive integer \(got /);
+  });
+});
+
 describe('createMarkdownStreamBuffer: mid-line continuations', () => {
   function run(mode: 'sentence' | 'clause', pushes: string[]): string {
     const md = createMarkdownStreamBuffer({firstChunk: mode});

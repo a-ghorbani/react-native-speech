@@ -119,15 +119,24 @@ export interface SynthesisOptions {
    */
   stripMarkdown?: boolean;
   /**
-   * Streaming only. With `'clause'`, the first chunk flushes at the
-   * earliest of a sentence end, a `, ; : — –` boundary after at least 3
-   * words, a `，；：、` boundary after at least 4 CJK characters, or 12
-   * complete words, so audio starts sooner. Later chunks keep sentence
-   * boundaries. Ignored by the OS engine.
+   * Streaming, and `speak()` on engines that split the first chunk (an
+   * add-on may). With `'clause'`, the first chunk flushes at the earliest of a sentence end, a `, ; : — –` boundary after at least 3
+   * words, a `，；：、` boundary after at least 4 CJK characters, or
+   * `firstChunkMaxWords` complete words, so audio starts sooner. Later
+   * chunks keep sentence boundaries. Ignored by the OS engine.
    * @platform neural-engines
    * @default 'sentence'
    */
   firstChunk?: FirstChunkMode;
+  /**
+   * With `firstChunk: 'clause'`, how many words the first chunk may hold
+   * before it is cut without a natural break. Higher keeps long first
+   * sentences whole; lower starts audio sooner. Must be an integer >= 1;
+   * other values throw. Ignored otherwise.
+   * @platform neural-engines
+   * @default 12
+   */
+  firstChunkMaxWords?: number;
   /**
    * Called for each synthesized audio chunk after any volume adjustment
    * and before playback. Useful for capturing audio offline — e.g. saving

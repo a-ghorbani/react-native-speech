@@ -780,7 +780,7 @@ import {
 | --- | --- |
 | `EngineStreamSession`, `EngineStreamSessionConfig` | Pipelined synth + play for `synthesizeStream`. `hasAudio` / `discard` / `onCancel` cover audio that stays native; `onCancel` runs synchronously on cancel. |
 | `neuralAudioPlayer`, `NeuralAudioPlayer`, `PlaybackOptions` | The single shared player. `play(buffer)` plays JS audio; `playNative(start)` tracks native playback so `Speech.stop()` / `pause()` reach it. Do not construct another `NeuralAudioPlayer` for playback. |
-| `TextChunker`, `TextChunk`, `StreamingChunker`, `findFirstClauseEnd`, `stripMarkdown` | The chunking and markdown stripping the built-in engines use. |
+| `TextChunker`, `TextChunk`, `StreamingChunker`, `findFirstClauseEnd`, `assertFirstChunkMaxWords`, `stripMarkdown` | The chunking and markdown stripping the built-in engines use. An engine that supports `firstChunk` passes `firstChunk` and `firstChunkMaxWords` to both `createMarkdownStreamBuffer` and `EngineStreamSession`, so both cut the first chunk at the same place. |
 | `base64ToArrayBuffer`, `loadAssetAsText`, `createComponentLogger` | Asset and logging helpers. |
 
 Native PCM sinks (experimental, as the subpath; both play on the same single neural player as `playAudio`, so a new playback stops and replaces the current one):

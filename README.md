@@ -123,7 +123,7 @@ Full options (execution providers, chunking, phonemizer selection) are documente
 
 ## Phonon add-on
 
-[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.7.0 <2.9.0`). Register the engine once, before the first `initialize` that uses it:
+[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.9.0 <2.10.0`). Register the engine once, before the first `initialize` that uses it:
 
 ```sh
 yarn add @pocketpalai/react-native-speech-phonon
@@ -179,10 +179,15 @@ stream.onProgress(event => {
 
 The OS engine does not emit chunk progress, so `stream.onProgress` never fires there.
 
-For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after 12 words, instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+
+A first sentence longer than the word limit, with no early comma, is split mid-sentence, which can be heard as a pause. Raise `firstChunkMaxWords` to keep long first sentences whole, at the cost of later first audio. It must be an integer of at least 1; other values throw.
 
 ```ts
-const stream = Speech.createSpeechStream('af_bella', {firstChunk: 'clause'});
+const stream = Speech.createSpeechStream('af_bella', {
+  firstChunk: 'clause',
+  firstChunkMaxWords: 25,
+});
 ```
 
 If you need `streamRange` to index into your own text exactly, strip markdown yourself with the exported `createMarkdownStreamBuffer()` and pass `stripMarkdown: false`:
@@ -190,10 +195,12 @@ If you need `streamRange` to index into your own text exactly, strip markdown yo
 ```ts
 import {createMarkdownStreamBuffer} from '@pocketpalai/react-native-speech';
 
-const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+// Pass the same word limit to both so they cut at the same place.
+const md = createMarkdownStreamBuffer({firstChunk: 'clause', firstChunkMaxWords: 25});
 const stream = Speech.createSpeechStream('af_bella', {
   stripMarkdown: false,
   firstChunk: 'clause',
+  firstChunkMaxWords: 25,
 });
 let spoken = ''; // what streamRange offsets index into
 for await (const token of llmTokenStream) {
