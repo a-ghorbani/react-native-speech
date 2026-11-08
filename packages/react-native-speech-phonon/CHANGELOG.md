@@ -1,5 +1,12 @@
 # Changelog
 
+# [0.2.0](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.3...phonon-v0.2.0) (2026-11-08)
+
+
+### Features
+
+* configurable first-chunk word limit (firstChunkMaxWords) ([#56](https://github.com/a-ghorbani/react-native-speech/issues/56)) ([dd66531](https://github.com/a-ghorbani/react-native-speech/commit/dd66531933597eb8b8af7d9bc104d552b88131b8))
+
 ## [0.1.3](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.2...phonon-v0.1.3) (2026-10-24)
 
 
