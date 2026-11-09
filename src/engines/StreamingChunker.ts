@@ -228,6 +228,11 @@ export class StreamingChunker {
       end = lastWordEnd(this.buffer, max);
     }
     if (end <= 0) {
+      // A single word longer than maxChunkSize: cut right after it.
+      const word = /\S\s+/.exec(this.buffer);
+      end = word ? word.index + word[0].length : -1;
+    }
+    if (end <= 0) {
       return null;
     }
     const chunk: TextChunk = {

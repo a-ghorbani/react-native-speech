@@ -654,6 +654,15 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     for (const c of open) expect(c.text).toMatch(/\S $/);
   });
 
+  test('a word longer than maxChunkSize does not hold back the text after it', () => {
+    const url = `https://example.com/${'a'.repeat(240)} `;
+    const text = url + COUNT;
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open[0]!.text).toBe(url);
+    expect(open.length).toBeGreaterThanOrEqual(2);
+  });
+
   test('CJK clause marks also cut a long run', () => {
     const text = '我们今天去公园散步，'.repeat(30);
     const {open, all} = streamInPieces(new StreamingChunker(200), text, 5);
@@ -673,6 +682,17 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     const chunker = new StreamingChunker(200);
     chunker.append(COUNT.slice(0, COUNT.lastIndexOf(', ', 190) + 2));
     expect(chunker.tryPeek()).toBeUndefined();
+  });
+
+  test('markdown buffer releases CJK clause text with no spaces while open', () => {
+    const text = '我们今天去公园散步，'.repeat(15);
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    for (let i = 0; i < text.length; i += 5) {
+      emitted += md.push(text.slice(i, i + 5));
+    }
+    expect(emitted.length).toBeGreaterThan(100);
+    expect((emitted + md.flush()).replace(/\s+/g, '')).toBe(text);
   });
 
   test('markdown buffer releases comma text to the chunker while open', () => {
