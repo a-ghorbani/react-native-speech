@@ -12,6 +12,22 @@ function deferred() {
 
 const tick = (ms = 10) => new Promise(r => setTimeout(r, ms));
 
+test('forgets an inference once it settles', async () => {
+  const t = new InferenceTracker();
+  const a = deferred();
+  const b = deferred();
+  t.track(a.promise);
+  t.track(b.promise).catch(() => {});
+  const running = (t as any).running as Set<unknown>;
+  expect(running.size).toBe(2);
+  a.resolve();
+  b.reject(new Error('run failed'));
+  await tick();
+  // Settled inferences (and the audio they hold) are not kept for the
+  // life of the engine.
+  expect(running.size).toBe(0);
+});
+
 describe('InferenceTracker.freeWhenIdle', () => {
   test('frees only after every tracked inference settled, failed ones included', async () => {
     const t = new InferenceTracker();

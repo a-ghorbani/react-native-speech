@@ -828,7 +828,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    // Detached first: no new inference can start on it, and a later
+    // 3. Release the ONNX session once no inference runs on it. Detached
+    // first: no new inference can start on it, and a later
     // initialize() creates a new one this release never touches.
     const session = this.session;
     this.session = null;
@@ -846,7 +847,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       }
     }
 
-    // 5. Clear voice embeddings cache
+    // 4. Clear voice embeddings cache
     try {
       this.voiceLoader.clear();
       log.debug('Voice loader cleared');
@@ -855,7 +856,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'voiceLoader', error: e as Error});
     }
 
-    // 6. Clear tokenizer data
+    // 5. Clear tokenizer data
     try {
       this.tokenizer.clear();
       log.debug('Tokenizer cleared');
@@ -864,7 +865,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'tokenizer', error: e as Error});
     }
 
-    // 7. Reset state to allow re-initialization
+    // 6. Reset state to allow re-initialization
     this.resetState();
 
     const success = errors.length === 0;
