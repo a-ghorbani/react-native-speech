@@ -6,6 +6,8 @@
 
 using namespace JS::NativeSpeech;
 
+static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
+
 @implementation RNSpeech
 {
   BOOL isDucking;
@@ -478,6 +480,23 @@ RCT_EXPORT_MODULE();
   }
 }
 
+// The next chunk of an utterance or stream arrives within the delay and cancels this, so the session
+// (and ducking of other audio) holds between chunks. Skipped if the app took the session over meanwhile.
+- (void)deactivateAudioSessionWhenIdle {
+  NSUInteger generation = _playbackGeneration;
+  AVAudioSessionCategory category = [AVAudioSession sharedInstance].category;
+  __weak RNSpeech *weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSessionIdleDeactivationDelay * NSEC_PER_SEC)),
+                 _audioQueue, ^{
+    RNSpeech *strongSelf = weakSelf;
+    if (!strongSelf || strongSelf->_playbackGeneration != generation || strongSelf.synthesizer.isSpeaking ||
+        ![[AVAudioSession sharedInstance].category isEqualToString:category]) {
+      return;
+    }
+    [strongSelf deactivateAudioSession];
+  });
+}
+
 - (void)cleanupAudio {
   _playbackGeneration++;
   if (_audioEngine.isRunning) {
@@ -503,7 +522,7 @@ RCT_EXPORT_MODULE();
   _pendingResolve = nil;
   // Stop the engine first, or deactivating the session fails with IsBusy.
   [self cleanupAudio];
-  [self deactivateAudioSession];
+  [self deactivateAudioSessionWhenIdle];
   RNSpeechTraceEnd(traceHandle, traceName);
   [self emitOnFinish:[self getAudioEventData]];
   if (resolve) {
