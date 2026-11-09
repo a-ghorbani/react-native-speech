@@ -250,6 +250,6 @@ grep -F '[SelfTest]' "$OUT/logcat.txt" || true
 st=0
 # pageSizeCompat exists from API 36 (page-size compat mode); below that a 4 KB library fails to load.
 pkg_dump=""
-((sdk < 36)) || pkg_dump="$OUT/package.txt"
+[[ "$sdk" =~ ^[0-9]+$ ]] && ((sdk < 36)) || pkg_dump="$OUT/package.txt"
 check_log "$OUT/logcat.txt" "$OUT/logcat-crash.txt" "$PAGE" "$REQUIRE" "$PKG" "$pkg_dump" | tee "$OUT/check.txt" || st=1
 exit $st
