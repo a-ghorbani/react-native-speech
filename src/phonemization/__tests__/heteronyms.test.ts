@@ -7,7 +7,7 @@ function pick(marked: string): string {
   const text = marked.replace(/<<|>>/g, '');
   const words = contextWords(splitOnPunctuation(text));
   const i = contextWords(splitOnPunctuation(marked.slice(0, m.index))).length;
-  return heteronymForm(words, i, m[1]!) ?? 'dict';
+  return heteronymForm(words, i) ?? 'dict';
 }
 
 describe('heteronymForm (#31)', () => {
@@ -62,6 +62,13 @@ describe('heteronymForm (#31)', () => {
     ['Show all <<records>> this month', 'dict'],
     ['Which methods should a subclass <<override>>?', 'dict'],
     ['Check the files your scripts <<import>>.', 'dict'],
+    ['Real-world <<uses>> include logging', 'dict'],
+    ['Common <<uses>> in finance', 'dict'],
+    ['Did you <<read>> it yesterday?', 'dict'],
+    ['I <<read>> it yesterday and liked it', 'ɹˈɛd'],
+    ['I <<read>> it last week', 'ɹˈɛd'],
+    ['They <<read>> the last section aloud', 'dict'],
+    ['The new <<import>> works', 'ˈɪmpˌɔːɹt'],
     ['The CI <<rerun>> passed', 'ɹˈiːɹˌʌn'],
     ["It can't be <<rerun>> yet", 'dict'],
     ['CI <<reruns>> now', 'dict'],

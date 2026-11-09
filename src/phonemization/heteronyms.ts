@@ -116,6 +116,7 @@ const LIVE_PLACE_AFTER = set(
   'in on at under inside here there behind alongside outside within near',
 );
 const LIVE_SUBJECTS = set('i we you they who');
+const SUBJECTS = set('i we you they he she it');
 const TIME_NOUNS = set(
   'week weekend day days month year time morning afternoon evening night sprint quarter',
 );
@@ -137,13 +138,11 @@ export function isHeteronym(word: string): boolean {
 
 /**
  * The context form of `words[i]`, or null to keep the dict form.
- * `words` is the lowercased text with null at clause boundaries; `raw` is
- * the word as written.
+ * `words` is the lowercased text with null at clause boundaries.
  */
 export function heteronymForm(
   words: readonly (string | null)[],
   i: number,
-  raw: string,
 ): string | null {
   const word = words[i];
   if (!word || !isHeteronym(word)) return null;
@@ -160,7 +159,14 @@ export function heteronymForm(
     if (next && READ_ATTRIBUTE_AFTER.has(next)) return null;
     // An instruction or a modal is present tense whatever follows
     // ("Read the logs from yesterday", "you can read …").
-    if (!prev || READ_PRESENT_BEFORE.has(prev)) return null;
+    if (
+      !prev ||
+      READ_PRESENT_BEFORE.has(prev) ||
+      // "Did you read …?", "Can we read …?"
+      (SUBJECTS.has(prev) && !!prev2 && READ_PRESENT_BEFORE.has(prev2))
+    ) {
+      return null;
+    }
     if (
       (prevRaw && READ_PAST_BEFORE.has(prevRaw)) ||
       (prev && READ_PAST_BEFORE.has(prev))
@@ -170,7 +176,6 @@ export function heteronymForm(
     for (let k = i + 1; k <= i + 4 && at(k); k++) {
       const w = at(k)!;
       const after = at(k + 1);
-      if (at(k - 1) === 'from' || at(k - 1) === 'since') break;
       if (w === 'yesterday' || w === 'ago') return form.past!;
       if (
         w === 'last' &&
@@ -199,9 +204,6 @@ export function heteronymForm(
   }
 
   let pos: 'verb' | 'noun' | null = null;
-  // A capitalized word inside a clause is usually a name or a label
-  // ("Go to Project settings"); only a button verb before it counts.
-  const name = /^[A-Z]/.test(raw) && prevRaw !== null;
   const inflected = isInflected(word);
   // "this week", "each day" after the word is a time phrase, not an object.
   const object =
@@ -216,8 +218,7 @@ export function heteronymForm(
   if (prev && BUTTON_BEFORE.has(prev)) pos = 'verb';
   else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
     pos = 'verb'; // "can't be rerun"
-  } else if (name) pos = null;
-  else if (
+  } else if (
     prev &&
     toVerb &&
     (inflected ? SUBJECT_3SG.has(prev) : VERB_BEFORE.has(prev))
@@ -238,10 +239,9 @@ export function heteronymForm(
     !inflected &&
     prev2 &&
     DETERMINERS.has(prev2) &&
-    !prev!.endsWith('s') &&
-    (!next || PREPOSITIONS.has(next))
+    !prev!.endsWith('s')
   ) {
-    // "a full rerun", "the latest import of"; not "files your scripts import"
+    // "a full rerun", "the new import works"; not "files your scripts import"
     pos = 'noun';
   } else if (object) {
     pos = 'verb';

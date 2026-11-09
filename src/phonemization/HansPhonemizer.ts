@@ -642,11 +642,7 @@ export class HansPhonemizer implements IPhonemizer {
               !/^[A-Z]{2,}$/.test(w) &&
               /^[a-z]+$/i.test(w.replace(/^[^a-z]+|[^a-z]+$/gi, ''))
             ) {
-              const form = heteronymForm(
-                context,
-                at,
-                w.replace(/^[^a-z]+/i, ''),
-              );
+              const form = heteronymForm(context, at);
               if (form) {
                 ipaWords.push(form);
                 continue;
