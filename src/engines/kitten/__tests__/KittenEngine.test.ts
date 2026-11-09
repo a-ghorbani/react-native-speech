@@ -540,15 +540,17 @@ describe('KittenEngine - stop() after a stream replaces another', () => {
 //
 // Fixtures are real Kitten Nano 0.8 outputs (untrimmed model waveform):
 // "Ok." on expr-voice-2-f, and "Few, fish, and fifty thieves, hush." on
-// expr-voice-4-m (fricative onset, a breath-like bump before speech).
-// Each carries ~0.6 s of near-silence before speech.
+// expr-voice-4-m (fricative onset, a breath-like bump before speech);
+// "Then we walked home." on expr-voice-4-f (the word's decay runs into
+// the last 208 ms). Each carries ~0.6 s of near-silence before speech
+// and ends in a short burst.
 // ─────────────────────────────────────────────────────────────────────────
 describe('KittenEngine - edge silence', () => {
   const {readFileSync} = require('fs');
   const {join} = require('path');
   const {neuralAudioPlayer} = require('../../NeuralAudioPlayer');
   const HOP = 240;
-  const TRIM = 5000;
+  const {TRIM_SAMPLES: TRIM} = require('../constants').KITTEN_CONSTANTS;
 
   const fixture = (name: string): Float32Array => {
     const buf: Buffer = readFileSync(join(__dirname, '__fixtures__', name));
@@ -625,6 +627,35 @@ describe('KittenEngine - edge silence', () => {
       expect(at).toBeGreaterThanOrEqual(0);
     },
   );
+
+  test('the last word decays before the buffer ends (#76)', async () => {
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: fixture('kitten-nano-4f-home.wav')},
+    });
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    await e.synthesize('Then we walked home.', {voiceId: 'expr-voice-2-f'});
+
+    const db = frameDb(played()[0]!);
+    expect(Math.max(...db.slice(-2))).toBeLessThan(-35);
+  });
+
+  test.each([
+    'kitten-nano-2f-ok.wav',
+    'kitten-nano-4m-few-fish.wav',
+    'kitten-nano-4f-home.wav',
+  ])('%s: the end burst is not played', async name => {
+    mockSessionRun.mockResolvedValue({waveform: {data: fixture(name)}});
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    await e.synthesize('Ok.', {voiceId: 'expr-voice-2-f'});
+
+    // Sound returning after silence in the last 150 ms is the burst.
+    const out = played()[0]!;
+    const db = frameDb(out).slice(-15);
+    const quiet = db.findIndex(v => v < -65);
+    expect(quiet < 0 || db.slice(quiet).every(v => v <= -50)).toBe(true);
+  });
 
   test('stream: chunks are trimmed too', async () => {
     mockSessionRun.mockResolvedValue({
