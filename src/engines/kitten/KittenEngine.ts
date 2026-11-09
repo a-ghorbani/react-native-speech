@@ -46,6 +46,7 @@ import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
+import {trimEdgeSilence} from './trimEdgeSilence';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
@@ -724,12 +725,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     const rawAudio = audioTensor.data as Float32Array;
     log.debug(`Raw audio: ${rawAudio.length} samples`);
 
-    // Trim trailing samples to remove artifacts
-    const trimmedLength = Math.max(0, rawAudio.length - TRIM_SAMPLES);
-    const audioData =
-      trimmedLength < rawAudio.length
-        ? rawAudio.slice(0, trimmedLength)
-        : rawAudio;
+    // Trim trailing samples to remove artifacts, then the edge silence
+    const audioData = trimEdgeSilence(
+      rawAudio.slice(0, Math.max(0, rawAudio.length - TRIM_SAMPLES)),
+      SAMPLE_RATE,
+    );
 
     // Apply volume if specified
     if (options?.volume !== undefined && options.volume !== 1.0) {

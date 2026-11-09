@@ -51,8 +51,12 @@ export const KITTEN_CONSTANTS = {
   EOS_TOKEN_ID: 10,
 
   // Post-processing
-  /** Number of trailing samples to trim from audio output to remove artifacts */
-  TRIM_SAMPLES: 5000,
+  /**
+   * Trailing samples dropped from every model output: each one ends in a
+   * short burst. 100 ms covers it at speeds 0.5-1; 5000 also cut the last
+   * word's decay on most voices.
+   */
+  TRIM_SAMPLES: 2400,
 
   // Phonemization
   /** Language code for the dict+hans00 phonemizer */
