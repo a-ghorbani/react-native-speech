@@ -90,6 +90,16 @@ const DICT: Record<string, string> = {
   space: 'spˈeɪs',
   pace: 'pˈeɪs',
   no: 'nˈoʊ',
+  power: 'pˈaʊɚ',
+  powers: 'pˈaʊɚz',
+  shell: 'ʃˈɛl',
+  hell: 'hˈɛl',
+  not: 'nˈɑːt',
+  note: 'nˈoʊt',
+  book: 'bˈʊk',
+  ebook: 'ˈiːbʊk',
+  ham: 'hˈæm',
+  mock: 'mˈɑːk',
 };
 
 describe('HansPhonemizer', () => {
@@ -159,6 +169,18 @@ describe('HansPhonemizer', () => {
       'snipping',
       expect.anything(),
     );
+  });
+
+  test('compound split does not cut a digraph or a doubled consonant', async () => {
+    // "powers|hell" would cut the sh; "ham|mock" doubles the m.
+    expect(await phon.phonemize('powershell', 'en-us')).toBe('pˈaʊɚʃˌɛl');
+    await phon.phonemize('hammock', 'en-us');
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith('hammock', expect.anything());
+  });
+
+  test('compound split prefers the longest head', async () => {
+    // "note|book", not "not|ebook"
+    expect(await phon.phonemize('notebook', 'en-us')).toBe('nˈoʊtbˌʊk');
   });
 
   test('compound split keeps the s with an s-cluster tail', async () => {

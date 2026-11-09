@@ -47,6 +47,10 @@ const stubDictSource = {
   size: () => 0,
 };
 const stubPreprocessor = class {
+  static lastOptions: Record<string, unknown> | undefined;
+  constructor(options?: Record<string, unknown>) {
+    stubPreprocessor.lastOptions = options;
+  }
   process(t: string) {
     return t;
   }
@@ -92,6 +96,15 @@ const sampleVoiceData = {
 describe('KittenEngine - construction & identity', () => {
   it('constructor does not throw', () => {
     expect(() => new KittenEngine()).not.toThrow();
+  });
+
+  it('leaves scale suffixes and fractions to normalizeForSpeech', () => {
+    // The upstream rules read "B2B" as "B two billion" and "5/1" as "five firsts".
+    new KittenEngine();
+    expect(stubPreprocessor.lastOptions).toMatchObject({
+      expandScaleSuffixes: false,
+      expandFractions: false,
+    });
   });
 
   it('identifies itself as kitten engine', () => {

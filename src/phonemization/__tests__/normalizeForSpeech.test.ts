@@ -120,6 +120,11 @@ describe('normalizeForSpeech', () => {
       'twenty-one milliseconds, forty-one megabytes, one hundred one kilograms',
     ],
     ['took 5,220 ms', 'took five thousand two hundred twenty milliseconds'],
+    ['a ≠ b and x ≈ 5', 'a not equal to b and x approximately 5'],
+    ['3 × 4 and 3 x 4', '3 times 4 and 3 times 4'],
+    ['takes ~5 days, see #31', 'takes about 5 days, see number 31'],
+    ['Mmmmm, 1000s of users', 'Mmm, thousands of users'],
+    ['on 05/01/2024', 'on 05 01 2024'],
     // Dotted acronyms keep a sentence-final period.
     ['the U.S. and the U.K. agreed', 'the U-S- and the U-K- agreed'],
     ['We live in the U.S.', 'We live in the U-S-.'],
