@@ -32,6 +32,8 @@ import {normalizeForSpeech} from '../normalizeForSpeech';
 import {TextPreprocessor} from '../KittenPreprocessor';
 import {TextNormalizer} from '../../engines/kokoro/TextNormalizer';
 import {lookupTable} from '../../utils/lookupTable';
+import {readdirSync, readFileSync} from 'node:fs';
+import {join} from 'node:path';
 
 const NAMES = [
   'constructor',
@@ -91,5 +93,28 @@ describe('Object.prototype names (#88)', () => {
     expect(t.toString).toBeUndefined();
     expect(Object.isFrozen(t)).toBe(true);
     expect(t.a).toBe('x');
+  });
+
+  test('text-path tables keyed by strings are lookupTable, not plain objects', () => {
+    // A plain `Record<string, …> = {` table hits Object.prototype for
+    // "constructor"; keep every such table on the text path prototype-free.
+    const phon = join(__dirname, '..');
+    const files = [
+      ...readdirSync(phon)
+        .filter(n => n.endsWith('.ts'))
+        .map(n => join(phon, n)),
+      join(__dirname, '../../engines/kokoro/TextNormalizer.ts'),
+      join(__dirname, '../../engines/kokoro/Phonemizer.ts'),
+    ];
+    const plain: string[] = [];
+    for (const f of files) {
+      const src = readFileSync(f, 'utf8');
+      for (const m of src.matchAll(
+        /(?:const|let)\s+(\w+)\s*(?::\s*Record<string,[^=]*>)?\s*=\s*\(?\{/g,
+      )) {
+        if (/Record<string,|\(\{$/.test(m[0])) plain.push(`${f}: ${m[1]}`);
+      }
+    }
+    expect(plain).toEqual([]);
   });
 });
