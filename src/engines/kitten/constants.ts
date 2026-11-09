@@ -53,7 +53,8 @@ export const KITTEN_CONSTANTS = {
   // Post-processing
   /**
    * Trailing samples dropped from every model output: each one ends in a
-   * ~35-50 ms burst. 5000 also cut the last word's decay on most voices.
+   * short burst. 100 ms covers it at speeds 0.5-1; 5000 also cut the last
+   * word's decay on most voices.
    */
   TRIM_SAMPLES: 2400,
 
