@@ -360,7 +360,7 @@ const SINGULAR_UNITS: Record<string, string> = {
 /** "one kilograms" / "1 minutes" → singular. */
 export function singularizeUnits(text: string): string {
   return text.replace(
-    /(?<!(?:point|hundred|thousand|million|billion) |[-\d.,])\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
+    /(?<!(?:point|hundred|thousand|million|billion|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety) |(?:hundred|thousand|million|billion) and |[-\d.,])\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
     (_m: string, one: string, unit: string) =>
       `${one} ${SINGULAR_UNITS[unit] ?? unit.slice(0, -1)}`,
   );
@@ -425,12 +425,14 @@ export function normalizeForSpeech(text: string): string {
   text = expandVersions(text);
   text = expandIpAddresses(text);
   text = expandNumericForms(text);
-  // Only unambiguous cooking/measure fractions; "4/5 stars" or "5/1" are
-  // left to each engine as before.
+  // Proper fractions with a common denominator ("3/4 cup", "2/5"); "5/1",
+  // "0/10" and "4/7" are left to each engine.
   text = text.replace(
     /(?<![/\d])\b(\d+)\s*\/\s*(\d+)\b(?!\s*\/\s*\d)/g,
     (m: string, a: string, b: string) =>
-      +a < +b && [2, 3, 4, 5, 8, 10, 16].includes(+b) ? expandFractions(m) : m,
+      +a > 0 && +a < +b && [2, 3, 4, 5, 8, 10, 16].includes(+b)
+        ? expandFractions(m)
+        : m,
   );
   text = expandTightScaleSuffixes(text);
   text = expandOrdinals(text);

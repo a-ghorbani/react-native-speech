@@ -196,6 +196,10 @@ describe('HansPhonemizer', () => {
     );
   });
 
+  test('compound split does not fuse a slash pair', async () => {
+    expect(await phon.phonemize('ice/cream', 'en-us')).not.toBe('ˈaɪskɹˌiːm');
+  });
+
   test('compound split prefers the longest head', async () => {
     // "note|book", not "not|ebook"
     expect(await phon.phonemize('notebook', 'en-us')).toBe('nˈoʊtbˌʊk');

@@ -503,8 +503,9 @@ function phonemizeWord(
     if (baseIpa) ipa = baseIpa + sSuffix(baseIpa);
   }
 
-  // 4e. Compound of two dict words ("dockerfile", "typescript").
-  if (!ipa && /^[a-z]+$/.test(clean)) {
+  // 4e. Compound of two dict words ("dockerfile", "typescript"); not
+  // across a slash ("four/seven").
+  if (!ipa && /^[a-z]+$/i.test(word.replace(/^[^a-z]+|[^a-z]+$/gi, ''))) {
     ipa = splitCompound(clean, dict);
   }
 

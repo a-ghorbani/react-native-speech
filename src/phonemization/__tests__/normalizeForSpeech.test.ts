@@ -126,6 +126,11 @@ describe('normalizeForSpeech', () => {
     ['Mmmmm, 1000s of users', 'Mmm, thousands of users'],
     ['on 05/01/2024', 'on 05 01 2024'],
     ['1.1 seconds, 41 min and 1 hr', '1.1 seconds, 41 minutes and 1 hour'],
+    [
+      'a hundred and one seconds, twenty one degrees',
+      'a hundred and one seconds, twenty one degrees',
+    ],
+    ['0/5 passed', '0/5 passed'],
     ['scored 2/5 and 1/10', 'scored two fifths and one tenth'],
     ['mask 0x10 on a 4x4', 'mask 0 x 10 on a 4 by 4'],
     // Dotted acronyms keep a sentence-final period.
