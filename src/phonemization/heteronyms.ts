@@ -110,7 +110,7 @@ const READ_ATTRIBUTE_AFTER = set(
   'access only permission permissions write and or receipt receipts replica replicas path paths timeout side model',
 );
 const LIVE_ADJ_BEFORE = set(
-  "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made",
+  "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made watch watched watching stream streamed streaming broadcast aired",
 );
 const LIVE_PLACE_AFTER = set(
   'in on at under inside here there behind alongside outside within near',

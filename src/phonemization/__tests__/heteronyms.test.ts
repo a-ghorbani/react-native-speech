@@ -53,6 +53,7 @@ describe('heteronymForm (#31)', () => {
     ['The feature is currently <<live>> in production', 'dict'],
     ['Your app is already <<live>> in the store', 'dict'],
     ["We're <<live>> on Twitch", 'dict'],
+    ['Millions watched <<live>> on TV', 'dict'],
     ['Methods currently <<live>> in utils', 'lˈɪv'],
     ['<<Read>> the logs from yesterday', 'dict'],
     ['You can <<read>> the report from yesterday', 'dict'],
