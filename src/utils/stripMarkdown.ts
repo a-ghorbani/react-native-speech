@@ -73,9 +73,7 @@ const HTML_TAG_PASS = [/<\/?[a-zA-Z][^>]*>/g, ''] as const;
 // Emphasis delimiters must sit next to whitespace, punctuation, or a string
 // edge. This keeps intraword underscores (snake_case, Python dunders like
 // `__init__`) and stray asterisks in prose (`*.txt`, `C * pointer`) intact.
-// U+2060 starts a stream buffer's mid-line continuation (CONTINUATION), which
-// follows a cut, so it counts as an edge too.
-const EMPHASIS_PRE = '(^|[\\s({\\[\\u2060])';
+const EMPHASIS_PRE = '(^|[\\s({\\[])';
 const EMPHASIS_POST = '(?=[\\s.,;:!?)}\\]]|$)';
 const emphasis = (delim: string, body: string) =>
   [
@@ -362,7 +360,8 @@ const LONG_TAIL_CHARS = 100;
 
 // Prepended to a mid-line continuation so line-anchored block rules
 // (`^- `, `^> `, `^# `) can't match it. U+2060 is not whitespace: `trim()`
-// keeps it and `[ \t]*` stops at it.
+// keeps it and `[ \t]*` stops at it. When the cut ended in whitespace, a
+// space follows it so emphasis right after the cut still opens (`*x*`).
 const CONTINUATION = '\u2060';
 
 export function createMarkdownStreamBuffer(
@@ -380,10 +379,16 @@ export function createMarkdownStreamBuffer(
   // (sentence or clause) cut: the remainder continues that line, so it
   // must not be read as a new block (`- 5 is negative` keeps its minus).
   let atLineStart = true;
+  // Whether the last mid-line cut ended in whitespace (not a CJK mark).
+  let cutAtSpace = false;
 
   function strip(text: string, continuation: boolean): string {
     if (!continuation) return stripMarkdown(text, opts);
-    return stripMarkdown(CONTINUATION + text, opts).replace(CONTINUATION, '');
+    const mark = cutAtSpace ? CONTINUATION + ' ' : CONTINUATION;
+    return stripMarkdown(mark + text, opts).replace(
+      cutAtSpace ? /\u2060 ?/ : CONTINUATION,
+      '',
+    );
   }
   function noteEmitted(text: string): void {
     if (!firstPending || !text) return;
@@ -501,6 +506,7 @@ export function createMarkdownStreamBuffer(
         buffer = buffer.slice(cut);
         const stripped = strip(sentence, !atLineStart);
         atLineStart = false;
+        cutAtSpace = /\s$/.test(sentence);
         // Append a single space so `StreamingChunker`'s SENTENCE_END_RE
         // (which requires whitespace after `.!?`) finds a boundary even
         // though `stripMarkdown` trims its output.

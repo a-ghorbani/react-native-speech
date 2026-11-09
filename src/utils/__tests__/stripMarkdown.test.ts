@@ -958,7 +958,10 @@ describe('createMarkdownStreamBuffer: inline markers before an early cut (#63)',
     'One sentence. [Then](u) this.',
     'One sentence. <b>Then</b> this.',
     '这是**粗体**的说明文字、然后*斜体*继续。',
-  ])('a marker right after the cut is stripped: %j', text => {
+    // A CJK cut has no space before the remainder: a `*` there stays literal.
+    '文件列表如下所示：*.txt 和 *.md 文件都会被读取',
+    '计算结果如下所示，* 号表示乘法，比如 2 * 3 等于六',
+  ])('a marker right after the cut strips like the whole line: %j', text => {
     const whole = stripMarkdown(text);
     for (const pieces of [[...text], words(text), [text]]) {
       for (const mode of ['clause', 'sentence']) {
