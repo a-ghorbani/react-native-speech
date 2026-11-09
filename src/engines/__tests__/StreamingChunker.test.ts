@@ -731,3 +731,216 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     expect((emitted + md.flush()).replace(/\s+/g, ' ').trim()).toBe(COUNT);
   });
 });
+
+describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', () => {
+  // The #70 reply: a 17-char first clause, then a 197-char sentence.
+  const REPLY =
+    Array.from({length: 20}, (_, i) => numberWord(i + 1)).join(', ') +
+    ' were the numbers we counted out loud this morning in the park. Then we walked home. After that we made tea and sat down to rest for a while. ';
+
+  /** Word tokens (optionally through the markdown buffer) into the chunker, draining after each. */
+  function streamTokens(chunker: StreamingChunker, text: string, md = true) {
+    const buf = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    const chunks: TextChunkLike[] = [];
+    const take = () => {
+      let c = chunker.tryPeek();
+      while (c) {
+        chunks.push(c);
+        c = chunker.tryPeek();
+      }
+    };
+    for (const tok of text.match(/\S+\s*/g) ?? []) {
+      const out = md ? buf.push(tok) : tok;
+      if (out) chunker.append(out);
+      take();
+    }
+    if (md) {
+      const tail = buf.flush();
+      if (tail) chunker.append(tail);
+    }
+    chunker.finalize();
+    take();
+    return chunks;
+  }
+
+  test.each([true, false])(
+    'the #70 reply: chunk 2 is at most 4x chunk 1 and ends at a clause mark (markdown buffer %s)',
+    md => {
+      const chunks = streamTokens(
+        new StreamingChunker(200, 'clause'),
+        REPLY,
+        md,
+      );
+      expectContiguous(chunks, REPLY);
+      expect(chunks[0]!.text).toBe('one, two, three, ');
+      expect(chunks[1]!.text.length).toBeLessThanOrEqual(4 * 17);
+      expect(chunks[1]!.text.length).toBeGreaterThanOrEqual(2 * 17);
+      expect(chunks[1]!.text).toMatch(/, $/);
+      // The ramp ends once the cap reaches maxChunkSize: chunk 3 runs to the sentence end.
+      expect(chunks[2]!.text).toMatch(/park\. $/);
+    },
+  );
+
+  test('a long sentence that arrives in one append is still cut at a clause within the cap', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append(REPLY);
+    expect(chunker.tryPeek()!.text).toBe('one, two, three, ');
+    const second = chunker.tryPeek()!.text;
+    expect(second.length).toBeLessThanOrEqual(68);
+    expect(second).toMatch(/, $/);
+  });
+
+  test('a long sentence with no clause mark in the cap comes alone, not packed with the next ones', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    const long =
+      'the quick brown fox jumps over the lazy dog and then keeps on running all the way back home. ';
+    chunker.append(
+      `Sure, thing here, ${long}It was fun. We laughed a lot. Then we went to bed early and slept. `,
+    );
+    expect(chunker.tryPeek()!.text).toBe('Sure, thing here, ');
+    expect(chunker.tryPeek()!.text).toBe(long);
+  });
+
+  test('no clause mark within the cap: the sentence is not cut at a word', () => {
+    const text =
+      'That is right. The quick brown fox jumps over the lazy dog and keeps on running far away into the forest until the night falls. ';
+    const chunks = streamTokens(new StreamingChunker(200, 'clause'), text);
+    expect(chunks.map(c => c.text)).toEqual([
+      'That is right. ',
+      'The quick brown fox jumps over the lazy dog and keeps on running far away into the forest until the night falls. ',
+    ]);
+  });
+
+  test('a clause mark early in the cap does not make a tiny chunk', () => {
+    const text =
+      'One two three, well, the quick brown fox jumps over the lazy dog and runs into the forest. ';
+    const chunks = streamTokens(new StreamingChunker(200, 'clause'), text);
+    // Cap 4 x 15 = 60; "well, " ends at 6, in the first half: no ramp cut.
+    expect(chunks[1]!.text).toBe(text.slice(15));
+  });
+
+  test('short sentences are packed only up to the cap', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append('Yes. ');
+    expect(chunker.tryPeek()!.text).toBe('Yes. ');
+    chunker.append('It is. So it goes. And then some more. Fine. ');
+    const second = chunker.tryPeek()!.text;
+    expect(second.length).toBeLessThanOrEqual(20);
+    expect(second).toBe('It is. So it goes. ');
+  });
+
+  test("firstChunk 'sentence' does not ramp", () => {
+    const text =
+      'Sure thing. Here is the plan for tomorrow, we leave at eight in the morning, drive to the lake and set up the tent before lunch. ';
+    const chunks = streamTokens(
+      new StreamingChunker(200, 'sentence'),
+      text,
+      false,
+    );
+    expect(chunks.map(c => c.text)).toEqual([
+      'Sure thing. ',
+      text.slice('Sure thing. '.length),
+    ]);
+  });
+
+  test('an abbreviation period inside the cap does not end a chunk', () => {
+    // Over maxChunkSize, the regular rules let "Dr. " end a chunk; the ramp must not.
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append(
+      'Sure, that is fine. I asked Dr. Smith about the results, and he said that everything looked fine, so we can relax for now and wait for the next appointment in spring. Then we went home, cooked a big pot of soup and had a long, slow lunch together in the garden. ',
+    );
+    expect(chunker.tryPeek()!.text).toBe('Sure, that is fine. ');
+    expect(chunker.tryPeek()!.text).toBe(
+      'I asked Dr. Smith about the results, and he said that everything looked fine, ',
+    );
+  });
+
+  test('the ramp still applies to text that is complete at finalize', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append(REPLY);
+    chunker.finalize();
+    const all: TextChunkLike[] = [];
+    let c = chunker.tryPeek();
+    while (c) {
+      all.push(c);
+      c = chunker.tryPeek();
+    }
+    expectContiguous(all, REPLY);
+    expect(all[1]!.text.length).toBeLessThanOrEqual(68);
+    expect(chunker.tryPeek()).toBeNull();
+  });
+
+  test('CJK clause marks cut a ramped chunk', () => {
+    const text =
+      '今天天气很好，' +
+      '我们早上去公园散步，看到很多人在跑步，还有小朋友在放风筝，后来我们去了湖边的咖啡馆喝茶聊天，一直坐到中午才回家。';
+    const chunks = streamTokens(
+      new StreamingChunker(200, 'clause'),
+      text,
+      false,
+    );
+    expectContiguous(chunks, text);
+    expect(chunks[0]!.text).toBe('今天天气很好，');
+    expect(chunks[1]!.text.length).toBeLessThanOrEqual(28);
+    expect(chunks[1]!.text).toMatch(/，$/);
+  });
+
+  test('a line with an inline marker reaches the chunker whole and is still ramped (#63)', () => {
+    const text = `**Note:** ${REPLY}`;
+    const chunks = streamTokens(new StreamingChunker(200, 'clause'), text);
+    expect(chunks[0]!.text.length).toBeLessThan(40);
+    expect(chunks[1]!.text.length).toBeLessThanOrEqual(
+      4 * chunks[0]!.text.length,
+    );
+    expect(chunks[1]!.text).toMatch(/, $/);
+  });
+
+  test('a long first chunk does not ramp', () => {
+    const first =
+      'This first sentence is already a good deal longer than fifty characters. ';
+    const text = first + REPLY.slice(17);
+    const chunks = streamTokens(
+      new StreamingChunker(200, 'clause'),
+      text,
+      false,
+    );
+    expect(chunks[0]!.text).toBe(first);
+    expect(chunks[1]!.text).toMatch(/park\. $/);
+  });
+
+  test('after the ramp ends, chunks are never packed past maxChunkSize', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append('One two three, ');
+    expect(chunker.tryPeek()!.text).toBe('One two three, ');
+    chunker.append(
+      'four five six seven eight nine ten eleven twelve thirteen. ',
+    );
+    expect(chunker.tryPeek()!.text.length).toBeLessThanOrEqual(60);
+    chunker.append('Short one here. '.repeat(40));
+    const sizes: number[] = [];
+    let c = chunker.tryPeek();
+    while (c) {
+      sizes.push(c.text.length);
+      c = chunker.tryPeek();
+    }
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(200);
+    expect(Math.max(...sizes)).toBeGreaterThan(150);
+  });
+
+  test('the ramp grows chunk by chunk and stops at maxChunkSize', () => {
+    const text = `${COUNT}, ${COUNT}. `;
+    const chunks = streamTokens(
+      new StreamingChunker(200, 'clause'),
+      text,
+      false,
+    );
+    expectContiguous(chunks, text);
+    const sizes = chunks.map(c => c.text.length);
+    expect(sizes[0]).toBe(17);
+    expect(sizes[1]).toBeLessThanOrEqual(68);
+    expect(sizes[2]).toBeLessThanOrEqual(4 * sizes[1]!);
+    expect(sizes[2]).toBeGreaterThan(sizes[1]!);
+    // Once a chunk is a quarter of maxChunkSize or more, the regular rules apply.
+    expect(Math.max(...sizes.slice(3, -1))).toBeGreaterThan(150);
+  });
+});
