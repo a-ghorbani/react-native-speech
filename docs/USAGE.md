@@ -608,7 +608,14 @@ await Speech.speak('Hello from Kokoro.', 'af_bella', {speed: 1.0, volume: 1.0});
 
 Voice blending: pass multiple voice IDs (see `src/engines/kokoro/VoiceLoader.ts`).
 
-> **Android note:** the q8-quantized Kokoro ONNX build (`model_q8f16.onnx`) produces NaN samples under onnxruntime-react-native's CPU execution provider and plays back as silence. Ship the fp16 (`model_fp16.onnx`) or full (`model.onnx`) variant for Android. iOS (CoreML) handles q8 fine.
+> **Which model file:** use `model_quantized.onnx` (int8, 88 MB) or `model.onnx` (fp32, 311 MB) from [onnx-community/Kokoro-82M-v1.0-ONNX](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX). The fp16 builds produce NaN audio on the CPU and XNNPACK providers, and synthesis then fails with a `produced NaN audio` error:
+>
+> | onnxruntime | `model_quantized.onnx` | `model.onnx` | `model_q8f16.onnx` | `model_fp16.onnx` |
+> | --- | --- | --- | --- | --- |
+> | 1.18 – 1.23 | ok | ok | ok | NaN on some inputs |
+> | 1.24 – 1.26 | ok | ok | NaN on every input | ok on the inputs tested |
+>
+> With `model_q8f16.onnx` on onnxruntime 1.24+, each chunk also takes about 8× longer to synthesize. Measured on arm64 with onnxruntime-node and on Android with onnxruntime-react-native 1.24.3 (#71).
 
 ### Supertonic
 

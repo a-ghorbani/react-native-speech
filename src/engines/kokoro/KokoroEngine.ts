@@ -87,6 +87,15 @@ function getOnnxRuntime(): OnnxRuntimeBindings {
 
 const {MAX_TOKEN_LIMIT, DEFAULT_MAX_CHUNK_SIZE, SAMPLE_RATE} = KOKORO_CONSTANTS;
 
+/** Strided probe: a broken fp16/q8f16 graph turns the whole waveform NaN. */
+function hasNaN(samples: Float32Array): boolean {
+  const step = Math.max(1, Math.floor(samples.length / 32));
+  for (let i = 0; i < samples.length; i += step) {
+    if (Number.isNaN(samples[i])) return true;
+  }
+  return samples.length > 0 && Number.isNaN(samples[samples.length - 1]);
+}
+
 export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   readonly name: TTSEngine = 'kokoro' as TTSEngine;
 
@@ -683,6 +692,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     const audioData = audioTensor.data as Float32Array;
+    if (hasNaN(audioData)) {
+      const ortVersion =
+        require('onnxruntime-react-native').env?.versions?.common ?? '?';
+      throw new Error(
+        `Kokoro model ${this.config?.modelPath ?? ''} produced NaN audio on onnxruntime ${ortVersion}. ` +
+          'model_q8f16.onnx does on onnxruntime >= 1.24 and model_fp16.onnx on some inputs; ' +
+          'use model_quantized.onnx (int8) or model.onnx (fp32).',
+      );
+    }
 
     // Create audio buffer
     const audioBuffer: AudioBuffer = {

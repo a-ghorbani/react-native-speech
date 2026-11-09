@@ -36,7 +36,7 @@ import {
 import Button from '../components/Button';
 import {C, MONO} from '../styles/cyber';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {kokoroModelManager} from '../utils/ModelManager';
+import {kokoroModelManager, type ModelVariant} from '../utils/ModelManager';
 import {
   supertonicModelManager,
   type SupertonicVersion,
@@ -790,7 +790,7 @@ const RootView: React.FC = () => {
 
   // Download handlers
   const downloadKokoroModel = React.useCallback(
-    async (variant: 'q8' | 'fp16' | 'full') => {
+    async (variant: ModelVariant) => {
       try {
         setIsDownloading(true);
         setDownloadingItem(`kokoro-${variant}`);
@@ -941,7 +941,7 @@ const RootView: React.FC = () => {
               if (type === 'kokoro') {
                 await kokoroModelManager.deleteModel(
                   version,
-                  variant as 'q8' | 'fp16' | 'full',
+                  variant as ModelVariant,
                 );
               } else if (type === 'supertonic') {
                 await supertonicModelManager.deleteModel(
@@ -1142,42 +1142,20 @@ const RootView: React.FC = () => {
                     ]}>
                     AVAILABLE DOWNLOADS
                   </Text>
-                  {(Platform.OS === 'android'
-                    ? [
-                        {
-                          variant: 'fp16',
-                          size: '164 MB',
-                          desc: 'Recommended',
-                          color: '#007AFF',
-                        },
-                        {
-                          variant: 'full',
-                          size: '328 MB',
-                          desc: 'Best quality',
-                          color: '#FF9500',
-                        },
-                      ]
-                    : [
-                        {
-                          variant: 'q8',
-                          size: '82 MB',
-                          desc: 'Recommended',
-                          color: '#007AFF',
-                        },
-                        {
-                          variant: 'fp16',
-                          size: '164 MB',
-                          desc: 'Higher quality',
-                          color: '#34C759',
-                        },
-                        {
-                          variant: 'full',
-                          size: '328 MB',
-                          desc: 'Best quality',
-                          color: '#FF9500',
-                        },
-                      ]
-                  ).map(item => {
+                  {[
+                    {
+                      variant: 'quantized',
+                      size: '88 MB',
+                      desc: 'Recommended',
+                      color: '#007AFF',
+                    },
+                    {
+                      variant: 'full',
+                      size: '311 MB',
+                      desc: 'Best quality',
+                      color: '#FF9500',
+                    },
+                  ].map(item => {
                     const isInstalled = kokoroModels.some(
                       m => m.variant === item.variant,
                     );
@@ -1197,9 +1175,7 @@ const RootView: React.FC = () => {
                             : themedStyles.opacityFull,
                         ]}
                         onPress={() =>
-                          downloadKokoroModel(
-                            item.variant as 'q8' | 'fp16' | 'full',
-                          )
+                          downloadKokoroModel(item.variant as ModelVariant)
                         }
                         disabled={isInstalled || isDownloading}>
                         {isThisDownloading ? (
