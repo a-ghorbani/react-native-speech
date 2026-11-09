@@ -10,13 +10,18 @@
 
 ## Library data
 
-This library ships **no dictionary or model data**. Consumer apps supply
-these at runtime:
+This library ships **no dictionary or model data**, apart from the small
+heteronym table below. Consumer apps supply the rest at runtime:
 
 - **Phonemization dictionary (optional):** apps may load any EPD1-format
   mmap dict via the `NativeDict` API. The library default phonemizer is
   `phonemize` (MIT, hans00 G2P) which requires no dict. See
   [PHONEMIZATION.md](PHONEMIZATION.md) for building and attributing a dict.
+- **Heteronym table** (`src/phonemization/heteronyms.ts`): the alternate
+  (noun, verb or past-tense) pronunciations of about 60 words, taken from
+  the POS-keyed gold dictionary of [misaki](https://github.com/hexgrad/misaki)
+  (`us_gold.json`, Apache-2.0, Copyright hexgrad) and converted to the
+  en-us dict's IPA notation.
 
 ## Neural TTS model licenses
 

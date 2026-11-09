@@ -19,6 +19,7 @@ import {
 } from '../engines/kokoro/Phonemizer';
 import {createComponentLogger} from '../utils/logger';
 import type {DictSource} from './DictSource';
+import {contextWords, heteronymForm, isHeteronym} from './heteronyms';
 
 const log = createComponentLogger('TTS', 'HansPhonemizer');
 const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : true;
@@ -203,7 +204,11 @@ const SECONDARY_STRESSED = new Set([
  * Currently empty: the 48-entry dict update on 2026-04-20 absorbed the
  * former interjection overlay (hmm, mhm, shh, mmm, pfft, brr, psst, ew).
  */
-const DICT_OVERRIDES: Record<string, string> = {};
+const DICT_OVERRIDES: Record<string, string> = {
+  // TODO: remove once the en-us dict has "teardown"; the compound split
+  // takes "tear" as in crying.
+  teardown: 'tˈɛɹdˌaʊn',
+};
 
 // --- Helpers ---
 
@@ -620,12 +625,29 @@ export class HansPhonemizer implements IPhonemizer {
         phoneme?: string;
       }[];
 
+      const context = contextWords(chunks);
+      let at = -1;
       for (const chunk of chunks) {
         if (!chunk.isPunctuation && chunk.text.trim()) {
           const words = chunk.text.trim().split(/\s+/);
           const ipaWords: string[] = [];
           for (const w of words) {
+            do at++;
+            while (context[at] === null);
             const clean = w.toLowerCase().replace(/[^a-z']/g, '');
+
+            // Heteronyms ("we use it" / "the use of"); not acronyms (USE).
+            if (
+              isHeteronym(context[at] ?? '') &&
+              !/^[A-Z]{2,}$/.test(w) &&
+              /^[a-z]+$/i.test(w.replace(/^[^a-z]+|[^a-z]+$/gi, ''))
+            ) {
+              const form = heteronymForm(context, at);
+              if (form) {
+                ipaWords.push(form);
+                continue;
+              }
+            }
 
             // Single dict probe per word; reused by both precheck and
             // phonemizeWord. Across the typical ~100 µs/word path this

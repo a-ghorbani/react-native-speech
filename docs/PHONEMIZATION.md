@@ -46,7 +46,13 @@ long input by sentence boundaries.
 
 Pure-JS G2P:
 1. Tokenizes the normalized text.
-2. Looks up each word in the loaded `DictSource`.
+2. Looks up each word in the loaded `DictSource`. A heteronym
+   (`src/phonemization/heteronyms.ts`: use, read, live, record, rerun, …)
+   takes its other form when the neighbouring words call for it ("we use
+   it" → juːz, "I have read" → ɹɛd, "a full rerun" → ɹˈiːɹˌʌn); with no
+   clear cue it keeps the dict form. Forms come from misaki's POS-keyed
+   gold dictionary (Apache-2.0). Same-POS meanings (lead, tear, wind,
+   bass) are out of scope.
 3. Falls back to letter-level rules for OOV words.
 4. Reassembles the IPA string, preserving punctuation chunks.
 
@@ -148,7 +154,8 @@ Use only to patch a known-wrong upstream dict entry while the dict fix
 is in flight; each entry should have a TODO pointing at the upstream
 change that will let us remove it.
 
-**Currently empty.** Pronunciations live in the dict. The palshub dict
+One entry: `teardown`, which the dict lacks and the compound split
+would read with "tear" as in crying. The palshub dict
 update on 2026-04-20 absorbed what was previously a hand-curated
 interjection overlay (`hmm`, `mhm`, `shh`, `mmm`, `pfft`, `brr`, `psst`,
 `ew`) — those are now regular dict entries, looked up at Layer 2.

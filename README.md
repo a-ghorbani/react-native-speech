@@ -255,6 +255,7 @@ Forked from [`@mhpdev/react-native-speech`](https://github.com/mhpdev-com/react-
 Built on top of:
 
 - [`phonemize`](https://github.com/hans00/phonemize) by [hans00](https://github.com/hans00) — the MIT G2P library that powers the default phonemizer.
+- [misaki](https://github.com/hexgrad/misaki) by hexgrad (Apache-2.0) — the source of the heteronym pronunciations ("we use it" vs "the use of").
 - [`onnxruntime-react-native`](https://github.com/microsoft/onnxruntime) — Microsoft's ONNX Runtime bindings for RN, which the Kokoro, Supertonic and Kitten engines use for inference.
 - [`@dr.pogodin/react-native-fs`](https://github.com/birdofpreyru/react-native-fs) — file I/O for model and dict loading.
 
