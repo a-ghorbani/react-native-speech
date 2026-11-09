@@ -497,3 +497,40 @@ describe('KittenEngine - release() during an active stream', () => {
     expect((e as any).activeStreamSession).toBeNull();
   });
 });
+
+describe('KittenEngine - stop() after a stream replaces another', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(24000).fill(0.5), dims: [1, 24000]},
+    });
+    mockPlayer.playHangs = true;
+  });
+
+  afterEach(() => {
+    mockPlayer.playHangs = false;
+  });
+
+  test('the replaced stream settling does not orphan the new one', async () => {
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const a = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    a.append('First sentence here. Second sentence here. ');
+    const aDone = a.finalize();
+    await new Promise(r => setTimeout(r, 100));
+
+    const b = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    b.append('Third sentence here. Fourth sentence here. ');
+    const bDone = b.finalize().then(() => 'resolved');
+    await aDone;
+    await new Promise(r => setTimeout(r, 100));
+
+    await e.stop();
+    const outcome = await Promise.race([
+      bDone,
+      new Promise(r => setTimeout(() => r('pending'), 2000)),
+    ]);
+    expect(outcome).toBe('resolved');
+  });
+});
