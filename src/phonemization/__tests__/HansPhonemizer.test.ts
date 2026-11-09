@@ -233,6 +233,10 @@ describe('HansPhonemizer', () => {
     expect(await phon.phonemize(text, 'en-us')).toBe(ipa);
   });
 
+  test('teardown reads tear as in rip', async () => {
+    expect(await phon.phonemize('teardown', 'en-us')).toBe('tˈɛɹdˌaʊn');
+  });
+
   test('an all-caps heteronym keeps the acronym path', async () => {
     // Not jˈuːz: "USE" reads as letters, as before.
     expect(await phon.phonemize('we USE it', 'en-us')).not.toContain('jˈuːz');
