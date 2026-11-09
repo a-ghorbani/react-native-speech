@@ -751,18 +751,28 @@ describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', ()
     ' were the numbers we counted out loud this morning in the park. Then we walked home. After that we made tea and sat down to rest for a while. ';
 
   /** Word tokens (optionally through the markdown buffer) into the chunker, draining after each. */
-  function streamTokens(chunker: StreamingChunker, text: string, md = true) {
+  // `releasedAt[i]`: tokens appended when chunk i came out (all = finalize).
+  function streamTokens(
+    chunker: StreamingChunker,
+    text: string,
+    md = true,
+    releasedAt: number[] = [],
+  ) {
     const buf = createMarkdownStreamBuffer({firstChunk: 'clause'});
     const chunks: TextChunkLike[] = [];
+    const tokens = text.match(/\S+\s*/g) ?? [];
+    let appended = 0;
     const take = () => {
       let c = chunker.tryPeek();
       while (c) {
         chunks.push(c);
+        releasedAt.push(appended);
         c = chunker.tryPeek();
       }
     };
-    for (const tok of text.match(/\S+\s*/g) ?? []) {
+    for (const tok of tokens) {
       const out = md ? buf.push(tok) : tok;
+      appended++;
       if (out) chunker.append(out);
       take();
     }
@@ -898,15 +908,22 @@ describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', ()
   });
 
   test('a reply opening with a closed inline marker is chunked like its plain twin (#63)', () => {
+    const markedAt: number[] = [];
+    const plainAt: number[] = [];
     const marked = streamTokens(
       new StreamingChunker(200, 'clause'),
       `**Note:** ${REPLY}`,
+      true,
+      markedAt,
     ).map(c => c.text);
     const plain = streamTokens(
       new StreamingChunker(200, 'clause'),
       `Note: ${REPLY}`,
+      true,
+      plainAt,
     ).map(c => c.text);
     expect(marked).toEqual(plain);
+    expect(markedAt).toEqual(plainAt);
     expect(marked[0]!.length).toBeLessThan(40);
     expect(marked[1]!.length).toBeLessThanOrEqual(4 * marked[0]!.length);
     expect(marked[1]).toMatch(/, $/);
