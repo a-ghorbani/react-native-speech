@@ -30,6 +30,9 @@ typedef struct FakePttsState {
   /* Optional: called after every frame the callback accepted (frame index from 0). */
   void (*on_frame)(int index, void *arg);
   void *on_frame_arg;
+  /* Optional: frame f carries frame_values[f] instead of sample_value (f < frame_values_len). */
+  const float *frame_values;
+  int frame_values_len;
 } FakePttsState;
 
 FakePttsState *fake_ptts_state(void);

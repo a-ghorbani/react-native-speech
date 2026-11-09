@@ -169,6 +169,47 @@ void float_to_pcm16(const float* in, size_t n, float gain, int16_t* out) noexcep
   }
 }
 
+void trim_edge_silence(std::vector<float>* pcm, int32_t sampleRate) {
+  constexpr double kFrameMs = 10, kThresholdDb = -35, kLeadPadMs = 100, kTrailPadMs = 150,
+                   kFadeMs = 5;
+  const auto ms = [sampleRate](double v) {
+    return static_cast<size_t>(std::lround(sampleRate * v / 1000));
+  };
+  const size_t hop = std::max<size_t>(1, ms(kFrameMs));
+  const size_t frames = pcm->size() / hop;
+  std::vector<double> rms(frames);
+  double peak = 0;
+  for (size_t f = 0; f < frames; ++f) {
+    double acc = 0;
+    for (size_t i = f * hop; i < (f + 1) * hop; ++i) acc += double((*pcm)[i]) * (*pcm)[i];
+    rms[f] = std::sqrt(acc / hop);
+    peak = std::max(peak, rms[f]);
+  }
+  if (!(peak > 0)) return;
+
+  const double threshold = peak * std::pow(10.0, kThresholdDb / 20);
+  size_t first = 0;
+  while (rms[first] <= threshold) ++first;
+  size_t last = frames - 1;
+  while (rms[last] <= threshold) --last;
+
+  const size_t lead = ms(kLeadPadMs);
+  const size_t start = first * hop > lead ? first * hop - lead : 0;
+  const size_t size = pcm->size();
+  const size_t end = std::min(size, (last + 1) * hop + ms(kTrailPadMs));
+  if (start == 0 && end == size) return;
+
+  pcm->erase(pcm->begin() + static_cast<std::ptrdiff_t>(end), pcm->end());
+  pcm->erase(pcm->begin(), pcm->begin() + static_cast<std::ptrdiff_t>(start));
+  const size_t n = pcm->size();
+  const size_t fade = std::min(ms(kFadeMs), n / 2);
+  for (size_t i = 0; i < fade; ++i) {
+    const float g = static_cast<float>(i) / fade;
+    if (start > 0) (*pcm)[i] *= g;
+    if (end < size) (*pcm)[n - 1 - i] *= g;
+  }
+}
+
 double monotonic_ms() {
   using namespace std::chrono;
   return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
@@ -405,6 +446,7 @@ Err Core::synthesizeImpl(int64_t handleId, int64_t requestId, const std::string&
     return Err::None;
   }
   if (sink.empty()) return Err::None;
+  trim_edge_silence(&sink, kSampleRate);
 
   const size_t bytes = sink.size() * sizeof(float);
   const int64_t samples = static_cast<int64_t>(sink.size());

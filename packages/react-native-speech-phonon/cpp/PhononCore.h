@@ -67,6 +67,12 @@ std::string upstream_default_voice(Platform platform, const std::vector<std::str
 // positive × 32767, truncation toward zero; NaN → 0.
 void float_to_pcm16(const float* in, size_t n, float gain, int16_t* out) noexcept;
 
+// The model ends every utterance with ~0.6 s of near-silence (decay, then a flat -69 dB floor),
+// so each chunk boundary paused ~0.75 s. Cuts both edges down to a short pad around the first
+// and last 10 ms frame within -35 dB of the loudest frame (the core package's
+// src/utils/trimEdgeSilence.ts rule). Leaves silent or uncut audio unchanged.
+void trim_edge_silence(std::vector<float>* pcm, int32_t sampleRate);
+
 // steady_clock ms; platform queues stamp enqueuedAtMs with it too.
 double monotonic_ms();
 
