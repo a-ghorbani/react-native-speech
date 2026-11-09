@@ -16,6 +16,11 @@ import {
   resumePhononSelfTestAfterReload,
   runPhononSelfTest,
 } from './selftest/phononSelfTest';
+import {
+  isEdgesSelfTestRunning,
+  parseEdgesUrl,
+  runEdgesSelfTest,
+} from './selftest/edgesSelfTest';
 
 type Tab = 'demo' | 'streaming' | 'benchmark';
 
@@ -32,13 +37,22 @@ function AppContent() {
   // Self-test deep link (adb `am start -d <url>` / devicectl `--payload-url`).
   React.useEffect(() => {
     const handle = (url: string | null | undefined) => {
+      const edges = url ? parseEdgesUrl(url) : null;
       const params = url ? parseSelfTestUrl(url) : null;
-      if (!params) return;
-      if (isPhononSelfTestRunning()) {
+      if (!edges && !params) return;
+      if (isPhononSelfTestRunning() || isEdgesSelfTestRunning()) {
         console.log('[SelfTest] already running; ignored', url);
         return;
       }
-      runPhononSelfTest(params, {showTab: setTab}).catch(err =>
+      if (edges) {
+        runEdgesSelfTest(edges, {showTab: setTab}).catch(err =>
+          console.log(
+            `[SelfTest] SELFTEST DONE suite=edges error=${String(err)}`,
+          ),
+        );
+        return;
+      }
+      runPhononSelfTest(params!, {showTab: setTab}).catch(err =>
         console.log(`[SelfTest] SELFTEST_DONE error=${String(err)}`),
       );
     };

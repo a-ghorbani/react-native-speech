@@ -184,7 +184,7 @@ const THRESHOLDS = {
   memGrowthMb: 40,
 };
 
-function intParam(
+export function intParam(
   value: string | null,
   fallback: number,
   min: number,
@@ -204,7 +204,7 @@ function intParam(
  * Lenient query parser: RN's URLSearchParams polyfill throws on a bad `%`
  * escape and cuts a value at its first `=`.
  */
-function parseQuery(query: string): Map<string, string> {
+export function parseQuery(query: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const part of query.split('&')) {
     if (!part) {
@@ -379,7 +379,7 @@ function wait(ms: number): Promise<void> {
   return sleepImpl(ms);
 }
 
-async function withTimeout<T>(
+export async function withTimeout<T>(
   p: Promise<T>,
   ms: number,
   what: string,
@@ -1199,6 +1199,11 @@ export async function runPhononSelfTest(
 function endRun(engineBefore: EngineId): void {
   running = false;
   sleepImpl = realSleep;
+  emitSelfTestDone(engineBefore);
+}
+
+/** Notifies `onPhononSelfTestDone` listeners; other suites call it too. */
+export function emitSelfTestDone(engineBefore: EngineId): void {
   const done: SelfTestDoneEvent = {
     engineBefore,
     engineAfter: Speech.getCurrentEngineId(),

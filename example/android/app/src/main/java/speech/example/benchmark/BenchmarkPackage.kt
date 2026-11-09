@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class BenchmarkPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-    return listOf(BenchmarkModule(reactContext))
+    return listOf(BenchmarkModule(reactContext), PlaybackProbeModule(reactContext))
   }
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {

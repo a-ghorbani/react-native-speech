@@ -1,0 +1,16 @@
+# Playback-edges suite through its deep link (example/src/selftest/edgesSelfTest.ts).
+# ${EDGES_QUERY}: deep-link parameters, e.g. engine=kitten&scenarios=stop,pause_tail.
+# Pass it with `maestro test --env EDGES_QUERY=...`.
+appId: speech.example
+---
+- launchApp:
+    stopApp: true
+- openLink: 'speechexample://selftest?suite=edges&${EDGES_QUERY}'
+- extendedWaitUntil:
+    visible:
+      id: 'selftest-summary'
+    timeout: 5400000
+- takeScreenshot: edges
+- assertVisible:
+    id: 'selftest-summary'
+    text: 'SELFTEST DONE suite=edges engine=\S+ passed=\d+ failed=0 skipped=\d+'
