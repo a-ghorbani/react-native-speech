@@ -914,19 +914,25 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
              reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     if (self->_isAudioPaused) {
-      self->_outputRemoved = NO;
+      [self resumeOnCurrentOutputs];
       [self emitOnResume:[self getAudioEventData]];
       [self resumeAudioInternal];
       resolve(@(YES));
     } else if (self->_outputRemoved) {
       // Held between chunks: the next one plays.
-      self->_outputRemoved = NO;
+      [self resumeOnCurrentOutputs];
       [self emitOnResume:[self getAudioEventData]];
       resolve(@(YES));
     } else {
       resolve(@(NO));
     }
   });
+}
+
+// The user chose the output that is there now; only its removal pauses again.
+- (void)resumeOnCurrentOutputs {
+  _outputRemoved = NO;
+  _playbackOutputs = RNSpeechOutputPorts([AVAudioSession sharedInstance].currentRoute);
 }
 
 - (void)isAudioPlaying:(RCTPromiseResolveBlock)resolve
