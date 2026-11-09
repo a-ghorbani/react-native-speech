@@ -197,7 +197,6 @@ void trim_edge_silence(std::vector<float>* pcm, int32_t sampleRate) {
   const size_t start = first * hop > lead ? first * hop - lead : 0;
   const size_t size = pcm->size();
   const size_t end = std::min(size, (last + 1) * hop + ms(kTrailPadMs));
-  if (start == 0 && end == size) return;
 
   pcm->erase(pcm->begin() + static_cast<std::ptrdiff_t>(end), pcm->end());
   pcm->erase(pcm->begin(), pcm->begin() + static_cast<std::ptrdiff_t>(start));
