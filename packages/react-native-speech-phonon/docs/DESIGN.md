@@ -702,7 +702,7 @@ only on this job.
   CI-cached model, and asserts S1/S3/S6 on the 4 KB image and S1 (`supported:true`,
   `pageSize:16384`) plus S3 on the 16 KB image. On API 36 a library that is not 16 KB aligned
   still loads, in page-size compat mode, so the job also fails when `dumpsys package` reports
-  `pageSizeCompat` other than 0 or the system shows its page-size mismatch warning. The 16 KB
+  `pageSizeCompat` other than 0 (or none at all) or the system shows its page-size mismatch warning. The 16 KB
   image is API 36 because system processes on the API 35 one crash in ART at random (#57).
 * The flag-off size gate (`android-flag-off-size`) is gone: without the package there is nothing
   to measure, and the core-only checks above replace it.

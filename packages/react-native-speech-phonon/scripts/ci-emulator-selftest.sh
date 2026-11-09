@@ -12,8 +12,8 @@
 #   4. check     every --require'd result logged `[SelfTest] <name> PASS`; S1 reported
 #                supported=true and pageSize=--page-size; the app does not run in page-size compat
 #                mode (Android 16+ runs a library that is not 16 KB aligned that way instead of
-#                failing to load it: `dumpsys package` pageSizeCompat != 0, or AppWarnings'
-#                PageSizeMismatchDialog); no crash of the app (crash buffer, tombstone header,
+#                failing to load it: `dumpsys package` pageSizeCompat != 0 or missing on API 36+,
+#                or AppWarnings' PageSizeMismatchDialog); no crash of the app (crash buffer, tombstone header,
 #                UnsatisfiedLinkError)
 # Writes logcat.txt, logcat-crash.txt, package.txt, device.json, selftest.json and check.txt to --out.
 #
@@ -49,12 +49,14 @@ check_log() {
     echo "FAIL support: want supported=true pageSize=$page, got: ${line:-no S1_support line}"; st=1
   fi
   local compat="" warning
-  if [[ -n "$dump" && -f "$dump" ]]; then
-    compat="$(grep -oE 'pageSizeCompat=[0-9]+' "$dump" | grep -v '=0$' | head -1 || true)"
+  if [[ -n "$dump" ]]; then
+    compat="$(grep -oE 'pageSizeCompat=[0-9]+' "$dump" 2>/dev/null | head -1 || true)"
+    [[ -n "$compat" ]] || compat="no pageSizeCompat in $dump"
+    [[ "$compat" != "pageSizeCompat=0" ]] || compat=""
   fi
   warning="$(grep -F "PageSizeMismatchDialog for package $pkg" "$log" | head -1 || true)"
   if [[ -n "$compat$warning" ]]; then
-    echo "FAIL pagesize: $pkg runs in page-size compat mode: ${compat:+$compat }$warning"; st=1
+    echo "FAIL pagesize: $pkg page-size compat mode or unknown: ${compat:+$compat }$warning"; st=1
   else
     echo "PASS pagesize: no page-size compat mode"
   fi
@@ -125,6 +127,9 @@ EOF
   expect fail pagesize "app in page-size compat mode (dumpsys)" --check-log "$ok16" --package-dump "$dir/pkg-compat.txt" --page-size 16384 --require "$req"
   { cat "$ok16"; echo "11-09 18:30:19.023   755   776 W AppWarnings: Showing PageSizeMismatchDialog for package speech.example"; } >"$dir/mismatch.txt"
   expect fail pagesize "page-size mismatch warning for the app" --check-log "$dir/mismatch.txt" --page-size 16384 --require "$req"
+  echo "Can't find service: package" >"$dir/pkg-none.txt"
+  expect fail pagesize "dumpsys has no pageSizeCompat" --check-log "$ok16" --package-dump "$dir/pkg-none.txt" --page-size 16384 --require "$req"
+  expect fail pagesize "package dump missing" --check-log "$ok16" --package-dump "$dir/missing.txt" --page-size 16384 --require "$req"
   sed 's/for package speech.example/for package com.other.app/' "$dir/mismatch.txt" >"$dir/mismatch-other.txt"
   expect pass - "mismatch warning for another app is not ours" --check-log "$dir/mismatch-other.txt" --page-size 16384 --require "$req"
   echo "--------- beginning of crash" >"$dir/crash-empty.txt"
@@ -177,9 +182,10 @@ done
 
 # 1. device
 device_page="$("${ADB[@]}" shell getconf PAGE_SIZE | tr -d '\r')"
+sdk="$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
 jq -n --arg page "$device_page" --arg abi "$("${ADB[@]}" shell getprop ro.product.cpu.abilist | tr -d '\r')" \
   --arg release "$("${ADB[@]}" shell getprop ro.build.version.release | tr -d '\r')" \
-  --arg sdk "$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')" \
+  --arg sdk "$sdk" \
   --arg fingerprint "$("${ADB[@]}" shell getprop ro.build.fingerprint | tr -d '\r')" \
   --arg apkSha "$(sha256sum "$APK" | cut -d' ' -f1)" \
   '{pageSize: ($page | tonumber), abilist: $abi, release: $release, sdk: $sdk,
@@ -242,5 +248,8 @@ done
 "${ADB[@]}" shell dumpsys package "$PKG" >"$OUT/package.txt" 2>&1 || true
 grep -F '[SelfTest]' "$OUT/logcat.txt" || true
 st=0
-check_log "$OUT/logcat.txt" "$OUT/logcat-crash.txt" "$PAGE" "$REQUIRE" "$PKG" "$OUT/package.txt" | tee "$OUT/check.txt" || st=1
+# pageSizeCompat exists from API 36 (page-size compat mode); below that a 4 KB library fails to load.
+pkg_dump=""
+((sdk < 36)) || pkg_dump="$OUT/package.txt"
+check_log "$OUT/logcat.txt" "$OUT/logcat-crash.txt" "$PAGE" "$REQUIRE" "$PKG" "$pkg_dump" | tee "$OUT/check.txt" || st=1
 exit $st
