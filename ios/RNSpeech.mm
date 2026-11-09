@@ -27,6 +27,8 @@ static const NSTimeInterval kOutputWatchIdleDelay = 30.0;
   NSArray<NSString *> *_playbackOutputs;
   // Those outputs went away: nothing plays, not even a later chunk, until resume(), stop() or a replace.
   BOOL _outputRemoved;
+  // Paused by an interruption, which reports `began` but no onPause.
+  BOOL _interruptionPaused;
 }
 
 RCT_EXPORT_MODULE();
@@ -124,8 +126,9 @@ RCT_EXPORT_MODULE();
       [self.synthesizer pauseSpeakingAtBoundary:AVSpeechBoundaryImmediate];
     }
     dispatch_async(_audioQueue, ^{
-      if (self->_isAudioPlaying) {
+      if (self->_isAudioPlaying && !self->_isAudioPaused) {
         [self pauseAudioInternal];
+        self->_interruptionPaused = YES;
       }
       [self emitOnAudioInterruption:@{@"type": @"began"}];
     });
@@ -214,6 +217,10 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
       [self emitOnPause:[self getAudioEventData]];
     } else if (!self->_isAudioPaused) {
       [self pauseForRemovedOutput];
+    } else if (self->_interruptionPaused) {
+      // The interruption's `ended` no longer resumes it, and may never come.
+      self->_interruptionPaused = NO;
+      [self emitOnPause:[self getAudioEventData]];
     }
   });
 }
@@ -583,6 +590,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   [_playerNode stop];
   _isAudioPlaying = NO;
   _isAudioPaused = NO;
+  _interruptionPaused = NO;
   _settleOnResume = NO;
   if (_pendingResolve) {
     // Stop or replace (finishPlayback clears the promise first): a new utterance plays normally.
@@ -620,9 +628,11 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 - (void)pauseAudioInternal {
   [_playerNode pause];
   _isAudioPaused = YES;
+  _interruptionPaused = NO;
 }
 
 - (void)resumeAudioInternal {
+  _interruptionPaused = NO;
   if (_settleOnResume) {
     [self finishPlayback];
     return;
