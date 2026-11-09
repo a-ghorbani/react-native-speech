@@ -702,7 +702,7 @@ subscription.remove();
 
 When the headphones, Bluetooth device, AirPlay or CarPlay output that speech is playing on goes away, playback pauses and `onPause` fires, as with Music or Podcasts, so the speech never moves to the phone speaker by itself. This can happen mid-sentence, between two chunks of a `speak()` or stream, or up to 30 s after the last chunk ended, while a stream's next chunk may still come; in that case `onPause` arrives with no `onStart` before it, and when the next chunk comes it starts paused (its `onStart` is followed by another `onPause`).
 
-The pause holds, through an interruption that ends with `shouldResume` and for later chunks, until you call `Speech.resume()` (playback continues on the current output) or `Speech.stop()`. Show a paused state with a resume control when you get an `onPause` you did not request. A new `speak()` or stream ends it (with `onStopped` for the held one) and plays normally. Connecting a new output does not pause.
+The pause holds, through an interruption that ends with `shouldResume` and for later chunks, until you call `Speech.resume()` (playback continues on the current output) or `Speech.stop()`. Show a paused state with a resume control when you get an `onPause` you did not request. A new `speak()` or stream ends it and plays normally (`onStopped` fires for the held one if it was held between chunks). Connecting a new output does not pause.
 
 ### Release / cleanup
 

@@ -129,3 +129,24 @@ describe('NeuralAudioPlayer.playNative', () => {
     });
   });
 });
+
+describe('NeuralAudioPlayer.endHeldPause', () => {
+  it('stops native after a playback ended, once', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.playNative(async () => {});
+    await player.endHeldPause();
+    await player.endHeldPause();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op before any playback and while one is in flight', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.endHeldPause();
+    const d = deferred();
+    const playing = player.playNative(() => d.promise);
+    await player.endHeldPause();
+    expect(native.stop).not.toHaveBeenCalled();
+    d.resolve();
+    await playing;
+  });
+});

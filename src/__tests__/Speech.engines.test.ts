@@ -364,6 +364,23 @@ describe('Speech dispatch to a registered engine', () => {
     await stream.cancel();
   });
 
+  it("a fallback stream's batches keep a held pause", async () => {
+    const plain = fakeEngine('nostream', {synthesizeStream: undefined}) as any;
+    plain.synthesize.mockImplementation(() =>
+      neuralAudioPlayer.playNative(async () => {}),
+    );
+    Speech.registerEngine(plain);
+    await Speech.initialize({engine: 'nostream'} as any);
+    const stream = Speech.createSpeechStream('v1');
+    stream.append('First sentence is here. ');
+    await new Promise(r => setTimeout(r, 0));
+    nativePlayer.stop!.mockClear();
+    stream.append('Second sentence is here. Third one too. ');
+    await stream.finalize();
+    expect(plain.synthesize.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(nativePlayer.stop).not.toHaveBeenCalled();
+  });
+
   it('a new speak() leaves a playback in flight to the engine', async () => {
     await Speech.initialize({engine: 'fake'} as any);
     let finish!: () => void;
