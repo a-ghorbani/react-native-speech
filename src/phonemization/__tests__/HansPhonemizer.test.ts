@@ -240,6 +240,7 @@ describe('HansPhonemizer', () => {
   test('an all-caps heteronym keeps the acronym path', async () => {
     // Not jˈuːz: "USE" reads as letters, as before.
     expect(await phon.phonemize('we USE it', 'en-us')).not.toContain('jˈuːz');
+    expect(await phon.phonemize('USE it', 'en-us')).not.toContain('jˈuːz');
   });
 
   test('elongated words collapse to the dict word', async () => {
