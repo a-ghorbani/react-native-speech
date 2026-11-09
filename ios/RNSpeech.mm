@@ -20,6 +20,8 @@ static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
   const char *_pendingTraceName;
   // Its buffer played back, or the engine stopped, while paused; resume settles it.
   BOOL _settleOnResume;
+  // Output ports of the current playback, to tell a removed headset from a new route.
+  NSArray<NSString *> *_playbackOutputs;
 }
 
 RCT_EXPORT_MODULE();
@@ -81,6 +83,10 @@ RCT_EXPORT_MODULE();
                                              selector:@selector(handleEngineConfigurationChange:)
                                                  name:AVAudioEngineConfigurationChangeNotification
                                                object:_audioEngine];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleRouteChange:)
+                                                 name:AVAudioSessionRouteChangeNotification
+                                               object:nil];
 
     // Best-effort default audio session category so interruption notifications
     // fire reliably. Ducking / silentMode overrides call setCategory explicitly
@@ -141,8 +147,50 @@ RCT_EXPORT_MODULE();
     }
     if (self->_isAudioPaused) {
       self->_settleOnResume = YES;
+    } else if ([self playbackOutputRemoved]) {
+      [self pauseForRemovedOutput];
+      self->_settleOnResume = YES;
     } else {
       [self finishPlayback];
+    }
+  });
+}
+
+static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *route) {
+  NSMutableArray<NSString *> *ports = [NSMutableArray array];
+  for (AVAudioSessionPortDescription *port in route.outputs) {
+    [ports addObject:port.portType];
+  }
+  return ports;
+}
+
+// Headphones, Bluetooth, AirPlay or CarPlay that the playback used are gone. Runs on _audioQueue.
+- (BOOL)playbackOutputRemoved {
+  NSArray<NSString *> *current = RNSpeechOutputPorts([AVAudioSession sharedInstance].currentRoute);
+  for (NSString *port in _playbackOutputs) {
+    if (![port isEqualToString:AVAudioSessionPortBuiltInSpeaker] &&
+        ![port isEqualToString:AVAudioSessionPortBuiltInReceiver] &&
+        ![current containsObject:port]) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
+// Like the system players: speech the user was hearing privately must not move to the speaker.
+- (void)pauseForRemovedOutput {
+  [self pauseAudioInternal];
+  [self emitOnPause:[self getAudioEventData]];
+}
+
+- (void)handleRouteChange:(NSNotification *)notification {
+  NSNumber *reason = notification.userInfo[AVAudioSessionRouteChangeReasonKey];
+  if (reason.unsignedIntegerValue != AVAudioSessionRouteChangeReasonOldDeviceUnavailable) {
+    return;
+  }
+  dispatch_async(_audioQueue, ^{
+    if (self->_isAudioPlaying && !self->_isAudioPaused && [self playbackOutputRemoved]) {
+      [self pauseForRemovedOutput];
     }
   });
 }
@@ -520,7 +568,8 @@ RCT_EXPORT_MODULE();
   RNSpeechTraceHandle traceHandle = _pendingTraceHandle;
   const char *traceName = _pendingTraceName;
   _pendingResolve = nil;
-  // Stop the engine first, or deactivating the session fails with IsBusy.
+  // cleanupAudio stops the engine (deactivating with it running fails with IsBusy) and bumps the
+  // generation that the deferred deactivation then waits on.
   [self cleanupAudio];
   [self deactivateAudioSessionWhenIdle];
   RNSpeechTraceEnd(traceHandle, traceName);
@@ -739,6 +788,7 @@ RCT_EXPORT_MODULE();
   self->_isAudioDucking = ducking;
 
   [self activateAudioSession:self->_isAudioDucking silentMode:silentMode];
+  self->_playbackOutputs = RNSpeechOutputPorts([AVAudioSession sharedInstance].currentRoute);
 
   [self->_audioEngine connect:self->_playerNode
                            to:self->_audioEngine.mainMixerNode
