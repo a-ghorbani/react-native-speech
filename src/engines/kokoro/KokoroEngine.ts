@@ -93,7 +93,7 @@ function hasNaN(samples: Float32Array): boolean {
   for (let i = 0; i < samples.length; i += step) {
     if (Number.isNaN(samples[i])) return true;
   }
-  return samples.length > 0 && Number.isNaN(samples[samples.length - 1]);
+  return false;
 }
 
 export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
