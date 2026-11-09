@@ -868,8 +868,9 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   }];
 
   if (self->_outputRemoved) {
-    // Already announced with onPause.
+    // Paused before it started: re-announced so the last event after onStart matches.
     self->_isAudioPaused = YES;
+    [self emitOnPause:[self getAudioEventData]];
   } else {
     [self->_playerNode play];
   }
@@ -882,6 +883,11 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 - (void)stopAudio:(RCTPromiseResolveBlock)resolve
            reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
+    // JS also calls this after a natural end, in case a pause is held between chunks.
+    if (!self->_pendingResolve && !self->_isAudioPlaying && !self->_outputRemoved) {
+      resolve(nil);
+      return;
+    }
     [self cleanupAudio];
     self->_playbackOutputs = nil;
     self->_outputRemoved = NO;
@@ -911,6 +917,11 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
       self->_outputRemoved = NO;
       [self emitOnResume:[self getAudioEventData]];
       [self resumeAudioInternal];
+      resolve(@(YES));
+    } else if (self->_outputRemoved) {
+      // Held between chunks: the next one plays.
+      self->_outputRemoved = NO;
+      [self emitOnResume:[self getAudioEventData]];
       resolve(@(YES));
     } else {
       resolve(@(NO));
