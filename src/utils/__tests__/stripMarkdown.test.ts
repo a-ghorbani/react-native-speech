@@ -830,6 +830,169 @@ describe("createMarkdownStreamBuffer: firstChunk 'clause'", () => {
   });
 });
 
+describe('createMarkdownStreamBuffer: inline markers before an early cut (#63)', () => {
+  // Pushes `pieces` in order, returning what was emitted before flush() and
+  // the whole streamed output.
+  function stream(pieces: string[], firstChunk = 'clause') {
+    const md = createMarkdownStreamBuffer({
+      firstChunk: firstChunk as 'clause' | 'sentence',
+    });
+    let early = '';
+    for (const p of pieces) early += md.push(p);
+    return {early, all: early + md.flush()};
+  }
+  const words = (t: string) => t.match(/\S+\s*/g) ?? [];
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+  test('a reply opening with **Note:** gets its first clause early', () => {
+    const text =
+      '**Note:** The model runs fully on your phone, so nothing you type leaves the device';
+    expect(stream(words(text)).early).toBe(
+      'Note: The model runs fully on your phone, ',
+    );
+  });
+
+  test('an unclosed **bold is not cut inside the pair', () => {
+    const md = createMarkdownStreamBuffer({firstChunk: 'clause'});
+    expect(md.push('**bold, still bold and more')).toBe('');
+    expect(md.push(' words** here. ')).toBe(
+      'bold, still bold and more words here. ',
+    );
+  });
+
+  // A clause cut lands after "x, " in each; `cut` = whether it may.
+  const cases: Array<[string, string, boolean]> = [
+    ['closed bold', 'A **bold** word sits here, then more', true],
+    ['closed italic *', 'An *italic* word sits here, then more', true],
+    ['closed italic _', 'An _italic_ word sits here, then more', true],
+    ['closed strike', 'A ~~struck~~ word sits here, then more', true],
+    [
+      'closed code span',
+      'Call `Speech.initialize()` once at startup, then more',
+      true,
+    ],
+    [
+      'closed double code span',
+      'Call ``init()`` once at startup, then more',
+      true,
+    ],
+    [
+      'closed link',
+      'See [the docs](https://x.y/a) for the details, then more',
+      true,
+    ],
+    [
+      'closed image',
+      'Look at ![a chart](c.png) for the numbers, then more',
+      true,
+    ],
+    [
+      'closed reference link',
+      'See [the docs][1] for the details, then more',
+      true,
+    ],
+    ['closed tag', 'Press <kbd>Enter</kbd> to send it now, then more', true],
+    ['nested closed', 'A *italic **and bold** run* sits here, then more', true],
+    // The stripper's bold pass can't span the inner `*` either; held.
+    [
+      'bold around italic',
+      'A **bold *and italic* run** sits here, then more',
+      false,
+    ],
+    ['snake_case', 'The snake_case_name variable holds it, then more', true],
+    ['less-than', 'Check that x < 5 holds for all, then more', true],
+    ['bare citation', 'Cite source [1] for this claim here, then more', true],
+    ['open bold', 'This is **really, very bold** text', false],
+    ['open italic *', 'This is *really, very italic* text', false],
+    ['open italic _', 'This is _really, very italic_ text', false],
+    ['open strike', 'This is ~~really, very struck~~ text', false],
+    ['open code span', 'Run the `foo, bar` command', false],
+    ['open link text', 'See [the docs, part two](u) now', false],
+    ['open link url', 'See the [docs](http://a.b/?q=x, y) now', false],
+    ['open image', 'Here is the ![big chart, in full](c.png) now', false],
+    ['open tag', 'Text in <b title="one, two">bold</b> now', false],
+    ['nested open', 'A **bold *italic* run, still bold** now', false],
+    ['nested open inner', 'A **bold *italic, still* bold** now', false],
+    ['stray asterisk', 'Two * three is six, so more', false],
+    ['bold opener alone', 'Ends with **bold, but never closes', false],
+  ];
+
+  test.each(cases)('%s: early clause cut = %s', (_name, text, cut) => {
+    const {early} = stream([text]);
+    expect(early !== '').toBe(cut);
+  });
+
+  test.each(cases)(
+    '%s: streamed output strips like the whole line',
+    (_name, text) => {
+      const whole = stripMarkdown(text);
+      for (const pieces of [[...text], words(text), [text]]) {
+        for (const mode of ['clause', 'sentence']) {
+          expect(norm(stream(pieces, mode).all)).toBe(norm(whole));
+        }
+      }
+    },
+  );
+
+  test.each(cases)(
+    '%s: a long tail with no sentence end strips like the whole line',
+    (_name, text) => {
+      const long = `${text} ${'and one more word, '.repeat(8)}end`;
+      const whole = stripMarkdown(long);
+      for (const pieces of [[...long], words(long)]) {
+        expect(norm(stream(pieces, 'sentence').all)).toBe(norm(whole));
+      }
+    },
+  );
+
+  // Markers right after a cut: the remainder is stripped on its own.
+  test.each([
+    '**Note:** some words here, *really* fine.',
+    '**Note:** some words here, _really_ fine.',
+    'Plain words go here, *really* fine.',
+    'One sentence. *Then* this.',
+    'One sentence. _Then_ this.',
+    'One sentence. **Then** this.',
+    'One sentence. ~~Then~~ this.',
+    'One sentence. `Then` this.',
+    'One sentence. [Then](u) this.',
+    'One sentence. <b>Then</b> this.',
+    '这是**粗体**的说明文字、然后*斜体*继续。',
+    // A CJK cut has no space before the remainder: a `*` there stays literal.
+    '文件列表如下所示：*.txt 和 *.md 文件都会被读取',
+    '计算结果如下所示，* 号表示乘法，比如 2 * 3 等于六',
+  ])('a marker right after the cut strips like the whole line: %j', text => {
+    const whole = stripMarkdown(text);
+    for (const pieces of [[...text], words(text), [text]]) {
+      for (const mode of ['clause', 'sentence']) {
+        expect(norm(stream(pieces, mode).all).replace(/ /g, '')).toBe(
+          norm(whole).replace(/ /g, ''),
+        );
+      }
+    }
+  });
+
+  test('markers after long-tail cuts are stripped', () => {
+    const items = Array.from({length: 40}, (_, i) =>
+      i % 2 ? `n${i} _e${i}_` : `n${i}, *e${i}*`,
+    ).join(' ');
+    const text = `**Note:** ${items}`;
+    for (const pieces of [[...text], words(text)]) {
+      const {early, all} = stream(pieces, 'sentence');
+      expect(early).not.toBe('');
+      expect(norm(all)).toBe(norm(stripMarkdown(text)));
+    }
+  });
+
+  test('a long tail after a closed marker is released while open', () => {
+    const tail = 'and one more word, '.repeat(8);
+    expect(stream(words(`**Numbers:** ${tail}`), 'sentence').early).not.toBe(
+      '',
+    );
+    expect(stream(words(`Count **${tail}`), 'sentence').early).toBe('');
+  });
+});
+
 describe('createMarkdownStreamBuffer: firstChunkMaxWords', () => {
   const head =
     'Did you read the Anthropic article saying small models like us could spread into';

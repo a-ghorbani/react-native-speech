@@ -711,11 +711,23 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     expect((emitted + md.flush()).replace(/\s+/g, '')).toBe(text);
   });
 
-  // Known limit (#63): an inline marker before the cut blocks the release.
-  test('markdown buffer still holds the tail when the line has an inline marker', () => {
+  test('markdown buffer releases the tail after a closed inline marker (#63)', () => {
     const md = createMarkdownStreamBuffer();
     let emitted = '';
     const text = `**Numbers:** ${COUNT}`;
+    for (let i = 0; i < text.length; i += 6) {
+      emitted += md.push(text.slice(i, i + 6));
+    }
+    expect(text.length - emitted.length).toBeLessThan(100);
+    expect((emitted + md.flush()).replace(/\s+/g, ' ').trim()).toBe(
+      `Numbers: ${COUNT}`,
+    );
+  });
+
+  test('markdown buffer holds the tail inside an open inline marker', () => {
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    const text = `Count **${COUNT}`;
     for (let i = 0; i < text.length; i += 6) {
       emitted += md.push(text.slice(i, i + 6));
     }
@@ -739,18 +751,28 @@ describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', ()
     ' were the numbers we counted out loud this morning in the park. Then we walked home. After that we made tea and sat down to rest for a while. ';
 
   /** Word tokens (optionally through the markdown buffer) into the chunker, draining after each. */
-  function streamTokens(chunker: StreamingChunker, text: string, md = true) {
+  // `releasedAt[i]`: tokens appended when chunk i came out (all = finalize).
+  function streamTokens(
+    chunker: StreamingChunker,
+    text: string,
+    md = true,
+    releasedAt: number[] = [],
+  ) {
     const buf = createMarkdownStreamBuffer({firstChunk: 'clause'});
     const chunks: TextChunkLike[] = [];
+    const tokens = text.match(/\S+\s*/g) ?? [];
+    let appended = 0;
     const take = () => {
       let c = chunker.tryPeek();
       while (c) {
         chunks.push(c);
+        releasedAt.push(appended);
         c = chunker.tryPeek();
       }
     };
-    for (const tok of text.match(/\S+\s*/g) ?? []) {
+    for (const tok of tokens) {
       const out = md ? buf.push(tok) : tok;
+      appended++;
       if (out) chunker.append(out);
       take();
     }
@@ -885,14 +907,26 @@ describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', ()
     expect(chunks[1]!.text).toMatch(/，$/);
   });
 
-  test('a line with an inline marker reaches the chunker whole and is still ramped (#63)', () => {
-    const text = `**Note:** ${REPLY}`;
-    const chunks = streamTokens(new StreamingChunker(200, 'clause'), text);
-    expect(chunks[0]!.text.length).toBeLessThan(40);
-    expect(chunks[1]!.text.length).toBeLessThanOrEqual(
-      4 * chunks[0]!.text.length,
-    );
-    expect(chunks[1]!.text).toMatch(/, $/);
+  test('a reply opening with a closed inline marker is chunked like its plain twin (#63)', () => {
+    const markedAt: number[] = [];
+    const plainAt: number[] = [];
+    const marked = streamTokens(
+      new StreamingChunker(200, 'clause'),
+      `**Note:** ${REPLY}`,
+      true,
+      markedAt,
+    ).map(c => c.text);
+    const plain = streamTokens(
+      new StreamingChunker(200, 'clause'),
+      `Note: ${REPLY}`,
+      true,
+      plainAt,
+    ).map(c => c.text);
+    expect(marked).toEqual(plain);
+    expect(markedAt).toEqual(plainAt);
+    expect(marked[0]!.length).toBeLessThan(40);
+    expect(marked[1]!.length).toBeLessThanOrEqual(4 * marked[0]!.length);
+    expect(marked[1]).toMatch(/, $/);
   });
 
   test('a long first chunk does not ramp', () => {
