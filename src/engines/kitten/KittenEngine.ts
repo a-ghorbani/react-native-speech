@@ -49,6 +49,7 @@ import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {InferenceTracker} from '../InferenceTracker';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -116,8 +117,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
   // Synthesis state tracking for safe resource release
-  private isSynthesizing = false;
-  private synthesisCompleteResolver: (() => void) | null = null;
+  private readonly inflight = new InferenceTracker();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
@@ -254,16 +254,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       );
     }
 
-    this.isSynthesizing = true;
-    try {
-      return await this.doSynthesize(input, options);
-    } finally {
-      this.isSynthesizing = false;
-      if (this.synthesisCompleteResolver) {
-        this.synthesisCompleteResolver();
-        this.synthesisCompleteResolver = null;
-      }
-    }
+    return this.doSynthesize(input, options);
   }
 
   synthesizeStream(options?: KittenSynthesisOptions): EngineStreamHandle {
@@ -274,7 +265,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.cancelActiveStream();
 
     this.stopRequested = false;
-    this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
@@ -304,7 +294,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
         const processed = this.preprocessor.process(normalizeForSpeech(text));
-        return this.synthesizeTextChunk(processed, voiceId, options);
+        return this.inflight.track(
+          this.synthesizeTextChunk(processed, voiceId, options),
+        );
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
@@ -329,11 +321,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
         }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
-        }
       }
     };
 
@@ -343,11 +330,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       } finally {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
-        }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
         }
       }
     };
@@ -477,7 +459,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           nextAudioPromise = null;
         } else {
           audioBuffer = await this.raceWithStop(
-            this.synthesizeTextChunk(chunk.text, voiceId, options, raw),
+            this.inflight.track(
+              this.synthesizeTextChunk(chunk.text, voiceId, options, raw),
+            ),
             stopSignal,
           );
         }
@@ -501,11 +485,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
-        nextAudioPromise = this.synthesizeTextChunk(
-          nextChunk.text,
-          voiceId,
-          options,
-          raw,
+        nextAudioPromise = this.inflight.track(
+          this.synthesizeTextChunk(nextChunk.text, voiceId, options, raw),
         );
       }
 
@@ -674,6 +655,16 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       rawTextLength,
     );
     const voiceTime = Date.now() - voiceStartTime;
+    // Stopped or released while this chunk was being prepared; the
+    // session may already be detached.
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Create ONNX input tensors
     const {Tensor} = getOnnxRuntime();
@@ -774,13 +765,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     return this.voiceLoader.getAvailableVoices();
   }
 
-  /** Cancels the active stream session, if any; resolves to whether one was. */
-  private async cancelActiveStream(): Promise<boolean> {
+  /** Cancels the active stream session, if any. */
+  private async cancelActiveStream(): Promise<void> {
     const session = this.activeStreamSession;
     this.activeStreamSession = null;
-    if (!session) return false;
-    await session.cancel().catch(() => {});
-    return true;
+    await session?.cancel().catch(() => {});
   }
 
   /**
@@ -792,9 +781,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    if (await this.cancelActiveStream()) {
-      this.isSynthesizing = false;
-    }
+    await this.cancelActiveStream();
     neuralAudioPlayer.stop().catch(() => {});
   }
 
@@ -807,28 +794,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.isLoading = false;
     this.initError = null;
     this.config = null;
-  }
-
-  private async waitForSynthesisComplete(
-    timeoutMs: number = 5000,
-  ): Promise<void> {
-    if (!this.isSynthesizing) {
-      return;
-    }
-
-    log.debug('Waiting for synthesis to complete...');
-
-    return new Promise<void>(resolve => {
-      this.synthesisCompleteResolver = resolve;
-
-      setTimeout(() => {
-        if (this.synthesisCompleteResolver === resolve) {
-          log.warn('Synthesis wait timeout, proceeding with release');
-          this.synthesisCompleteResolver = null;
-          resolve();
-        }
-      }, timeoutMs);
-    });
   }
 
   private resetState(): void {
@@ -866,6 +831,10 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     }
 
     this.stopRequested = true;
+    // Ends speak()'s wait on its current chunk, so it resolves rather
+    // than failing on the detached session.
+    this.stopSignalResolver?.();
+    this.stopSignalResolver = null;
 
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
@@ -878,19 +847,22 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    await this.waitForSynthesisComplete();
-
-    if (this.session) {
+    // Detached first: no new inference can start on it, and a later
+    // initialize() creates a new one this release never touches.
+    const session = this.session;
+    this.session = null;
+    if (session) {
       try {
-        if (typeof this.session.release === 'function') {
-          await this.session.release();
-          log.debug('ONNX session released');
-        }
+        await this.inflight.freeWhenIdle(async () => {
+          if (typeof session.release === 'function') {
+            await session.release();
+            log.debug('ONNX session released');
+          }
+        });
       } catch (e) {
         log.warn('Failed to release ONNX session:', e);
         errors.push({component: 'session', error: e as Error});
       }
-      this.session = null;
     }
 
     try {

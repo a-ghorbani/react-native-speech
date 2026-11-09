@@ -44,6 +44,7 @@ import {TextChunker, type TextChunk} from '../../utils/TextChunker';
 import {SUPERTONIC_CONSTANTS} from './constants';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {InferenceTracker} from '../InferenceTracker';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -75,8 +76,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
   // Synthesis state tracking for safe resource release
-  private isSynthesizing = false;
-  private synthesisCompleteResolver: (() => void) | null = null;
+  private readonly inflight = new InferenceTracker();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
@@ -204,18 +204,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       throw new Error('Text cannot be empty');
     }
 
-    // Track synthesis state for safe resource release
-    this.isSynthesizing = true;
-    try {
-      return await this.doSynthesize(text, options);
-    } finally {
-      this.isSynthesizing = false;
-      // Resolve any pending waitForSynthesisComplete() calls
-      if (this.synthesisCompleteResolver) {
-        this.synthesisCompleteResolver();
-        this.synthesisCompleteResolver = null;
-      }
-    }
+    return this.doSynthesize(text, options);
   }
 
   synthesizeStream(options?: SupertonicSynthesisOptions): EngineStreamHandle {
@@ -226,7 +215,6 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     this.cancelActiveStream();
 
     this.stopRequested = false;
-    this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const inferenceSteps =
       options?.inferenceSteps || this.defaultInferenceSteps;
@@ -272,12 +260,14 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: async (text: string) => {
         const voiceStyle = await voiceStylePromise;
-        return this.synthesizeChunk(
-          text,
-          voiceStyle,
-          inferenceSteps,
-          speed,
-          language,
+        return this.inflight.track(
+          this.synthesizeChunk(
+            text,
+            voiceStyle,
+            inferenceSteps,
+            speed,
+            language,
+          ),
         );
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
@@ -303,11 +293,6 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
         }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
-        }
       }
     };
 
@@ -317,11 +302,6 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       } finally {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
-        }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
         }
       }
     };
@@ -444,12 +424,14 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
           nextAudioPromise = null;
         } else {
           audioBuffer = await this.raceWithStop(
-            this.synthesizeChunk(
-              chunk.text,
-              voiceStyle,
-              inferenceSteps,
-              speed,
-              language,
+            this.inflight.track(
+              this.synthesizeChunk(
+                chunk.text,
+                voiceStyle,
+                inferenceSteps,
+                speed,
+                language,
+              ),
             ),
             stopSignal,
           );
@@ -477,12 +459,14 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
-        nextAudioPromise = this.synthesizeChunk(
-          nextChunk.text,
-          voiceStyle,
-          inferenceSteps,
-          speed,
-          language,
+        nextAudioPromise = this.inflight.track(
+          this.synthesizeChunk(
+            nextChunk.text,
+            voiceStyle,
+            inferenceSteps,
+            speed,
+            language,
+          ),
         );
       }
 
@@ -579,13 +563,11 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     return this.styleLoader.getVoices(language);
   }
 
-  /** Cancels the active stream session, if any; resolves to whether one was. */
-  private async cancelActiveStream(): Promise<boolean> {
+  /** Cancels the active stream session, if any. */
+  private async cancelActiveStream(): Promise<void> {
     const session = this.activeStreamSession;
     this.activeStreamSession = null;
-    if (!session) return false;
-    await session.cancel().catch(() => {});
-    return true;
+    await session?.cancel().catch(() => {});
   }
 
   /**
@@ -600,9 +582,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    if (await this.cancelActiveStream()) {
-      this.isSynthesizing = false;
-    }
+    await this.cancelActiveStream();
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});
   }
@@ -621,33 +601,6 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     this.isLoading = false;
     this.initError = null;
     this.config = null;
-  }
-
-  /**
-   * Wait for any ongoing synthesis to complete or abort
-   */
-  private async waitForSynthesisComplete(
-    timeoutMs: number = 5000,
-  ): Promise<void> {
-    if (!this.isSynthesizing) {
-      return;
-    }
-
-    log.debug('Waiting for synthesis to complete...');
-
-    return new Promise<void>(resolve => {
-      // Set up resolver for when synthesis completes
-      this.synthesisCompleteResolver = resolve;
-
-      // Timeout fallback
-      setTimeout(() => {
-        if (this.synthesisCompleteResolver === resolve) {
-          log.warn('Synthesis wait timeout, proceeding with release');
-          this.synthesisCompleteResolver = null;
-          resolve();
-        }
-      }, timeoutMs);
-    });
   }
 
   /**
@@ -697,8 +650,12 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       };
     }
 
-    // 1. Signal stop and wait for any ongoing synthesis to complete
+    // 1. Signal stop
     this.stopRequested = true;
+    // Ends speak()'s wait on its current chunk, so it resolves rather
+    // than failing on the detached session.
+    this.stopSignalResolver?.();
+    this.stopSignalResolver = null;
 
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
@@ -712,16 +669,18 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    // 3. Wait for synthesis to complete (with timeout)
-    await this.waitForSynthesisComplete();
-
-    // 4. Release inference pipeline (4 ONNX sessions)
+    // 3. Release the inference pipeline (4 ONNX sessions) once no
+    // inference runs on it. Detached first: a later initialize() loads a
+    // new pipeline this release never touches.
+    const inference = this.inference;
+    this.inference = new SupertonicInference();
+    let inferenceErrors: Error[] = [];
     try {
-      const inferenceErrors = await this.inference.release();
-      if (inferenceErrors.length > 0) {
-        for (const err of inferenceErrors) {
-          errors.push({component: 'inference', error: err});
-        }
+      await this.inflight.freeWhenIdle(async () => {
+        inferenceErrors = await inference.release();
+      });
+      for (const err of inferenceErrors) {
+        errors.push({component: 'inference', error: err});
       }
       log.debug('Inference pipeline released');
     } catch (e) {
@@ -729,7 +688,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       errors.push({component: 'inference', error: e as Error});
     }
 
-    // 5. Clear style cache
+    // 4. Clear style cache
     try {
       this.styleLoader.clear();
       log.debug('Style loader cleared');
@@ -738,7 +697,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       errors.push({component: 'styleLoader', error: e as Error});
     }
 
-    // 6. Clear unicode processor
+    // 5. Clear unicode processor
     try {
       this.unicodeProcessor.clear();
       log.debug('Unicode processor cleared');
@@ -747,7 +706,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       errors.push({component: 'unicodeProcessor', error: e as Error});
     }
 
-    // 7. Reset state to allow re-initialization
+    // 6. Reset state to allow re-initialization
     this.resetState();
 
     const success = errors.length === 0;

@@ -40,6 +40,7 @@ import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {concatAudioBuffers, splitInHalves} from '../kitten/splitOversized';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
+import {InferenceTracker} from '../InferenceTracker';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -110,8 +111,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   private chunkProgressCallback: ChunkProgressCallback | null = null;
 
   // Synthesis state tracking for safe resource release
-  private isSynthesizing = false;
-  private synthesisCompleteResolver: (() => void) | null = null;
+  private readonly inflight = new InferenceTracker();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
@@ -250,18 +250,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
 
-    // Track synthesis state for safe resource release
-    this.isSynthesizing = true;
-    try {
-      return await this.doSynthesize(input, options);
-    } finally {
-      this.isSynthesizing = false;
-      // Resolve any pending waitForSynthesisComplete() calls
-      if (this.synthesisCompleteResolver) {
-        this.synthesisCompleteResolver();
-        this.synthesisCompleteResolver = null;
-      }
-    }
+    return this.doSynthesize(input, options);
   }
 
   synthesizeStream(options?: KokoroSynthesisOptions): EngineStreamHandle {
@@ -272,7 +261,6 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     this.cancelActiveStream();
 
     this.stopRequested = false;
-    this.isSynthesizing = true;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const language = this.getLanguageFromVoice(voiceId);
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
@@ -291,7 +279,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
-        this.synthesizeTextChunk(text, voiceId, language, options),
+        this.inflight.track(
+          this.synthesizeTextChunk(text, voiceId, language, options),
+        ),
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
@@ -314,11 +304,6 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
         }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
-        }
       }
     };
 
@@ -328,11 +313,6 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       } finally {
         if (this.activeStreamSession === session) {
           this.activeStreamSession = null;
-        }
-        this.isSynthesizing = false;
-        if (this.synthesisCompleteResolver) {
-          this.synthesisCompleteResolver();
-          this.synthesisCompleteResolver = null;
         }
       }
     };
@@ -469,7 +449,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         nextAudioPromise = null;
       } else {
         audioBuffer = await this.raceWithStop(
-          this.synthesizeTextChunk(chunk.text, voiceId, language, options, raw),
+          this.inflight.track(
+            this.synthesizeTextChunk(
+              chunk.text,
+              voiceId,
+              language,
+              options,
+              raw,
+            ),
+          ),
           stopSignal,
         );
       }
@@ -489,12 +477,14 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       const nextChunkIndex = chunkIndex + 1;
       if (!this.stopRequested && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
-        nextAudioPromise = this.synthesizeTextChunk(
-          nextChunk.text,
-          voiceId,
-          language,
-          options,
-          raw,
+        nextAudioPromise = this.inflight.track(
+          this.synthesizeTextChunk(
+            nextChunk.text,
+            voiceId,
+            language,
+            options,
+            raw,
+          ),
         );
       }
 
@@ -643,6 +633,16 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
     const voiceTime = Date.now() - voiceStartTime;
+    // Stopped or released while this chunk was being prepared; the
+    // session may already be detached.
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Convert to BigInt64Array for ONNX (int64)
     const tokensBigInt = new BigInt64Array(tokens.map(t => BigInt(t)));
@@ -728,13 +728,11 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     return this.voiceLoader.getAvailableVoices(language);
   }
 
-  /** Cancels the active stream session, if any; resolves to whether one was. */
-  private async cancelActiveStream(): Promise<boolean> {
+  /** Cancels the active stream session, if any. */
+  private async cancelActiveStream(): Promise<void> {
     const session = this.activeStreamSession;
     this.activeStreamSession = null;
-    if (!session) return false;
-    await session.cancel().catch(() => {});
-    return true;
+    await session?.cancel().catch(() => {});
   }
 
   /**
@@ -749,9 +747,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    if (await this.cancelActiveStream()) {
-      this.isSynthesizing = false;
-    }
+    await this.cancelActiveStream();
     // Fire-and-forget native audio stop
     neuralAudioPlayer.stop().catch(() => {});
   }
@@ -774,33 +770,6 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     this.isLoading = false;
     this.initError = null;
     this.config = null;
-  }
-
-  /**
-   * Wait for any ongoing synthesis to complete or abort
-   */
-  private async waitForSynthesisComplete(
-    timeoutMs: number = 5000,
-  ): Promise<void> {
-    if (!this.isSynthesizing) {
-      return;
-    }
-
-    log.debug('Waiting for synthesis to complete...');
-
-    return new Promise<void>(resolve => {
-      // Set up resolver for when synthesis completes
-      this.synthesisCompleteResolver = resolve;
-
-      // Timeout fallback
-      setTimeout(() => {
-        if (this.synthesisCompleteResolver === resolve) {
-          log.warn('Synthesis wait timeout, proceeding with release');
-          this.synthesisCompleteResolver = null;
-          resolve();
-        }
-      }, timeoutMs);
-    });
   }
 
   /**
@@ -850,8 +819,12 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       };
     }
 
-    // 1. Signal stop and wait for any ongoing synthesis to complete
+    // 1. Signal stop
     this.stopRequested = true;
+    // Ends speak()'s wait on its current chunk, so it resolves rather
+    // than failing on the detached session.
+    this.stopSignalResolver?.();
+    this.stopSignalResolver = null;
 
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
@@ -865,24 +838,26 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    // 3. Wait for synthesis to complete (with timeout)
-    await this.waitForSynthesisComplete();
-
-    // 4. Release ONNX session (main memory consumer)
-    if (this.session) {
+    // 3. Release the ONNX session once no inference runs on it. Detached
+    // first: no new inference can start on it, and a later
+    // initialize() creates a new one this release never touches.
+    const session = this.session;
+    this.session = null;
+    if (session) {
       try {
-        if (typeof this.session.release === 'function') {
-          await this.session.release();
-          log.debug('ONNX session released');
-        }
+        await this.inflight.freeWhenIdle(async () => {
+          if (typeof session.release === 'function') {
+            await session.release();
+            log.debug('ONNX session released');
+          }
+        });
       } catch (e) {
         log.warn('Failed to release ONNX session:', e);
         errors.push({component: 'session', error: e as Error});
       }
-      this.session = null;
     }
 
-    // 5. Clear voice embeddings cache
+    // 4. Clear voice embeddings cache
     try {
       this.voiceLoader.clear();
       log.debug('Voice loader cleared');
@@ -891,7 +866,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'voiceLoader', error: e as Error});
     }
 
-    // 6. Clear tokenizer data
+    // 5. Clear tokenizer data
     try {
       this.tokenizer.clear();
       log.debug('Tokenizer cleared');
@@ -900,7 +875,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       errors.push({component: 'tokenizer', error: e as Error});
     }
 
-    // 7. Reset state to allow re-initialization
+    // 6. Reset state to allow re-initialization
     this.resetState();
 
     const success = errors.length === 0;

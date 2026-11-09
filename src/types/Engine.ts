@@ -282,6 +282,8 @@ export interface TTSEngineInterface<TConfig = void> {
    * Release model resources from memory while keeping engine instance reusable.
    * After calling release(), initialize() must be called before synthesize().
    * Unlike destroy(), the engine instance remains valid for re-initialization.
+   * Resolves without waiting for an inference that is still running; that
+   * model's memory is freed when the inference ends.
    *
    * @returns ReleaseResult with success status and any errors encountered
    *
