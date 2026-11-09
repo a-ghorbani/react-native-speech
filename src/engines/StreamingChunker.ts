@@ -17,7 +17,6 @@ import type {TextChunk} from '../utils/TextChunker';
 import {isAbbreviationPeriod} from '../utils/abbreviations';
 import {
   SENTENCE_END_RE,
-  SOFT_CHUNK_CHARS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
   lastClauseEnd,
@@ -215,18 +214,17 @@ export class StreamingChunker {
   }
 
   /**
-   * For a buffer with no sentence end: once it holds `SOFT_CHUNK_CHARS`,
-   * cut at the last clause mark within that; with no clause mark, once
-   * it holds `maxChunkSize`, at the last word end within it.
+   * For a buffer with no sentence end that has reached `maxChunkSize`:
+   * cut at the last clause mark within it, else at the last word end, so
+   * a long run of clauses doesn't wait for the stream to end (#48).
    */
   private extractSoftCut(): TextChunk | null {
     const max = this.maxChunkSize;
-    const soft = Math.min(SOFT_CHUNK_CHARS, max);
-    if (this.buffer.length < soft) {
+    if (this.buffer.length < max) {
       return null;
     }
-    let end = lastClauseEnd(this.buffer, soft);
-    if (end <= 0 && this.buffer.length >= max) {
+    let end = lastClauseEnd(this.buffer, max);
+    if (end <= 0) {
       end = lastWordEnd(this.buffer, max);
     }
     if (end <= 0) {

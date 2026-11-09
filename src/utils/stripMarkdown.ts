@@ -24,7 +24,6 @@
 import type {FirstChunkMode} from '../types';
 import {
   DEFAULT_FIRST_CHUNK_MAX_WORDS,
-  SOFT_CHUNK_CHARS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
   lastClauseEnd,
@@ -320,6 +319,11 @@ const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 // one, so the stripper never sees half of a pair.
 const INLINE_MARKER_RE = /[*_`[\]<]/;
 
+// A newline-less tail this long with no sentence end is released at its
+// last clause or word end, so the chunker can cut it before the stream
+// ends (#48).
+const LONG_TAIL_CHARS = 100;
+
 // Prepended to a mid-line continuation so line-anchored block rules
 // (`^- `, `^> `, `^# `) can't match it. U+2060 is not whitespace: `trim()`
 // keeps it and `[ \t]*` stops at it.
@@ -440,9 +444,7 @@ export function createMarkdownStreamBuffer(
           const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
           if (sentMatch) {
             cut = sentMatch[1]!.length + sentMatch[2]!.length;
-          } else if (buffer.length >= SOFT_CHUNK_CHARS) {
-            // No sentence end in a long tail: release it up to the last
-            // clause or word end and let the chunker cut it (#48).
+          } else if (buffer.length >= LONG_TAIL_CHARS) {
             const soft = Math.max(
               lastClauseEnd(buffer, buffer.length),
               lastWordEnd(buffer, buffer.length),

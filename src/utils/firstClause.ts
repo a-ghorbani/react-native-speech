@@ -42,11 +42,6 @@ const CLAUSE_MIN_WORDS = 3;
 const CLAUSE_MIN_CJK_CHARS = 4;
 /** Default upper bound on first-chunk words when no boundary has appeared. */
 export const DEFAULT_FIRST_CHUNK_MAX_WORDS = 12;
-/**
- * Streamed text with no sentence end is cut once this many characters
- * are buffered, so a long run of clauses doesn't wait for the stream to end.
- */
-export const SOFT_CHUNK_CHARS = 100;
 
 /** End offset of the last match of `re` ending at or before `limit`, or -1. */
 function lastMatchEnd(re: RegExp, text: string, limit: number): number {

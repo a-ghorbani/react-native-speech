@@ -21,7 +21,6 @@ jest.mock('../../phonemization', () => ({
 }));
 
 import {KittenEngine} from '../kitten/KittenEngine';
-import {SOFT_CHUNK_CHARS} from '../../utils/firstClause';
 
 const COUNT = Array.from({length: 40}, (_, i) => `number ${i + 1}`).join(', ');
 const AUDIO = {
@@ -32,7 +31,7 @@ const AUDIO = {
 };
 
 test.each([true, false])(
-  'Kitten speaks comma-only text in short chunks before finalize (stripMarkdown %p)',
+  'Kitten speaks comma-only text in maxChunkSize pieces before finalize (stripMarkdown %p)',
   async stripMarkdown => {
     const engine = new KittenEngine() as any;
     engine.isInitialized = true;
@@ -54,11 +53,10 @@ test.each([true, false])(
     const spokenWhileOpen = chunks.join('').length;
     await stream.finalize();
 
-    // The markdown buffer and the chunker may each hold a short tail.
-    expect(COUNT.length - spokenWhileOpen).toBeLessThan(2 * SOFT_CHUNK_CHARS);
-    for (const c of chunks) {
-      expect(c.length).toBeLessThanOrEqual(SOFT_CHUNK_CHARS);
-    }
+    // Kitten's default maxChunkSize is 200: past the first clause, a
+    // ~200-char chunk is spoken before the stream ends.
+    expect(spokenWhileOpen - chunks[0]!.length).toBeGreaterThan(150);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(200);
     expect(chunks.join('').replace(/\s+/g, ' ').trim()).toBe(COUNT);
   },
 );

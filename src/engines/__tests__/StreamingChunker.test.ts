@@ -611,14 +611,11 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
         6,
       );
       expectContiguous(all, COUNT);
-      // Only a short tail may wait for finalize.
+      // Less than one chunk's worth waits for finalize.
       const heldBack = afterFinalize.reduce((n, c) => n + c.text.length, 0);
-      expect(heldBack).toBeLessThan(100);
-      expect(open.length).toBeGreaterThanOrEqual(3);
-      // No chunk after the first exceeds the soft limit.
-      for (const c of all.slice(1)) {
-        expect(c.text.length).toBeLessThanOrEqual(100);
-      }
+      expect(heldBack).toBeLessThan(200);
+      expect(open.length).toBeGreaterThanOrEqual(mode === 'clause' ? 2 : 1);
+      for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
       // Cuts land after a comma.
       for (const c of open) expect(c.text).toMatch(/, $/);
     },
@@ -629,11 +626,14 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     expect(all[0]!.text).toBe('one, two, three, ');
   });
 
-  test('bulk comma text is split at clauses within the soft limit', () => {
+  test('bulk comma text is split at clauses within maxChunkSize', () => {
     const text = `${COUNT}, ${COUNT}, ${COUNT}`;
     const {all} = streamInPieces(new StreamingChunker(200), text, text.length);
     expectContiguous(all, text);
-    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(100);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+    for (const c of all.slice(0, -1)) {
+      expect(c.text.length).toBeGreaterThan(150);
+    }
     for (const c of all.slice(0, -1)) expect(c.text).toMatch(/, $/);
   });
 
@@ -661,9 +661,9 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     expect(chunker.tryPeek()!.text).toBe(text);
   });
 
-  test('short comma text waits for more input', () => {
+  test('comma text shorter than maxChunkSize waits for more input', () => {
     const chunker = new StreamingChunker(200);
-    chunker.append('one, two, three, four, five, six, ');
+    chunker.append(COUNT.slice(0, COUNT.lastIndexOf(', ', 190) + 2));
     expect(chunker.tryPeek()).toBeUndefined();
   });
 
