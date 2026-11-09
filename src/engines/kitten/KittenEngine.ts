@@ -46,7 +46,7 @@ import {TextPreprocessor, loadNativeDict} from '../../phonemization';
 import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
-import {trimEdgeSilence} from './trimEdgeSilence';
+import {trimEdgeSilence} from '../../utils/trimEdgeSilence';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';

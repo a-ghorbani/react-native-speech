@@ -38,6 +38,7 @@ import {loadNativeDict} from '../../phonemization';
 import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {concatAudioBuffers, splitInHalves} from '../kitten/splitOversized';
+import {trimEdgeSilence} from '../../utils/trimEdgeSilence';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {InferenceTracker} from '../InferenceTracker';
@@ -691,8 +692,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
 
-    const audioData = audioTensor.data as Float32Array;
-    if (hasNaN(audioData)) {
+    const modelAudio = audioTensor.data as Float32Array;
+    if (hasNaN(modelAudio)) {
       const ortVersion =
         require('onnxruntime-react-native').env?.versions?.common ?? '?';
       throw new Error(
@@ -702,7 +703,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
 
-    // Create audio buffer
+    const audioData = trimEdgeSilence(modelAudio, SAMPLE_RATE);
     const audioBuffer: AudioBuffer = {
       samples: audioData,
       sampleRate: SAMPLE_RATE,
