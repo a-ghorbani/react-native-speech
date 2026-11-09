@@ -90,6 +90,23 @@ const DICT: Record<string, string> = {
   space: 'spˈeɪs',
   pace: 'pˈeɪs',
   no: 'nˈoʊ',
+  power: 'pˈaʊɚ',
+  powers: 'pˈaʊɚz',
+  shell: 'ʃˈɛl',
+  hell: 'hˈɛl',
+  not: 'nˈɑːt',
+  note: 'nˈoʊt',
+  book: 'bˈʊk',
+  ebook: 'ˈiːbʊk',
+  ham: 'hˈæm',
+  mock: 'mˈɑːk',
+  over: 'ˈoʊvɚ',
+  overt: 'oʊvˈɜːt',
+  think: 'θˈɪŋk',
+  hink: 'hˈɪŋk',
+  young: 'jˈʌŋ',
+  youn: 'jˈuːn',
+  gish: 'ɡˈɪʃ',
 };
 
 describe('HansPhonemizer', () => {
@@ -142,6 +159,54 @@ describe('HansPhonemizer', () => {
 
   test("plural possessive (cats') reads as the plural", async () => {
     expect(await phon.phonemize("cats'", 'en-us')).toBe('kˈæts');
+  });
+
+  test('OOV compound of two dict words joins them, tail secondary', async () => {
+    expect(await phon.phonemize('dockerfile', 'en-us')).toBe('dˈɑːkɚfˌaɪl');
+  });
+
+  test('compound split rejects suffix tails and doubled boundaries', async () => {
+    await phon.phonemize('foldable snipping', 'en-us');
+    // Both fall through to hans00 rather than "fold+eɪbəl" / "snip+pɪŋ".
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'foldable',
+      expect.anything(),
+    );
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'snipping',
+      expect.anything(),
+    );
+  });
+
+  test('compound split does not cut a digraph or a doubled consonant', async () => {
+    // "powers|hell" would cut the sh; "ham|mock" doubles the m.
+    expect(await phon.phonemize('powershell', 'en-us')).toBe('pˈaʊɚʃˌɛl');
+    // "overt|hink"
+    expect(await phon.phonemize('overthink', 'en-us')).toBe('ˈoʊvɚθˌɪŋk');
+    await phon.phonemize('hammock', 'en-us');
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith('hammock', expect.anything());
+  });
+
+  test('an inflected dict word is not split as a compound', async () => {
+    // "youn|gish" would win without the check; young + ish is the word.
+    await phon.phonemize('youngish', 'en-us');
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'youngish',
+      expect.anything(),
+    );
+  });
+
+  test('compound split does not fuse a slash pair', async () => {
+    expect(await phon.phonemize('ice/cream', 'en-us')).not.toBe('ˈaɪskɹˌiːm');
+  });
+
+  test('compound split prefers the longest head', async () => {
+    // "note|book", not "not|ebook"
+    expect(await phon.phonemize('notebook', 'en-us')).toBe('nˈoʊtbˌʊk');
+  });
+
+  test('compound split keeps the s with an s-cluster tail', async () => {
+    expect(await phon.phonemize('namespace', 'en-us')).toBe('nˈeɪmspˌeɪs');
   });
 
   test('elongated words collapse to the dict word', async () => {
