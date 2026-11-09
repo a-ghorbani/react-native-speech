@@ -164,12 +164,13 @@ inc = emu["strategy"]["matrix"]["include"]
 by = {i["target"]: i for i in inc}
 assert set(by) == {"google_apis", "google_apis_ps16k"}, by
 assert by["google_apis"]["page-size"] == 4096 and by["google_apis_ps16k"]["page-size"] == 16384
+assert by["google_apis"]["api-level"] == 35 and by["google_apis_ps16k"]["api-level"] == 36, by
 for t, want in (("google_apis", {"S1_support", "S3_short_speak", "S6_stop"}),
                 ("google_apis_ps16k", {"S1_support", "S3_short_speak"})):
     assert want <= set(by[t]["require"].split(",")), (t, by[t]["require"])
 runner = next(s for s in emu["steps"] if "android-emulator-runner" in s.get("uses", ""))
 w = runner["with"]
-assert str(w["api-level"]) == "35" and w["arch"] == "x86_64" and w["target"] == "${{ matrix.target }}", w
+assert w["api-level"] == "${{ matrix.api-level }}" and w["arch"] == "x86_64" and w["target"] == "${{ matrix.target }}", w
 assert "ci-emulator-selftest.sh" in w["script"] and "${{ matrix.page-size }}" in w["script"], w["script"]
 assert emu.get("strategy", {}).get("fail-fast") is False
 

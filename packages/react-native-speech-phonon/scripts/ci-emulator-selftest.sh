@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the example app's Phonon self-test on an emulator and check it (docs/DESIGN.md §4.2,
-# §8.2): the android-emulator-phonon CI job, x86_64 API 35 with 4 KB and 16 KB pages.
+# §8.2): the android-emulator-phonon CI job, x86_64 API 35 with 4 KB pages and API 36 with 16 KB.
 #
 #   1. device    `getconf PAGE_SIZE` is --page-size (the 16 KB job really runs on 16 KB pages)
 #   2. install   the debug APK with the add-on (JS bundled in: no Metro), then the model checkpoint
@@ -10,25 +10,28 @@
 #                speechexample://selftest/phonon?runs=N&scenarios=...&model=...&runId=ci
 #                and wait for `[SelfTest] SELFTEST_DONE` in logcat (--timeout seconds)
 #   4. check     every --require'd result logged `[SelfTest] <name> PASS`; S1 reported
-#                supported=true and pageSize=--page-size; no crash of the app (crash buffer,
-#                tombstone header, UnsatisfiedLinkError)
-# Writes logcat.txt, logcat-crash.txt, device.json, selftest.json and check.txt to --out.
+#                supported=true and pageSize=--page-size; the app does not run in page-size compat
+#                mode (Android 16+ runs a library that is not 16 KB aligned that way instead of
+#                failing to load it: `dumpsys package` pageSizeCompat != 0 or missing on API 36+,
+#                or AppWarnings' PageSizeMismatchDialog); no crash of the app (crash buffer, tombstone header,
+#                UnsatisfiedLinkError)
+# Writes logcat.txt, logcat-crash.txt, package.txt, device.json, selftest.json and check.txt to --out.
 #
 # Usage: ci-emulator-selftest.sh --apk <app-debug.apk> --model <dir> --page-size 4096|16384
 #          --require S1_support,S2_init,S3_short_speak[,...] [--scenarios s3,s6] [--runs 3]
 #          [--out <dir>] [--timeout 1200] [--package speech.example] [--serial <adb serial>]
-#        ci-emulator-selftest.sh --check-log <logcat.txt> [--crash-log <file>] --page-size N
-#          --require ...                                # step 4 alone, on saved logs
+#        ci-emulator-selftest.sh --check-log <logcat.txt> [--crash-log <file>]
+#          [--package-dump <dumpsys package>] --page-size N --require ...   # step 4 alone, on saved logs
 #        ci-emulator-selftest.sh --selftest             # step 4 on fixture logs
 set -euo pipefail
 
 PKG=speech.example
 APK="" MODEL="" PAGE="" REQUIRE="" SCENARIOS="s3,s6" RUNS=3 OUT="emulator-selftest" TIMEOUT=1200
-CHECK_LOG="" CRASH_LOG="" SERIAL=""
+CHECK_LOG="" CRASH_LOG="" PKG_DUMP="" SERIAL=""
 
-# check_log <logcat> <crash log or ""> <page size> <required,names> <package>: step 4.
+# check_log <logcat> <crash log or ""> <page size> <required,names> <package> [<dumpsys package>]: step 4.
 check_log() {
-  local log="$1" crash="$2" page="$3" require="$4" pkg="$5" st=0 name line
+  local log="$1" crash="$2" page="$3" require="$4" pkg="$5" dump="${6:-}" st=0 name line
   for name in ${require//,/ }; do
     line="$(grep -E "\[SelfTest\] $name (PASS|FAIL)( |$)" "$log" | tail -1 || true)"
     if [[ "$line" == *"[SelfTest] $name PASS"* ]]; then
@@ -44,6 +47,18 @@ check_log() {
     echo "PASS support: supported=true pageSize=$page"
   else
     echo "FAIL support: want supported=true pageSize=$page, got: ${line:-no S1_support line}"; st=1
+  fi
+  local compat="" warning
+  if [[ -n "$dump" ]]; then
+    compat="$(grep -oE 'pageSizeCompat=[0-9]+' "$dump" 2>/dev/null | head -1 || true)"
+    [[ -n "$compat" ]] || compat="no pageSizeCompat in $dump"
+    [[ "$compat" != "pageSizeCompat=0" ]] || compat=""
+  fi
+  warning="$(grep -F "PageSizeMismatchDialog for package $pkg" "$log" | head -1 || true)"
+  if [[ -n "$compat$warning" ]]; then
+    echo "FAIL pagesize: $pkg page-size compat mode or unknown: ${compat:+$compat }$warning"; st=1
+  else
+    echo "PASS pagesize: no page-size compat mode"
   fi
   line="$(grep -E '\[SelfTest\] SELFTEST_DONE ' "$log" | tail -1 || true)"
   if [[ -n "$line" ]]; then echo "PASS done: ${line#*"[SelfTest] "}"; else echo "FAIL done: no SELFTEST_DONE"; st=1; fi
@@ -106,6 +121,17 @@ EOF
   { cat "$ok16"; echo "10-21 10:00:09.600   999   999 E AndroidRuntime: FATAL EXCEPTION: main"; \
     echo "10-21 10:00:09.600   999   999 E AndroidRuntime: Process: com.android.systemui, PID: 999"; } >"$dir/other.txt"
   expect pass - "another process crashing is not ours" --check-log "$dir/other.txt" --page-size 16384 --require "$req"
+  printf 'Packages:\n  Package [speech.example] (1a2b3c):\n    pageSizeCompat=0\n' >"$dir/pkg-ok.txt"
+  expect pass - "pageSizeCompat=0" --check-log "$ok16" --package-dump "$dir/pkg-ok.txt" --page-size 16384 --require "$req"
+  sed 's/pageSizeCompat=0/pageSizeCompat=4/' "$dir/pkg-ok.txt" >"$dir/pkg-compat.txt"
+  expect fail pagesize "app in page-size compat mode (dumpsys)" --check-log "$ok16" --package-dump "$dir/pkg-compat.txt" --page-size 16384 --require "$req"
+  { cat "$ok16"; echo "11-09 18:30:19.023   755   776 W AppWarnings: Showing PageSizeMismatchDialog for package speech.example"; } >"$dir/mismatch.txt"
+  expect fail pagesize "page-size mismatch warning for the app" --check-log "$dir/mismatch.txt" --page-size 16384 --require "$req"
+  echo "Can't find service: package" >"$dir/pkg-none.txt"
+  expect fail pagesize "dumpsys has no pageSizeCompat" --check-log "$ok16" --package-dump "$dir/pkg-none.txt" --page-size 16384 --require "$req"
+  expect fail pagesize "package dump missing" --check-log "$ok16" --package-dump "$dir/missing.txt" --page-size 16384 --require "$req"
+  sed 's/for package speech.example/for package com.other.app/' "$dir/mismatch.txt" >"$dir/mismatch-other.txt"
+  expect pass - "mismatch warning for another app is not ours" --check-log "$dir/mismatch-other.txt" --page-size 16384 --require "$req"
   echo "--------- beginning of crash" >"$dir/crash-empty.txt"
   expect pass - "empty crash buffer" --check-log "$ok16" --crash-log "$dir/crash-empty.txt" --page-size 16384 --require "$req"
   { echo "--------- beginning of crash"; echo "10-21 10:00:09 F DEBUG   : pid: 1234, tid: 1290, name: pool  >>> speech.example <<<"; } >"$dir/crash.txt"
@@ -127,6 +153,7 @@ while [[ $# -gt 0 ]]; do
     --serial) SERIAL="$2"; shift 2 ;;
     --check-log) CHECK_LOG="$2"; shift 2 ;;
     --crash-log) CRASH_LOG="$2"; shift 2 ;;
+    --package-dump) PKG_DUMP="$2"; shift 2 ;;
     --selftest) selftest; exit $? ;;
     -h|--help) awk 'NR > 1 { if (!/^#/) exit; print }' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -136,7 +163,7 @@ done
 [[ -n "$REQUIRE" ]] || { echo "--require is required" >&2; exit 2; }
 
 if [[ -n "$CHECK_LOG" ]]; then
-  check_log "$CHECK_LOG" "$CRASH_LOG" "$PAGE" "$REQUIRE" "$PKG"
+  check_log "$CHECK_LOG" "$CRASH_LOG" "$PAGE" "$REQUIRE" "$PKG" "$PKG_DUMP"
   exit $?
 fi
 
@@ -155,9 +182,10 @@ done
 
 # 1. device
 device_page="$("${ADB[@]}" shell getconf PAGE_SIZE | tr -d '\r')"
+sdk="$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')"
 jq -n --arg page "$device_page" --arg abi "$("${ADB[@]}" shell getprop ro.product.cpu.abilist | tr -d '\r')" \
   --arg release "$("${ADB[@]}" shell getprop ro.build.version.release | tr -d '\r')" \
-  --arg sdk "$("${ADB[@]}" shell getprop ro.build.version.sdk | tr -d '\r')" \
+  --arg sdk "$sdk" \
   --arg fingerprint "$("${ADB[@]}" shell getprop ro.build.fingerprint | tr -d '\r')" \
   --arg apkSha "$(sha256sum "$APK" | cut -d' ' -f1)" \
   '{pageSize: ($page | tonumber), abilist: $abi, release: $release, sdk: $sdk,
@@ -217,7 +245,11 @@ done
 "${ADB[@]}" logcat -d -b crash -v threadtime >"$OUT/logcat-crash.txt" || true
 "${ADB[@]}" shell run-as "$PKG" cat files/phonon-evidence/ci/selftest.json >"$OUT/selftest.json" 2>/dev/null || true
 "${ADB[@]}" shell run-as "$PKG" cat files/phonon-evidence/ci/bench.jsonl >"$OUT/bench.jsonl" 2>/dev/null || true
+"${ADB[@]}" shell dumpsys package "$PKG" >"$OUT/package.txt" 2>&1 || true
 grep -F '[SelfTest]' "$OUT/logcat.txt" || true
 st=0
-check_log "$OUT/logcat.txt" "$OUT/logcat-crash.txt" "$PAGE" "$REQUIRE" "$PKG" | tee "$OUT/check.txt" || st=1
+# pageSizeCompat exists from API 36 (page-size compat mode); below that a 4 KB library fails to load.
+pkg_dump=""
+[[ "$sdk" =~ ^[0-9]+$ ]] && ((sdk < 36)) || pkg_dump="$OUT/package.txt"
+check_log "$OUT/logcat.txt" "$OUT/logcat-crash.txt" "$PAGE" "$REQUIRE" "$PKG" "$pkg_dump" | tee "$OUT/check.txt" || st=1
 exit $st

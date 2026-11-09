@@ -434,12 +434,17 @@ jobs:
       matrix:
         include:
           - target: google_apis
+            api-level: 35
             page-size: 4096
             ram: 4096M
             scenarios: s3,s6
             require: S1_support,S2_init,S3_short_speak,S6_stop
           # 16 KB pages need more RAM: at 4 GB the low-memory killer took down system_server.
+          # API 36: on the API 35 ps16k image, system_server and other system processes crash in
+          # ART at random (#57). API 36 runs a 4 KB-aligned library in page-size compat mode
+          # instead of failing to load it; ci-emulator-selftest.sh fails the job on that.
           - target: google_apis_ps16k
+            api-level: 36
             page-size: 16384
             ram: 6144M
             scenarios: s3
@@ -483,7 +488,7 @@ jobs:
       - name: Self-test on the emulator
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 35
+          api-level: ${{ matrix.api-level }}
           arch: x86_64
           target: ${{ matrix.target }}
           ram-size: ${{ matrix.ram }}
