@@ -155,6 +155,11 @@ RCT_EXPORT_MODULE();
     }
     if (self->_isAudioPaused) {
       self->_settleOnResume = YES;
+      if (self->_interruptionPaused && [self playbackOutputRemoved]) {
+        self->_interruptionPaused = NO;
+        self->_outputRemoved = YES;
+        [self emitOnPause:[self getAudioEventData]];
+      }
     } else if ([self playbackOutputRemoved]) {
       [self pauseForRemovedOutput];
       self->_outputRemoved = YES;
