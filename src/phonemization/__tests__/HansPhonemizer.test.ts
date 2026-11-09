@@ -90,6 +90,20 @@ const DICT: Record<string, string> = {
   space: 'spˈeɪs',
   pace: 'pˈeɪs',
   no: 'nˈoʊ',
+  we: 'wˈiː',
+  use: 'jˈuːs',
+  close: 'klˈoʊs',
+  door: 'dˈɔːɹ',
+  they: 'ðˈeɪ',
+  live: 'lˈaɪv',
+  here: 'hˈɪɹ',
+  i: 'ˈaɪ',
+  read: 'ɹˈiːd',
+  it: 'ɪt',
+  yesterday: 'jˈɛstɚdˌeɪ',
+  press: 'pɹˈɛs',
+  record: 'ɹˈɛkɚd',
+  flag: 'flˈæɡ',
   power: 'pˈaʊɚ',
   powers: 'pˈaʊɚz',
   shell: 'ʃˈɛl',
@@ -207,6 +221,21 @@ describe('HansPhonemizer', () => {
 
   test('compound split keeps the s with an s-cluster tail', async () => {
     expect(await phon.phonemize('namespace', 'en-us')).toBe('nˈeɪmspˌeɪs');
+  });
+
+  test.each([
+    ['We use it', 'wiː jˈuːz ɪt'],
+    ['Close the door', 'klˈoʊz ðiː dˈɔːɹ'],
+    ['They live here', 'ðeɪ lˈɪv hˈɪɹ'],
+    ['I read it yesterday', 'aɪ ɹˈɛd ɪt jˈɛstɚdˌeɪ'],
+    ['Press record', 'pɹˈɛs ɹᵻkˈɔːɹd'],
+  ])('heteronym in context (#31): %s', async (text, ipa) => {
+    expect(await phon.phonemize(text, 'en-us')).toBe(ipa);
+  });
+
+  test('an all-caps heteronym keeps the acronym path', async () => {
+    // Not jˈuːz: "USE" reads as letters, as before.
+    expect(await phon.phonemize('we USE it', 'en-us')).not.toContain('jˈuːz');
   });
 
   test('elongated words collapse to the dict word', async () => {
