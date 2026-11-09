@@ -328,6 +328,18 @@ export default class Speech {
     voiceId?: string,
     options?: SynthesisOptions,
   ): Promise<void> {
+    if (neuralEngine(Speech.currentEngine)) {
+      await neuralAudioPlayer.endHeldPause();
+    }
+    await Speech.synthesizeOnCurrentEngine(input, voiceId, options);
+  }
+
+  /** `speak()` within an utterance already started (a stream's batches): keeps a held pause. */
+  private static async synthesizeOnCurrentEngine(
+    input: SpeechInput,
+    voiceId?: string,
+    options?: SynthesisOptions,
+  ): Promise<void> {
     assertFirstChunkMaxWords(options?.firstChunkMaxWords);
     const engine = Speech.currentEngine;
 
@@ -387,6 +399,10 @@ export default class Speech {
     // keeping the pipelined synth+play loop alive for the stream's
     // lifetime. OS engine doesn't — fall back to the adaptive batcher.
     const instance = neuralEngine(Speech.currentEngine);
+    if (instance) {
+      // Sent before any chunk of this stream, on the same native queue.
+      neuralAudioPlayer.endHeldPause().catch(() => {});
+    }
     let engineStreamFactory:
       | ((opts?: SpeechStreamOptions) => EngineStreamHandle)
       | undefined;
@@ -399,7 +415,7 @@ export default class Speech {
 
     return new SpeechStreamImpl({
       synthesize: (text: string) =>
-        Speech.speak(text, voiceId, synthesisOptions),
+        Speech.synthesizeOnCurrentEngine(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
       subscribeProgress: (cb: ChunkProgressCallback) =>
         Speech.onChunkProgress(cb),

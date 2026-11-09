@@ -51,17 +51,41 @@ describe('NeuralAudioPlayer.playNative', () => {
   it('clears the playing flag when playback ends or fails', async () => {
     const player = new NeuralAudioPlayer();
     await player.playNative(async () => {});
-    await player.stop();
     await expect(player.pause()).resolves.toBe(false);
-    expect(native.stop).not.toHaveBeenCalled();
+    expect(native.pause).not.toHaveBeenCalled();
 
     await expect(
       player.playNative(async () => {
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
+    await expect(player.pause()).resolves.toBe(false);
+    expect(native.pause).not.toHaveBeenCalled();
+  });
+
+  it('stop() after a playback ended reaches native once, for a pause native holds between chunks', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.playNative(async () => {});
+    await player.stop();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+
+    await player.stop();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop() before any playback stays local', async () => {
+    const player = new NeuralAudioPlayer();
     await player.stop();
     expect(native.stop).not.toHaveBeenCalled();
+  });
+
+  it('every playback re-arms the native stop', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.playNative(async () => {});
+    await player.stop();
+    await player.playNative(async () => {});
+    await player.stop();
+    expect(native.stop).toHaveBeenCalledTimes(2);
   });
 
   it('a replaced playback settling does not clear the newer one', async () => {
@@ -103,5 +127,26 @@ describe('NeuralAudioPlayer.playNative', () => {
       ducking: undefined,
       silentMode: undefined,
     });
+  });
+});
+
+describe('NeuralAudioPlayer.endHeldPause', () => {
+  it('stops native after a playback ended, once', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.playNative(async () => {});
+    await player.endHeldPause();
+    await player.endHeldPause();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('is a no-op before any playback and while one is in flight', async () => {
+    const player = new NeuralAudioPlayer();
+    await player.endHeldPause();
+    const d = deferred();
+    const playing = player.playNative(() => d.promise);
+    await player.endHeldPause();
+    expect(native.stop).not.toHaveBeenCalled();
+    d.resolve();
+    await playing;
   });
 });

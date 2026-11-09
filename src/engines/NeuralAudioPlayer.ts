@@ -35,6 +35,12 @@ export interface PlaybackOptions {
 export class NeuralAudioPlayer {
   private isCurrentlyPlaying = false;
   private playGen = 0;
+  /**
+   * A playback ran since the last native stop. Native can hold a pause between
+   * chunks (iOS: the headphones went away), so stop() reaches native until then;
+   * native ignores a stop with nothing to stop.
+   */
+  private nativeMayHold = false;
 
   /**
    * Play an audio buffer
@@ -70,6 +76,7 @@ export class NeuralAudioPlayer {
   async playNative(start: () => Promise<void>): Promise<void> {
     const gen = ++this.playGen;
     this.isCurrentlyPlaying = true;
+    this.nativeMayHold = true;
 
     try {
       await start();
@@ -84,10 +91,22 @@ export class NeuralAudioPlayer {
    * Stop current playback
    */
   async stop(): Promise<void> {
-    if (this.isCurrentlyPlaying) {
+    if (this.isCurrentlyPlaying || this.nativeMayHold) {
       this.playGen++;
       this.isCurrentlyPlaying = false;
+      this.nativeMayHold = false;
       await NativeNeuralAudioPlayer.stop();
+    }
+  }
+
+  /**
+   * Start of a new utterance or stream: end a pause native still holds from
+   * the previous one (it then reports onStopped). A playback in flight is left
+   * to the engine, which replaces it.
+   */
+  async endHeldPause(): Promise<void> {
+    if (!this.isCurrentlyPlaying && this.nativeMayHold) {
+      await this.stop();
     }
   }
 

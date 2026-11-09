@@ -957,8 +957,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     audioExecutor.execute {
       if (audioInvalidated) return@execute
       try {
+        // JS also stops after a natural end; nothing was playing then, so no onStopped.
+        val active = audioTrackPromise != null || isAudioPlayingState || isAudioPausedState
         stopNeuralPlayback()
-        emitOnStopped(getAudioEventData())
+        if (active) emitOnStopped(getAudioEventData())
         promise.resolve(null)
       } catch (e: Exception) {
         promise.reject("audio_error", "Failed to stop audio: ${e.message}", e)
