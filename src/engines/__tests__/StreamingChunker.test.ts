@@ -637,6 +637,14 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     for (const c of all.slice(0, -1)) expect(c.text).toMatch(/, $/);
   });
 
+  test('a multi-word clause is kept whole rather than cut at a word', () => {
+    const text = 'and then we counted the sheep very slowly, '.repeat(12);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThan(0);
+    for (const c of open) expect(c.text).toMatch(/slowly, $/);
+  });
+
   test('text with no punctuation at all is cut at a word within maxChunkSize', () => {
     const text = COUNT.replace(/,/g, '').repeat(2);
     const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
