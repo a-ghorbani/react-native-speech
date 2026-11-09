@@ -23,7 +23,10 @@ export function trimEdgeSilence(
   let peak = 0;
   for (let f = 0; f < frames; f++) {
     let acc = 0;
-    for (let i = f * hop; i < (f + 1) * hop; i++) acc += samples[i]! ** 2;
+    for (let i = f * hop; i < (f + 1) * hop; i++) {
+      const v = samples[i]!;
+      acc += v * v;
+    }
     rms[f] = Math.sqrt(acc / hop);
     if (rms[f]! > peak) peak = rms[f]!;
   }
