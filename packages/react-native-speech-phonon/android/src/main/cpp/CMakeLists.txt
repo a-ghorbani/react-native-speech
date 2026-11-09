@@ -36,5 +36,5 @@ if(ANDROID_ABI MATCHES "^(arm64-v8a|x86_64)$" AND ANDROID_ABI IN_LIST PHONON_ABI
 
   target_link_libraries(rnspeech_phonon ${log-lib} dl)
   # 16 KB page-size alignment for Android 15+ devices.
-  target_link_options(rnspeech_phonon PRIVATE "-Wl,-z,max-page-size=16384")
+  target_link_options(rnspeech_phonon PRIVATE "-Wl,-z,max-page-size=4096" "-Wl,-z,common-page-size=4096")
 endif()
