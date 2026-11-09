@@ -187,12 +187,13 @@ describe('KokoroEngine - edge silence (#79)', () => {
     mockSessionRun.mockImplementation(async () => ({
       waveform: {data: fixture(OK)},
     }));
-    const e = await initEngine();
+    const e = new KokoroEngine();
+    await e.initialize({...validConfig, maxChunkSize: 12});
     const handle = e.synthesizeStream({voiceId: 'af_bella'});
     handle.append('Ok. Fine then. ');
     await handle.finalize();
 
-    expect(played().length).toBeGreaterThanOrEqual(1);
+    expect(played().length).toBe(2);
     for (const out of played()) {
       expect(edgesMs(out).lead).toBeLessThanOrEqual(150);
       expect(edgesMs(out).trail).toBeLessThanOrEqual(250);
