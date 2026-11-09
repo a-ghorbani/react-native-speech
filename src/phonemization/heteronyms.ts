@@ -110,12 +110,16 @@ const READ_ATTRIBUTE_AFTER = set(
   'access only permission permissions write and or receipt receipts replica replicas path paths timeout side model',
 );
 const LIVE_ADJ_BEFORE = set(
-  "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made watch watched watching stream streamed streaming broadcast aired",
+  "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made watch watched watching stream streamed streaming broadcast air airs aired",
 );
 const LIVE_PLACE_AFTER = set(
   'in on at under inside here there behind alongside outside within near',
 );
 const LIVE_SUBJECTS = set('i we you they who');
+// "live stream", "live demo": the adjective before a noun.
+const LIVE_NOUN_AFTER = set(
+  'stream streams streaming streamed demo demos event events preview reload',
+);
 const SUBJECTS = set('i we you they he she it');
 // "give you", "show you": "you" is the object, not the subject.
 const GIVE_VERBS = set(
@@ -125,7 +129,6 @@ const GIVE_VERBS = set(
 const PLURAL_NOUNS = set(
   'people children men women media police staff team family government data',
 );
-const OBJECT_PRONOUNS = set('it them him her me us');
 // "save lives in": the noun after a verb that takes lives as its object.
 const LIVES_OBJECT_VERBS = set(
   'save change risk protect touch improve transform affect lose cost claim',
@@ -209,6 +212,7 @@ export function heteronymForm(
     while (at(b) && (/ly$/.test(at(b)!) || at(b) === 'already')) b--;
     const before = at(b);
     if (!before || LIVE_ADJ_BEFORE.has(before)) return null;
+    if (next && LIVE_NOUN_AFTER.has(next)) return null;
     if (before === 'you' && GIVE_VERBS.has(at(b - 1) ?? '')) return null;
     // The verb needs a subject right before it: "they live", "files live
     // in"; not "stream it live on", "watch the game live on".
@@ -217,7 +221,6 @@ export function heteronymForm(
       (word === 'live'
         ? /[^s]s$/.test(before) || PLURAL_NOUNS.has(before)
         : !DETERMINERS.has(before) &&
-          !OBJECT_PRONOUNS.has(before) &&
           !LIVES_OBJECT_VERBS.has(before) &&
           !/(s|ed)$/.test(before));
     if (
