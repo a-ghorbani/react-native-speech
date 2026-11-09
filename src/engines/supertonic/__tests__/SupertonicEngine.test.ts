@@ -200,3 +200,29 @@ describe('SupertonicEngine - release() during an active stream', () => {
     expect((e as any).activeStreamSession).toBeNull();
   });
 });
+
+describe('SupertonicEngine - synthesize() chunk text', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSessionCreate();
+    configureAssetLoader();
+  });
+
+  it('sends grouped sentences to the model with the space between them', async () => {
+    const e = new SupertonicEngine();
+    await e.initialize(validConfig);
+    jest.spyOn((e as any).styleLoader, 'getVoiceStyle').mockResolvedValue({});
+    const synth = jest
+      .spyOn((e as any).inference, 'synthesize')
+      .mockResolvedValue({
+        samples: new Float32Array(10),
+        sampleRate: 44100,
+        channels: 1,
+        duration: 0.1,
+      });
+    await e.synthesize('One here. Two here.', {voiceId: 'F1'});
+    expect(synth.mock.calls.map(c => c[0])).toEqual([
+      '<en>One here. Two here.</en>',
+    ]);
+  });
+});
