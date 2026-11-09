@@ -532,3 +532,147 @@ describe("StreamingChunker firstChunk: 'clause'", () => {
     expect((first as {text: string}).text).toBe('Sure thing friend, ');
   });
 });
+
+// #48: a reply with commas but no sentence end ("count to forty").
+const ONES = [
+  '',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+];
+const TEENS = [
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+];
+const TENS = ['', '', 'twenty', 'thirty', 'forty'];
+const numberWord = (n: number) =>
+  n < 10
+    ? ONES[n]!
+    : n < 20
+      ? TEENS[n - 10]!
+      : TENS[Math.floor(n / 10)]! + (n % 10 ? `-${ONES[n % 10]}` : '');
+const COUNT = Array.from({length: 40}, (_, i) => numberWord(i + 1)).join(', ');
+
+/** Append `text` in `size`-char pieces, draining ready chunks after each; then finalize. */
+function streamInPieces(chunker: StreamingChunker, text: string, size: number) {
+  const open: TextChunkLike[] = [];
+  const afterFinalize: TextChunkLike[] = [];
+  const take = (into: TextChunkLike[]) => {
+    let c = chunker.tryPeek();
+    while (c) {
+      into.push(c);
+      c = chunker.tryPeek();
+    }
+  };
+  for (let i = 0; i < text.length; i += size) {
+    chunker.append(text.slice(i, i + size));
+    take(open);
+  }
+  chunker.finalize();
+  take(afterFinalize);
+  return {open, afterFinalize, all: [...open, ...afterFinalize]};
+}
+type TextChunkLike = {text: string; startIndex: number; endIndex: number};
+
+function expectContiguous(chunks: TextChunkLike[], text: string) {
+  expect(chunks.map(c => c.text).join('')).toBe(text);
+  let at = 0;
+  for (const c of chunks) {
+    expect(c.startIndex).toBe(at);
+    at = c.endIndex;
+  }
+}
+
+describe('StreamingChunker: text without a sentence end (#48)', () => {
+  test('the count text is the reported ~400 chars', () => {
+    expect(COUNT.length).toBe(399);
+  });
+
+  test.each(['clause', 'sentence'] as const)(
+    'firstChunk %s: comma text is cut at clauses while the stream is open',
+    mode => {
+      const {open, afterFinalize, all} = streamInPieces(
+        new StreamingChunker(200, mode),
+        COUNT,
+        6,
+      );
+      expectContiguous(all, COUNT);
+      // Only a short tail may wait for finalize.
+      const heldBack = afterFinalize.reduce((n, c) => n + c.text.length, 0);
+      expect(heldBack).toBeLessThan(100);
+      expect(open.length).toBeGreaterThanOrEqual(3);
+      // No chunk after the first exceeds the soft limit.
+      for (const c of all.slice(1)) {
+        expect(c.text.length).toBeLessThanOrEqual(100);
+      }
+      // Cuts land after a comma.
+      for (const c of open) expect(c.text).toMatch(/, $/);
+    },
+  );
+
+  test('the first clause chunk is unchanged', () => {
+    const {all} = streamInPieces(new StreamingChunker(200, 'clause'), COUNT, 6);
+    expect(all[0]!.text).toBe('one, two, three, ');
+  });
+
+  test('bulk comma text is split at clauses within the soft limit', () => {
+    const text = `${COUNT}, ${COUNT}, ${COUNT}`;
+    const {all} = streamInPieces(new StreamingChunker(200), text, text.length);
+    expectContiguous(all, text);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(100);
+    for (const c of all.slice(0, -1)) expect(c.text).toMatch(/, $/);
+  });
+
+  test('text with no punctuation at all is cut at a word within maxChunkSize', () => {
+    const text = COUNT.replace(/,/g, '').repeat(2);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThanOrEqual(2);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+    for (const c of open) expect(c.text).toMatch(/\S $/);
+  });
+
+  test('CJK clause marks also cut a long run', () => {
+    const text = '我们今天去公园散步，'.repeat(30);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 5);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThan(0);
+    for (const c of open) expect(c.text).toMatch(/，$/);
+  });
+
+  test('a sentence end still decides the cut when one is present', () => {
+    const text = `${COUNT.slice(0, 150)}. Then the rest, and more. `;
+    const chunker = new StreamingChunker(200);
+    chunker.append(text);
+    expect(chunker.tryPeek()!.text).toBe(text);
+  });
+
+  test('short comma text waits for more input', () => {
+    const chunker = new StreamingChunker(200);
+    chunker.append('one, two, three, four, five, six, ');
+    expect(chunker.tryPeek()).toBeUndefined();
+  });
+
+  test('markdown buffer releases comma text to the chunker while open', () => {
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    for (let i = 0; i < COUNT.length; i += 6)
+      emitted += md.push(COUNT.slice(i, i + 6));
+    expect(COUNT.length - emitted.length).toBeLessThan(100);
+    expect((emitted + md.flush()).replace(/\s+/g, ' ').trim()).toBe(COUNT);
+  });
+});

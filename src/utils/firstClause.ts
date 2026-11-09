@@ -42,6 +42,35 @@ const CLAUSE_MIN_WORDS = 3;
 const CLAUSE_MIN_CJK_CHARS = 4;
 /** Default upper bound on first-chunk words when no boundary has appeared. */
 export const DEFAULT_FIRST_CHUNK_MAX_WORDS = 12;
+/**
+ * Streamed text with no sentence end is cut once this many characters
+ * are buffered, so a long run of clauses doesn't wait for the stream to end.
+ */
+export const SOFT_CHUNK_CHARS = 100;
+
+/** End offset of the last match of `re` ending at or before `limit`, or -1. */
+function lastMatchEnd(re: RegExp, text: string, limit: number): number {
+  const all = new RegExp(re.source, 'g');
+  let end = -1;
+  let m: RegExpExecArray | null;
+  while ((m = all.exec(text)) !== null && m.index + m[0].length <= limit) {
+    end = m.index + m[0].length;
+  }
+  return end;
+}
+
+/** End of the last clause mark (ASCII or CJK) at or before `limit`, or -1. */
+export function lastClauseEnd(text: string, limit: number): number {
+  return Math.max(
+    lastMatchEnd(CLAUSE_END_RE, text, limit),
+    lastMatchEnd(CJK_CLAUSE_END_RE, text, limit),
+  );
+}
+
+/** End of the last whitespace-terminated word at or before `limit`, or -1. */
+export function lastWordEnd(text: string, limit: number): number {
+  return lastMatchEnd(/\S\s+/, text, limit);
+}
 
 /** Throws unless `value` is `undefined` or an integer >= 1. */
 export function assertFirstChunkMaxWords(value: unknown): void {

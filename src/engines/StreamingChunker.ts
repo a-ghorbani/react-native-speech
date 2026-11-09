@@ -17,8 +17,11 @@ import type {TextChunk} from '../utils/TextChunker';
 import {isAbbreviationPeriod} from '../utils/abbreviations';
 import {
   SENTENCE_END_RE,
+  SOFT_CHUNK_CHARS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastClauseEnd,
+  lastWordEnd,
 } from '../utils/firstClause';
 
 export {findFirstClauseEnd} from '../utils/firstClause';
@@ -142,7 +145,7 @@ export class StreamingChunker {
     const chunk =
       this.firstChunk === 'clause' && !this.firstTaken
         ? this.extractFirstClause()
-        : this.extractSentences();
+        : (this.extractSentences() ?? this.extractSoftCut());
     if (chunk) {
       this.firstTaken = true;
     }
@@ -203,6 +206,37 @@ export class StreamingChunker {
 
     const chunk: TextChunk = {
       text,
+      startIndex: this.absoluteOffset,
+      endIndex: this.absoluteOffset + end,
+    };
+    this.buffer = this.buffer.slice(end);
+    this.absoluteOffset += end;
+    return chunk;
+  }
+
+  /**
+   * For a buffer with no sentence end: once it holds `SOFT_CHUNK_CHARS`,
+   * cut at the last clause mark within that (else within `maxChunkSize`);
+   * once it holds `maxChunkSize`, at the last word end within it.
+   */
+  private extractSoftCut(): TextChunk | null {
+    const max = this.maxChunkSize;
+    const soft = Math.min(SOFT_CHUNK_CHARS, max);
+    if (this.buffer.length < soft) {
+      return null;
+    }
+    let end = lastClauseEnd(this.buffer, soft);
+    if (end <= 0) {
+      end = lastClauseEnd(this.buffer, max);
+    }
+    if (end <= 0 && this.buffer.length >= max) {
+      end = lastWordEnd(this.buffer, max);
+    }
+    if (end <= 0) {
+      return null;
+    }
+    const chunk: TextChunk = {
+      text: this.buffer.slice(0, end),
       startIndex: this.absoluteOffset,
       endIndex: this.absoluteOffset + end,
     };

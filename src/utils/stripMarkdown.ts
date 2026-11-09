@@ -24,8 +24,11 @@
 import type {FirstChunkMode} from '../types';
 import {
   DEFAULT_FIRST_CHUNK_MAX_WORDS,
+  SOFT_CHUNK_CHARS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastClauseEnd,
+  lastWordEnd,
 } from './firstClause';
 
 /**
@@ -435,8 +438,26 @@ export function createMarkdownStreamBuffer(
         }
         if (cut <= 0) {
           const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
-          if (!sentMatch) break;
-          cut = sentMatch[1]!.length + sentMatch[2]!.length;
+          if (sentMatch) {
+            cut = sentMatch[1]!.length + sentMatch[2]!.length;
+          } else if (buffer.length >= SOFT_CHUNK_CHARS) {
+            // No sentence end in a long tail: release it up to the last
+            // clause or word end and let the chunker cut it (#48).
+            const soft = Math.max(
+              lastClauseEnd(buffer, buffer.length),
+              lastWordEnd(buffer, buffer.length),
+            );
+            if (
+              soft <= 0 ||
+              INLINE_MARKER_RE.test(buffer.slice(0, soft)) ||
+              buffer.includes('|')
+            ) {
+              break;
+            }
+            cut = soft;
+          } else {
+            break;
+          }
         }
         const sentence = buffer.slice(0, cut);
         buffer = buffer.slice(cut);
