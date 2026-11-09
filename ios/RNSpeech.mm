@@ -580,6 +580,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   _isAudioPaused = NO;
   _settleOnResume = NO;
   if (_pendingResolve) {
+    // Stop or replace (finishPlayback clears the promise first): a new utterance plays normally.
+    _outputRemoved = NO;
     RCTPromiseResolveBlock resolve = _pendingResolve;
     _pendingResolve = nil;
     RNSpeechTraceEnd(_pendingTraceHandle, _pendingTraceName);
