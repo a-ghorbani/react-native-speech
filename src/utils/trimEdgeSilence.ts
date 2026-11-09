@@ -1,6 +1,7 @@
 /**
- * Kitten pads every utterance with ~0.6 s before speech and ~0.4 s after
- * (digital zeros, then a -40..-50 dB noise bed), so each chunk boundary
+ * Kitten and Kokoro pad every utterance with silence: Kitten ~0.6 s before
+ * speech and ~0.4 s after (zeros, then a -40..-50 dB noise bed), Kokoro
+ * ~0.4 s and ~0.55 s (zeros and a -60..-75 dB bed), so each chunk boundary
  * was a ~1 s pause. Cut both edges down to a short pad around the first
  * and last frame within THRESHOLD_DB of the loudest frame. Soft onsets
  * and tails (fricatives, breaths) rise through the threshold gradually,
