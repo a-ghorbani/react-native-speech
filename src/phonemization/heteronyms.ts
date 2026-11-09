@@ -95,7 +95,7 @@ const PREPOSITIONS = set(
   'of for in on with from by at into about per without after before during',
 );
 const QUANTIFIERS = set(
-  'all both some each any many few several more most one two three four five six seven eight nine ten',
+  'all both some each any many few several more most countless one two three four five six seven eight nine ten',
 );
 const OBJECT_START = set(
   'the a an it them this these those my your our their his her its me us him all both each every some any',
@@ -142,12 +142,21 @@ const NOUN_ADJECTIVES = set(
   'common other typical main possible practical potential primary everyday different various',
 );
 const NOUN_AFTER_USE = set('case cases');
+// A modal opening a question has the noun as its subject ("Can progress be
+// measured?"); "do" stays a verb cue ("Do use caution").
+const MODALS = set('can could will would shall should may might must');
+// "thanks to", "due to": "to" is a preposition.
+const TO_PREPOSITION_AFTER = set(
+  'thanks due compared owing according related similar close next prior relative',
+);
+// "help her rewrite": "her" is the object of a verb that takes a bare verb.
+const BARE_VERB_TAKERS = set(
+  'help helps let lets make makes have has had watch watches see sees',
+);
 // "Are you close?", "I want you close": the pronoun is not the subject.
 const NOT_SUBJECT_AFTER = set(
   "am is are was were isn't aren't wasn't weren't want wants keep keeps hold holds email emails",
 );
-// "thousands of lives", "two lives on Sunday"
-const AMOUNTS = set('hundreds thousands millions billions dozens countless');
 // "these past few days"
 const TIME_LEAD = set('past last next few coming couple');
 
@@ -241,7 +250,6 @@ export function heteronymForm(
         : !DETERMINERS.has(before) &&
           !PREPOSITIONS.has(before) &&
           !QUANTIFIERS.has(before) &&
-          !AMOUNTS.has(before) &&
           !LIVES_OBJECT_VERBS.has(before) &&
           !/(s|ed|ing)$/.test(before));
     if (
@@ -268,6 +276,8 @@ export function heteronymForm(
     object ||
     (!!next && PREPOSITIONS.has(next));
   if (!toVerb) return null; // "switch to record mode", "to rerun npm"
+  if (prev === 'to' && TO_PREPOSITION_AFTER.has(prev2 ?? '')) return null;
+  if (MODALS.has(prev ?? '') && prev2 === null) return null;
   // "give you use cases": "you" is the object.
   const youObject =
     (prev === 'you' && GIVE_VERBS.has(prev2 ?? '')) ||
@@ -285,6 +295,8 @@ export function heteronymForm(
     (inflected ? SUBJECT_3SG.has(prev) : VERB_BEFORE.has(prev))
   ) {
     pos = 'verb';
+  } else if (prev === 'her' && BARE_VERB_TAKERS.has(prev2 ?? '')) {
+    pos = 'verb'; // "help her rewrite the letter"
   } else if (
     prev &&
     (DETERMINERS.has(prev) ||
