@@ -29,64 +29,61 @@ test('forgets an inference once it settles', async () => {
 });
 
 describe('InferenceTracker.freeWhenIdle', () => {
-  test('frees only after every tracked inference settled, failed ones included', async () => {
+  test('with nothing running, frees before it resolves and throws its error', async () => {
+    const t = new InferenceTracker();
+    const free = jest.fn(async () => {});
+    await t.freeWhenIdle(free);
+    expect(free).toHaveBeenCalledTimes(1);
+
+    await expect(
+      t.freeWhenIdle(async () => {
+        throw new Error('free failed');
+      }),
+    ).rejects.toThrow('free failed');
+  });
+
+  test('with inference running, resolves at once and frees after every tracked one settled, failed ones included', async () => {
     const t = new InferenceTracker();
     const a = deferred();
     const b = deferred();
     t.track(a.promise);
     t.track(b.promise).catch(() => {});
     const free = jest.fn(async () => {});
-    const done = t.freeWhenIdle(free, 1000);
 
+    await t.freeWhenIdle(free);
+    expect(free).not.toHaveBeenCalled();
     a.resolve();
     await tick();
     expect(free).not.toHaveBeenCalled();
     b.reject(new Error('run failed'));
-    await done;
+    await tick();
     expect(free).toHaveBeenCalledTimes(1);
   });
 
   test('does not wait for inference tracked after it was called', async () => {
     const t = new InferenceTracker();
-    const free = jest.fn(async () => {});
-    const done = t.freeWhenIdle(free, 1000);
-    t.track(new Promise(() => {}));
-    await done;
-    expect(free).toHaveBeenCalledTimes(1);
-  });
-
-  test('past the timeout it resolves, and frees once the inference ends', async () => {
-    const t = new InferenceTracker();
     const a = deferred();
     t.track(a.promise);
     const free = jest.fn(async () => {});
-
-    await t.freeWhenIdle(free, 30);
-    expect(free).not.toHaveBeenCalled();
-
+    await t.freeWhenIdle(free);
+    t.track(new Promise(() => {}));
     a.resolve();
     await tick();
     expect(free).toHaveBeenCalledTimes(1);
   });
 
-  test('throws a free error within the wait; only logs one after it', async () => {
-    const t = new InferenceTracker();
-    await expect(
-      t.freeWhenIdle(async () => {
-        throw new Error('free failed');
-      }, 1000),
-    ).rejects.toThrow('free failed');
-
+  test('a deferred free that fails is logged, not an unhandled rejection', async () => {
     const unhandled: unknown[] = [];
     const onUnhandled = (r: unknown) => unhandled.push(r);
     process.on('unhandledRejection', onUnhandled);
     try {
+      const t = new InferenceTracker();
       const a = deferred();
       t.track(a.promise);
       const late = jest.fn(async () => {
         throw new Error('late free failed');
       });
-      await expect(t.freeWhenIdle(late, 30)).resolves.toBeUndefined();
+      await t.freeWhenIdle(late);
       a.resolve();
       await tick(30);
       expect(late).toHaveBeenCalledTimes(1);

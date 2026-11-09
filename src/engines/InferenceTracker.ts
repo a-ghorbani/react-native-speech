@@ -22,32 +22,18 @@ export class InferenceTracker {
   }
 
   /**
-   * Runs `free` once every inference tracked so far has settled; call it
-   * after detaching the session, so nothing started later can use it.
-   * Waits at most `timeoutMs`: past that it resolves, and `free` still runs
-   * when the inferences settle (its error is then only logged). An error
-   * from a `free` that ran within the wait is thrown.
+   * Frees a detached session: now when no inference is running (an error
+   * from `free` is thrown), otherwise once every inference tracked so far
+   * has settled, without waiting for them (an error is then only logged).
+   * Call it after detaching the session, so nothing started later uses it.
    */
-  async freeWhenIdle(
-    free: () => Promise<void>,
-    timeoutMs = 5000,
-  ): Promise<void> {
-    const freed = Promise.allSettled([...this.running])
-      .then(free)
-      .then(() => true);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timedOut = new Promise<false>(resolve => {
-      timer = setTimeout(() => resolve(false), timeoutMs);
-    });
-    try {
-      if (!(await Promise.race([freed, timedOut]))) {
-        log.warn(
-          `Inference still running after ${timeoutMs} ms; freeing the session when it ends`,
-        );
-        freed.catch(e => log.warn('Deferred session release failed:', e));
-      }
-    } finally {
-      clearTimeout(timer);
+  async freeWhenIdle(free: () => Promise<void>): Promise<void> {
+    if (this.running.size === 0) {
+      return free();
     }
+    log.debug('Inference still running; freeing the session when it ends');
+    Promise.allSettled([...this.running])
+      .then(free)
+      .catch(e => log.warn('Deferred session release failed:', e));
   }
 }

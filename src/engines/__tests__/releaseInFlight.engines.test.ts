@@ -303,6 +303,25 @@ describe.each(ENGINES)(
       expect(freedNew).not.toHaveBeenCalled();
     });
 
+    test('stop() then release() (an engine switch) does not wait for the abandoned inference', async () => {
+      const h = harness(make);
+      const speak = outcome(h.engine.synthesize('Speak HOLD sentence.'));
+      await tick();
+      await h.engine.stop();
+      const released = await Promise.race([
+        h.engine.release().then(() => 'resolved'),
+        tick(50).then(() => 'pending'),
+      ]);
+      expect(released).toBe('resolved');
+      expect(h.running()).toBe(1);
+      expect(h.freed).not.toHaveBeenCalled();
+
+      h.finish();
+      await tick();
+      expect(h.freed).toHaveBeenCalledTimes(1);
+      await speak;
+    });
+
     test('with nothing in flight, release() frees at once', async () => {
       const h = harness(make);
       const t0 = Date.now();
