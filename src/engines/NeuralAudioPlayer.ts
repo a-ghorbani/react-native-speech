@@ -100,6 +100,17 @@ export class NeuralAudioPlayer {
   }
 
   /**
+   * Start of a new utterance or stream: end a pause native still holds from
+   * the previous one (it then reports onStopped). A playback in flight is left
+   * to the engine, which replaces it.
+   */
+  async endHeldPause(): Promise<void> {
+    if (!this.isCurrentlyPlaying && this.nativeMayHold) {
+      await this.stop();
+    }
+  }
+
+  /**
    * Pause current playback
    */
   async pause(): Promise<boolean> {

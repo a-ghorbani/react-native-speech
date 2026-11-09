@@ -344,6 +344,39 @@ describe('Speech dispatch to a registered engine', () => {
     );
   });
 
+  it('a new speak() or stream first ends a pause native may hold from the previous one', async () => {
+    await Speech.initialize({engine: 'fake'} as any);
+    await neuralAudioPlayer.playNative(async () => {});
+    const order: string[] = [];
+    nativePlayer.stop!.mockImplementationOnce(async () => {
+      order.push('native stop');
+    });
+    fake.synthesize.mockImplementationOnce(async () => {
+      order.push('synthesize');
+    });
+    await Speech.speak('Next.');
+    expect(order).toEqual(['native stop', 'synthesize']);
+
+    await neuralAudioPlayer.playNative(async () => {});
+    nativePlayer.stop!.mockClear();
+    const stream = Speech.createSpeechStream('v1');
+    expect(nativePlayer.stop).toHaveBeenCalledTimes(1);
+    await stream.cancel();
+  });
+
+  it('a new speak() leaves a playback in flight to the engine', async () => {
+    await Speech.initialize({engine: 'fake'} as any);
+    let finish!: () => void;
+    const playing = neuralAudioPlayer.playNative(
+      () => new Promise<void>(res => (finish = res)),
+    );
+    await Speech.speak('Next.');
+    expect(nativePlayer.stop).not.toHaveBeenCalled();
+    finish();
+    await playing;
+    await neuralAudioPlayer.stop();
+  });
+
   it('getVoicesWithMetadata rejects for engines without it and for os-native', async () => {
     const bare = fakeEngine('bare', {getVoicesWithMetadata: undefined});
     Speech.registerEngine(bare as any);

@@ -338,6 +338,9 @@ export default class Speech {
     }
 
     const engineInstance = engineManager.getEngine(engine);
+    if (neuralEngine(engine)) {
+      await neuralAudioPlayer.endHeldPause();
+    }
     await engineInstance.synthesize(input, {
       voiceId,
       ...options,
@@ -387,6 +390,10 @@ export default class Speech {
     // keeping the pipelined synth+play loop alive for the stream's
     // lifetime. OS engine doesn't — fall back to the adaptive batcher.
     const instance = neuralEngine(Speech.currentEngine);
+    if (instance) {
+      // Sent before any chunk of this stream, on the same native queue.
+      neuralAudioPlayer.endHeldPause().catch(() => {});
+    }
     let engineStreamFactory:
       | ((opts?: SpeechStreamOptions) => EngineStreamHandle)
       | undefined;
