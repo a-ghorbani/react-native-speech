@@ -20,8 +20,11 @@ static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
   const char *_pendingTraceName;
   // Its buffer played back, or the engine stopped, while paused; resume settles it.
   BOOL _settleOnResume;
-  // Output ports of the current playback, to tell a removed headset from a new route.
+  // Outputs of the current playback (kept until stop or idle deactivation), to tell a removed headset
+  // from a new route.
   NSArray<NSString *> *_playbackOutputs;
+  // Those outputs went away: nothing plays, not even the next chunk, until resume() or stop().
+  BOOL _outputRemoved;
 }
 
 RCT_EXPORT_MODULE();
@@ -131,7 +134,7 @@ RCT_EXPORT_MODULE();
       [self.synthesizer continueSpeaking];
     }
     dispatch_async(_audioQueue, ^{
-      if (shouldResume && self->_isAudioPaused) {
+      if (shouldResume && self->_isAudioPaused && !self->_outputRemoved) {
         [self resumeAudioInternal];
       }
       [self emitOnAudioInterruption:@{@"type": @"ended", @"shouldResume": @(shouldResume)}];
@@ -149,6 +152,7 @@ RCT_EXPORT_MODULE();
       self->_settleOnResume = YES;
     } else if ([self playbackOutputRemoved]) {
       [self pauseForRemovedOutput];
+      self->_outputRemoved = YES;
       self->_settleOnResume = YES;
     } else {
       [self finishPlayback];
@@ -156,10 +160,17 @@ RCT_EXPORT_MODULE();
   });
 }
 
+// Bluetooth profiles count as one output, so an A2DP -> HFP switch (the app opened the mic) is no removal.
 static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *route) {
   NSMutableArray<NSString *> *ports = [NSMutableArray array];
   for (AVAudioSessionPortDescription *port in route.outputs) {
-    [ports addObject:port.portType];
+    NSString *type = port.portType;
+    if ([type isEqualToString:AVAudioSessionPortBluetoothA2DP] ||
+        [type isEqualToString:AVAudioSessionPortBluetoothHFP] ||
+        [type isEqualToString:AVAudioSessionPortBluetoothLE]) {
+      type = @"Bluetooth";
+    }
+    [ports addObject:type];
   }
   return ports;
 }
@@ -189,7 +200,12 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     return;
   }
   dispatch_async(_audioQueue, ^{
-    if (self->_isAudioPlaying && !self->_isAudioPaused && [self playbackOutputRemoved]) {
+    if (![self playbackOutputRemoved]) {
+      return;
+    }
+    // Also while paused, or between the chunks of a held session.
+    self->_outputRemoved = YES;
+    if (self->_isAudioPlaying && !self->_isAudioPaused) {
       [self pauseForRemovedOutput];
     }
   });
@@ -537,12 +553,21 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSessionIdleDeactivationDelay * NSEC_PER_SEC)),
                  _audioQueue, ^{
     RNSpeech *strongSelf = weakSelf;
-    if (!strongSelf || strongSelf->_playbackGeneration != generation || strongSelf.synthesizer.isSpeaking ||
+    if (!strongSelf || strongSelf->_playbackGeneration != generation) {
+      return;
+    }
+    [strongSelf endSessionOutputs];
+    if (strongSelf.synthesizer.isSpeaking ||
         ![[AVAudioSession sharedInstance].category isEqualToString:category]) {
       return;
     }
     [strongSelf deactivateAudioSession];
   });
+}
+
+- (void)endSessionOutputs {
+  _playbackOutputs = nil;
+  _outputRemoved = NO;
 }
 
 - (void)cleanupAudio {
@@ -835,7 +860,12 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     });
   }];
 
-  [self->_playerNode play];
+  if (self->_outputRemoved) {
+    self->_isAudioPaused = YES;
+    [self emitOnPause:[self getAudioEventData]];
+  } else {
+    [self->_playerNode play];
+  }
   // After play, so a throw there leaves nothing pending; the completion reads these on this queue.
   self->_pendingResolve = resolve;
   self->_pendingTraceHandle = traceHandle;
@@ -846,6 +876,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
            reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     [self cleanupAudio];
+    [self endSessionOutputs];
     [self deactivateAudioSession];
     [self emitOnStopped:[self getAudioEventData]];
     resolve(nil);
@@ -869,6 +900,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
              reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     if (self->_isAudioPaused) {
+      self->_outputRemoved = NO;
       [self emitOnResume:[self getAudioEventData]];
       [self resumeAudioInternal];
       resolve(@(YES));
