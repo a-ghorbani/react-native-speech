@@ -26,6 +26,8 @@ import {
   DEFAULT_FIRST_CHUNK_MAX_WORDS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastClauseEnd,
+  lastWordEnd,
 } from './firstClause';
 
 /**
@@ -284,7 +286,9 @@ export function stripMarkdown(
  *      we look for `[.!?]+\s+` and emit the prefix. This is what
  *      progressive playback for ordinary prose without paragraph breaks
  *      depends on — without it, a single LLM paragraph would buffer
- *      until `finalize()` and time-to-first-audio would balloon.
+ *      until `finalize()` and time-to-first-audio would balloon. A tail
+ *      of `LONG_TAIL_CHARS` or more with no sentence end is released at
+ *      its last clause or word end instead.
  *
  *   3. End-of-stream `flush()`. Any remaining tail is stripped and
  *      emitted (unless we're still inside an unclosed fenced code block,
@@ -316,6 +320,11 @@ const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 // code spans). An early clause flush is skipped when the prefix holds
 // one, so the stripper never sees half of a pair.
 const INLINE_MARKER_RE = /[*_`[\]<]/;
+
+// A newline-less tail this long with no sentence end is released at its
+// last clause or word end, so the chunker can cut it before the stream
+// ends (#48).
+const LONG_TAIL_CHARS = 100;
 
 // Prepended to a mid-line continuation so line-anchored block rules
 // (`^- `, `^> `, `^# `) can't match it. U+2060 is not whitespace: `trim()`
@@ -435,8 +444,24 @@ export function createMarkdownStreamBuffer(
         }
         if (cut <= 0) {
           const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
-          if (!sentMatch) break;
-          cut = sentMatch[1]!.length + sentMatch[2]!.length;
+          if (sentMatch) {
+            cut = sentMatch[1]!.length + sentMatch[2]!.length;
+          } else if (buffer.length >= LONG_TAIL_CHARS) {
+            const soft = Math.max(
+              lastClauseEnd(buffer, buffer.length),
+              lastWordEnd(buffer, buffer.length),
+            );
+            if (
+              soft <= 0 ||
+              INLINE_MARKER_RE.test(buffer.slice(0, soft)) ||
+              buffer.includes('|')
+            ) {
+              break;
+            }
+            cut = soft;
+          } else {
+            break;
+          }
         }
         const sentence = buffer.slice(0, cut);
         buffer = buffer.slice(cut);

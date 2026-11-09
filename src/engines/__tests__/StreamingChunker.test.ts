@@ -532,3 +532,202 @@ describe("StreamingChunker firstChunk: 'clause'", () => {
     expect((first as {text: string}).text).toBe('Sure thing friend, ');
   });
 });
+
+// #48: a reply with commas but no sentence end ("count to forty").
+const ONES = [
+  '',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+];
+const TEENS = [
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+];
+const TENS = ['', '', 'twenty', 'thirty', 'forty'];
+const numberWord = (n: number) =>
+  n < 10
+    ? ONES[n]!
+    : n < 20
+      ? TEENS[n - 10]!
+      : TENS[Math.floor(n / 10)]! + (n % 10 ? `-${ONES[n % 10]}` : '');
+const COUNT = Array.from({length: 40}, (_, i) => numberWord(i + 1)).join(', ');
+
+/** Append `text` in `size`-char pieces, draining ready chunks after each; then finalize. */
+function streamInPieces(chunker: StreamingChunker, text: string, size: number) {
+  const open: TextChunkLike[] = [];
+  const afterFinalize: TextChunkLike[] = [];
+  const take = (into: TextChunkLike[]) => {
+    let c = chunker.tryPeek();
+    while (c) {
+      into.push(c);
+      c = chunker.tryPeek();
+    }
+  };
+  for (let i = 0; i < text.length; i += size) {
+    chunker.append(text.slice(i, i + size));
+    take(open);
+  }
+  chunker.finalize();
+  take(afterFinalize);
+  return {open, afterFinalize, all: [...open, ...afterFinalize]};
+}
+type TextChunkLike = {text: string; startIndex: number; endIndex: number};
+
+function expectContiguous(chunks: TextChunkLike[], text: string) {
+  expect(chunks.map(c => c.text).join('')).toBe(text);
+  let at = 0;
+  for (const c of chunks) {
+    expect(c.startIndex).toBe(at);
+    at = c.endIndex;
+  }
+}
+
+describe('StreamingChunker: text without a sentence end (#48)', () => {
+  test('the count text is the reported ~400 chars', () => {
+    expect(COUNT.length).toBe(399);
+  });
+
+  test.each(['clause', 'sentence'] as const)(
+    'firstChunk %s: comma text is cut at clauses while the stream is open',
+    mode => {
+      const {open, afterFinalize, all} = streamInPieces(
+        new StreamingChunker(200, mode),
+        COUNT,
+        6,
+      );
+      expectContiguous(all, COUNT);
+      // Less than one chunk's worth waits for finalize.
+      const heldBack = afterFinalize.reduce((n, c) => n + c.text.length, 0);
+      expect(heldBack).toBeLessThan(200);
+      expect(open.length).toBeGreaterThanOrEqual(mode === 'clause' ? 2 : 1);
+      for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+      // Cuts land after a comma.
+      for (const c of open) expect(c.text).toMatch(/, $/);
+    },
+  );
+
+  test('the first clause chunk is unchanged', () => {
+    const {all} = streamInPieces(new StreamingChunker(200, 'clause'), COUNT, 6);
+    expect(all[0]!.text).toBe('one, two, three, ');
+  });
+
+  test('bulk comma text is split at clauses within maxChunkSize', () => {
+    const text = `${COUNT}, ${COUNT}, ${COUNT}`;
+    const {all} = streamInPieces(new StreamingChunker(200), text, text.length);
+    expectContiguous(all, text);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+    for (const c of all.slice(0, -1)) {
+      expect(c.text.length).toBeGreaterThan(150);
+    }
+    for (const c of all.slice(0, -1)) expect(c.text).toMatch(/, $/);
+  });
+
+  test('a multi-word clause is kept whole rather than cut at a word', () => {
+    const text = 'and then we counted the sheep very slowly, '.repeat(12);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThan(0);
+    for (const c of open) expect(c.text).toMatch(/slowly, $/);
+  });
+
+  test('an early clause mark does not make a tiny chunk', () => {
+    const words = 'the quick brown fox jumps over the lazy dog '.repeat(6);
+    const text = 'Well, ' + words + 'end. More text here. ';
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open[0]!.text.length).toBeGreaterThan(100);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+  });
+
+  test('an early CJK clause mark still cuts text with no spaces', () => {
+    const text = '我们去公园散步，' + '天气很好阳光明媚'.repeat(30);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open[0]?.text).toBe('我们去公园散步，');
+  });
+
+  test('text with no punctuation at all is cut at a word within maxChunkSize', () => {
+    const text = COUNT.replace(/,/g, '').repeat(2);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThanOrEqual(2);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
+    for (const c of open) expect(c.text).toMatch(/\S $/);
+  });
+
+  test('a word longer than maxChunkSize does not hold back the text after it', () => {
+    const url = `https://example.com/${'a'.repeat(240)} `;
+    const text = url + COUNT;
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
+    expectContiguous(all, text);
+    expect(open[0]!.text).toBe(url);
+    expect(open.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('CJK clause marks also cut a long run', () => {
+    const text = '我们今天去公园散步，'.repeat(30);
+    const {open, all} = streamInPieces(new StreamingChunker(200), text, 5);
+    expectContiguous(all, text);
+    expect(open.length).toBeGreaterThan(0);
+    for (const c of open) expect(c.text).toMatch(/，$/);
+  });
+
+  test('a sentence end still decides the cut when one is present', () => {
+    const text = `${COUNT.slice(0, 150)}. Then the rest, and more. `;
+    const chunker = new StreamingChunker(200);
+    chunker.append(text);
+    expect(chunker.tryPeek()!.text).toBe(text);
+  });
+
+  test('comma text shorter than maxChunkSize waits for more input', () => {
+    const chunker = new StreamingChunker(200);
+    chunker.append(COUNT.slice(0, COUNT.lastIndexOf(', ', 190) + 2));
+    expect(chunker.tryPeek()).toBeUndefined();
+  });
+
+  test('markdown buffer releases CJK clause text with no spaces while open', () => {
+    const text = '我们今天去公园散步，'.repeat(15);
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    for (let i = 0; i < text.length; i += 5) {
+      emitted += md.push(text.slice(i, i + 5));
+    }
+    expect(emitted.length).toBeGreaterThan(100);
+    expect((emitted + md.flush()).replace(/\s+/g, '')).toBe(text);
+  });
+
+  // Known limit (#63): an inline marker before the cut blocks the release.
+  test('markdown buffer still holds the tail when the line has an inline marker', () => {
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    const text = `**Numbers:** ${COUNT}`;
+    for (let i = 0; i < text.length; i += 6) {
+      emitted += md.push(text.slice(i, i + 6));
+    }
+    expect(emitted).toBe('');
+  });
+
+  test('markdown buffer releases comma text to the chunker while open', () => {
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    for (let i = 0; i < COUNT.length; i += 6)
+      emitted += md.push(COUNT.slice(i, i + 6));
+    expect(COUNT.length - emitted.length).toBeLessThan(100);
+    expect((emitted + md.flush()).replace(/\s+/g, ' ').trim()).toBe(COUNT);
+  });
+});

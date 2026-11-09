@@ -19,6 +19,8 @@ import {
   SENTENCE_END_RE,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastClauseEnd,
+  lastWordEnd,
 } from '../utils/firstClause';
 
 export {findFirstClauseEnd} from '../utils/firstClause';
@@ -142,7 +144,7 @@ export class StreamingChunker {
     const chunk =
       this.firstChunk === 'clause' && !this.firstTaken
         ? this.extractFirstClause()
-        : this.extractSentences();
+        : (this.extractSentences() ?? this.extractSoftCut());
     if (chunk) {
       this.firstTaken = true;
     }
@@ -203,6 +205,40 @@ export class StreamingChunker {
 
     const chunk: TextChunk = {
       text,
+      startIndex: this.absoluteOffset,
+      endIndex: this.absoluteOffset + end,
+    };
+    this.buffer = this.buffer.slice(end);
+    this.absoluteOffset += end;
+    return chunk;
+  }
+
+  /**
+   * For a buffer with no sentence end that has reached `maxChunkSize`:
+   * cut at the last clause mark within it, else at the last word end, so
+   * a long run of clauses doesn't wait for the stream to end (#48). A
+   * clause mark in the first half loses to a word end: a tiny chunk would
+   * play out before the next one is synthesized.
+   */
+  private extractSoftCut(): TextChunk | null {
+    const max = this.maxChunkSize;
+    if (this.buffer.length < max) {
+      return null;
+    }
+    let end = lastClauseEnd(this.buffer, max);
+    if (end < max / 2) {
+      end = Math.max(end, lastWordEnd(this.buffer, max));
+    }
+    if (end <= 0) {
+      // A single word longer than maxChunkSize: cut right after it.
+      const word = /\S\s+/.exec(this.buffer);
+      end = word ? word.index + word[0].length : -1;
+    }
+    if (end <= 0) {
+      return null;
+    }
+    const chunk: TextChunk = {
+      text: this.buffer.slice(0, end),
       startIndex: this.absoluteOffset,
       endIndex: this.absoluteOffset + end,
     };
