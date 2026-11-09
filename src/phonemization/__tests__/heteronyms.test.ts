@@ -28,6 +28,15 @@ describe('heteronymForm (#31)', () => {
     ['I have <<read>> the brief', 'ɹˈɛd'],
     ['It was <<read>> twice', 'ɹˈɛd'],
     ['We <<rerun>> the job', 'dict'],
+    ['The CI <<rerun>> passed', 'ɹˈiːɹˌʌn'],
+    ["It can't be <<rerun>> yet", 'dict'],
+    ['CI <<reruns>> now', 'dict'],
+    ['The script <<uses>> bash', 'jˈuːzᵻz'],
+    ['The <<uses>> of it', 'dict'],
+    ['<<Use>> the cache', 'jˈuːz'],
+    ['<<Use>> shutdownNow instead', 'jˈuːz'],
+    ['<<Use>> of caches is fine', 'dict'],
+    ['You can watch it <<live>> with this', 'dict'],
     // Noun cues
     ['A full <<rerun>>.', 'ɹˈiːɹˌʌn'],
     ['The <<rerun>> passed', 'ɹˈiːɹˌʌn'],
@@ -61,7 +70,8 @@ describe('heteronymForm (#31)', () => {
   });
 
   test('a clause boundary cuts the context', () => {
-    // "we" is in another clause, so no verb cue reaches "rerun".
-    expect(pick('As we said, <<rerun>>.')).toBe('dict');
+    // "we" is in another clause, so no verb cue reaches "record".
+    expect(pick('We, <<record>>.')).toBe('dict');
+    expect(pick('We <<record>>.')).toBe('ɹᵻkˈɔːɹd');
   });
 });

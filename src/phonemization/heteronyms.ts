@@ -9,12 +9,18 @@
  * dict's IPA notation. See docs/LICENSES.md.
  */
 
-type Form = {verb?: string; noun?: string; past?: string};
+type Form = {
+  verb?: string;
+  noun?: string;
+  past?: string;
+  /** Reading with no cue, when it isn't the dict's ("the script uses X"). */
+  usual?: 'verb' | 'noun';
+};
 
 const TABLE: Record<string, Form> = {
   read: {past: 'ɹˈɛd'},
   use: {verb: 'jˈuːz'},
-  uses: {verb: 'jˈuːzᵻz'},
+  uses: {verb: 'jˈuːzᵻz', usual: 'verb'},
   live: {verb: 'lˈɪv'},
   lives: {verb: 'lˈɪvz'},
   close: {verb: 'klˈoʊz'},
@@ -50,7 +56,7 @@ const TABLE: Record<string, Form> = {
   increase: {verb: 'ɪŋkɹˈiːs'},
   replay: {verb: 'ɹiːplˈeɪ'},
   replays: {verb: 'ɹiːplˈeɪz'},
-  rerun: {noun: 'ɹˈiːɹˌʌn'},
+  rerun: {noun: 'ɹˈiːɹˌʌn', usual: 'noun'},
   reruns: {noun: 'ɹˈiːɹˌʌnz'},
   restart: {noun: 'ɹˈiːstˌɑːɹt'},
   restarts: {noun: 'ɹˈiːstˌɑːɹts'},
@@ -81,6 +87,7 @@ const VERB_BEFORE = set(
   "to can could will would shall should may might must do does did don't doesn't didn't won't can't cannot couldn't wouldn't shouldn't i we you they i'll we'll you'll they'll let's please",
 );
 const BUTTON_BEFORE = set('press click tap hit select choose');
+const PASSIVE_BEFORE = set('be been being is are was were get gets got');
 const SUBJECT_3SG = set('he she it this that');
 const DETERMINERS = set(
   'a an the this these those my your his her its our their no every another whose',
@@ -104,7 +111,7 @@ const LIVE_ADJ_BEFORE = set(
   "is are was were be been being isn't aren't wasn't weren't it's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made",
 );
 const LIVE_PLACE_AFTER = set(
-  'in on at under inside here there behind alongside outside within near with',
+  'in on at under inside here there behind alongside outside within near',
 );
 const LIVE_SUBJECTS = set('i we you they who');
 
@@ -178,7 +185,9 @@ export function heteronymForm(
   const name = /^[A-Z]/.test(raw) && prevRaw !== null;
   const inflected = isInflected(word);
   if (prev && BUTTON_BEFORE.has(prev)) pos = 'verb';
-  else if (name) pos = null;
+  else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
+    pos = 'verb'; // "can't be rerun"
+  } else if (name) pos = null;
   else if (
     prev &&
     (inflected ? SUBJECT_3SG.has(prev) : VERB_BEFORE.has(prev))
@@ -198,6 +207,12 @@ export function heteronymForm(
     pos = 'noun';
   } else if (next && OBJECT_START.has(next)) {
     pos = 'verb';
+  } else if (word === 'use' && prevRaw === null) {
+    // Clause-initial "Use X" is an instruction; "Use of X" took the
+    // preposition branch above only if something preceded it.
+    pos = next && PREPOSITIONS.has(next) ? 'noun' : 'verb';
+  } else if (form.usual) {
+    pos = form.usual;
   }
   return pos ? (form[pos] ?? null) : null;
 }
