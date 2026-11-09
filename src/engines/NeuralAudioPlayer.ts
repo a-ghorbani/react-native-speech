@@ -35,6 +35,12 @@ export interface PlaybackOptions {
 export class NeuralAudioPlayer {
   private isCurrentlyPlaying = false;
   private playGen = 0;
+  /**
+   * Native paused between chunks on its own (iOS: the headphones went away), so
+   * a stop() in that gap must still reach native to end the held pause.
+   */
+  private heldPause = false;
+  private pauseSubscription: {remove(): void} | null = null;
 
   /**
    * Play an audio buffer
@@ -68,6 +74,11 @@ export class NeuralAudioPlayer {
    * @param start - Starts playback; resolves when it finishes or is stopped
    */
   async playNative(start: () => Promise<void>): Promise<void> {
+    this.pauseSubscription ??= NativeNeuralAudioPlayer.onPause(() => {
+      if (!this.isCurrentlyPlaying) {
+        this.heldPause = true;
+      }
+    });
     const gen = ++this.playGen;
     this.isCurrentlyPlaying = true;
 
@@ -84,9 +95,10 @@ export class NeuralAudioPlayer {
    * Stop current playback
    */
   async stop(): Promise<void> {
-    if (this.isCurrentlyPlaying) {
+    if (this.isCurrentlyPlaying || this.heldPause) {
       this.playGen++;
       this.isCurrentlyPlaying = false;
+      this.heldPause = false;
       await NativeNeuralAudioPlayer.stop();
     }
   }
@@ -106,6 +118,7 @@ export class NeuralAudioPlayer {
    * Resume paused playback
    */
   async resume(): Promise<boolean> {
+    this.heldPause = false;
     const result = await NativeNeuralAudioPlayer.resume();
     return result;
   }

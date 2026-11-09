@@ -7,6 +7,8 @@
 using namespace JS::NativeSpeech;
 
 static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
+// Covers a slow producer between the chunks of one stream.
+static const NSTimeInterval kOutputWatchIdleDelay = 30.0;
 
 @implementation RNSpeech
 {
@@ -20,10 +22,10 @@ static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
   const char *_pendingTraceName;
   // Its buffer played back, or the engine stopped, while paused; resume settles it.
   BOOL _settleOnResume;
-  // Outputs of the current playback (kept until stop or idle deactivation), to tell a removed headset
-  // from a new route.
+  // Outputs of the last playback (kept until stop or kOutputWatchIdleDelay idle), to tell a removed
+  // headset from a new route.
   NSArray<NSString *> *_playbackOutputs;
-  // Those outputs went away: nothing plays, not even the next chunk, until resume() or stop().
+  // Those outputs went away: nothing plays, not even a later chunk, until resume(), stop() or a replace.
   BOOL _outputRemoved;
 }
 
@@ -203,9 +205,14 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     if (![self playbackOutputRemoved]) {
       return;
     }
-    // Also while paused, or between the chunks of a held session.
+    if (self->_outputRemoved) {
+      return;
+    }
     self->_outputRemoved = YES;
-    if (self->_isAudioPlaying && !self->_isAudioPaused) {
+    if (!self->_isAudioPlaying) {
+      // Between chunks: the next one starts paused.
+      [self emitOnPause:[self getAudioEventData]];
+    } else if (!self->_isAudioPaused) {
       [self pauseForRemovedOutput];
     }
   });
@@ -553,21 +560,19 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSessionIdleDeactivationDelay * NSEC_PER_SEC)),
                  _audioQueue, ^{
     RNSpeech *strongSelf = weakSelf;
-    if (!strongSelf || strongSelf->_playbackGeneration != generation) {
-      return;
-    }
-    [strongSelf endSessionOutputs];
-    if (strongSelf.synthesizer.isSpeaking ||
+    if (!strongSelf || strongSelf->_playbackGeneration != generation || strongSelf.synthesizer.isSpeaking ||
         ![[AVAudioSession sharedInstance].category isEqualToString:category]) {
       return;
     }
     [strongSelf deactivateAudioSession];
   });
-}
-
-- (void)endSessionOutputs {
-  _playbackOutputs = nil;
-  _outputRemoved = NO;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kOutputWatchIdleDelay * NSEC_PER_SEC)),
+                 _audioQueue, ^{
+    RNSpeech *strongSelf = weakSelf;
+    if (strongSelf && strongSelf->_playbackGeneration == generation) {
+      strongSelf->_playbackOutputs = nil;
+    }
+  });
 }
 
 - (void)cleanupAudio {
@@ -863,8 +868,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   }];
 
   if (self->_outputRemoved) {
+    // Already announced with onPause.
     self->_isAudioPaused = YES;
-    [self emitOnPause:[self getAudioEventData]];
   } else {
     [self->_playerNode play];
   }
@@ -878,7 +883,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
            reject:(RCTPromiseRejectBlock)reject {
   dispatch_async(_audioQueue, ^{
     [self cleanupAudio];
-    [self endSessionOutputs];
+    self->_playbackOutputs = nil;
+    self->_outputRemoved = NO;
     [self deactivateAudioSession];
     [self emitOnStopped:[self getAudioEventData]];
     resolve(nil);

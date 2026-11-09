@@ -40,6 +40,7 @@ jest.mock('../../../../src/NativeAudioPlayer', () => ({
     pause: jest.fn(async () => true),
     resume: jest.fn(async () => true),
     isSpeaking: jest.fn(async () => false),
+    onPause: jest.fn(() => ({remove: jest.fn()})),
   },
 }));
 

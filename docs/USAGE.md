@@ -698,6 +698,12 @@ const subscription = onAudioInterruption(event => {
 subscription.remove();
 ```
 
+### Headphones or Bluetooth removed (iOS, neural engines)
+
+When the headphones, Bluetooth device, AirPlay or CarPlay output that speech is playing on goes away, playback pauses and `onPause` fires, as with Music or Podcasts, so the speech never moves to the phone speaker by itself. This can happen mid-sentence or between two chunks of a `speak()` or stream; in that case `onPause` arrives with no `onStart` before it, and the next chunk starts paused.
+
+The pause holds, through an interruption that ends with `shouldResume` and for later chunks, until you call `Speech.resume()` (playback continues on the current output) or `Speech.stop()`. Show a paused state with a resume control when you get an `onPause` you did not request. Call `Speech.stop()` before starting unrelated speech, or it starts paused too. Connecting a new output does not pause.
+
 ### Release / cleanup
 
 Neural engines hold ONNX sessions and voice buffers that can run to 200+ MB. Call `Speech.release()` when you're done to free the sessions. Re-initialize before the next call. See [ARCHITECTURE.md](./ARCHITECTURE.md) for memory characteristics per engine.
