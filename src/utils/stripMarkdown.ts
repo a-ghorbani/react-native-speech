@@ -73,7 +73,9 @@ const HTML_TAG_PASS = [/<\/?[a-zA-Z][^>]*>/g, ''] as const;
 // Emphasis delimiters must sit next to whitespace, punctuation, or a string
 // edge. This keeps intraword underscores (snake_case, Python dunders like
 // `__init__`) and stray asterisks in prose (`*.txt`, `C * pointer`) intact.
-const EMPHASIS_PRE = '(^|[\\s({\\[])';
+// U+2060 starts a stream buffer's mid-line continuation (CONTINUATION), which
+// follows a cut, so it counts as an edge too.
+const EMPHASIS_PRE = '(^|[\\s({\\[\\u2060])';
 const EMPHASIS_POST = '(?=[\\s.,;:!?)}\\]]|$)';
 const emphasis = (delim: string, body: string) =>
   [
@@ -340,9 +342,9 @@ const INLINE_OPENER_RE = /(?:^|[\s({[])(?:\*|_|~~)|[`[]|<\/?[a-zA-Z]/;
 /**
  * Whether an early cut after `prefix` would split an inline construct
  * (`**bold, text**`, a link, a code span), so the stripper would see half
- * of a pair. A cut never ends right after a marker, so a construct
- * complete within the prefix strips the same way whatever follows; only an
- * unmatched opener can pair across the cut.
+ * of a pair. A cut ends in whitespace or a CJK mark, never right after a
+ * closing marker, so a construct complete within the prefix strips the same
+ * way whatever follows; only an unmatched opener can pair across the cut.
  */
 function hasOpenInlineMarker(prefix: string): boolean {
   let rest = applyPasses(prefix, [...LINK_PASSES, HTML_TAG_PASS]);

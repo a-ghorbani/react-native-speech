@@ -945,6 +945,42 @@ describe('createMarkdownStreamBuffer: inline markers before an early cut (#63)',
     },
   );
 
+  // Markers right after a cut: the remainder is stripped on its own.
+  test.each([
+    '**Note:** some words here, *really* fine.',
+    '**Note:** some words here, _really_ fine.',
+    'Plain words go here, *really* fine.',
+    'One sentence. *Then* this.',
+    'One sentence. _Then_ this.',
+    'One sentence. **Then** this.',
+    'One sentence. ~~Then~~ this.',
+    'One sentence. `Then` this.',
+    'One sentence. [Then](u) this.',
+    'One sentence. <b>Then</b> this.',
+    '这是**粗体**的说明文字、然后*斜体*继续。',
+  ])('a marker right after the cut is stripped: %j', text => {
+    const whole = stripMarkdown(text);
+    for (const pieces of [[...text], words(text), [text]]) {
+      for (const mode of ['clause', 'sentence']) {
+        expect(norm(stream(pieces, mode).all).replace(/ /g, '')).toBe(
+          norm(whole).replace(/ /g, ''),
+        );
+      }
+    }
+  });
+
+  test('markers after long-tail cuts are stripped', () => {
+    const items = Array.from({length: 40}, (_, i) =>
+      i % 2 ? `n${i} _e${i}_` : `n${i}, *e${i}*`,
+    ).join(' ');
+    const text = `**Note:** ${items}`;
+    for (const pieces of [[...text], words(text)]) {
+      const {early, all} = stream(pieces, 'sentence');
+      expect(early).not.toBe('');
+      expect(norm(all)).toBe(norm(stripMarkdown(text)));
+    }
+  });
+
   test('a long tail after a closed marker is released while open', () => {
     const tail = 'and one more word, '.repeat(8);
     expect(stream(words(`**Numbers:** ${tail}`), 'sentence').early).not.toBe(
