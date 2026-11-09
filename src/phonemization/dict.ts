@@ -25,7 +25,8 @@ export async function loadDict(path: string): Promise<JsDictSource> {
   if (cached) return cached;
 
   const text = await loadAssetAsText(path);
-  const dict: Record<string, string> = {};
+  // No prototype: a "__proto__" or "constructor" entry is a plain key.
+  const dict: Record<string, string> = Object.create(null);
   for (const line of text.split('\n')) {
     if (!line) continue;
     const tab = line.indexOf('\t');

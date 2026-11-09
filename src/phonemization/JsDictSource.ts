@@ -15,7 +15,9 @@ export class JsDictSource implements DictSource {
   }
 
   lookup(word: string): string | null {
-    return this.dict[word] ?? null;
+    return Object.prototype.hasOwnProperty.call(this.dict, word)
+      ? this.dict[word]!
+      : null;
   }
 
   size(): number {

@@ -8,6 +8,7 @@
  */
 
 import {splitCamelCase} from './splitCamelCase';
+import {lookupTable} from '../utils/lookupTable';
 
 // ─────────────────────────────────────────────
 // Number → words
@@ -51,7 +52,7 @@ const TENS = [
 
 const SCALE = ['', 'thousand', 'million', 'billion', 'trillion'];
 
-const ORDINAL_EXCEPTIONS: Record<string, string> = {
+const ORDINAL_EXCEPTIONS = lookupTable<string>({
   one: 'first',
   two: 'second',
   three: 'third',
@@ -62,9 +63,9 @@ const ORDINAL_EXCEPTIONS: Record<string, string> = {
   eight: 'eighth',
   nine: 'ninth',
   twelve: 'twelfth',
-};
+});
 
-const CURRENCY_SYMBOLS: Record<string, string> = {
+const CURRENCY_SYMBOLS = lookupTable<string>({
   $: 'dollar',
   '€': 'euro',
   '£': 'pound',
@@ -72,7 +73,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   '₹': 'rupee',
   '₩': 'won',
   '₿': 'bitcoin',
-};
+});
 
 function threeDigitsToWords(n: number): string {
   if (n === 0) return '';
@@ -170,7 +171,7 @@ export function floatToWords(
 }
 
 function romanToInt(s: string): number {
-  const val: Record<string, number> = {
+  const val = lookupTable<number>({
     I: 1,
     V: 5,
     X: 10,
@@ -178,7 +179,7 @@ function romanToInt(s: string): number {
     C: 100,
     D: 500,
     M: 1000,
-  };
+  });
   let result = 0;
   let prev = 0;
   for (const ch of s.toUpperCase().split('').reverse()) {
@@ -273,12 +274,12 @@ export function expandPercentages(text: string): string {
 }
 
 export function expandCurrency(text: string): string {
-  const scaleMap: Record<string, string> = {
+  const scaleMap = lookupTable<string>({
     K: 'thousand',
     M: 'million',
     B: 'billion',
     T: 'trillion',
-  };
+  });
   return text.replace(
     RE_CURRENCY,
     (_, symbol: string, rawIn: string, scaleSuffix?: string) => {
@@ -354,7 +355,7 @@ export function expandModelNames(text: string): string {
 }
 
 export function expandUnits(text: string): string {
-  const unitMap: Record<string, string> = {
+  const unitMap = lookupTable<string>({
     km: 'kilometers',
     kg: 'kilograms',
     mg: 'milligrams',
@@ -376,7 +377,7 @@ export function expandUnits(text: string): string {
     'c°': 'degrees Celsius',
     '°f': 'degrees Fahrenheit',
     'f°': 'degrees Fahrenheit',
-  };
+  });
   return text.replace(RE_UNIT, (_, raw: string, unitIn: string) => {
     const unit = unitIn.toLowerCase();
     const expanded = unitMap[unit] || unitIn;
@@ -426,12 +427,12 @@ export function expandScientificNotation(text: string): string {
 }
 
 export function expandScaleSuffixes(text: string): string {
-  const map: Record<string, string> = {
+  const map = lookupTable<string>({
     K: 'thousand',
     M: 'million',
     B: 'billion',
     T: 'trillion',
-  };
+  });
   return text.replace(RE_SCALE, (_, raw: string, suffix: string) => {
     const scaleWord = map[suffix] || suffix;
     const num = raw.includes('.')
