@@ -697,10 +697,13 @@ only on this job.
 * `build-android-phonon` (no turbo cache): ABIs arm64-v8a,x86_64,
   `--configuration-cache` on the add-on module, R8 release; `verify-apk.sh --phonon on`.
 * `android-emulator-phonon` (ubuntu-latest + KVM, `reactivecircus/android-emulator-runner`):
-  matrix {x86_64 API 35 `google_apis`, x86_64 API 35
+  matrix {x86_64 API 35 `google_apis`, x86_64 API 36
   `google_apis_ps16k`}. Installs the debug APK, triggers the self-test deep link with a
   CI-cached model, and asserts S1/S3/S6 on the 4 KB image and S1 (`supported:true`,
-  `pageSize:16384`) plus S3 on the 16 KB image.
+  `pageSize:16384`) plus S3 on the 16 KB image. On API 36 a library that is not 16 KB aligned
+  still loads, in page-size compat mode, so the job also fails when `dumpsys package` reports
+  `pageSizeCompat` other than 0 or the system shows its page-size mismatch warning. The 16 KB
+  image is API 36 because system processes on the API 35 one crash in ART at random (#57).
 * The flag-off size gate (`android-flag-off-size`) is gone: without the package there is nothing
   to measure, and the core-only checks above replace it.
 * `build-ios-phonon` (macos-15, Xcode with iOS 18 runtime; the job runs `xcrun simctl list
@@ -965,7 +968,7 @@ Claim via agistry before use. iOS via the ios-lab router agent.
 | SD 8 Elite Gen5 (SM8850, Android 16) | df8fc5ef | supported | addon S1–S13, U3, F1 |
 | OnePlus 6 (SD845) | ba5702bf | **unsupported** (no asimddp) | U1, U2 (`--abi armeabi-v7a`), F1; optional negative control N1; optional generic-build data point |
 | CI emulator x86_64 API 35 (4 KB) | CI | supported (slow) | S1, S3, S6 |
-| CI emulator x86_64 API 35 ps16k (16 KB) | CI | supported, `pageSize=16384` | S1, S3 |
+| CI emulator x86_64 API 36 ps16k (16 KB) | CI | supported, `pageSize=16384`, no page-size compat mode | S1, S3 |
 | iPhone 13 Pro (A15) | ios-lab | supported iff iOS ≥ 18 | S1–S12 (no S13), S11b, soak, F1; else U-iOS and "ANE unverified on hardware" |
 | iOS Simulator 18.x arm64 | CI / lab | supported (CPU Core ML; exempt from RTF/first-audio thresholds) | S1, S3, S6 |
 | iOS Simulator x86_64 (Intel host, if any) | lab | `unsupported-abi`, launches | U-iOS-x86 (optional) |
