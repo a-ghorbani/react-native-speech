@@ -368,7 +368,11 @@ const RootView: React.FC = () => {
             return;
           }
 
-          const model = models[0]!;
+          // An older q8/fp16 install returns NaN audio on onnxruntime 1.24 (#71).
+          const model =
+            models.find(m => m.variant === 'quantized') ??
+            models.find(m => m.variant === 'full') ??
+            models[0]!;
           const config = kokoroModelManager.getDownloadedModelConfig(
             model.version,
             model.variant,
@@ -1142,20 +1146,22 @@ const RootView: React.FC = () => {
                     ]}>
                     AVAILABLE DOWNLOADS
                   </Text>
-                  {[
-                    {
-                      variant: 'quantized',
-                      size: '88 MB',
-                      desc: 'Recommended',
-                      color: '#007AFF',
-                    },
-                    {
-                      variant: 'full',
-                      size: '311 MB',
-                      desc: 'Best quality',
-                      color: '#FF9500',
-                    },
-                  ].map(item => {
+                  {(
+                    [
+                      {
+                        variant: 'quantized',
+                        size: '88 MB',
+                        desc: 'Recommended',
+                        color: '#007AFF',
+                      },
+                      {
+                        variant: 'full',
+                        size: '311 MB',
+                        desc: 'Best quality',
+                        color: '#FF9500',
+                      },
+                    ] as const
+                  ).map(item => {
                     const isInstalled = kokoroModels.some(
                       m => m.variant === item.variant,
                     );
@@ -1174,9 +1180,7 @@ const RootView: React.FC = () => {
                             ? themedStyles.opacityFaded
                             : themedStyles.opacityFull,
                         ]}
-                        onPress={() =>
-                          downloadKokoroModel(item.variant as ModelVariant)
-                        }
+                        onPress={() => downloadKokoroModel(item.variant)}
                         disabled={isInstalled || isDownloading}>
                         {isThisDownloading ? (
                           <View style={styles.downloadingState}>
