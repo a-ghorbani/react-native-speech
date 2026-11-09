@@ -80,7 +80,7 @@ const TABLE: Record<string, Form> = {
 const set = (s: string) => new Set(s.split(' '));
 
 const ADVERBS = set(
-  'also just then now only still always never really not simply actually even usually often first automatically manually quickly easily',
+  'also just then now only still always never really not simply actually even usually often first automatically manually quickly easily already ever',
 );
 const VERB_BEFORE = set(
   "to can could will would shall should may might must do does did don't doesn't didn't won't can't cannot couldn't wouldn't shouldn't i we you they i'll we'll you'll they'll let's please",
@@ -117,6 +117,19 @@ const LIVE_PLACE_AFTER = set(
 );
 const LIVE_SUBJECTS = set('i we you they who');
 const SUBJECTS = set('i we you they he she it');
+// "give you", "show you": "you" is the object, not the subject.
+const GIVE_VERBS = set(
+  'give gives show shows send sends offer offers tell tells bring brings get gets teach teaches buy buys hand hands owe wish',
+);
+// Plural subjects without an -s ("the people produce").
+const PLURAL_NOUNS = set(
+  'people children men women media police staff team family government data',
+);
+const OBJECT_PRONOUNS = set('it them him her me us');
+// "save lives in": the noun after a verb that takes lives as its object.
+const LIVES_OBJECT_VERBS = set(
+  'save change risk protect touch improve transform affect lose cost claim',
+);
 const TIME_NOUNS = set(
   'week weekend day days month year time morning afternoon evening night sprint quarter',
 );
@@ -169,7 +182,9 @@ export function heteronymForm(
     }
     if (
       (prevRaw && READ_PAST_BEFORE.has(prevRaw)) ||
-      (prev && READ_PAST_BEFORE.has(prev))
+      (prev && READ_PAST_BEFORE.has(prev)) ||
+      // "Have you read …?"
+      (SUBJECTS.has(prev) && /^(have|has|had)$/.test(prev2 ?? ''))
     ) {
       return form.past!;
     }
@@ -193,10 +208,21 @@ export function heteronymForm(
     let b = i - 1;
     while (at(b) && (/ly$/.test(at(b)!) || at(b) === 'already')) b--;
     const before = at(b);
-    if (before && LIVE_ADJ_BEFORE.has(before)) return null;
+    if (!before || LIVE_ADJ_BEFORE.has(before)) return null;
+    if (before === 'you' && GIVE_VERBS.has(at(b - 1) ?? '')) return null;
+    // The verb needs a subject right before it: "they live", "files live
+    // in"; not "stream it live on", "watch the game live on".
+    const subject =
+      LIVE_SUBJECTS.has(before) ||
+      (word === 'live'
+        ? /[^s]s$/.test(before) || PLURAL_NOUNS.has(before)
+        : !DETERMINERS.has(before) &&
+          !OBJECT_PRONOUNS.has(before) &&
+          !LIVES_OBJECT_VERBS.has(before) &&
+          !/(s|ed)$/.test(before));
     if (
-      (next && LIVE_PLACE_AFTER.has(next)) ||
-      (prev && LIVE_SUBJECTS.has(prev))
+      subject &&
+      (LIVE_SUBJECTS.has(before) || (next && LIVE_PLACE_AFTER.has(next)))
     ) {
       return form.verb!;
     }
@@ -212,15 +238,18 @@ export function heteronymForm(
   // the verb only with an object or a preposition after (use: always).
   const toVerb =
     prev !== 'to' ||
-    word === 'use' ||
+    (word === 'use' && !NOUN_AFTER_USE.has(next ?? '')) ||
     object ||
     (!!next && PREPOSITIONS.has(next));
+  if (!toVerb) return null; // "switch to record mode", "to rerun npm"
+  // "give you use cases": "you" is the object.
+  const youObject = prev === 'you' && GIVE_VERBS.has(prev2 ?? '');
   if (prev && BUTTON_BEFORE.has(prev)) pos = 'verb';
   else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
     pos = 'verb'; // "can't be rerun"
   } else if (
     prev &&
-    toVerb &&
+    !youObject &&
     (inflected ? SUBJECT_3SG.has(prev) : VERB_BEFORE.has(prev))
   ) {
     pos = 'verb';
@@ -239,12 +268,17 @@ export function heteronymForm(
     !inflected &&
     prev2 &&
     DETERMINERS.has(prev2) &&
-    !prev!.endsWith('s')
+    !prev!.endsWith('s') &&
+    !PLURAL_NOUNS.has(prev!) &&
+    (!next || PREPOSITIONS.has(next))
   ) {
-    // "a full rerun", "the new import works"; not "files your scripts import"
+    // "a full rerun.", "the latest import of"; not "files your scripts
+    // import", "at the top import React"
     pos = 'noun';
   } else if (object) {
     pos = 'verb';
+  } else if (prev === null && inflected) {
+    pos = null; // "Uses: cleaning", "Uses vary"
   } else if (prev === null && form.usual === 'noun') {
     pos = 'verb'; // "Rerun npm install", "Then rerun."
   } else if (word === 'use' && prevRaw === null) {
