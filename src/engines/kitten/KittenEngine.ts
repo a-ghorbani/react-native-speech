@@ -655,6 +655,16 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       rawTextLength,
     );
     const voiceTime = Date.now() - voiceStartTime;
+    // Stopped or released while this chunk was being prepared; the
+    // session may already be detached.
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Create ONNX input tensors
     const {Tensor} = getOnnxRuntime();

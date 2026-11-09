@@ -633,6 +633,16 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
     const voiceTime = Date.now() - voiceStartTime;
+    // Stopped or released while this chunk was being prepared; the
+    // session may already be detached.
+    if (this.stopRequested) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Convert to BigInt64Array for ONNX (int64)
     const tokensBigInt = new BigInt64Array(tokens.map(t => BigInt(t)));

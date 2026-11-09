@@ -340,3 +340,42 @@ describe.each(ENGINES)(
     });
   },
 );
+
+/**
+ * Below the stubbed unit: a chunk still preparing its inputs (voice
+ * embedding) when release() detaches the session ends quietly with an
+ * empty buffer, rather than failing and logging "session not initialized".
+ */
+describe.each([
+  ['Kokoro', () => new KokoroEngine() as any, 'getVoiceEmbedding'],
+  ['Kitten', () => new KittenEngine() as any, 'getStyleEmbedding'],
+] as const)(
+  '%s: a chunk preparing when release() runs',
+  (_n, create, embed) => {
+    test('ends empty without touching the session or logging an error', async () => {
+      const e = create();
+      const run = jest.fn();
+      let embedded!: (v: Float32Array) => void;
+      e.isInitialized = true;
+      e.session = {run, release: jest.fn(async () => {})};
+      e.tokenizer = {clear: jest.fn()};
+      e.voiceLoader = {
+        clear: jest.fn(),
+        [embed]: jest.fn(() => new Promise(r => (embedded = r))),
+      };
+      const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const chunk = e.inflight.track(e.synthesizeChunk([1, 2, 3], 'v', 3));
+        await tick();
+        await e.release();
+        embedded(new Float32Array(4));
+        const audio = await chunk;
+        expect(audio.samples.length).toBe(0);
+        expect(run).not.toHaveBeenCalled();
+        expect(errors).not.toHaveBeenCalled();
+      } finally {
+        errors.mockRestore();
+      }
+    });
+  },
+);
