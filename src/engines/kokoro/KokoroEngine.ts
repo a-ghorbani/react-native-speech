@@ -697,7 +697,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         require('onnxruntime-react-native').env?.versions?.common ?? '?';
       throw new Error(
         `Kokoro model ${this.config?.modelPath ?? ''} produced NaN audio on onnxruntime ${ortVersion}. ` +
-          'The q8 build (model_q8f16.onnx) does on onnxruntime >= 1.24 and the fp16 build (model_fp16.onnx) on some inputs; ' +
+          'The q8 build (model_q8f16.onnx) produces NaN on every input on onnxruntime >= 1.24, and the fp16 build (model_fp16.onnx) on some inputs; ' +
           'use model_quantized.onnx (int8) or model.onnx (fp32).',
       );
     }
