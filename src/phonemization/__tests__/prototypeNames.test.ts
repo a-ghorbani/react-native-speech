@@ -32,6 +32,7 @@ import {normalizeForSpeech} from '../normalizeForSpeech';
 import {TextPreprocessor} from '../KittenPreprocessor';
 import {TextNormalizer} from '../../engines/kokoro/TextNormalizer';
 import {lookupTable} from '../../utils/lookupTable';
+import {createPhonemizer} from '../../engines/kokoro/Phonemizer';
 import {readdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
 
@@ -59,6 +60,37 @@ describe('Object.prototype names (#88)', () => {
     const phon = new HansPhonemizer({dict});
     expect(await phon.phonemize('Constructor', 'en-us')).toBe('kənstɹˈʌktɚ');
   });
+
+  test.each(['The constructor runs once.', 'CONSTRUCTOR and toString.'])(
+    'Kitten and Kokoro text paths read "%s" as words',
+    async text => {
+      const dict = new JsDictSource({
+        the: 'ðə',
+        constructor: 'kənstɹˈʌktɚ',
+        runs: 'ɹˈʌnz',
+        once: 'wˈʌns',
+        and: 'ænd',
+      });
+      const kitten = await createPhonemizer('js-ipa', {dict}).phonemize(
+        new TextPreprocessor({
+          removePunctuation: false,
+          expandContractions: false,
+          lowercase: false,
+          expandScaleSuffixes: false,
+          expandFractions: false,
+        }).process(normalizeForSpeech(text)),
+        'en-us',
+      );
+      const kokoro = await createPhonemizer('js', {dict}).phonemize(
+        new TextNormalizer().normalize(normalizeForSpeech(text)),
+        'en-us',
+      );
+      for (const out of [kitten, kokoro]) {
+        expect(out).not.toMatch(LEAK);
+        expect(out).toContain('kənstɹ');
+      }
+    },
+  );
 
   test('JsDictSource misses for prototype names', () => {
     const dict = new JsDictSource({the: 'ðə'});
@@ -96,23 +128,35 @@ describe('Object.prototype names (#88)', () => {
   });
 
   test('text-path tables keyed by strings are lookupTable, not plain objects', () => {
-    // A plain `Record<string, …> = {` table hits Object.prototype for
-    // "constructor"; keep every such table on the text path prototype-free.
-    const phon = join(__dirname, '..');
-    const files = [
-      ...readdirSync(phon)
+    // A plain object indexed by a word hits Object.prototype for
+    // "constructor"; keep every such table on the text path prototype-free
+    // (lookupTable for fixed tables; Object.create(null) or a Map if mutable).
+    const dir = (d: string) =>
+      readdirSync(join(__dirname, d))
         .filter(n => n.endsWith('.ts'))
-        .map(n => join(phon, n)),
-      join(__dirname, '../../engines/kokoro/TextNormalizer.ts'),
-      join(__dirname, '../../engines/kokoro/Phonemizer.ts'),
+        .map(n => join(__dirname, d, n));
+    const files = [
+      ...dir('..'),
+      ...dir('../../utils'),
+      ...[
+        'kokoro/TextNormalizer.ts',
+        'kokoro/Phonemizer.ts',
+        'kitten/chunkTextWithPositions.ts',
+        'kitten/splitOversized.ts',
+      ].map(f => join(__dirname, '../../engines', f)),
     ];
     const plain: string[] = [];
     for (const f of files) {
       const src = readFileSync(f, 'utf8');
       for (const m of src.matchAll(
-        /(?:const|let)\s+(\w+)\s*(?::\s*Record<string,[^=]*>)?\s*=\s*\(?\{/g,
+        /(?:const|let)\s+(\w+)\s*(:[^;=]*?(?:=>[^;=]*?)*)?=\s*\(?\{/g,
       )) {
-        if (/Record<string,|\(\{$/.test(m[0])) plain.push(`${f}: ${m[1]}`);
+        const [, name, type = ''] = m;
+        const stringKeyed = /Record<string|\[\w+:\s*string\]/.test(type);
+        // Unannotated: flagged when indexed by a variable (`NAME[word]`).
+        const indexed =
+          !type && new RegExp(`\\b${name}\\[(?![\\d'"\\]])`).test(src);
+        if (stringKeyed || indexed) plain.push(`${f}: ${name}`);
       }
     }
     expect(plain).toEqual([]);
