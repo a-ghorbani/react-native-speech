@@ -100,7 +100,7 @@ describe('KittenEngine - construction & identity', () => {
 
   it('leaves scale suffixes and fractions to normalizeForSpeech', () => {
     // The upstream rules read "B2B" as "B two billion" and "5/1" as "five firsts".
-    new KittenEngine();
+    expect(new KittenEngine()).toBeDefined();
     expect(stubPreprocessor.lastOptions).toMatchObject({
       expandScaleSuffixes: false,
       expandFractions: false,
