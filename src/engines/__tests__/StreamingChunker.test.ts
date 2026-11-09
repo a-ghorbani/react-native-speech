@@ -695,6 +695,17 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     expect((emitted + md.flush()).replace(/\s+/g, '')).toBe(text);
   });
 
+  // Known limit (#63): an inline marker before the cut blocks the release.
+  test('markdown buffer still holds the tail when the line has an inline marker', () => {
+    const md = createMarkdownStreamBuffer();
+    let emitted = '';
+    const text = `**Numbers:** ${COUNT}`;
+    for (let i = 0; i < text.length; i += 6) {
+      emitted += md.push(text.slice(i, i + 6));
+    }
+    expect(emitted).toBe('');
+  });
+
   test('markdown buffer releases comma text to the chunker while open', () => {
     const md = createMarkdownStreamBuffer();
     let emitted = '';
