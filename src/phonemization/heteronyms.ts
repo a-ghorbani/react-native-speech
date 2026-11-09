@@ -85,7 +85,7 @@ const ADVERBS = set(
 const VERB_BEFORE = set(
   "to can could will would shall should may might must do does did don't doesn't didn't won't can't cannot couldn't wouldn't shouldn't i we you they i'll we'll you'll they'll let's please",
 );
-const BUTTON_BEFORE = set('press click tap hit select choose');
+const BUTTON_BEFORE = set('press click tap');
 const PASSIVE_BEFORE = set('be been being is are was were get gets got');
 const SUBJECT_3SG = set('he she it this that');
 const DETERMINERS = set(
@@ -107,7 +107,7 @@ const READ_PAST_BEFORE = set(
   "have has had i've we've you've they've having was were been being is are be already",
 );
 const READ_ATTRIBUTE_AFTER = set(
-  'access only permission permissions write and or receipt receipts replica replicas path paths timeout side model',
+  'access only permission permissions privilege privileges right rights scope scopes role roles lock locks operation operations request requests mode write and or receipt receipts replica replicas path paths timeout side model',
 );
 const LIVE_ADJ_BEFORE = set(
   "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made watch watched watching stream streamed streaming broadcast air airs aired",
@@ -142,6 +142,14 @@ const NOUN_ADJECTIVES = set(
   'common other typical main possible practical potential primary everyday different various',
 );
 const NOUN_AFTER_USE = set('case cases');
+// "Are you close?", "I want you close": the pronoun is not the subject.
+const NOT_SUBJECT_AFTER = set(
+  "am is are was were isn't aren't wasn't weren't want wants keep keeps hold holds email emails",
+);
+// "thousands of lives", "two lives on Sunday"
+const AMOUNTS = set('hundreds thousands millions billions dozens countless');
+// "these past few days"
+const TIME_LEAD = set('past last next few coming couple');
 
 function isInflected(word: string): boolean {
   return word.endsWith('s') && TABLE[word.slice(0, -1)] !== undefined;
@@ -183,6 +191,8 @@ export function heteronymForm(
     ) {
       return null;
     }
+    // "All you need to do is read …"
+    if (/^(is|was)$/.test(prev) && at(back - 1) === 'do') return null;
     if (
       (prevRaw && READ_PAST_BEFORE.has(prevRaw)) ||
       (prev && READ_PAST_BEFORE.has(prev)) ||
@@ -214,6 +224,14 @@ export function heteronymForm(
     if (!before || LIVE_ADJ_BEFORE.has(before)) return null;
     if (next && LIVE_NOUN_AFTER.has(next)) return null;
     if (before === 'you' && GIVE_VERBS.has(at(b - 1) ?? '')) return null;
+    // "Are we live?", "Are the changes live in production?"
+    if (NOT_SUBJECT_AFTER.has(at(b - 1) ?? '')) return null;
+    if (
+      DETERMINERS.has(at(b - 1) ?? '') &&
+      NOT_SUBJECT_AFTER.has(at(b - 2) ?? '')
+    ) {
+      return null;
+    }
     // The verb needs a subject right before it: "they live", "files live
     // in"; not "stream it live on", "watch the game live on".
     const subject =
@@ -221,8 +239,11 @@ export function heteronymForm(
       (word === 'live'
         ? /[^s]s$/.test(before) || PLURAL_NOUNS.has(before)
         : !DETERMINERS.has(before) &&
+          !PREPOSITIONS.has(before) &&
+          !QUANTIFIERS.has(before) &&
+          !AMOUNTS.has(before) &&
           !LIVES_OBJECT_VERBS.has(before) &&
-          !/(s|ed)$/.test(before));
+          !/(s|ed|ing)$/.test(before));
     if (
       subject &&
       (LIVE_SUBJECTS.has(before) || (next && LIVE_PLACE_AFTER.has(next)))
@@ -235,8 +256,10 @@ export function heteronymForm(
   let pos: 'verb' | 'noun' | null = null;
   const inflected = isInflected(word);
   // "this week", "each day" after the word is a time phrase, not an object.
+  let t = i + 2;
+  while (TIME_LEAD.has(at(t) ?? '')) t++;
   const object =
-    !!next && OBJECT_START.has(next) && !TIME_NOUNS.has(at(i + 2) ?? '');
+    !!next && OBJECT_START.has(next) && !TIME_NOUNS.has(at(t) ?? '');
   // "to" is a preposition before a noun ("switch to record mode"): it marks
   // the verb only with an object or a preposition after (use: always).
   const toVerb =
@@ -246,9 +269,15 @@ export function heteronymForm(
     (!!next && PREPOSITIONS.has(next));
   if (!toVerb) return null; // "switch to record mode", "to rerun npm"
   // "give you use cases": "you" is the object.
-  const youObject = prev === 'you' && GIVE_VERBS.has(prev2 ?? '');
+  const youObject =
+    (prev === 'you' && GIVE_VERBS.has(prev2 ?? '')) ||
+    (SUBJECTS.has(prev ?? '') && NOT_SUBJECT_AFTER.has(prev2 ?? ''));
   if (prev && BUTTON_BEFORE.has(prev)) pos = 'verb';
-  else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
+  else if (next === 'of')
+    pos = 'noun'; // "Does use of caffeine …"
+  else if (form.usual === 'noun' && (prev === 'and' || prev === 'or')) {
+    pos = 'verb'; // "fix the path and rerun CI"
+  } else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
     pos = 'verb'; // "can't be rerun"
   } else if (
     prev &&
@@ -264,7 +293,8 @@ export function heteronymForm(
   ) {
     pos = 'noun';
   } else if (prev && QUANTIFIERS.has(prev)) {
-    pos = object ? 'verb' : 'noun';
+    // "they all import the same", but "all records the user created"
+    pos = object && !inflected ? 'verb' : 'noun';
   } else if (inflected && next && NOUN_AFTER_S.has(next)) {
     pos = 'noun';
   } else if (
