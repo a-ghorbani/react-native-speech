@@ -25,6 +25,14 @@ import {
 
 export {findFirstClauseEnd} from '../utils/firstClause';
 
+/**
+ * With `firstChunk: 'clause'`, each chunk after the first may be at most
+ * this many times the previous one, so it is synthesized while the
+ * previous one plays (#70). The ramp ends once the cap reaches
+ * maxChunkSize.
+ */
+const RAMP_FACTOR = 4;
+
 export class StreamingChunker {
   private buffer = '';
   private absoluteOffset = 0;
@@ -34,6 +42,8 @@ export class StreamingChunker {
   private firstChunk: FirstChunkMode;
   private firstChunkMaxWords: number | undefined;
   private firstTaken = false;
+  /** Size limit for the next chunk while ramping up; null once the ramp ends. */
+  private rampCap: number | null = null;
 
   private waiter: ((chunk: TextChunk | null) => void) | null = null;
 
@@ -144,11 +154,44 @@ export class StreamingChunker {
     const chunk =
       this.firstChunk === 'clause' && !this.firstTaken
         ? this.extractFirstClause()
-        : (this.extractSentences() ?? this.extractSoftCut());
+        : (this.extractRamped() ??
+          this.extractSentences() ??
+          this.extractSoftCut());
     if (chunk) {
+      if (
+        (!this.firstTaken && this.firstChunk === 'clause') ||
+        this.rampCap !== null
+      ) {
+        const cap = RAMP_FACTOR * chunk.text.length;
+        this.rampCap = cap < this.maxChunkSize ? cap : null;
+      }
       this.firstTaken = true;
     }
     return chunk;
+  }
+
+  /**
+   * While ramping: sentences up to the cap; else, once the buffer reaches
+   * the cap, the last clause mark in its second half; else the first
+   * sentence alone, however long. Null (no sentence end yet) leaves the
+   * cut to the soft cut.
+   */
+  private extractRamped(): TextChunk | null {
+    const cap = this.rampCap;
+    if (cap === null) {
+      return null;
+    }
+    const sentences = this.extractSentences(cap, false);
+    if (sentences) {
+      return sentences;
+    }
+    if (this.buffer.length >= cap) {
+      const end = lastClauseEnd(this.buffer, cap);
+      if (end >= cap / 2) {
+        return this.take(end);
+      }
+    }
+    return this.extractSentences(cap);
   }
 
   private extractFirstClause(): TextChunk | null {
@@ -156,39 +199,39 @@ export class StreamingChunker {
     if (end <= 0) {
       return null;
     }
-    const chunk: TextChunk = {
-      text: this.buffer.slice(0, end),
-      startIndex: this.absoluteOffset,
-      endIndex: this.absoluteOffset + end,
-    };
-    this.buffer = this.buffer.slice(end);
-    this.absoluteOffset += end;
-    return chunk;
+    return this.take(end);
   }
 
   /**
    * Extract complete sentence(s) from the front of the buffer, up to
-   * `maxChunkSize`. Returns null if no sentence boundary is found.
+   * `limit` (default `maxChunkSize`). A first sentence longer than that
+   * comes alone, unless `allowLonger` is false. Returns null if no
+   * sentence boundary is found.
    */
-  private extractSentences(): TextChunk | null {
+  private extractSentences(
+    limit?: number,
+    allowLonger = true,
+  ): TextChunk | null {
+    const max = limit ?? this.maxChunkSize;
     const re = new RegExp(SENTENCE_END_RE.source, 'g');
     let m: RegExpExecArray | null;
     let lastGoodEnd = -1;
 
     while ((m = re.exec(this.buffer)) !== null) {
       // Once the buffer is past maxChunkSize, abbreviation periods count
-      // as boundaries again so text with no other break still flushes.
+      // as boundaries again so text with no other break still flushes;
+      // a ramp-limited chunk never ends at one.
       if (
-        this.buffer.length <= this.maxChunkSize &&
+        (limit !== undefined || this.buffer.length <= this.maxChunkSize) &&
         isAbbreviationPeriod(this.buffer, m.index)
       ) {
         continue;
       }
       const candidateEnd = m.index + m[0].length;
-      if (candidateEnd <= this.maxChunkSize || lastGoodEnd === -1) {
+      if (candidateEnd <= max || (lastGoodEnd === -1 && allowLonger)) {
         lastGoodEnd = candidateEnd;
       }
-      if (candidateEnd >= this.maxChunkSize && lastGoodEnd > 0) {
+      if (candidateEnd >= max) {
         break;
       }
     }
@@ -197,20 +240,10 @@ export class StreamingChunker {
       return null;
     }
 
-    const end = lastGoodEnd;
-    const text = this.buffer.slice(0, end);
-    if (text.trim().length === 0) {
+    if (this.buffer.slice(0, lastGoodEnd).trim().length === 0) {
       return null;
     }
-
-    const chunk: TextChunk = {
-      text,
-      startIndex: this.absoluteOffset,
-      endIndex: this.absoluteOffset + end,
-    };
-    this.buffer = this.buffer.slice(end);
-    this.absoluteOffset += end;
-    return chunk;
+    return this.take(lastGoodEnd);
   }
 
   /**
@@ -237,6 +270,11 @@ export class StreamingChunker {
     if (end <= 0) {
       return null;
     }
+    return this.take(end);
+  }
+
+  /** Remove the first `end` chars of the buffer as a chunk. */
+  private take(end: number): TextChunk {
     const chunk: TextChunk = {
       text: this.buffer.slice(0, end),
       startIndex: this.absoluteOffset,

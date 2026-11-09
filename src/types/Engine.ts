@@ -122,8 +122,12 @@ export interface SynthesisOptions {
    * Streaming, and `speak()` on engines that split the first chunk (an
    * add-on may). With `'clause'`, the first chunk flushes at the earliest of a sentence end, a `, ; : — –` boundary after at least 3
    * words, a `，；：、` boundary after at least 4 CJK characters, or
-   * `firstChunkMaxWords` complete words, so audio starts sooner. Later
-   * chunks keep sentence boundaries. Ignored by the OS engine.
+   * `firstChunkMaxWords` complete words, so audio starts sooner. In a
+   * stream, the chunks after it grow from there, each limited to about 4
+   * times the previous one and cut at a sentence end or else a clause mark
+   * (a longer sentence with no clause mark stays whole), until the limit
+   * reaches `maxChunkSize`; later chunks keep sentence boundaries. Ignored
+   * by the OS engine.
    * @platform neural-engines
    * @default 'sentence'
    */

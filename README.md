@@ -179,7 +179,7 @@ stream.onProgress(event => {
 
 The OS engine does not emit chunk progress, so `stream.onProgress` never fires there.
 
-For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. Later chunks still break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. So that the next chunk is synthesized while a short first chunk plays, the chunks after it grow step by step: each is limited to about 4 times the previous one, cut at a sentence end or, failing that, at a clause mark (never inside a word; a longer sentence with no clause mark stays whole), until the limit reaches `maxChunkSize`. After that, chunks break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 
 A first sentence longer than the word limit, with no early comma, is split mid-sentence, which can be heard as a pause. Raise `firstChunkMaxWords` to keep long first sentences whole, at the cost of later first audio. It must be an integer of at least 1; other values throw.
 
