@@ -55,6 +55,60 @@ export interface StripMarkdownOptions {
   firstChunkMaxWords?: number;
 }
 
+// Inline constructs that open and close on one line, as `[pattern,
+// replacement]` passes. `stripMarkdown` runs them, and the stream buffer's
+// open-marker check reuses them so the two can't drift apart.
+const LINK_PASSES: ReadonlyArray<readonly [RegExp, string]> = [
+  // Images: ![alt](url) → alt (or empty if no alt). Drop the URL. Before
+  // links since the syntax is a superset.
+  [/!\[([^\]]*)\]\([^)]*\)/g, '$1'],
+  // Links: [text](url) → text.
+  [/\[([^\]]*)\]\([^)]*\)/g, '$1'],
+  // Reference-style links: [text][ref] → text.
+  [/\[([^\]]*)\]\[[^\]]*\]/g, '$1'],
+];
+// HTML tags: drop. Kitten's preprocessor already does this but we unify
+// so Kokoro gets it too.
+const HTML_TAG_PASS = [/<\/?[a-zA-Z][^>]*>/g, ''] as const;
+// Emphasis delimiters must sit next to whitespace, punctuation, or a string
+// edge. This keeps intraword underscores (snake_case, Python dunders like
+// `__init__`) and stray asterisks in prose (`*.txt`, `C * pointer`) intact.
+const EMPHASIS_PRE = '(^|[\\s({\\[])';
+const EMPHASIS_POST = '(?=[\\s.,;:!?)}\\]]|$)';
+const emphasis = (delim: string, body: string) =>
+  [
+    new RegExp(
+      `${EMPHASIS_PRE}${delim}(${body}+?)${delim}${EMPHASIS_POST}`,
+      'g',
+    ),
+    '$1$2',
+  ] as const;
+const EMPHASIS_PASSES = [
+  emphasis('\\*\\*', '[^*\\n]'),
+  // Note: no `__...__` pass. Python dunders (`__init__`, `__main__`) show
+  // up in technical prose often enough that preserving them matters more
+  // than handling the rare CommonMark `__bold__` form — almost everyone
+  // uses `**` for bold. If an LLM emits `__foo__` it'll pass through
+  // intact; that's a better failure mode than destroying identifiers.
+  emphasis('~~', '[^~\\n]'),
+  emphasis('\\*', '[^*\\n]'),
+  emphasis('_', '[^_\\n]'),
+];
+// Inline code: `x` → x. Triple-backtick inline is rare but handle it
+// before single-backtick so the triple pattern wins.
+const CODE_SPAN_PASSES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/```([^`\n]+)```/g, '$1'],
+  [/``([^`\n]+)``/g, '$1'],
+  [/`([^`\n]+)`/g, '$1'],
+];
+
+function applyPasses(
+  text: string,
+  passes: ReadonlyArray<readonly [RegExp, string]>,
+): string {
+  return passes.reduce((out, [re, to]) => out.replace(re, to), text);
+}
+
 const DEFAULTS: Required<StripMarkdownOptions> = {
   dropCodeBlocks: true,
   firstChunk: 'sentence',
@@ -85,21 +139,13 @@ export function stripMarkdown(
     (_m, code: string) => (opts.dropCodeBlocks ? '' : code),
   );
 
-  // 2. Images: ![alt](url) → alt (or empty if no alt). Drop the URL.
-  // Keep this before links since the syntax is a superset.
-  out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
-
-  // 3. Links: [text](url) → text. Drop URL.
-  out = out.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-
-  // 4. Reference-style links: [text][ref] → text
-  out = out.replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1');
+  // 2-4. Images, links, reference-style links (LINK_PASSES).
+  out = applyPasses(out, LINK_PASSES);
   // And drop reference definitions: `[ref]: url`
   out = out.replace(/^\s*\[[^\]]+\]:\s+\S.*$/gm, '');
 
-  // 5. HTML tags — drop. Kitten's preprocessor already does this but we
-  // unify so Kokoro gets it too.
-  out = out.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  // 5. HTML tags (HTML_TAG_PASS).
+  out = applyPasses(out, [HTML_TAG_PASS]);
 
   // 6. Table rows — flatten `| a | b | c |` to "a, b, c." with a sentence
   // break. Must run before we strip stray pipes elsewhere. We require the
@@ -132,38 +178,11 @@ export function stripMarkdown(
     },
   );
 
-  // 7. Emphasis markers: strip `**`, `__`, `*`, `_`, `~~` around text.
-  // MUST run before headers + lists — otherwise a header like
-  // `### **Title:**` ends with `**`, header regex doesn't detect the `:`
-  // terminator, and a stray `.` gets injected → `Title:.`
-  //
-  // All emphasis patterns require delimiter-adjacency to whitespace,
-  // punctuation, or string edges. This keeps intraword underscores
-  // (snake_case, Python dunders like `__init__`) and stray asterisks in
-  // prose (`*.txt`, `C * pointer`) from getting chewed.
-  const emphasisPre = '(^|[\\s({\\[])';
-  const emphasisPost = '(?=[\\s.,;:!?)}\\]]|$)';
-  out = out.replace(
-    new RegExp(`${emphasisPre}\\*\\*([^*\\n]+?)\\*\\*${emphasisPost}`, 'g'),
-    '$1$2',
-  );
-  // Note: no `__...__` pass. Python dunders (`__init__`, `__main__`) show
-  // up in technical prose often enough that preserving them matters more
-  // than handling the rare CommonMark `__bold__` form — almost everyone
-  // uses `**` for bold. If an LLM emits `__foo__` it'll pass through
-  // intact; that's a better failure mode than destroying identifiers.
-  out = out.replace(
-    new RegExp(`${emphasisPre}~~([^~\\n]+?)~~${emphasisPost}`, 'g'),
-    '$1$2',
-  );
-  out = out.replace(
-    new RegExp(`${emphasisPre}\\*([^*\\n]+?)\\*${emphasisPost}`, 'g'),
-    '$1$2',
-  );
-  out = out.replace(
-    new RegExp(`${emphasisPre}_([^_\\n]+?)_${emphasisPost}`, 'g'),
-    '$1$2',
-  );
+  // 7. Emphasis markers: strip `**`, `*`, `_`, `~~` around text
+  // (EMPHASIS_PASSES). MUST run before headers + lists — otherwise a header
+  // like `### **Title:**` ends with `**`, header regex doesn't detect the
+  // `:` terminator, and a stray `.` gets injected → `Title:.`
+  out = applyPasses(out, EMPHASIS_PASSES);
 
   // 8. List markers.
   //   - Bullets `-`/`*`/`+` at line start: strip entirely (no spoken form).
@@ -218,11 +237,8 @@ export function stripMarkdown(
   // quotes (`>>`, `> > `, etc.) in a single pass.
   out = out.replace(/^[ \t]*(?:>[ \t]?)+/gm, '');
 
-  // 13. Inline code: `x` → x. Triple-backtick inline is rare but handle
-  // it before single-backtick so the triple pattern wins.
-  out = out.replace(/```([^`\n]+)```/g, '$1');
-  out = out.replace(/``([^`\n]+)``/g, '$1');
-  out = out.replace(/`([^`\n]+)`/g, '$1');
+  // 13. Inline code (CODE_SPAN_PASSES).
+  out = applyPasses(out, CODE_SPAN_PASSES);
 
   // 14. Clean up any stray leftover runs of the markers we just processed
   // that didn't form a matched pair (LLMs often emit unbalanced `**`, and
@@ -316,10 +332,26 @@ const FENCE_LINE_RE = /^[ \t]*(?:```|~~~)/;
 // be wrong, so we wait for the closing `\n`.
 const BLOCK_START_RE = /^[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>|\||`{3}|~{3})/;
 
-// Inline markers that may span a clause cut (`**bold, text**`, links,
-// code spans). An early clause flush is skipped when the prefix holds
-// one, so the stripper never sees half of a pair.
-const INLINE_MARKER_RE = /[*_`[\]<]/;
+// What can still open an inline construct once the complete ones are
+// removed: an emphasis delimiter at a line start or after whitespace or
+// `({[`, a backtick, a `[`, or the start of a tag.
+const INLINE_OPENER_RE = /(?:^|[\s({[])(?:\*|_|~~)|[`[]|<\/?[a-zA-Z]/;
+
+/**
+ * Whether an early cut after `prefix` would split an inline construct
+ * (`**bold, text**`, a link, a code span), so the stripper would see half
+ * of a pair. A cut never ends right after a marker, so a construct
+ * complete within the prefix strips the same way whatever follows; only an
+ * unmatched opener can pair across the cut.
+ */
+function hasOpenInlineMarker(prefix: string): boolean {
+  let rest = applyPasses(prefix, [...LINK_PASSES, HTML_TAG_PASS]);
+  rest = applyPasses(rest, EMPHASIS_PASSES);
+  rest = applyPasses(rest, CODE_SPAN_PASSES);
+  // A bracket pair not followed by `(` or `[` can't become a link (`[1]`).
+  rest = rest.replace(/\[([^\]]*)\](?![([])/g, '$1');
+  return INLINE_OPENER_RE.test(rest);
+}
 
 // A newline-less tail this long with no sentence end is released at its
 // last clause or word end, so the chunker can cut it before the stream
@@ -436,7 +468,7 @@ export function createMarkdownStreamBuffer(
           // line holds a `|` (a table row needs the whole line to strip).
           if (
             clauseEnd > 0 &&
-            !INLINE_MARKER_RE.test(buffer.slice(0, clauseEnd)) &&
+            !hasOpenInlineMarker(buffer.slice(0, clauseEnd)) &&
             !buffer.includes('|')
           ) {
             cut = clauseEnd;
@@ -453,7 +485,7 @@ export function createMarkdownStreamBuffer(
             );
             if (
               soft <= 0 ||
-              INLINE_MARKER_RE.test(buffer.slice(0, soft)) ||
+              hasOpenInlineMarker(buffer.slice(0, soft)) ||
               buffer.includes('|')
             ) {
               break;
