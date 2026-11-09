@@ -216,8 +216,8 @@ export class StreamingChunker {
 
   /**
    * For a buffer with no sentence end: once it holds `SOFT_CHUNK_CHARS`,
-   * cut at the last clause mark within that (else within `maxChunkSize`);
-   * once it holds `maxChunkSize`, at the last word end within it.
+   * cut at the last clause mark within that; with no clause mark, once
+   * it holds `maxChunkSize`, at the last word end within it.
    */
   private extractSoftCut(): TextChunk | null {
     const max = this.maxChunkSize;
@@ -226,9 +226,6 @@ export class StreamingChunker {
       return null;
     }
     let end = lastClauseEnd(this.buffer, soft);
-    if (end <= 0) {
-      end = lastClauseEnd(this.buffer, max);
-    }
     if (end <= 0 && this.buffer.length >= max) {
       end = lastWordEnd(this.buffer, max);
     }
