@@ -809,7 +809,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       };
     }
 
-    // 1. Signal stop and wait for any ongoing synthesis to complete
+    // 1. Signal stop
     this.stopRequested = true;
     // Ends speak()'s wait on its current chunk, so it resolves rather
     // than failing on the detached session.

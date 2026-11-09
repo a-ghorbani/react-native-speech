@@ -632,6 +632,8 @@ export default class Speech {
    * - Memory pressure situations
    *
    * After release(), call initialize() before using speak().
+   * It does not wait for an inference that is still running; that model's
+   * memory is freed when the inference ends.
    *
    * @returns ReleaseResult with success status and any errors
    *
