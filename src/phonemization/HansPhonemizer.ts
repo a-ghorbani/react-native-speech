@@ -19,7 +19,7 @@ import {
 } from '../engines/kokoro/Phonemizer';
 import {createComponentLogger} from '../utils/logger';
 import type {DictSource} from './DictSource';
-import {contextWords, heteronymForm} from './heteronyms';
+import {contextWords, heteronymForm, isHeteronym} from './heteronyms';
 
 const log = createComponentLogger('TTS', 'HansPhonemizer');
 const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : true;
@@ -638,6 +638,7 @@ export class HansPhonemizer implements IPhonemizer {
 
             // Heteronyms ("we use it" / "the use of"); not acronyms (USE).
             if (
+              isHeteronym(context[at] ?? '') &&
               !/^[A-Z]{2,}$/.test(w) &&
               /^[a-z]+$/i.test(w.replace(/^[^a-z]+|[^a-z]+$/gi, ''))
             ) {

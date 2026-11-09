@@ -63,7 +63,6 @@ const TABLE: Record<string, Form> = {
   rewrite: {noun: 'ɹˈiːɹˌaɪt'},
   rewrites: {noun: 'ɹˈiːɹˌaɪts'},
   retest: {noun: 'ɹˈiːtˌɛst'},
-  refresh: {noun: 'ɹˈiːfɹˌɛʃ'},
   refund: {noun: 'ɹˈiːfˌʌnd'},
   reject: {noun: 'ɹˈiːdʒˌɛkt'},
   rejects: {noun: 'ɹˈiːdʒˌɛkts'},
@@ -101,6 +100,9 @@ const QUANTIFIERS = set(
 const OBJECT_START = set(
   'the a an it them this these those my your our their his her its me us him all both each every some any',
 );
+const READ_PRESENT_BEFORE = set(
+  "to can could will would shall should may might must do does did don't doesn't didn't won't can't cannot couldn't wouldn't shouldn't let's please",
+);
 const READ_PAST_BEFORE = set(
   "have has had i've we've you've they've having was were been being is are be already",
 );
@@ -108,12 +110,21 @@ const READ_ATTRIBUTE_AFTER = set(
   'access only permission permissions write and or receipt receipts replica replicas path paths timeout side model',
 );
 const LIVE_ADJ_BEFORE = set(
-  "is are was were be been being isn't aren't wasn't weren't it's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made",
+  "is are was were be been being isn't aren't wasn't weren't it's that's there's i'm we're you're they're he's she's go goes going went gone stay stays stayed staying remain remains remained keep keeps make makes made",
 );
 const LIVE_PLACE_AFTER = set(
   'in on at under inside here there behind alongside outside within near',
 );
 const LIVE_SUBJECTS = set('i we you they who');
+const TIME_NOUNS = set(
+  'week weekend day days month year time morning afternoon evening night sprint quarter',
+);
+// After an -s form these make it a noun ("other uses are", "uses of").
+const NOUN_AFTER_S = set('of are were include includes included');
+const NOUN_ADJECTIVES = set(
+  'common other typical main possible practical potential primary everyday different various',
+);
+const NOUN_AFTER_USE = set('case cases');
 
 function isInflected(word: string): boolean {
   return word.endsWith('s') && TABLE[word.slice(0, -1)] !== undefined;
@@ -147,6 +158,9 @@ export function heteronymForm(
 
   if (word === 'read') {
     if (next && READ_ATTRIBUTE_AFTER.has(next)) return null;
+    // An instruction or a modal is present tense whatever follows
+    // ("Read the logs from yesterday", "you can read …").
+    if (!prev || READ_PRESENT_BEFORE.has(prev)) return null;
     if (
       (prevRaw && READ_PAST_BEFORE.has(prevRaw)) ||
       (prev && READ_PAST_BEFORE.has(prev))
@@ -156,6 +170,7 @@ export function heteronymForm(
     for (let k = i + 1; k <= i + 4 && at(k); k++) {
       const w = at(k)!;
       const after = at(k + 1);
+      if (at(k - 1) === 'from' || at(k - 1) === 'since') break;
       if (w === 'yesterday' || w === 'ago') return form.past!;
       if (
         w === 'last' &&
@@ -169,7 +184,11 @@ export function heteronymForm(
   }
 
   if (word === 'live' || word === 'lives') {
-    if (prev && LIVE_ADJ_BEFORE.has(prev)) return null;
+    // Skip "currently", "fully", "already" back to the copula.
+    let b = i - 1;
+    while (at(b) && (/ly$/.test(at(b)!) || at(b) === 'already')) b--;
+    const before = at(b);
+    if (before && LIVE_ADJ_BEFORE.has(before)) return null;
     if (
       (next && LIVE_PLACE_AFTER.has(next)) ||
       (prev && LIVE_SUBJECTS.has(prev))
@@ -184,33 +203,56 @@ export function heteronymForm(
   // ("Go to Project settings"); only a button verb before it counts.
   const name = /^[A-Z]/.test(raw) && prevRaw !== null;
   const inflected = isInflected(word);
+  // "this week", "each day" after the word is a time phrase, not an object.
+  const object =
+    !!next && OBJECT_START.has(next) && !TIME_NOUNS.has(at(i + 2) ?? '');
+  // "to" is a preposition before a noun ("switch to record mode"): it marks
+  // the verb only with an object or a preposition after (use: always).
+  const toVerb =
+    prev !== 'to' ||
+    word === 'use' ||
+    object ||
+    (!!next && PREPOSITIONS.has(next));
   if (prev && BUTTON_BEFORE.has(prev)) pos = 'verb';
   else if (form.usual === 'noun' && prev && PASSIVE_BEFORE.has(prev)) {
     pos = 'verb'; // "can't be rerun"
   } else if (name) pos = null;
   else if (
     prev &&
+    toVerb &&
     (inflected ? SUBJECT_3SG.has(prev) : VERB_BEFORE.has(prev))
   ) {
     pos = 'verb';
-  } else if (prev && (DETERMINERS.has(prev) || PREPOSITIONS.has(prev))) {
+  } else if (
+    prev &&
+    (DETERMINERS.has(prev) ||
+      PREPOSITIONS.has(prev) ||
+      NOUN_ADJECTIVES.has(prev))
+  ) {
     pos = 'noun';
   } else if (prev && QUANTIFIERS.has(prev)) {
-    pos = next && OBJECT_START.has(next) ? 'verb' : 'noun';
+    pos = object ? 'verb' : 'noun';
+  } else if (inflected && next && NOUN_AFTER_S.has(next)) {
+    pos = 'noun';
   } else if (
     !inflected &&
     prev2 &&
     DETERMINERS.has(prev2) &&
+    !prev!.endsWith('s') &&
     (!next || PREPOSITIONS.has(next))
   ) {
-    // "a full rerun", "the latest import of"
+    // "a full rerun", "the latest import of"; not "files your scripts import"
     pos = 'noun';
-  } else if (next && OBJECT_START.has(next)) {
+  } else if (object) {
     pos = 'verb';
+  } else if (prev === null && form.usual === 'noun') {
+    pos = 'verb'; // "Rerun npm install", "Then rerun."
   } else if (word === 'use' && prevRaw === null) {
-    // Clause-initial "Use X" is an instruction; "Use of X" took the
-    // preposition branch above only if something preceded it.
-    pos = next && PREPOSITIONS.has(next) ? 'noun' : 'verb';
+    // Clause-initial "Use X" is an instruction; not "Use cases …", "Use:".
+    pos =
+      next && !PREPOSITIONS.has(next) && !NOUN_AFTER_USE.has(next)
+        ? 'verb'
+        : null;
   } else if (form.usual) {
     pos = form.usual;
   }
