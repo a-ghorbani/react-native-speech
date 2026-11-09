@@ -534,3 +534,123 @@ describe('KittenEngine - stop() after a stream replaces another', () => {
     expect(outcome).toBe('resolved');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Edge silence (#74)
+//
+// Fixtures are real Kitten Nano 0.8 outputs (untrimmed model waveform):
+// "Ok." on expr-voice-2-f, and "Few, fish, and fifty thieves, hush." on
+// expr-voice-4-m (fricative onset, a breath-like bump before speech).
+// Each carries ~0.6 s of near-silence before speech.
+// ─────────────────────────────────────────────────────────────────────────
+describe('KittenEngine - edge silence', () => {
+  const {readFileSync} = require('fs');
+  const {join} = require('path');
+  const {neuralAudioPlayer} = require('../../NeuralAudioPlayer');
+  const HOP = 240;
+  const TRIM = 5000;
+
+  const fixture = (name: string): Float32Array => {
+    const buf: Buffer = readFileSync(join(__dirname, '__fixtures__', name));
+    const n = (buf.length - 44) / 2;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) out[i] = buf.readInt16LE(44 + i * 2) / 32767;
+    return out;
+  };
+  const frameDb = (s: Float32Array): number[] => {
+    const rms: number[] = [];
+    for (let i = 0; i + HOP <= s.length; i += HOP) {
+      let acc = 0;
+      for (let j = i; j < i + HOP; j++) acc += s[j]! ** 2;
+      rms.push(Math.sqrt(acc / HOP));
+    }
+    const peak = Math.max(...rms);
+    return rms.map(r => 20 * Math.log10(Math.max(r, 1e-9) / peak));
+  };
+  // Lead/trail as #74 measured them: ms of 10 ms frames below -30 dB of the peak frame.
+  const edgesMs = (s: Float32Array) => {
+    const db = frameDb(s);
+    const first = db.findIndex(v => v > -30);
+    let last = db.length - 1;
+    while (db[last]! <= -30) last--;
+    return {lead: first * 10, trail: (db.length - 1 - last) * 10};
+  };
+  const played = (): Float32Array[] =>
+    (neuralAudioPlayer.play as jest.Mock).mock.calls.map(c => c[0].samples);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+  });
+
+  test.each([
+    ['kitten-nano-2f-ok.wav', 150, 250],
+    ['kitten-nano-4m-few-fish.wav', 400, 250],
+  ])(
+    'speak(): %s plays with at most %i ms lead and %i ms trail',
+    async (name, maxLead, maxTrail) => {
+      mockSessionRun.mockResolvedValue({waveform: {data: fixture(name)}});
+      const e = new KittenEngine();
+      await e.initialize(validConfig);
+      await e.synthesize('Ok.', {voiceId: 'expr-voice-2-f'});
+
+      const [out] = played();
+      const {lead, trail} = edgesMs(out!);
+      expect(lead).toBeLessThanOrEqual(maxLead);
+      expect(trail).toBeLessThanOrEqual(maxTrail);
+    },
+  );
+
+  test.each(['kitten-nano-2f-ok.wav', 'kitten-nano-4m-few-fish.wav'])(
+    '%s: everything from 5 dB under the trim threshold inward plays unchanged',
+    async name => {
+      const model = fixture(name);
+      const base = model.slice(0, model.length - TRIM);
+      const db = frameDb(base);
+      const a = db.findIndex(v => v > -40) * HOP;
+      let b = db.length - 1;
+      while (db[b]! <= -40) b--;
+      const speech = base.subarray(a, (b + 1) * HOP);
+
+      mockSessionRun.mockResolvedValue({waveform: {data: model}});
+      const e = new KittenEngine();
+      await e.initialize(validConfig);
+      await e.synthesize('Ok.', {voiceId: 'expr-voice-2-f'});
+
+      const [out] = played();
+      let at = -1;
+      for (let s = 0; s + speech.length <= out!.length && at < 0; s++) {
+        if (speech.every((v, k) => out![s + k] === v)) at = s;
+      }
+      expect(at).toBeGreaterThanOrEqual(0);
+    },
+  );
+
+  test('stream: chunks are trimmed too', async () => {
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: fixture('kitten-nano-2f-ok.wav')},
+    });
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+    handle.append('Ok. Fine then. ');
+    await handle.finalize();
+
+    expect(played().length).toBeGreaterThanOrEqual(1);
+    for (const out of played())
+      expect(edgesMs(out).lead).toBeLessThanOrEqual(150);
+  });
+
+  test('a fully silent chunk still plays and does not end the utterance', async () => {
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(24000)},
+    });
+    const e = new KittenEngine();
+    await e.initialize(validConfig);
+    await e.synthesize('First one. Second one.', {
+      voiceId: 'expr-voice-2-f',
+    });
+
+    expect(played().map(s => s.length)).toEqual([24000 - TRIM, 24000 - TRIM]);
+  });
+});
