@@ -185,7 +185,8 @@ void trim_edge_silence(std::vector<float>* pcm, int32_t sampleRate) {
     rms[f] = std::sqrt(acc / hop);
     peak = std::max(peak, rms[f]);
   }
-  if (!(peak > 0)) return;
+  // Silent, NaN-only or non-finite audio is stored as is.
+  if (!(peak > 0) || !std::isfinite(peak)) return;
 
   const double threshold = peak * std::pow(10.0, kThresholdDb / 20);
   size_t first = 0;
@@ -198,8 +199,10 @@ void trim_edge_silence(std::vector<float>* pcm, int32_t sampleRate) {
   const size_t size = pcm->size();
   const size_t end = std::min(size, (last + 1) * hop + ms(kTrailPadMs));
 
-  pcm->erase(pcm->begin() + static_cast<std::ptrdiff_t>(end), pcm->end());
-  pcm->erase(pcm->begin(), pcm->begin() + static_cast<std::ptrdiff_t>(start));
+  if (start == 0 && end == size) return;
+  // A fresh vector, so the stored buffer's capacity matches what bytesLocked() counts.
+  *pcm = std::vector<float>(pcm->begin() + static_cast<std::ptrdiff_t>(start),
+                            pcm->begin() + static_cast<std::ptrdiff_t>(end));
   const size_t n = pcm->size();
   const size_t fade = std::min(ms(kFadeMs), n / 2);
   for (size_t i = 0; i < fade; ++i) {

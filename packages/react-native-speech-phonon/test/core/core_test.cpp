@@ -859,6 +859,34 @@ TEST(trim_edge_silence_leaves_silent_short_and_uncut_audio_alone) {
   CHECK(full == before);
 }
 
+TEST(trim_edge_silence_fades_in_a_cut_lead) {
+  // -40 dB content in the cut lead: the kept 100 ms pad starts at 0 and ramps up over 5 ms.
+  std::vector<float> v = edges(60, 50, 0);
+  std::fill(v.begin(), v.begin() + 240 * 60, 0.0025f);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.size(), size_t{240 * (10 + 50)});
+  CHECK_EQ(v[0], 0.0f);
+  CHECK(v[60] > 0.0f && v[60] < 0.0025f);
+  CHECK_EQ(v[120], 0.0025f);
+}
+
+TEST(trim_edge_silence_leaves_non_finite_audio_alone) {
+  std::vector<float> inf = edges(60, 50, 40);
+  inf[240 * 80] = std::numeric_limits<float>::infinity();
+  const std::vector<float> infBefore = inf;
+  trim_edge_silence(&inf, 24000);
+  CHECK_EQ(inf.size(), infBefore.size());
+  std::vector<float> nan(24000, std::numeric_limits<float>::quiet_NaN());
+  trim_edge_silence(&nan, 24000);
+  CHECK_EQ(nan.size(), size_t{24000});
+}
+
+TEST(trim_edge_silence_releases_the_cut_capacity) {
+  std::vector<float> v = edges(60, 50, 40);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.capacity(), v.size());
+}
+
 TEST(synthesize_stores_trimmed_audio) {
   auto core = newCore();
   const int64_t h = createOk(*core);
