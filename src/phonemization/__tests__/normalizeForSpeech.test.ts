@@ -114,6 +114,12 @@ describe('normalizeForSpeech', () => {
     ['Version 1.2.3.4 is out', 'Version 1 point 2 point 3 point 4 is out'],
     ['Upgrade to v2.1.0.', 'Upgrade to version 2 point 1 point 0.'],
     ['Q1-Q4 and a 4x4', 'Q 1 to Q 4 and a 4 by 4'],
+    ['arm64-v8a and 55bdd4-ceadfc62', 'arm 64-v 8 a and 55 bdd 4-ceadfc 62'],
+    [
+      '21 ms, 41 MB, 101 kg',
+      'twenty-one milliseconds, forty-one megabytes, one hundred one kilograms',
+    ],
+    ['took 5,220 ms', 'took five thousand two hundred twenty milliseconds'],
     // Dotted acronyms keep a sentence-final period.
     ['the U.S. and the U.K. agreed', 'the U-S- and the U-K- agreed'],
     ['We live in the U.S.', 'We live in the U-S-.'],

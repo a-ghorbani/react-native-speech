@@ -209,7 +209,7 @@ const RE_TIME = /\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/gi;
 const RE_RANGE = /(?<!\w)(\d+)-(\d+)(?!\w)/g;
 const RE_MODEL_VER = /\b([a-zA-Z][a-zA-Z0-9]*)-(\d[\d.]*)(?=[^\d.]|$)/g;
 const RE_UNIT =
-  /(\d+(?:\.\d+)?)\s*(km|kg|mg|ml|gb|mb|kb|tb|hz|khz|mhz|ghz|mph|kph|°[cCfF]|[cCfF]°|ms|ns|µs)\b/gi;
+  /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(km|kg|mg|ml|gb|mb|kb|tb|hz|khz|mhz|ghz|mph|kph|°[cCfF]|[cCfF]°|ms|ns|µs)\b/gi;
 const RE_SCALE = /(?<![a-zA-Z])(\d+(?:\.\d+)?)\s*([KMBT])(?![a-zA-Z\d])/g;
 const RE_SCI = /(?<![a-zA-Z\d])(-?\d+(?:\.\d+)?)[eE]([+-]?\d+)(?![a-zA-Z\d])/g;
 const RE_FRACTION = /\b(\d+)\s*\/\s*(\d+)\b/g;
@@ -380,9 +380,10 @@ export function expandUnits(text: string): string {
   return text.replace(RE_UNIT, (_, raw: string, unitIn: string) => {
     const unit = unitIn.toLowerCase();
     const expanded = unitMap[unit] || unitIn;
-    const num = raw.includes('.')
-      ? floatToWords(raw)
-      : numberToWords(parseInt(raw, 10));
+    const digits = raw.replace(/,/g, '');
+    const num = digits.includes('.')
+      ? floatToWords(digits)
+      : numberToWords(parseInt(digits, 10));
     return `${num} ${expanded}`;
   });
 }

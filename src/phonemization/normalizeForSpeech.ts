@@ -298,8 +298,8 @@ export function expandNumericForms(text: string): string {
       .replace(/(?<=[A-Za-z][\w.-]*\d)-(?=\d+(?:\.\d+)?[BMK]\b)/g, ' ')
       // Percentage ranges: "10-20%" (else "-20%" reads as negative)
       .replace(/(?<=\d)-(?=\d[\d.]*\s*%)/g, ' to ')
-      // Code ranges: "Q1-Q4" → "Q1 to Q4"
-      .replace(/(?<=[A-Za-z]\d+)-(?=[A-Za-z]+\d)/g, ' to ')
+      // Code ranges: "Q1-Q4" → "Q1 to Q4"; not "arm64-v8a" or a hash
+      .replace(/\b([A-Za-z]+)(\d+)-(?=\1\d+\b)/g, '$1$2 to ')
       // Dimensions: "4x4", "1920x1080" → "by"
       .replace(/(?<=\d)x(?=\d)/g, ' by ')
       // Ranges with an en/em dash: "10–20" → "10 to 20"
@@ -360,7 +360,7 @@ const SINGULAR_UNITS: Record<string, string> = {
 /** "one kilograms" / "1 minutes" → singular. */
 export function singularizeUnits(text: string): string {
   return text.replace(
-    /(?<!point )\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
+    /(?<!(?:point|hundred|thousand|million|billion|and) |-)\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
     (_m: string, one: string, unit: string) =>
       `${one} ${SINGULAR_UNITS[unit] ?? unit.slice(0, -1)}`,
   );
