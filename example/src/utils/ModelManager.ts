@@ -151,7 +151,7 @@ export class KokoroModelManager {
    * Download a model with progress tracking
    */
   async downloadModel(
-    variant: ModelVariant = 'q8',
+    variant: ModelVariant = 'quantized',
     onProgress?: (progress: ModelDownloadProgress) => void,
   ): Promise<void> {
     const modelUrl = MODEL_URLS[this.modelVersion]?.[variant];

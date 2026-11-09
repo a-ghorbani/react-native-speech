@@ -36,7 +36,7 @@ import {
 import Button from '../components/Button';
 import {C, MONO} from '../styles/cyber';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {kokoroModelManager} from '../utils/ModelManager';
+import {kokoroModelManager, type ModelVariant} from '../utils/ModelManager';
 import {
   supertonicModelManager,
   type SupertonicVersion,
@@ -368,7 +368,11 @@ const RootView: React.FC = () => {
             return;
           }
 
-          const model = models[0]!;
+          // An older q8/fp16 install returns NaN audio on onnxruntime 1.24 (#71).
+          const model =
+            models.find(m => m.variant === 'quantized') ??
+            models.find(m => m.variant === 'full') ??
+            models[0]!;
           const config = kokoroModelManager.getDownloadedModelConfig(
             model.version,
             model.variant,
@@ -790,7 +794,7 @@ const RootView: React.FC = () => {
 
   // Download handlers
   const downloadKokoroModel = React.useCallback(
-    async (variant: 'q8' | 'fp16' | 'full') => {
+    async (variant: ModelVariant) => {
       try {
         setIsDownloading(true);
         setDownloadingItem(`kokoro-${variant}`);
@@ -941,7 +945,7 @@ const RootView: React.FC = () => {
               if (type === 'kokoro') {
                 await kokoroModelManager.deleteModel(
                   version,
-                  variant as 'q8' | 'fp16' | 'full',
+                  variant as ModelVariant,
                 );
               } else if (type === 'supertonic') {
                 await supertonicModelManager.deleteModel(
@@ -1142,41 +1146,21 @@ const RootView: React.FC = () => {
                     ]}>
                     AVAILABLE DOWNLOADS
                   </Text>
-                  {(Platform.OS === 'android'
-                    ? [
-                        {
-                          variant: 'fp16',
-                          size: '164 MB',
-                          desc: 'Recommended',
-                          color: '#007AFF',
-                        },
-                        {
-                          variant: 'full',
-                          size: '328 MB',
-                          desc: 'Best quality',
-                          color: '#FF9500',
-                        },
-                      ]
-                    : [
-                        {
-                          variant: 'q8',
-                          size: '82 MB',
-                          desc: 'Recommended',
-                          color: '#007AFF',
-                        },
-                        {
-                          variant: 'fp16',
-                          size: '164 MB',
-                          desc: 'Higher quality',
-                          color: '#34C759',
-                        },
-                        {
-                          variant: 'full',
-                          size: '328 MB',
-                          desc: 'Best quality',
-                          color: '#FF9500',
-                        },
-                      ]
+                  {(
+                    [
+                      {
+                        variant: 'quantized',
+                        size: '88 MB',
+                        desc: 'Recommended',
+                        color: '#007AFF',
+                      },
+                      {
+                        variant: 'full',
+                        size: '311 MB',
+                        desc: 'Best quality',
+                        color: '#FF9500',
+                      },
+                    ] as const
                   ).map(item => {
                     const isInstalled = kokoroModels.some(
                       m => m.variant === item.variant,
@@ -1196,11 +1180,7 @@ const RootView: React.FC = () => {
                             ? themedStyles.opacityFaded
                             : themedStyles.opacityFull,
                         ]}
-                        onPress={() =>
-                          downloadKokoroModel(
-                            item.variant as 'q8' | 'fp16' | 'full',
-                          )
-                        }
+                        onPress={() => downloadKokoroModel(item.variant)}
                         disabled={isInstalled || isDownloading}>
                         {isThisDownloading ? (
                           <View style={styles.downloadingState}>

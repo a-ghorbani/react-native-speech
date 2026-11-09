@@ -202,3 +202,24 @@ describe('KokoroEngine - phoneme input bypasses g2p', () => {
     expect(mockSessionRun).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('KokoroEngine - NaN model output (#71)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockAssets();
+  });
+
+  it('rejects instead of playing a waveform of NaN', async () => {
+    // model_q8f16.onnx on onnxruntime >= 1.24: every sample NaN, ~8x long.
+    mockSessionRun.mockResolvedValue({
+      waveform: {data: new Float32Array(24000 * 40).fill(NaN)},
+    });
+    const {neuralAudioPlayer} = require('../../NeuralAudioPlayer');
+    const e = await initEngine();
+
+    await expect(
+      e.synthesize('hello world', {voiceId: 'af_bella'}),
+    ).rejects.toThrow(/\/fake\/model\.onnx produced NaN audio/);
+    expect(neuralAudioPlayer.play).not.toHaveBeenCalled();
+  });
+});
