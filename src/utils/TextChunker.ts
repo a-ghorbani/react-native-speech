@@ -94,41 +94,35 @@ export class TextChunker {
       ];
     }
 
-    // Group sentences into chunks respecting maxChunkSize
-    let currentChunk = '';
-    let chunkStart = 0;
+    // Group sentences into chunks respecting maxChunkSize. A chunk is the
+    // original text from its first to its last sentence, without outer
+    // whitespace, so the separators between grouped sentences are kept.
+    let chunkStart = -1;
     let chunkEnd = 0;
 
     for (const sentence of sentences) {
-      const trimmedText = sentence.text.trimEnd();
-
-      if (
-        currentChunk.length + trimmedText.length > maxChunkSize &&
-        currentChunk.length > 0
-      ) {
-        // Save current chunk and start a new one
+      const start =
+        sentence.start +
+        sentence.text.length -
+        sentence.text.trimStart().length;
+      const end = sentence.start + sentence.text.trimEnd().length;
+      if (chunkStart !== -1 && end - chunkStart > maxChunkSize) {
         chunks.push({
-          text: currentChunk.trim(),
+          text: text.slice(chunkStart, chunkEnd),
           startIndex: chunkStart,
           endIndex: chunkEnd,
         });
-        currentChunk = trimmedText;
-        chunkStart = sentence.start;
-        chunkEnd = sentence.end;
-      } else {
-        // Add to current chunk
-        if (currentChunk.length === 0) {
-          chunkStart = sentence.start;
-        }
-        currentChunk += trimmedText;
-        chunkEnd = sentence.end;
+        chunkStart = -1;
       }
+      if (chunkStart === -1) {
+        chunkStart = start;
+      }
+      chunkEnd = end;
     }
 
-    // Add final chunk
-    if (currentChunk.length > 0) {
+    if (chunkStart !== -1) {
       chunks.push({
-        text: currentChunk.trim(),
+        text: text.slice(chunkStart, chunkEnd),
         startIndex: chunkStart,
         endIndex: chunkEnd,
       });

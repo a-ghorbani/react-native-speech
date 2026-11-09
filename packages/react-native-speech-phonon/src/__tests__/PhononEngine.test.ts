@@ -650,6 +650,18 @@ describe('synthesize: input and options', () => {
     expect(fake.synths.map(s => s.text)).toEqual(['Short one.']);
   });
 
+  it('keeps the space between sentences grouped into one chunk', async () => {
+    fake.state.autoSynth = true;
+    fake.state.autoPlay = true;
+    const engine = await ready();
+    await engine.synthesize('One here. Two here.');
+    expect(fake.synths.map(s => s.text)).toEqual(['One here. Two here.']);
+    // firstChunk:'clause' finds the sentence boundary inside that chunk.
+    fake.synths.length = 0;
+    await engine.synthesize('One here. Two here.', {firstChunk: 'clause'});
+    expect(fake.synths.map(s => s.text)).toEqual(['One here. ', 'Two here.']);
+  });
+
   it('splits the first chunk at firstChunkMaxWords words', async () => {
     fake.state.autoSynth = true;
     fake.state.autoPlay = true;
