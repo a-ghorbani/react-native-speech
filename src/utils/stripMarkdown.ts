@@ -286,7 +286,9 @@ export function stripMarkdown(
  *      we look for `[.!?]+\s+` and emit the prefix. This is what
  *      progressive playback for ordinary prose without paragraph breaks
  *      depends on — without it, a single LLM paragraph would buffer
- *      until `finalize()` and time-to-first-audio would balloon.
+ *      until `finalize()` and time-to-first-audio would balloon. A tail
+ *      of `LONG_TAIL_CHARS` or more with no sentence end is released at
+ *      its last clause or word end instead.
  *
  *   3. End-of-stream `flush()`. Any remaining tail is stripped and
  *      emitted (unless we're still inside an unclosed fenced code block,
