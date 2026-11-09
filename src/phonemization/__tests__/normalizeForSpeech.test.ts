@@ -66,7 +66,7 @@ describe('normalizeForSpeech', () => {
     ['in 4K or 8K', 'in 4 kay or 8 kay'],
     ['trained 3 ML models', 'trained 3 m-l- models'],
     ['add 5 ml water', 'add five milliliters water'],
-    ['rated 4/5 and due 5/1', 'rated 4/5 and due 5/1'],
+    ['rated 4/5 and due 5/1', 'rated four fifths and due 5/1'],
     ['use 3/4 cup', 'use three quarters cup'],
     ['run 1:30:45', 'run 1 30 45'],
     ['Qwen2.5-7B', 'Qwen 2.5 7 billion'],
@@ -125,6 +125,9 @@ describe('normalizeForSpeech', () => {
     ['takes ~5 days, see #31', 'takes about 5 days, see number 31'],
     ['Mmmmm, 1000s of users', 'Mmm, thousands of users'],
     ['on 05/01/2024', 'on 05 01 2024'],
+    ['1.1 seconds, 41 min and 1 hr', '1.1 seconds, 41 minutes and 1 hour'],
+    ['scored 2/5 and 1/10', 'scored two fifths and one tenth'],
+    ['mask 0x10 on a 4x4', 'mask 0 x 10 on a 4 by 4'],
     // Dotted acronyms keep a sentence-final period.
     ['the U.S. and the U.K. agreed', 'the U-S- and the U-K- agreed'],
     ['We live in the U.S.', 'We live in the U-S-.'],

@@ -100,6 +100,13 @@ const DICT: Record<string, string> = {
   ebook: 'ˈiːbʊk',
   ham: 'hˈæm',
   mock: 'mˈɑːk',
+  over: 'ˈoʊvɚ',
+  overt: 'oʊvˈɜːt',
+  think: 'θˈɪŋk',
+  hink: 'hˈɪŋk',
+  young: 'jˈʌŋ',
+  youn: 'jˈuːn',
+  gish: 'ɡˈɪʃ',
 };
 
 describe('HansPhonemizer', () => {
@@ -174,8 +181,19 @@ describe('HansPhonemizer', () => {
   test('compound split does not cut a digraph or a doubled consonant', async () => {
     // "powers|hell" would cut the sh; "ham|mock" doubles the m.
     expect(await phon.phonemize('powershell', 'en-us')).toBe('pˈaʊɚʃˌɛl');
+    // "overt|hink"
+    expect(await phon.phonemize('overthink', 'en-us')).toBe('ˈoʊvɚθˌɪŋk');
     await phon.phonemize('hammock', 'en-us');
     expect(hans00Mock.toIPA).toHaveBeenCalledWith('hammock', expect.anything());
+  });
+
+  test('an inflected dict word is not split as a compound', async () => {
+    // "youn|gish" would win without the check; young + ish is the word.
+    await phon.phonemize('youngish', 'en-us');
+    expect(hans00Mock.toIPA).toHaveBeenCalledWith(
+      'youngish',
+      expect.anything(),
+    );
   });
 
   test('compound split prefers the longest head', async () => {

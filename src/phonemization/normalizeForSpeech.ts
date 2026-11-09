@@ -301,7 +301,7 @@ export function expandNumericForms(text: string): string {
       // Code ranges: "Q1-Q4" → "Q1 to Q4"; not "arm64-v8a" or a hash
       .replace(/\b([A-Za-z]+)(\d+)-(?=\1\d+\b)/g, '$1$2 to ')
       // Dimensions: "4x4", "1920x1080" → "by"
-      .replace(/(?<=\d)x(?=\d)/g, ' by ')
+      .replace(/(?<!\b0)(?<=\d)x(?=\d)/g, ' by ')
       // Ranges with an en/em dash: "10–20" → "10 to 20"
       .replace(/(?<=\d)\s*[–—]\s*(?=\d)/g, ' to ')
       // Leading minus: "-5", "−5" → "minus 5" (not "5-10" ranges, not bullets)
@@ -360,7 +360,7 @@ const SINGULAR_UNITS: Record<string, string> = {
 /** "one kilograms" / "1 minutes" → singular. */
 export function singularizeUnits(text: string): string {
   return text.replace(
-    /(?<!(?:point|hundred|thousand|million|billion|and) |-)\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
+    /(?<!(?:point|hundred|thousand|million|billion) |[-\d.,])\b(one|1) (kilometers|kilograms|milligrams|milliliters|gigabytes|megabytes|kilobytes|terabytes|milliseconds|nanoseconds|microseconds|centimeters|millimeters|feet|pounds|ounces|seconds|minutes|hours|degrees)\b/g,
     (_m: string, one: string, unit: string) =>
       `${one} ${SINGULAR_UNITS[unit] ?? unit.slice(0, -1)}`,
   );
@@ -430,7 +430,7 @@ export function normalizeForSpeech(text: string): string {
   text = text.replace(
     /(?<![/\d])\b(\d+)\s*\/\s*(\d+)\b(?!\s*\/\s*\d)/g,
     (m: string, a: string, b: string) =>
-      +a < +b && [2, 3, 4, 8, 16].includes(+b) ? expandFractions(m) : m,
+      +a < +b && [2, 3, 4, 5, 8, 10, 16].includes(+b) ? expandFractions(m) : m,
   );
   text = expandTightScaleSuffixes(text);
   text = expandOrdinals(text);

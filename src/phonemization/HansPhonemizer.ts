@@ -332,7 +332,30 @@ const SUFFIX_TAILS = new Set(
   ).split(' '),
 );
 const INFLECTED_TAIL = /(?:ings?|ies|ables?|ably|ibles?)$/;
+// Dict word + inflection ("tiredest", "kookier"): not a compound. Not
+// -ed: "watermarked" splits fine.
+const INFLECTIONS: [string, string][] = [
+  ['s', ''],
+  ['es', ''],
+  ['er', ''],
+  ['r', ''],
+  ['est', ''],
+  ['st', ''],
+  ['ier', 'y'],
+  ['iest', 'y'],
+  ['ies', 'y'],
+  ['ied', 'y'],
+  ['ish', ''],
+  ['ly', ''],
+  ['ing', ''],
+  ['ing', 'e'],
+];
 function splitCompound(clean: string, dict: DictSource): string | null {
+  const inflected = INFLECTIONS.some(
+    ([sfx, rep]) =>
+      clean.endsWith(sfx) && dict.lookup(clean.slice(0, -sfx.length) + rep),
+  );
+  if (inflected) return null;
   for (let i = clean.length - COMPOUND_MIN_TAIL; i >= COMPOUND_MIN_HEAD; i--) {
     const headText = clean.slice(0, i);
     const tailText = clean.slice(i);
