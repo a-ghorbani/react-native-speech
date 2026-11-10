@@ -318,6 +318,12 @@ Immediately stops any ongoing or in queue speech synthesis.
 Speech.stop().then(() => console.log('Speech stopped'));
 ```
 
+#### **Starting a new utterance**
+
+On the neural engines (Kokoro, Supertonic, Kitten and engine add-ons), a new `speak()` or `createSpeechStream()` replaces whatever the engine is speaking, as if `Speech.stop()` had been called first: the previous `speak()` promise or stream `finalize()` resolves, `onStopped` fires for the chunk that was playing, and none of its remaining sentences play. This holds in every order (speak or stream, then speak or stream).
+
+On the OS engine, `speak()` after `speak()` queues: the second utterance plays when the first ends. Call `Speech.stop()` first to replace it instead. A stream on the OS engine replaces, and is replaced by, a new `speak()` or stream, as on the neural engines.
+
 #### **Pause Speech**
 
 > **Note:** On Android, API 26+ (Android 8+) required.

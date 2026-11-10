@@ -325,6 +325,10 @@ export default class Speech {
    *   short-circuit g2p. Phoneme input is supported only by the IPA
    *   neural engines (Kokoro, Kitten); the OS and Supertonic engines
    *   reject it with a clear error.
+   * On a neural engine it replaces the utterance (speak or stream) the
+   * engine is speaking, as `stop()` would. On the OS engine it queues
+   * behind an earlier `speak()` and replaces only a stream.
+   *
    * @param voiceId - Voice identifier (engine-specific)
    * @param options - Synthesis options
    * @example
@@ -384,6 +388,9 @@ export default class Speech {
    * dispatch, which makes the adaptive batching effectively a no-op —
    * the stream still works (the OS queues utterances natively) but
    * sounds roughly the same as per-sentence `speak()`.
+   *
+   * The stream replaces the utterance (speak or stream) the engine is
+   * speaking, as `stop()` would.
    *
    * @param voiceId - Voice identifier for the active engine
    * @param options - Synthesis options + stream-specific tuning
