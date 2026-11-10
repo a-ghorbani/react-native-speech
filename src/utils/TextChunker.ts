@@ -7,6 +7,8 @@
  * Shared between Kokoro and Supertonic engines.
  */
 
+import {UNSPACED_SENTENCE_ENDS} from './firstClause';
+
 /**
  * Represents a chunk of text with position information in the original text
  */
@@ -50,8 +52,12 @@ export class TextChunker {
 
     const chunks: TextChunk[] = [];
 
-    // Split by sentence-ending punctuation followed by whitespace
-    const sentenceRegex = /[.!?]+[\s]*/g;
+    // Split after sentence-ending punctuation (any script) and the
+    // whitespace that follows it
+    const sentenceRegex = new RegExp(
+      `(?:[.!?]+|[${UNSPACED_SENTENCE_ENDS}]+)\\s*`,
+      'g',
+    );
     const sentences: {text: string; start: number; end: number}[] = [];
 
     let lastIndex = 0;

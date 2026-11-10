@@ -11,6 +11,15 @@
 
 import type {AudioBuffer} from '../../types';
 import {isAbbreviationPeriod} from '../../utils/abbreviations';
+import {CJK_CHARS, UNSPACED_SENTENCE_ENDS} from '../../utils/firstClause';
+
+// After `.!?` a space is needed; unspaced marks (。 । ؟ …) end a sentence
+// on their own. Clause marks: ASCII and Arabic need a space, CJK do not.
+const SENTENCE_SPLIT_RE = new RegExp(
+  `(?<=[.!?])\\s+|(?<=[${UNSPACED_SENTENCE_ENDS}])\\s*`,
+);
+const CLAUSE_SPLIT_RE = /(?<=[,;:،؛])\s+|(?<=[，；：、])\s*/;
+const CJK_CHAR_RE = new RegExp(`[${CJK_CHARS}]`);
 
 /**
  * Split a source-text chunk that's too long for Kitten's BERT (after
@@ -46,9 +55,9 @@ export function splitOversizedSource(text: string): string[] {
 
   const tieredPatterns: RegExp[] = [
     // Tier 1: sentence boundaries (highest prosody quality).
-    /(?<=[.!?])\s+/,
+    SENTENCE_SPLIT_RE,
     // Tier 2: clause boundaries.
-    /(?<=[,;:])\s+/,
+    CLAUSE_SPLIT_RE,
     // Tier 3: bare newline runs not preceded by `.!?,;:` (those are
     // already covered above). Use a lookbehind to skip cases where the
     // newline follows a punctuation mark — splitting there twice would
@@ -88,6 +97,15 @@ export function splitOversizedSource(text: string): string[] {
     if (left && right) return [left, right];
   }
 
+  // Tier 4b: text written without spaces (CJK): cut between two CJK
+  // characters at the midpoint.
+  if (
+    CJK_CHAR_RE.test(trimmed[mid - 1] ?? '') &&
+    CJK_CHAR_RE.test(trimmed[mid] ?? '')
+  ) {
+    return [trimmed.slice(0, mid), trimmed.slice(mid)];
+  }
+
   // Tier 5: couldn't split — caller will see length === 1 and give up.
   return [trimmed];
 }
@@ -103,7 +121,7 @@ export function splitInHalves(text: string): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
   const sentences: string[] = [];
-  for (const part of trimmed.split(/(?<=[.!?])\s+/)) {
+  for (const part of trimmed.split(SENTENCE_SPLIT_RE)) {
     const prev = sentences[sentences.length - 1];
     if (prev !== undefined && isAbbreviationPeriod(prev, prev.length - 1)) {
       sentences[sentences.length - 1] = `${prev} ${part}`;
@@ -112,7 +130,7 @@ export function splitInHalves(text: string): string[] {
     }
   }
   let pieces = sentences;
-  if (pieces.length < 2) pieces = trimmed.split(/(?<=[,;:])\s+/);
+  if (pieces.length < 2) pieces = trimmed.split(CLAUSE_SPLIT_RE);
   if (pieces.length < 2) pieces = trimmed.split(/\n+/);
   pieces = pieces.map(p => p.trim()).filter(Boolean);
   if (pieces.length < 2) return splitOversizedSource(trimmed);

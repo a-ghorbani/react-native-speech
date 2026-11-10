@@ -499,8 +499,7 @@ function previewText(text: string): string {
 function extractFirstSentence(
   text: string,
 ): {head: string; tail: string} | null {
-  const re = /(?:[.!?]+\s+|[。！？]+\s*)/;
-  const m = re.exec(text);
+  const m = new RegExp(SENTENCE_END_RE.source).exec(text);
   if (!m) {
     return null;
   }
@@ -513,7 +512,7 @@ function extractFirstSentence(
 }
 
 /**
- * Split the buffer at the last `[.!?]+` followed by whitespace, so the
+ * Split the buffer at the last sentence end (`SENTENCE_END_RE`), so the
  * head contains as many complete sentences as possible and the tail
  * holds any still-streaming incomplete sentence.
  */

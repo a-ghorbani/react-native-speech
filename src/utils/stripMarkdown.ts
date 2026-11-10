@@ -26,9 +26,22 @@ import {
   DEFAULT_FIRST_CHUNK_MAX_WORDS,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastCjkCharEnd,
   lastClauseEnd,
   lastWordEnd,
+  UNSPACED_SENTENCE_ENDS,
 } from './firstClause';
+
+/** Text that already ends a sentence (or a `:` lead-in), in any script. */
+const ENDS_SENTENCE_RE = new RegExp(`[.!?:${UNSPACED_SENTENCE_ENDS}]$`);
+
+/**
+ * The stream buffer's first complete sentence: `.!?` followed by a space
+ * or tab, or an unspaced sentence mark (`。` `।` `؟` …) with or without one.
+ */
+const STREAM_SENTENCE_RE = new RegExp(
+  `^([\\s\\S]*?(?:[.!?]+(?=[ \\t])|[${UNSPACED_SENTENCE_ENDS}]+))([ \\t]*)`,
+);
 
 /**
  * Options for markdown stripping. All default to sensible TTS behavior.
@@ -204,7 +217,7 @@ export function stripMarkdown(
   // Strip optional trailing `#` (ATX closing syntax).
   out = out.replace(/^[ \t]*#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$/gm, (_m, body) => {
     const trimmed = (body as string).replace(/\s+$/, '');
-    return /[.!?:]$/.test(trimmed) ? trimmed : trimmed + '.';
+    return ENDS_SENTENCE_RE.test(trimmed) ? trimmed : trimmed + '.';
   });
 
   // 8. Setext-style headers: underline with `===` or `---` on the next line.
@@ -212,7 +225,7 @@ export function stripMarkdown(
   // hrule pass below for stray `---`). Convert inline setext to period.
   out = out.replace(/^(.+)\n[=]{2,}[ \t]*$/gm, (_m, body) => {
     const trimmed = (body as string).trim();
-    return /[.!?:]$/.test(trimmed) ? trimmed : trimmed + '.';
+    return ENDS_SENTENCE_RE.test(trimmed) ? trimmed : trimmed + '.';
   });
   // Require that the `---` underline is NOT immediately followed by another
   // `---` line — cascaded dashes are multiple hrules, not "setext heading
@@ -225,7 +238,7 @@ export function stripMarkdown(
       const trimmed = (body as string).trim();
       if (!trimmed) return _m;
       if (/^[-*_ \t]+$/.test(trimmed)) return _m;
-      return /[.!?:]$/.test(trimmed) ? trimmed : trimmed + '.';
+      return ENDS_SENTENCE_RE.test(trimmed) ? trimmed : trimmed + '.';
     },
   );
 
@@ -274,7 +287,13 @@ export function stripMarkdown(
   //     extra `.` (keep the separating `\n` so paragraphs don't glue).
   //   - when multiple hrules stack (each having been converted to its own
   //     `.` line), fold the run into a single `.` line.
-  out = out.replace(/([.!?:])[ \t]*\n\.(?=[ \t]*(?:\n|$))/g, '$1');
+  out = out.replace(
+    new RegExp(
+      `([.!?:${UNSPACED_SENTENCE_ENDS}])[ \\t]*\\n\\.(?=[ \\t]*(?:\\n|$))`,
+      'g',
+    ),
+    '$1',
+  );
   out = out.replace(/\.[ \t]*\n(?:\.[ \t]*\n)+/g, '.\n');
 
   return out.trim();
@@ -482,13 +501,14 @@ export function createMarkdownStreamBuffer(
           }
         }
         if (cut <= 0) {
-          const sentMatch = buffer.match(/^([\s\S]*?[.!?]+)([ \t]+)/);
+          const sentMatch = buffer.match(STREAM_SENTENCE_RE);
           if (sentMatch) {
             cut = sentMatch[1]!.length + sentMatch[2]!.length;
           } else if (buffer.length >= LONG_TAIL_CHARS) {
             const soft = Math.max(
               lastClauseEnd(buffer, buffer.length),
               lastWordEnd(buffer, buffer.length),
+              lastCjkCharEnd(buffer, buffer.length),
             );
             if (
               soft <= 0 ||

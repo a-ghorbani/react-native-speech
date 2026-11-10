@@ -25,14 +25,27 @@ import {isAbbreviationPeriod} from './abbreviations';
  * `finalize()` flushes the tail regardless, so a stream that ends
  * without any matching punctuation still completes correctly.
  */
-export const SENTENCE_END_RE = /(?:[.!?]+\s+|[。！？]+\s*)/g;
+/**
+ * Sentence-final marks that are unambiguous on their own, so no space is
+ * needed after them: CJK `。！？．`, Devanagari danda `।` and double danda
+ * `॥`, Arabic `؟`, Urdu `۔`.
+ */
+export const UNSPACED_SENTENCE_ENDS = '。！？．।॥؟۔';
+
+export const SENTENCE_END_RE = new RegExp(
+  `(?:[.!?]+\\s+|[${UNSPACED_SENTENCE_ENDS}]+\\s*)`,
+  'g',
+);
 
 /** ASCII clause marks; need trailing whitespace like sentence ends. */
-const CLAUSE_END_RE = /[,;:—–]\s+/g;
+// `، ؛` are the Arabic comma and semicolon.
+const CLAUSE_END_RE = /[,;:—–،؛]\s+/g;
 /** CJK clause marks; CJK text has no spaces, so none are required. */
 const CJK_CLAUSE_END_RE = /[，；：、]\s*/g;
 /** Han, kana and CJK compatibility ideographs. */
-const CJK_CHAR_RE = /[぀-ヿ㐀-鿿豈-﫿]/g;
+/** Kana, CJK ideographs and compatibility ideographs: scripts written without spaces. */
+export const CJK_CHARS = '぀-ヿ㐀-鿿豈-﫿';
+const CJK_CHAR_RE = new RegExp(`[${CJK_CHARS}]`, 'g');
 const WORD_RE = /\S+\s+/g;
 const HAS_LETTER_RE = /[\p{L}\p{N}]/u;
 
@@ -65,6 +78,14 @@ export function lastClauseEnd(text: string, limit: number): number {
 /** End of the last whitespace-terminated word at or before `limit`, or -1. */
 export function lastWordEnd(text: string, limit: number): number {
   return lastMatchEnd(/\S\s+/, text, limit);
+}
+
+/**
+ * End of the last CJK character within `limit`, for text written without
+ * spaces when it has no punctuation to cut at either. -1 if there is none.
+ */
+export function lastCjkCharEnd(text: string, limit: number): number {
+  return lastMatchEnd(CJK_CHAR_RE, text, limit);
 }
 
 /** Throws unless `value` is `undefined` or an integer >= 1. */
