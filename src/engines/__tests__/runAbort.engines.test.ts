@@ -88,8 +88,10 @@ const ENGINES: Array<[string, (s: object) => any]> = [
         clear: jest.fn(),
       };
       e.tokenizer = {clear: jest.fn()};
-      e.synthesizeTextChunk = (text: string) =>
-        e.inflight.track(e.synthesizeChunk([0, 5, 6, 0], 'af_heart', {}, text));
+      e.synthesizeTextChunk = () =>
+        e.inflight.track(
+          e.synthesizeChunk([0, 5, 6, 0], 'af_heart', e.utteranceGen),
+        );
       return e;
     },
   ],
@@ -105,7 +107,9 @@ const ENGINES: Array<[string, (s: object) => any]> = [
         clear: jest.fn(),
       };
       e.synthesizeTextChunk = (text: string) =>
-        e.inflight.track(e.synthesizeChunk([0, 5, 6, 0], 'Bella', text.length));
+        e.inflight.track(
+          e.synthesizeChunk([0, 5, 6, 0], 'Bella', text.length, e.utteranceGen),
+        );
       return e;
     },
   ],
