@@ -106,7 +106,8 @@ const MODEL_VARIANTS: Record<SupertonicVersion, ModelVariantConfig> = {
       'uk',
       'vi',
     ],
-    description: 'Multilingual (31 langs), v2-compatible 4-model pipeline',
+    description:
+      'Multilingual (31 langs), best quality; 3.5-6x slower than v2, needs a recent phone',
   },
 };
 

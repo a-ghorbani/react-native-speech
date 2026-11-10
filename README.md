@@ -119,6 +119,8 @@ await Speech.initialize({
 await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
 ```
 
+Supertonic v3 is 3.5–6× slower than v2 on Android. On Snapdragon 845-class phones (2018) it is slower than real time, so use v2 there for en/ko/es/pt/fr. See [Choosing a model version](docs/USAGE.md#choosing-a-model-version).
+
 Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
 
 ## Phonon add-on
