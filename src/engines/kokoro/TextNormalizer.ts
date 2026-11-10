@@ -234,8 +234,9 @@ export class TextNormalizer {
     // result = result.replace(/(?<=X')S\b/g, 's');
     // ALL-CAPS words (>=2 letters)
     result = result.replace(/(?<=\b[A-Z]{2,})'?s\b/g, "'S");
-    // single-letter uppercase tokens (C's, B's)
-    result = result.replace(/(?<=\b[A-Z])'?s\b/g, "'S");
+    // single-letter uppercase tokens (C's, B's, "G 2 Ps"); not the words
+    // "As", "Is", "Us" unless written with the apostrophe
+    result = result.replace(/(?<=\b[A-Z])'s\b|(?<=\b[B-HJ-TV-Z])s\b/g, "'S");
     // X → /ɪz/ exception
     result = result.replace(/(?<=X')S\b/g, 's');
 
