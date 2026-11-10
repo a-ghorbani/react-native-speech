@@ -694,13 +694,12 @@ Keep the voice files with their model: the voice style files of v2 and v3 have t
 
 #### Upgrading from v2 to v3
 
-v3 is a drop-in replacement: no config or API change.
+v3 is a drop-in replacement for files and API (no config change), but it is slower: check the cost above on your slowest supported phone before switching.
 
-- Replace all files from [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3): the four ONNX models, `unicode_indexer.json` and `voice_styles/`. The file names and layout are the same as v2, and the download is about 135 MB larger.
+- Replace the files the engine loads with those from [Supertone/supertonic-3](https://huggingface.co/Supertone/supertonic-3): the four ONNX models, `unicode_indexer.json` and `voice_styles/`. The file names and layout are the same as v2, and the download is about 135 MB larger.
 - The same ten voice IDs (`F1`–`F5`, `M1`–`M5`) exist, but they are re-trained voices and do not sound identical to v2's.
 - `language` accepts all 31 v3 codes plus `'na'`. v2's five codes keep working.
 - The license is unchanged (Open RAIL-M, see [LICENSES.md](LICENSES.md)).
-- Check the cost above on your slowest supported phone before switching.
 
 ### Kitten
 
