@@ -581,6 +581,12 @@ Install the optional peer:
 npm install onnxruntime-react-native
 ```
 
+On iOS, pin the native runtime to the same version as `onnxruntime-react-native`. Its podspec depends on `onnxruntime-c` without a version, so CocoaPods resolves whatever it last saw (a fresh `pod update` takes the newest), and the JS and native versions can differ silently. The model-file results below depend on the native version (#71). In your `Podfile` target:
+
+```ruby
+pod 'onnxruntime-c', '1.24.3' # = the onnxruntime-react-native version in your lockfile
+```
+
 All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
 ### Kokoro

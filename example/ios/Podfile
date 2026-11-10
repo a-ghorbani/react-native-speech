@@ -19,6 +19,8 @@ end
 
 target 'SpeechExample' do
   config = use_native_modules!
+  # Match onnxruntime-react-native in yarn.lock; its podspec leaves onnxruntime-c unpinned.
+  pod 'onnxruntime-c', '1.24.3'
 
   use_react_native!(
     :path => config[:reactNativePath],
