@@ -625,7 +625,7 @@ const RootView: React.FC = () => {
   // Release engine resources when app goes to background
   React.useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'background') {
+      if (nextState === 'background' && !(globalThis as any).__i97bg) {
         // Release neural engine resources when app is backgrounded
         Speech.release().catch(err =>
           console.warn('[RootView] Background release failed:', err),
