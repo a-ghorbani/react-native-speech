@@ -602,13 +602,16 @@ const RootView: React.FC = () => {
     }
   }, [selectedEngine, supertonicLanguage, spokenText]);
 
-  // Same for Kokoro: a Mandarin voice (zf_/zm_) gets the Chinese sample.
+  // Same for Kokoro: a Mandarin voice (zf_/zm_) gets the Chinese sample,
+  // and any other voice gets the English one back.
   React.useEffect(() => {
     if (selectedEngine !== TTSEngine.KOKORO) return;
-    if (!selectedVoice?.startsWith('z')) return;
     if (!SAMPLE_TEXT_SET.has(spokenText)) return;
-    if (SAMPLE_TEXT.zh && SAMPLE_TEXT.zh !== spokenText) {
-      setSpokenText(SAMPLE_TEXT.zh);
+    const next = selectedVoice?.startsWith('z')
+      ? SAMPLE_TEXT.zh
+      : ENGLISH_DEFAULT_TEXT;
+    if (next && next !== spokenText) {
+      setSpokenText(next);
     }
   }, [selectedEngine, selectedVoice, spokenText]);
 

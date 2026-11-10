@@ -124,6 +124,13 @@ describe('KokoroEngine - Mandarin voices', () => {
     expect(mockSessionRun).not.toHaveBeenCalled();
   });
 
+  it('phoneme input on a zh voice still works without the zh import', async () => {
+    const e = await initEngine();
+    await e.synthesize({phonemes: 'ni↓xau↓'}, {voiceId: 'zf_xiaoxiao'});
+    expect(mockPhonemize).not.toHaveBeenCalled();
+    expect(mockSessionRun).toHaveBeenCalledTimes(1);
+  });
+
   it('after the zh import, Chinese goes through the zh G2P and Latin runs through English', async () => {
     require('../../../zh');
     const e = await initEngine();

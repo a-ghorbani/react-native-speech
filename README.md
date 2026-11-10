@@ -141,7 +141,7 @@ import '@pocketpalai/react-native-speech/zh';
 await Speech.speak('今天天气很好。', 'zf_xiaoxiao');
 ```
 
-Without the import, a `zf_*` or `zm_*` voice fails with an error that names it. Numbers are read in Chinese, and Latin words inside Chinese text are read in English.
+Without the import, Chinese text on a `zf_*` or `zm_*` voice fails with an error that names it (IPA input via `{phonemes}` works either way). Numbers are read in Chinese, and Latin words inside Chinese text are read in English. The separate Kokoro v1.1-zh model (voices `zf_001` …) uses a different phoneme set and is not supported.
 
 **Not supported on Kokoro**, though the model has voices for them:
 

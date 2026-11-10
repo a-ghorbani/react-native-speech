@@ -544,6 +544,13 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       // A registered language G2P (e.g. zh) takes the raw chunk and sends
       // runs in other scripts back through the English path.
       const g2p = getKokoroG2P(language);
+      if (language === 'zh' && !g2p) {
+        throw new Error(
+          `Voice "${voiceId}" is Mandarin Chinese. Add ` +
+            "`import '@pocketpalai/react-native-speech/zh';` to your app " +
+            '(and install the `pinyin-pro` package) to enable Chinese text.',
+        );
+      }
       const normalized = g2p ? '' : normalizeForEngine(chunkText, 'kokoro');
 
       // Check stop between pipeline steps
@@ -1111,14 +1118,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       case 'b':
         return 'en-gb'; // British English
       case 'z':
-        if (!getKokoroG2P('zh')) {
-          throw new Error(
-            `Voice "${voiceId}" is Mandarin Chinese. Add ` +
-              "`import '@pocketpalai/react-native-speech/zh';` to your app " +
-              '(and install the `pinyin-pro` package) to enable Chinese text.',
-          );
-        }
-        return 'zh';
+        return 'zh'; // text needs the opt-in zh G2P; IPA input does not
       default:
         // es/fr/hi/it/ja/pt voices: the model speaks these languages,
         // but the built-in dict phonemizer is English-only, so text input

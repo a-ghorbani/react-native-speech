@@ -72,6 +72,18 @@ describe('sentence ends in non-Latin scripts', () => {
     expect(buf.push('यह पहला वाक्य है। यह')).toBe('यह पहला वाक्य है। ');
   });
 
+  test.each([
+    ['a link', '请看[官方文档。](https://example.com/a)了解更多内容。'],
+    ['a code span', '用 `a。b` 表示结果。'],
+  ])('the markdown stream buffer does not cut at 。 inside %s', (_name, md) => {
+    const buf = createMarkdownStreamBuffer();
+    let out = '';
+    for (const ch of md) out += buf.push(ch);
+    out += buf.flush();
+    expect(out).not.toMatch(/https|`|\]\(/);
+    expect(out.replace(/\s+/g, '')).toBe(stripMarkdown(md).replace(/\s+/g, ''));
+  });
+
   test('the markdown stream buffer emits a Chinese sentence at 。 with no space after it', () => {
     const buf = createMarkdownStreamBuffer();
     expect(buf.push('今天天气很好。我们')).toBe('今天天气很好。 ');
@@ -124,6 +136,17 @@ describe('text without spaces or punctuation', () => {
 
   test('splitInHalves splits Chinese at 。', () => {
     expect(splitInHalves(ZH)).toHaveLength(2);
+  });
+
+  test('consecutive sentence marks stay together (？！)', () => {
+    expect(splitOversizedSource('真的吗？！我不信。')).toEqual([
+      '真的吗？！',
+      '我不信。',
+    ]);
+    expect(splitInHalves('真的吗？！我不信。')).toEqual([
+      '真的吗？！',
+      '我不信。',
+    ]);
   });
 
   test('splitOversizedSource splits Hindi at the danda', () => {

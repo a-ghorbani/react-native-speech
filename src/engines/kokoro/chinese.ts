@@ -49,9 +49,16 @@ function integerToChinese(digits: string): string {
   return out.startsWith('一十') ? out.slice(1) : out;
 }
 
-/** Digits → Chinese numerals: 2013 → 二千零一十三, 3.5 → 三点五, 40% → 百分之四十. */
+/**
+ * Digits → Chinese numerals: 3.5 → 三点五, 40% → 百分之四十, 1,000 → 一千; a
+ * four-digit year is read digit by digit (2013年 → 二零一三年). Full-width
+ * digits count as digits.
+ */
 export function numbersToChinese(text: string): string {
   return text
+    .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
+    .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
+    .replace(/\d{4}(?=年)/g, y => [...y].map(c => DIGITS[Number(c)]).join(''))
     .replace(/(\d+(?:\.\d+)?)%/g, (_m, n: string) => '百分之' + n)
     .replace(/\d+(?:\.\d+)?/g, m => {
       const [int, frac] = m.split('.');
@@ -214,6 +221,8 @@ export function pinyinSyllableToIpa(syllable: string): string {
       ({iu: 'iou', ui: 'uei', un: 'uen', ue: 'üe'} as Record<string, string>)[
         final
       ] ?? final;
+    if (final === 'io')
+      return WHOLE_SYLLABLE_IPA.io!.replace('0', TONE_ARROW[tone]!); // 哟 yo
     let finalIpa = FINAL_IPA[final];
     if (final === 'i' && RETROFLEX_OR_SIBILANT.includes(initial))
       finalIpa = 'ɨ0';
@@ -250,6 +259,7 @@ export async function chineseToKokoroPhonemes(
   };
   for (const m of prepared.matchAll(HAN_RUN_RE)) {
     await pushOther(prepared.slice(last, m.index));
+    // pinyin-pro applies 一/不 tone sandhi; misaki's v1.0 path did not.
     const syllables = pinyin(m[0], {toneType: 'num', type: 'array', v: true});
     parts.push(syllables.map(pinyinSyllableToIpa).join(''));
     last = m.index! + m[0].length;

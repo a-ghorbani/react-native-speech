@@ -16,7 +16,7 @@ import {CJK_CHARS, UNSPACED_SENTENCE_ENDS} from '../../utils/firstClause';
 // After `.!?` a space is needed; unspaced marks (。 । ؟ …) end a sentence
 // on their own. Clause marks: ASCII and Arabic need a space, CJK do not.
 const SENTENCE_SPLIT_RE = new RegExp(
-  `(?<=[.!?])\\s+|(?<=[${UNSPACED_SENTENCE_ENDS}])\\s*`,
+  `(?<=[.!?])\\s+|(?<=[${UNSPACED_SENTENCE_ENDS}])(?![${UNSPACED_SENTENCE_ENDS}])\\s*`,
 );
 const CLAUSE_SPLIT_RE = /(?<=[,;:،؛])\s+|(?<=[，；：、])\s*/;
 const CJK_CHAR_RE = new RegExp(`[${CJK_CHARS}]`);

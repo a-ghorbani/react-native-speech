@@ -502,8 +502,20 @@ export function createMarkdownStreamBuffer(
         }
         if (cut <= 0) {
           const sentMatch = buffer.match(STREAM_SENTENCE_RE);
-          if (sentMatch) {
-            cut = sentMatch[1]!.length + sentMatch[2]!.length;
+          const sentEnd = sentMatch
+            ? sentMatch[1]!.length + sentMatch[2]!.length
+            : 0;
+          // An unspaced mark (`。` `।` `؟` …) inside a link or code span
+          // is not a cut point: the marker would be spoken. (`.!?` cuts
+          // need a following space and keep their old behaviour.)
+          const unspaced = sentMatch
+            ? UNSPACED_SENTENCE_ENDS.includes(sentMatch[1]!.slice(-1))
+            : false;
+          if (
+            sentEnd > 0 &&
+            !(unspaced && hasOpenInlineMarker(buffer.slice(0, sentEnd)))
+          ) {
+            cut = sentEnd;
           } else if (buffer.length >= LONG_TAIL_CHARS) {
             const soft = Math.max(
               lastClauseEnd(buffer, buffer.length),
