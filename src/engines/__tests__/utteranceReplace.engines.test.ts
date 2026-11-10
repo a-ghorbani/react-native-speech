@@ -196,6 +196,8 @@ describe.each(ENGINES)(
         expect(lateA).toEqual([]);
         // Playback was stopped (native onStopped) before B played.
         expect(timeline.slice(0, firstB)).toContain('stop');
+        // ...and is not stopped again once B plays.
+        expect(timeline.slice(firstB)).not.toContain('stop');
         expect(plays().filter(t => t.startsWith('play:Bravo'))).toEqual([
           'play:Bravo one is here.',
           'play:Bravo two is here.',

@@ -771,9 +771,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    await this.cancelActiveStream();
-    // Fire-and-forget native audio stop
+    // Before the stream cancel yields: a later stop would cut the next
+    // utterance's first chunk.
     neuralAudioPlayer.stop().catch(() => {});
+    await this.cancelActiveStream();
   }
 
   private isSuperseded(gen: number): boolean {
