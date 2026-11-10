@@ -9,6 +9,8 @@
  * dict's IPA notation. See docs/LICENSES.md.
  */
 
+import {lookupTable} from '../utils/lookupTable';
+
 type Form = {
   verb?: string;
   noun?: string;
@@ -17,7 +19,7 @@ type Form = {
   usual?: 'verb' | 'noun';
 };
 
-const TABLE: Record<string, Form> = {
+const TABLE = lookupTable<Form>({
   read: {past: 'ɹˈɛd'},
   use: {verb: 'jˈuːz'},
   uses: {verb: 'jˈuːzᵻz', usual: 'verb'},
@@ -75,7 +77,7 @@ const TABLE: Record<string, Form> = {
   produce: {noun: 'pɹˈoʊdˌuːs'},
   convert: {noun: 'kˈɑːnvˌɜːt'},
   converts: {noun: 'kˈɑːnvˌɜːts'},
-};
+});
 
 const set = (s: string) => new Set(s.split(' '));
 

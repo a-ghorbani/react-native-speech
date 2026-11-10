@@ -28,6 +28,7 @@ import {
   expandScientificNotation,
   expandUnits,
 } from './KittenPreprocessor';
+import {lookupTable} from '../utils/lookupTable';
 
 const MONTHS = [
   'January',
@@ -44,7 +45,7 @@ const MONTHS = [
   'December',
 ];
 
-const EXTRA_UNITS: Record<string, string> = {
+const EXTRA_UNITS = lookupTable<string>({
   ft: 'feet',
   lb: 'pounds',
   lbs: 'pounds',
@@ -57,13 +58,13 @@ const EXTRA_UNITS: Record<string, string> = {
   mins: 'minutes',
   hr: 'hours',
   hrs: 'hours',
-};
+});
 
-const CURRENCY_NAMES: Record<string, string> = {
+const CURRENCY_NAMES = lookupTable<string>({
   $: 'dollars',
   '€': 'euros',
   '£': 'pounds',
-};
+});
 
 const TLDS =
   'com|org|net|io|ai|dev|app|edu|gov|uk|de|fr|jp|cn|ca|au|info|biz|xyz|tech|gg|tv|ly';
@@ -78,14 +79,14 @@ function speakDomain(domain: string): string {
   return domain.split('.').join(' dot ');
 }
 
-const HTML_ENTITIES: Record<string, string> = {
+const HTML_ENTITIES = lookupTable<string>({
   amp: '&',
   lt: '<',
   gt: '>',
   quot: '"',
   apos: "'",
   nbsp: ' ',
-};
+});
 
 export function normalizeQuotes(text: string): string {
   return text
@@ -249,12 +250,12 @@ export function spellTimeSuffixes(text: string): string {
   );
 }
 
-const SCALE_WORDS: Record<string, string> = {
+const SCALE_WORDS = lookupTable<string>({
   k: 'thousand',
   m: 'million',
   b: 'billion',
   t: 'trillion',
-};
+});
 
 export function expandScaledCurrency(text: string): string {
   // "$4.2 billion" / "$2.5M" → "4.2 billion dollars" (otherwise read as
@@ -352,11 +353,11 @@ export function expandVersions(text: string): string {
   );
 }
 
-const SINGULAR_UNITS: Record<string, string> = {
+const SINGULAR_UNITS = lookupTable<string>({
   feet: 'foot',
   inches: 'inch',
   degrees: 'degree',
-};
+});
 /** "one kilograms" / "1 minutes" → singular. */
 export function singularizeUnits(text: string): string {
   return text.replace(

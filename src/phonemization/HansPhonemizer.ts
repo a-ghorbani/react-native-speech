@@ -20,6 +20,7 @@ import {
 import {createComponentLogger} from '../utils/logger';
 import type {DictSource} from './DictSource';
 import {contextWords, heteronymForm, isHeteronym} from './heteronyms';
+import {lookupTable} from '../utils/lookupTable';
 
 const log = createComponentLogger('TTS', 'HansPhonemizer');
 const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : true;
@@ -114,11 +115,11 @@ function getHans00(): Hans00 | null {
 
 const IPA_VOWELS = new Set('aeiouæɑɒɔəɛɜɝɞɪʊʌɚɨøɵœɶɤɯʏɐ'.split(''));
 
-const REDUCED_FORMS: Record<string, string> = {
+const REDUCED_FORMS = lookupTable<string>({
   a: 'ɐ',
   to: 'tə',
   has: 'hɐz',
-};
+});
 
 const FULLY_UNSTRESSED = new Set([
   'he',
@@ -204,11 +205,11 @@ const SECONDARY_STRESSED = new Set([
  * Currently empty: the 48-entry dict update on 2026-04-20 absorbed the
  * former interjection overlay (hmm, mhm, shh, mmm, pfft, brr, psst, ew).
  */
-const DICT_OVERRIDES: Record<string, string> = {
+const DICT_OVERRIDES = lookupTable<string>({
   // TODO: remove once the en-us dict has "teardown"; the compound split
   // takes "tear" as in crying.
   teardown: 'tˈɛɹdˌaʊn',
-};
+});
 
 // --- Helpers ---
 
@@ -307,7 +308,7 @@ const CONTRACTION_SUFFIXES: [string, string][] = [
 ];
 
 /** Contractions whose base isn't a word ("shan't" ← "shall not"). */
-const IRREGULAR_CONTRACTIONS: Record<string, string> = {"shan't": 'ʃˈænt'};
+const IRREGULAR_CONTRACTIONS = lookupTable<string>({"shan't": 'ʃˈænt'});
 
 /** English -s allomorph after a base pronunciation: ɪz / s / z. */
 function sSuffix(baseIpa: string): string {
