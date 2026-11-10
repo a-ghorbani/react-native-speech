@@ -103,9 +103,14 @@ export interface OnnxInferenceSession {
   /**
    * Run inference with the given input tensors
    * @param feeds - Map of input names to tensors
+   * @param options - `signal` terminates the run when aborted (needs the
+   *   binding patch in docs/USAGE.md; ignored otherwise)
    * @returns Map of output names to tensors
    */
-  run(feeds: Record<string, OnnxTensor>): Promise<Record<string, OnnxTensor>>;
+  run(
+    feeds: Record<string, OnnxTensor>,
+    options?: {signal?: AbortSignal},
+  ): Promise<Record<string, OnnxTensor>>;
 
   /** Names of the model inputs */
   readonly inputNames: readonly string[];
