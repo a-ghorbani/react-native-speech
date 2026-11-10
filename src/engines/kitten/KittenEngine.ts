@@ -113,6 +113,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  /** Bumped by stop(); a speak() loop from an older value is superseded. */
+  private utteranceGen = 0;
   private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
@@ -264,7 +266,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       throw new Error('Kitten engine not initialized');
     }
 
-    this.cancelActiveStream();
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
 
     this.stopRequested = false;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -380,8 +383,10 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     // preprocessing, no sentence chunking. The IPA is a single unit.
     const raw = isPhonemeInput(input);
     const text = raw ? input.phonemes : input;
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
     this.stopRequested = false;
-    this.stopSignalResolver = null;
+    const gen = this.utteranceGen;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
 
@@ -433,7 +438,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     let nextAudioPromise: Promise<AudioBuffer> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         log.debug('Stop requested, aborting synthesis');
         return undefined;
       }
@@ -476,7 +481,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       if (
         audioBuffer === null ||
-        this.stopRequested ||
+        this.isSuperseded(gen) ||
         audioBuffer.samples.length === 0
       ) {
         log.debug('Stop requested, aborting before playback');
@@ -485,7 +490,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       // Start synthesizing next chunk in parallel
       const nextChunkIndex = chunkIndex + 1;
-      if (!this.stopRequested && nextChunkIndex < chunks.length) {
+      if (!this.isSuperseded(gen) && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
         nextAudioPromise = this.inflight.track(
           this.synthesizeTextChunk(nextChunk.text, voiceId, options, raw),
@@ -778,12 +783,19 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
+    this.utteranceGen++;
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    await this.cancelActiveStream();
+    // Before the stream cancel yields: a later stop would cut the next
+    // utterance's first chunk.
     neuralAudioPlayer.stop().catch(() => {});
+    await this.cancelActiveStream();
+  }
+
+  private isSuperseded(gen: number): boolean {
+    return this.stopRequested || gen !== this.utteranceGen;
   }
 
   async destroy(): Promise<void> {

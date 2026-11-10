@@ -1042,6 +1042,37 @@ describe('synthesize: stop and re-entry races', () => {
     expect(fake.liveBuffers()).toBe(0);
   });
 
+  it.each([
+    ['speak', 'stream'],
+    ['stream', 'speak'],
+  ] as const)(
+    '%s -> %s: the new call stops the old one; none of its chunks play',
+    async (first, second) => {
+      fake.state.autoSynth = true;
+      const engine = await ready({maxChunkSize: 25});
+      const start = (kind: 'speak' | 'stream', text: string) => {
+        if (kind === 'speak') return engine.synthesize(text);
+        const h = engine.synthesizeStream();
+        h.append(text);
+        return h.finalize();
+      };
+      const a = start(first, TEXT);
+      await flush();
+      expect(fake.plays).toHaveLength(1);
+
+      const b = start(second, 'Bravo call.');
+      expect(nativePlayer.stop).toHaveBeenCalled();
+      fake.state.autoPlay = true;
+      fake.plays[0]!.resolve();
+      await a;
+      await b;
+      await flush();
+      expect(fake.plays).toHaveLength(2);
+      expect(fake.synths.at(-1)!.text.trim()).toBe('Bravo call.');
+      expect(fake.liveBuffers()).toBe(0);
+    },
+  );
+
   it('a stop() during re-entry wait supersedes the waiting call', async () => {
     const engine = await ready();
     const first = engine.synthesize('First call.');

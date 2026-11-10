@@ -318,6 +318,12 @@ Immediately stops any ongoing or in queue speech synthesis.
 Speech.stop().then(() => console.log('Speech stopped'));
 ```
 
+#### **Starting a new utterance**
+
+On the neural engines (Kokoro, Supertonic, Kitten, and add-ons that follow [the add-on contract](#writing-an-add-on)), a new `speak()` or `createSpeechStream()` replaces whatever the engine is speaking, as if `Speech.stop()` had been called first: the previous `speak()` promise or stream `finalize()` resolves, `onStopped` fires for the chunk that was playing, and none of its remaining sentences play. This holds in every order (speak or stream, then speak or stream).
+
+On the OS engine, `speak()` after `speak()` queues: the second utterance plays when the first ends. Call `Speech.stop()` first to replace it instead. A stream on the OS engine replaces, and is replaced by, a new `speak()` or stream, as on the neural engines.
+
 #### **Pause Speech**
 
 > **Note:** On Android, API 26+ (Android 8+) required.
@@ -748,6 +754,7 @@ An add-on engine is a class implementing `TTSEngineInterface<TConfig>` whose `na
 
 - **Imports:** import the engine contract from `@pocketpalai/react-native-speech` and the building blocks from `@pocketpalai/react-native-speech/engine-sdk`, never deep paths; see [Engine add-on API](#engine-add-on-api).
 - **Playback:** play only through the shared player so ducking, audio focus, interruptions and `onStart` / `onFinish` behave as for the built-in engines. Audio in JS goes through `neuralAudioPlayer.play(buffer)`. Audio that lives in native memory is played through the core's native PCM sinks (`NeuralPcmSink` / `RNSpeechAudioOutput`), wrapped in `neuralAudioPlayer.playNative(() => myNativeModule.play(...))` so `Speech.stop()` / `pause()` reach it. `Speech.pause()` / `resume()` control that shared player only; audio played any other way keeps playing.
+- **Replace:** a `synthesize()` or `synthesizeStream()` call must first stop the call still running on the engine (speak or stream), as `stop()` would, so a new utterance replaces the old one (see [Starting a new utterance](#starting-a-new-utterance)). `Speech` does not do this for the engine.
 - **`destroy()`:** must tolerate an engine whose `initialize()` never completed or failed: a retry after a failed first `Speech.initialize` calls `destroy()` before initializing again.
 - **Typed config:** extend `CustomEngineConfigs` so `Speech.initialize` type-checks the add-on's config:
 

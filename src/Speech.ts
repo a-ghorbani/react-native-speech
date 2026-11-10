@@ -102,6 +102,17 @@ function resolveEngine(id: EngineId): AnyEngine | undefined {
   return created;
 }
 
+// The latest stream that feeds the engine through speak() batches (an
+// engine without synthesizeStream, e.g. the OS engine). A new speak() or
+// stream replaces it.
+let batchStream: SpeechStreamImpl | null = null;
+
+function cancelBatchStream(): void {
+  const stream = batchStream;
+  batchStream = null;
+  stream?.cancel().catch(() => {});
+}
+
 // Engines get `dispatchChunkProgress` at init; it fans out to the
 // `setChunkProgressCallback` slot and every `onChunkProgress` subscription.
 // Subscriptions are wrapped so one callback can be added twice and removed
@@ -314,6 +325,10 @@ export default class Speech {
    *   short-circuit g2p. Phoneme input is supported only by the IPA
    *   neural engines (Kokoro, Kitten); the OS and Supertonic engines
    *   reject it with a clear error.
+   * On a neural engine it replaces the utterance (speak or stream) the
+   * engine is speaking, as `stop()` would. On the OS engine it queues
+   * behind an earlier `speak()` and replaces only a stream.
+   *
    * @param voiceId - Voice identifier (engine-specific)
    * @param options - Synthesis options
    * @example
@@ -328,6 +343,7 @@ export default class Speech {
     voiceId?: string,
     options?: SynthesisOptions,
   ): Promise<void> {
+    cancelBatchStream();
     if (neuralEngine(Speech.currentEngine)) {
       await neuralAudioPlayer.endHeldPause();
     }
@@ -373,6 +389,9 @@ export default class Speech {
    * the stream still works (the OS queues utterances natively) but
    * sounds roughly the same as per-sentence `speak()`.
    *
+   * The stream replaces the utterance (speak or stream) the engine is
+   * speaking, as `stop()` would.
+   *
    * @param voiceId - Voice identifier for the active engine
    * @param options - Synthesis options + stream-specific tuning
    * @returns A handle with `append()`, `finalize()`, and `cancel()`
@@ -413,7 +432,14 @@ export default class Speech {
         instance.synthesizeStream!({...streamVoiceOpt, ...opts});
     }
 
-    return new SpeechStreamImpl({
+    cancelBatchStream();
+    if (!engineStreamFactory) {
+      // The engine replaces its own utterance in synthesizeStream();
+      // here the stream replaces a speak() that is still playing.
+      Speech.stop().catch(err => log.warn('stop before stream failed:', err));
+    }
+
+    const stream = new SpeechStreamImpl({
       synthesize: (text: string) =>
         Speech.synthesizeOnCurrentEngine(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
@@ -422,6 +448,10 @@ export default class Speech {
       engineStreamFactory,
       options,
     });
+    if (!engineStreamFactory) {
+      batchStream = stream;
+    }
+    return stream;
   }
 
   /**

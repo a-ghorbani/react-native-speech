@@ -115,6 +115,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  /** Bumped by stop(); a speak() loop from an older value is superseded. */
+  private utteranceGen = 0;
   private warnedVoiceLanguages = new Set<string>();
   private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
@@ -268,7 +270,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       throw new Error('Kokoro engine not initialized');
     }
 
-    this.cancelActiveStream();
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
 
     this.stopRequested = false;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -380,9 +383,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // single unit and fed straight to the tokenizer.
     const raw = isPhonemeInput(input);
     const text = raw ? input.phonemes : input;
-    // Reset stop flag and generate new utterance ID
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
     this.stopRequested = false;
-    this.stopSignalResolver = null;
+    const gen = this.utteranceGen;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
 
@@ -427,7 +431,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       // Check if stop was requested
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         log.debug('Stop requested, aborting synthesis');
         return undefined;
       }
@@ -475,7 +479,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       // Stop signal won the race, or empty buffer from early-stop check
       if (
         audioBuffer === null ||
-        this.stopRequested ||
+        this.isSuperseded(gen) ||
         audioBuffer.samples.length === 0
       ) {
         log.debug('Stop requested, aborting before playback');
@@ -485,7 +489,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       // Start synthesizing next chunk in parallel with playback
       // (only if not already stopping to avoid wasted work)
       const nextChunkIndex = chunkIndex + 1;
-      if (!this.stopRequested && nextChunkIndex < chunks.length) {
+      if (!this.isSuperseded(gen) && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
         nextAudioPromise = this.inflight.track(
           this.synthesizeTextChunk(
@@ -761,14 +765,20 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
+    this.utteranceGen++;
     // Resolve stop signal so Promise.race exits immediately
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    await this.cancelActiveStream();
-    // Fire-and-forget native audio stop
+    // Before the stream cancel yields: a later stop would cut the next
+    // utterance's first chunk.
     neuralAudioPlayer.stop().catch(() => {});
+    await this.cancelActiveStream();
+  }
+
+  private isSuperseded(gen: number): boolean {
+    return this.stopRequested || gen !== this.utteranceGen;
   }
 
   /**

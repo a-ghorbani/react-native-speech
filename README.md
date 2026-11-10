@@ -214,6 +214,8 @@ stream.append(tail);
 await stream.finalize();
 ```
 
+A new stream or `speak()` replaces the stream or `speak()` playing on the same engine, as `Speech.stop()` would; on the OS engine only, `speak()` after `speak()` queues instead. See [Starting a new utterance](./docs/USAGE.md#starting-a-new-utterance).
+
 Streaming playback works with every neural engine (Kokoro, Supertonic, Kitten, Phonon) as well as the OS engine; progress events and `firstChunk` are neural-only. See the `Streaming` tab in [`example/`](./example/) for a live demo that simulates variable token rates.
 
 ## Architecture (short)

@@ -254,6 +254,9 @@ export interface TTSEngineInterface<TConfig = void> {
    * Passing a plain `string` runs the full pipeline (text input,
    * unchanged behaviour). Passing a `PhonemeInput` short-circuits g2p
    * on the IPA engines; engines without an IPA-in path reject it.
+   *
+   * Must first stop the call still running on this engine (speak or
+   * stream), as `stop()` would: a new utterance replaces the old one.
    */
   synthesize(
     input: SpeechInput,
@@ -267,6 +270,7 @@ export interface TTSEngineInterface<TConfig = void> {
    *
    * Optional — only neural engines implement this. `SpeechStream`
    * falls back to the Tier 1 adaptive batcher when this is absent.
+   * Like `synthesize()`, it first stops the call still running.
    */
   synthesizeStream?(options?: SynthesisOptions): EngineStreamHandle;
 
