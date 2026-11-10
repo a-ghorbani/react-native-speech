@@ -126,9 +126,9 @@ const RE_CODE_DIGITS =
 export function expandCodeDigits(text: string): string {
   return text.replace(RE_CODE_DIGITS, (m: string, at: number, s: string) =>
     +m >= 1100
-      ? (/\w/.test(s[at - 1] ?? '') ? ' ' : '') +
+      ? (/\S/.test(s[at - 1] ?? '') ? ' ' : '') +
         yearToWords(+m) +
-        (/\w/.test(s[at + 4] ?? '') ? ' ' : '')
+        (/[^\s.,;:!?)\]»"']/.test(s[at + 4] ?? '') ? ' ' : '')
       : m,
   );
 }
