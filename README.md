@@ -123,6 +123,35 @@ Supertonic v3 is 3.5–6× slower than v2 on Android. On Snapdragon 845-class ph
 
 Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
 
+## Supported languages
+
+| Engine | Languages | How to select |
+| --- | --- | --- |
+| OS (`AVSpeechSynthesizer` / Android `TextToSpeech`) | Whatever voices the device has installed | `language: 'zh-CN'` (BCP 47) in the speak options, or a `voice` from `Speech.getAvailableVoices('zh')` |
+| Kokoro | English (`a*` American, `b*` British voices). Mandarin Chinese (`zf_*`, `zm_*` voices), opt-in, see below | Pick a voice of that language |
+| Kitten | English | — |
+| Supertonic | v3: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi, plus `na` for unknown or mixed text. v2: en, es, fr, ko, pt. v1: en | `language: 'hi'` in the speak options; any voice works with any language |
+| Phonon (add-on) | English (31m). The 40m models add fr, de, es and pt, but they are non-commercial (CC BY-NC) | `language` in the Phonon config |
+
+**Mandarin on Kokoro.** It works with the Kokoro v1.0 model you already have (no extra model download), but it is opt-in so apps that don't need it don't bundle it. Install `pinyin-pro` and import the entry once:
+
+```ts
+import '@pocketpalai/react-native-speech/zh';
+
+await Speech.speak('今天天气很好。', 'zf_xiaoxiao');
+```
+
+Without the import, a `zf_*` or `zm_*` voice fails with an error that names it. Numbers are read in Chinese, and Latin words inside Chinese text are read in English.
+
+**Not supported on Kokoro**, though the model has voices for them:
+
+- Japanese (`j*`): the library has no Japanese reading of kanji. Use Supertonic v3 (`language: 'ja'`).
+- Spanish (`e*`), French (`f*`), Hindi (`h*`), Italian (`i*`), Brazilian Portuguese (`p*`): the library has no grapheme-to-phoneme rules for them. Use Supertonic v3, or pass IPA yourself (`Speech.speak({phonemes})`).
+
+Text splitting follows each script's punctuation (`。！？` for Chinese and Japanese, `।` for Hindi, `؟ ،` for Arabic). Text without spaces (Chinese, Japanese) is cut between characters when a long run has no punctuation.
+
+How well each Supertonic v3 language comes out is measured in [#14](https://github.com/a-ghorbani/react-native-speech/issues/14): 29 of 31 languages are read back by Whisper at under 10 % character error rate. Vietnamese is weaker (17.5 %, the model's own accuracy), and Hindi with numbers written as digits is less reliable (13.4 %, 6.2 % without digits).
+
 ## Phonon add-on
 
 [`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.9.0 <2.10.0`). Register the engine once, before the first `initialize` that uses it:
