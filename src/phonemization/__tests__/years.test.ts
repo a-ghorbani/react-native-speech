@@ -28,6 +28,7 @@ describe('years behind a context word read as years (#32)', () => {
     ['the 2000s', 'the two thousands'],
     ['CPUs from roughly 2019 on', 'from roughly twenty nineteen on'],
     ['through 1972', 'through nineteen seventy-two'],
+    ['In 2020 researchers found', 'In twenty twenty researchers'],
     ['dropped (Q4, 2023)', 'Q four, twenty twenty-three'],
   ])('%s', (input, expected) => {
     const {kitten, kokoro} = both(input);
@@ -42,12 +43,16 @@ describe('other 4-digit numbers read as cardinals (#32)', () => {
     ['2048 MB of RAM', 'two thousand forty', 'megabytes'],
     ['port 8080', 'eight thousand eighty', ''],
     ['out of 2048 tokens', 'two thousand forty', 'tokens'],
+    ['a context of 2048 tokens', 'two thousand forty', 'tokens'],
+    ['by 1984 users', 'one thousand nine hundred eighty', 'users'],
+    ['after 1984 steps', 'one thousand nine hundred eighty', 'steps'],
+    ['from 1950 to 1984 people', 'one thousand nine hundred fifty', 'people'],
     ['a median of 1551 ms', 'one thousand five hundred fifty', 'milliseconds'],
     ['in 1500 ms', 'fifteen hundred', 'milliseconds'],
     ['costs $1999', 'one thousand nine hundred ninety', 'dollars'],
     ['takes 1500-2000 ms', 'two thousand', 'milliseconds'],
     ['1950–1984 MB', 'one thousand nine hundred eighty', 'megabytes'],
-    ['1984 - 1950 = 34', 'one thousand nine hundred fifty', 'minus'],
+    ['scores 1950 - 1984', 'one thousand nine hundred eighty', 'scores'],
   ])('%s', (input, cardinal, rest) => {
     const {kitten, kokoro} = both(input);
     for (const out of [kitten, kokoro]) {

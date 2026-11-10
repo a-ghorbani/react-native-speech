@@ -29,6 +29,55 @@ const RE_CONTEXT = new RegExp(
   'g',
 );
 
+// A count, not a year, when one of these nouns follows: "a context of 2048
+// tokens", "by 1500 users". A closed list: "In 2020 researchers found" stays
+// a year.
+export const COUNT_NOUNS = [
+  'tokens',
+  'users',
+  'people',
+  'steps',
+  'items',
+  'words',
+  'rows',
+  'lines',
+  'files',
+  'bytes',
+  'characters',
+  'times',
+  'messages',
+  'requests',
+  'samples',
+  'records',
+  'units',
+  'entries',
+  'iterations',
+  'epochs',
+  'runs',
+  'tests',
+  'calls',
+  'queries',
+  'documents',
+  'pages',
+  'sentences',
+  'parameters',
+  'examples',
+  'images',
+  'frames',
+  'points',
+  'results',
+  'events',
+  'downloads',
+  'commits',
+  'customers',
+  'employees',
+  'students',
+];
+const RE_COUNT_NOUN_NEXT = new RegExp(
+  `^\\s+(?:${COUNT_NOUNS.join('|')})\\b`,
+  'i',
+);
+
 /** 1984 → "nineteen eighty-four", 2005 → "two thousand five". */
 export function yearToWords(year: number): string {
   if (year >= 2000 && year <= 2009) return numberToWords(year);
@@ -42,19 +91,23 @@ export function yearToWords(year: number): string {
 /**
  * A year behind "in/since/by/from/until/of/circa/before/after/between/
  * through" (optionally "roughly", "about", …), a month or a quarter ("Q4,
- * 2023"), plus the second year of "from 1990 to 2020". Runs after units, so
- * "of 1955 ms" is already words.
+ * 2023"), plus the second year of "from 1990 to 2020"; not before a count
+ * noun. Runs after units, so "of 1955 ms" is already words.
  */
 export function expandYears(text: string): string {
   return text.replace(
     RE_CONTEXT,
     (
-      _m: string,
+      m: string,
       lead: string,
       a: string,
       join: string | undefined,
       b: string | undefined,
-    ) => lead + yearToWords(+a) + (join && b ? join + yearToWords(+b) : ''),
+      offset: number,
+    ) =>
+      RE_COUNT_NOUN_NEXT.test(text.slice(offset + m.length))
+        ? m
+        : lead + yearToWords(+a) + (join && b ? join + yearToWords(+b) : ''),
   );
 }
 
