@@ -44,6 +44,8 @@ export class StreamingChunker {
   private firstTaken = false;
   /** Size limit for the next chunk while ramping up; null once the ramp ends. */
   private rampCap: number | null = null;
+  /** Consumer's size limit, read when a chunk is cut (`setChunkCap`). */
+  private chunkCap: (() => number | null) | null = null;
 
   private waiter: ((chunk: TextChunk | null) => void) | null = null;
 
@@ -124,6 +126,17 @@ export class StreamingChunker {
     return undefined;
   }
 
+  /**
+   * With `firstChunk: 'clause'`, limit the chunks after the first to
+   * `cap()` chars, read when each chunk is cut, e.g. to what can be
+   * synthesized while the queued audio plays (#83). It cuts like the ramp:
+   * at a clause mark in its second half, else after whole sentences. A
+   * null result, or null `cap`, sets no limit.
+   */
+  setChunkCap(cap: (() => number | null) | null): void {
+    this.chunkCap = cap;
+  }
+
   /** Total chars appended so far. */
   get totalAppended(): number {
     return this.absoluteOffset + this.buffer.length;
@@ -170,6 +183,14 @@ export class StreamingChunker {
     return chunk;
   }
 
+  /** The tighter of the ramp cap and the consumer's; null when neither is below maxChunkSize. */
+  private currentCap(): number | null {
+    const consumer =
+      this.firstChunk === 'clause' && this.chunkCap ? this.chunkCap() : null;
+    const cap = Math.min(this.rampCap ?? Infinity, consumer ?? Infinity);
+    return cap < this.maxChunkSize ? cap : null;
+  }
+
   /**
    * While ramping: sentences up to the cap; else, once the buffer reaches
    * the cap, the last clause mark in its second half; else the first
@@ -177,7 +198,7 @@ export class StreamingChunker {
    * cut to the soft cut.
    */
   private extractRamped(): TextChunk | null {
-    const cap = this.rampCap;
+    const cap = this.currentCap();
     if (cap === null) {
       return null;
     }
