@@ -256,6 +256,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.stop();
 
     this.stopRequested = false;
+    const gen = this.utteranceGen;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
@@ -286,7 +287,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       synthesizeChunk: (text: string) => {
         const processed = normalizeForEngine(text, 'kitten');
         return this.inflight.track(
-          this.synthesizeTextChunk(processed, voiceId, options),
+          this.synthesizeTextChunk(processed, voiceId, gen, options),
         );
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
@@ -453,7 +454,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         } else {
           audioBuffer = await this.raceWithStop(
             this.inflight.track(
-              this.synthesizeTextChunk(chunk.text, voiceId, options, raw),
+              this.synthesizeTextChunk(chunk.text, voiceId, gen, options, raw),
             ),
             stopSignal,
           );
@@ -479,7 +480,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       if (!this.isSuperseded(gen) && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
         nextAudioPromise = this.inflight.track(
-          this.synthesizeTextChunk(nextChunk.text, voiceId, options, raw),
+          this.synthesizeTextChunk(nextChunk.text, voiceId, gen, options, raw),
         );
       }
 
@@ -503,11 +504,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   private async synthesizeTextChunk(
     chunkStr: string,
     voiceId: string,
-    options?: KittenSynthesisOptions,
-    raw = false,
     // The utterance this unit belongs to; a later speak() resets
     // stopRequested but not this.
-    gen = this.utteranceGen,
+    gen: number,
+    options?: KittenSynthesisOptions,
+    raw = false,
   ): Promise<AudioBuffer> {
     const emptyBuffer = (): AudioBuffer => ({
       samples: new Float32Array(0),
@@ -591,9 +592,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           const subAudio = await this.synthesizeTextChunk(
             piece,
             voiceId,
+            gen,
             options,
             raw,
-            gen,
           );
           if (subAudio.samples.length > 0) subBuffers.push(subAudio);
         }

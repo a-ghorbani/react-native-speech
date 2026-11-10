@@ -176,5 +176,41 @@ describe.each(['Kitten', 'Kokoro'] as const)(
 
       expect(h.log).toEqual(['new:NEW']);
     });
+
+    it('does not run the rest of an oversized chunk after stop() + speak() on the same session', async () => {
+      const h = setup(name);
+      const old = h.engine.synthesize(OVERSIZED);
+      await tick();
+      expect(h.log).toEqual(['old:A']);
+
+      await h.engine.stop();
+      const next = h.engine.synthesize('NEW one');
+      await tick();
+      h.releaseHeld(); // piece A ends; so does NEW
+      await tick();
+      h.releaseHeld();
+      await Promise.all([old, next]);
+
+      expect(h.log).toEqual(['old:A', 'old:NEW']);
+    });
+
+    it('does not start a unit for an utterance replaced from its progress callback', async () => {
+      const h = setup(name);
+      let replaced = false;
+      let next: Promise<unknown> | undefined;
+      h.engine.setChunkProgressCallback(() => {
+        if (replaced) return;
+        replaced = true;
+        next = h.engine.synthesize('NEW one');
+      });
+      const old = h.engine.synthesize('A one');
+      await tick();
+      h.releaseHeld();
+      await tick();
+      h.releaseHeld();
+      await Promise.all([old, next]);
+
+      expect(h.log).toEqual(['old:NEW']);
+    });
   },
 );

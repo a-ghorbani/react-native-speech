@@ -274,6 +274,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     this.stop();
 
     this.stopRequested = false;
+    const gen = this.utteranceGen;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const language = this.getLanguageFromVoice(voiceId);
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
@@ -293,7 +294,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.inflight.track(
-          this.synthesizeTextChunk(text, voiceId, language, options),
+          this.synthesizeTextChunk(text, voiceId, language, gen, options),
         ),
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
@@ -468,6 +469,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
               chunk.text,
               voiceId,
               language,
+              gen,
               options,
               raw,
             ),
@@ -496,6 +498,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
             nextChunk.text,
             voiceId,
             language,
+            gen,
             options,
             raw,
           ),
@@ -524,11 +527,11 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     chunkText: string,
     voiceId: string,
     language: string,
-    options?: KokoroSynthesisOptions,
-    raw = false,
     // The utterance this unit belongs to; a later speak() resets
     // stopRequested but not this.
-    gen = this.utteranceGen,
+    gen: number,
+    options?: KokoroSynthesisOptions,
+    raw = false,
   ): Promise<AudioBuffer> {
     // For phoneme input, the chunk IS the IPA — skip normalization and
     // g2p entirely and tokenize it directly. For text input, run the
@@ -599,9 +602,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
           piece,
           voiceId,
           language,
+          gen,
           options,
           raw,
-          gen,
         );
         if (audio.samples.length > 0) buffers.push(audio);
       }
