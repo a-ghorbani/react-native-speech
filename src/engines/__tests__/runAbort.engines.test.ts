@@ -212,6 +212,62 @@ describe.each(ENGINES)('%s', (_name, make) => {
     await expect(bDone).resolves.toBeUndefined();
   });
 
+  test("patched binding: the stream handle's cancel() terminates its run; the stream settles, nothing plays (#108)", async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const h = e.synthesizeStream();
+    h.append(TWO);
+    const done = h.finalize();
+    await until(() => m.runs.length >= 1);
+    await h.cancel();
+    expect(m.runs.every(r => r.signal?.aborted)).toBe(true);
+    await expect(done).resolves.toBeUndefined();
+    await tick(20);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test('patched binding: cancel() of a stream already replaced by a speak() leaves the new run alone (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append(TWO);
+    const aDone = a.finalize();
+    await until(() => m.runs.length >= 1);
+    const before = m.runs.length;
+    const b = e.synthesize('A new reply.');
+    await until(() => m.runs.length === before + 1);
+    await a.cancel();
+    await expect(aDone).resolves.toBeUndefined();
+    expect(m.runs[before]!.signal?.aborted).toBe(false);
+    m.runs[before]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(b).resolves.toBeUndefined();
+  });
+
+  test('patched binding: a new stream right after a cancel() runs and plays (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append(TWO);
+    a.finalize();
+    await until(() => m.runs.length >= 1);
+    await a.cancel();
+    const before = m.runs.length;
+    const b = e.synthesizeStream();
+    b.append('A new reply.');
+    const bDone = b.finalize();
+    await until(() => m.runs.length === before + 1);
+    expect(m.runs[before]!.signal?.aborted).toBe(false);
+    m.runs[before]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(bDone).resolves.toBeUndefined();
+  });
+
   test('a run that fails differently after the abort is still a stop', async () => {
     bind('unpatched');
     const m = session('unpatched');

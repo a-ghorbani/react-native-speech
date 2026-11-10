@@ -215,6 +215,21 @@ describe.each(['Kitten', 'Kokoro'] as const)(
       expect(h.log).toEqual(['old:NEW']);
     });
 
+    it("does not run a stream unit held in g2p once the stream handle's cancel() ran (#108)", async () => {
+      const h = setup(name);
+      h.hold.phonemize = 'A';
+      const stream = h.engine.synthesizeStream();
+      stream.append('A one.');
+      const done = stream.finalize();
+      await tick();
+      expect(h.phonemized()).toEqual(['A one.']);
+      await stream.cancel();
+      h.releaseHeld(); // A's g2p ends after the cancel
+      await tick();
+      await done;
+      expect(h.log).toEqual([]);
+    });
+
     it('does not run the prefetched next chunk after stop() + speak() (#104)', async () => {
       const h = setup(name);
       h.engine.config.maxChunkSize = 8;
