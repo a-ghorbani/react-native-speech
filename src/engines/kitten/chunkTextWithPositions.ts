@@ -1,5 +1,12 @@
-import {ensurePunctuation} from '../../phonemization/KittenPreprocessor';
 import {isAbbreviationPeriod} from '../../utils/abbreviations';
+
+/** Ensure a chunk ends in punctuation (kittentts.onnx_model). */
+function ensurePunctuation(text: string): string {
+  text = text.trim();
+  if (!text) return text;
+  if (!'.!?,;:'.includes(text[text.length - 1]!)) text += ',';
+  return text;
+}
 
 /**
  * Split text into per-sentence chunks, preserving original-text positions

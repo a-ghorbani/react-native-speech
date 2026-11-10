@@ -13,11 +13,6 @@ jest.mock('../NeuralAudioPlayer', () => ({
 }));
 jest.mock('../../phonemization', () => ({
   loadNativeDict: jest.fn(),
-  TextPreprocessor: class {
-    process(t: string) {
-      return t;
-    }
-  },
 }));
 
 import {KittenEngine} from '../kitten/KittenEngine';

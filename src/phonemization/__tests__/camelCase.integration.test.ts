@@ -5,8 +5,8 @@
  * it loads the real hans00 G2P library so we catch regressions in the full
  * pipeline (splitter + dict lookup + hans00 fallback).
  *
- * Mirrors how production composes the steps: TextNormalizer (Kokoro) and
- * TextPreprocessor (Kitten) call `splitCamelCase` before handing text to
+ * Mirrors how production composes the steps: both engine tails
+ * (phonemization/engineTails) call `splitCamelCase` before handing text to
  * `HansPhonemizer.phonemize`. We compose the same two functions here so the
  * test stays faithful to production wiring — `HansPhonemizer` is a pure
  * phonemizer and does not split internally.

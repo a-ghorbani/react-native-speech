@@ -67,7 +67,7 @@ Minimum device recommendation: 3 GB RAM phone. On 2 GB devices (iPhone SE) one n
 Default stack (Kokoro + Kitten):
 
 ```
-text → TextNormalizer → chunker → (dict lookup → hans00 G2P fallback) → post-process → tokens
+text → chunker → normalizeForEngine (shared + engine tail) → (dict lookup → hans00 G2P fallback) → post-process → tokens
 ```
 
 - No data is shipped in the library. Consumer apps supply the mmap `.bin` dict path via `NativeDict` API.

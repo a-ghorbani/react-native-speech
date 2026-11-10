@@ -10,12 +10,5 @@ export type {DictSource} from './DictSource';
 export {JsDictSource} from './JsDictSource';
 export {NativeDictSource, openNativeDict} from './NativeDictSource';
 export {HansPhonemizer, type HansPhonemizerOptions} from './HansPhonemizer';
-export {normalizeForSpeech} from './normalizeForSpeech';
-export {
-  TextPreprocessor,
-  type TextPreprocessorConfig,
-  chunkText,
-  ensurePunctuation,
-  numberToWords,
-  floatToWords,
-} from './KittenPreprocessor';
+export {normalizeForSpeech, normalizeForEngine} from './normalizeForSpeech';
+export {numberToWords, floatToWords} from './numberWords';

@@ -1,4 +1,4 @@
-import {normalizeForSpeech} from '../normalizeForSpeech';
+import {normalizeForEngine, normalizeForSpeech} from '../normalizeForSpeech';
 
 describe('normalizeForSpeech', () => {
   test.each([
@@ -154,7 +154,7 @@ describe('normalizeForSpeech', () => {
 });
 
 describe('numberToWords (long digit strings)', () => {
-  const {numberToWords} = require('../KittenPreprocessor');
+  const {numberToWords} = require('../numberWords');
 
   test('reads 16+ digits digit by digit instead of a wrong cardinal', () => {
     expect(numberToWords('1234567890123456')).toBe(
@@ -164,5 +164,23 @@ describe('numberToWords (long digit strings)', () => {
 
   test('keeps cardinal reading up to 15 digits', () => {
     expect(numberToWords('1000000000000')).toBe('one trillion');
+  });
+});
+
+describe('normalizeForEngine (#33)', () => {
+  test('Kitten leaves scale suffixes and fractions to the shared rules', () => {
+    // The upstream kittentts rules read "B2B" as "B two billion" and "5/1"
+    // as "five firsts"; the Kitten tail doesn't run them.
+    const out = normalizeForEngine('B2B and 5/1', 'kitten');
+    expect(out).not.toMatch(/billion|firsts/);
+  });
+
+  test('each engine keeps its number style', () => {
+    expect(normalizeForEngine('It has 31 items.', 'kitten')).toBe(
+      'It has thirty-one items.',
+    );
+    expect(normalizeForEngine('It has 31 items.', 'kokoro')).toBe(
+      'It has thirty one items.',
+    );
   });
 });

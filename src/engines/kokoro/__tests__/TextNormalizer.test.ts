@@ -135,7 +135,7 @@ describe('TextNormalizer', () => {
 
   describe('number handling', () => {
     test('splits years into two parts', () => {
-      // Years are split to "19 90" by splitNum, then intToWords final pass
+      // Years are split to "19 90" by splitNum, then the final integer pass
       // converts the bare integer segments to words.
       expect(normalizer.normalize('1990')).toBe('nineteen ninety');
       expect(normalizer.normalize('2022')).toBe('twenty twenty two');

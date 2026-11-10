@@ -29,7 +29,7 @@ import {HansPhonemizer} from '../HansPhonemizer';
 import {JsDictSource} from '../JsDictSource';
 import {loadDict} from '../dict';
 import {normalizeForSpeech} from '../normalizeForSpeech';
-import {TextPreprocessor} from '../KittenPreprocessor';
+import {kittenTail} from '../engineTails';
 import {TextNormalizer} from '../../engines/kokoro/TextNormalizer';
 import {lookupTable} from '../../utils/lookupTable';
 import {createPhonemizer} from '../../engines/kokoro/Phonemizer';
@@ -72,13 +72,7 @@ describe('Object.prototype names (#88)', () => {
         and: 'ænd',
       });
       const kitten = await createPhonemizer('js-ipa', {dict}).phonemize(
-        new TextPreprocessor({
-          removePunctuation: false,
-          expandContractions: false,
-          lowercase: false,
-          expandScaleSuffixes: false,
-          expandFractions: false,
-        }).process(normalizeForSpeech(text)),
+        kittenTail(normalizeForSpeech(text)),
         'en-us',
       );
       const kokoro = await createPhonemizer('js', {dict}).phonemize(
@@ -107,13 +101,7 @@ describe('Object.prototype names (#88)', () => {
 
   test.each(NAMES)('%s survives the Kitten and Kokoro text layers', name => {
     const text = `Call ${name} on 5 km and $3 at 10K, the 1st, IV.`;
-    const kitten = new TextPreprocessor({
-      removePunctuation: false,
-      expandContractions: false,
-      lowercase: false,
-      expandScaleSuffixes: false,
-      expandFractions: false,
-    }).process(normalizeForSpeech(text));
+    const kitten = kittenTail(normalizeForSpeech(text));
     const kokoro = new TextNormalizer().normalize(normalizeForSpeech(text));
     expect(kitten).not.toMatch(LEAK);
     expect(kokoro).not.toMatch(LEAK);
