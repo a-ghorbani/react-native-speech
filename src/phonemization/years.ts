@@ -15,9 +15,12 @@ const DAY = '(?:\\d{1,2}|[a-z-]*(?:first|second|third|th)),?';
 
 // Months are case-sensitive ("may" is a verb); prepositions take either case.
 const PREPOSITION =
-  '[Ii]n|[Ss]ince|[Bb]y|[Ff]rom|[Uu]ntil|(?<!\\b[Oo]ut )[Oo]f|[Cc]irca|[Bb]efore|[Aa]fter|[Bb]etween';
+  '[Ii]n|[Ss]ince|[Bb]y|[Ff]rom|[Uu]ntil|(?<!\\b[Oo]ut )[Oo]f|[Cc]irca|[Bb]efore|[Aa]fter|[Bb]etween|[Tt]hrough';
 
-const TRIGGER = `(?:\\b(?:${PREPOSITION})|\\b${MONTH}(?: ${DAY})?)`;
+// "from roughly 2019 on"
+const HEDGE = '(?: (?:roughly|about|around|approximately|early|mid|late))?';
+
+const TRIGGER = `(?:\\b(?:${PREPOSITION})${HEDGE}|\\b${MONTH}(?: ${DAY})?|\\bQ[1-4],?)`;
 
 const NOT_IN_NUMBER_AFTER = '(?![.,:/-]?\\d|%|\\w)';
 
@@ -37,8 +40,9 @@ export function yearToWords(year: number): string {
 }
 
 /**
- * A year behind "in/since/by/from/until/of/circa/before/after/between" or a
- * month, plus the second year of "from 1990 to 2020". Runs after units, so
+ * A year behind "in/since/by/from/until/of/circa/before/after/between/
+ * through" (optionally "roughly", "about", …), a month or a quarter ("Q4,
+ * 2023"), plus the second year of "from 1990 to 2020". Runs after units, so
  * "of 1955 ms" is already words.
  */
 export function expandYears(text: string): string {
@@ -51,5 +55,18 @@ export function expandYears(text: string): string {
       join: string | undefined,
       b: string | undefined,
     ) => lead + yearToWords(+a) + (join && b ? join + yearToWords(+b) : ''),
+  );
+}
+
+// A 4-digit run inside a code reads in pairs, as people say model numbers:
+// "SM8850" → "SM eighty-eight fifty", "RTX4090", "ad4255" in a hash. Glued to
+// a letter before, or followed by letters and another digit ("5228ea0"); not
+// a unit ("2048MB", already words by now).
+const RE_CODE_DIGITS =
+  /(?<=[A-Za-z])\d{4}(?!\d)|(?<![\w.])\d{4}(?=[A-Za-z]+\d)/g;
+
+export function expandCodeDigits(text: string): string {
+  return text.replace(RE_CODE_DIGITS, (m: string) =>
+    +m >= 1100 ? ` ${yearToWords(+m)} ` : m,
   );
 }

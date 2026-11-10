@@ -26,6 +26,9 @@ describe('years behind a context word read as years (#32)', () => {
     ['the summer of 1969', 'the summer of nineteen sixty-nine'],
     ['in 2019 or 2020', 'in twenty nineteen or twenty twenty'],
     ['the 2000s', 'the two thousands'],
+    ['CPUs from roughly 2019 on', 'from roughly twenty nineteen on'],
+    ['through 1972', 'through nineteen seventy-two'],
+    ['dropped (Q4, 2023)', 'Q four, twenty twenty-three'],
   ])('%s', (input, expected) => {
     const {kitten, kokoro} = both(input);
     expect(kitten).toContain(expected);
@@ -52,5 +55,27 @@ describe('other 4-digit numbers read as cardinals (#32)', () => {
       expect(out).toContain(rest);
       expect(out).not.toMatch(/nineteen|twenty (?:twenty|forty|fifteen)/);
     }
+  });
+});
+
+describe('4-digit runs inside codes read in pairs (#32)', () => {
+  test.each([
+    ['the SM8850 chip', 'SM eighty-eight fifty chip'],
+    ['MT6899 (Dimensity)', 'MT sixty-eight ninety-nine'],
+    ['an RTX4090', 'RTX forty ninety'],
+    ['commit 5228ea0', 'fifty-two twenty-eight'],
+  ])('%s', (input, expected) => {
+    const {kitten, kokoro} = both(input);
+    expect(kitten).toContain(expected);
+    expect(kokoro).toContain(expected);
+  });
+
+  test.each([
+    ['2048MB of RAM', 'two thousand forty'],
+    ['a 1440p screen', 'one thousand four hundred forty'],
+  ])('not a unit: %s', (input, cardinal) => {
+    const {kitten, kokoro} = both(input);
+    expect(kitten.replace(/-/g, ' ')).toContain(cardinal);
+    expect(kokoro.replace(/-/g, ' ')).toContain(cardinal);
   });
 });

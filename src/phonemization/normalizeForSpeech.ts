@@ -31,7 +31,7 @@ import {
   UNIT_NAMES,
 } from './textRules';
 import {kittenTail, kokoroTail} from './engineTails';
-import {YEAR, expandYears, yearToWords} from './years';
+import {YEAR, expandCodeDigits, expandYears, yearToWords} from './years';
 import {lookupTable} from '../utils/lookupTable';
 
 const MONTHS = [
@@ -462,6 +462,7 @@ export function normalizeForSpeech(text: string): string {
   text = singularizeUnits(text);
   text = expandClockTimes(text);
   text = expandYears(text);
+  text = expandCodeDigits(text);
   text = spellTimeSuffixes(text);
   text = splitAlphanumeric(text);
   text = markDottedAcronyms(text);
