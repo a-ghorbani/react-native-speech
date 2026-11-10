@@ -22,9 +22,10 @@ const PREPOSITION =
 // "from roughly 2019 on"
 const HEDGE = '(?: (?:roughly|about|around|approximately|early|mid|late))?';
 
-const TRIGGER = `(?:\\b(?:${PREPOSITION})${HEDGE}|\\b${MONTH}(?: ${DAY})?|\\bQ[1-4],?)`;
+// Not the "by" of a dimension ("1024 by 2048", from "1024x2048").
+const TRIGGER = `(?:(?<!\\d )\\b(?:${PREPOSITION})${HEDGE}|\\b${MONTH}(?: ${DAY})?|\\bQ[1-4],?)`;
 
-const NOT_IN_NUMBER_AFTER = '(?![.,:/-]?\\d|%|\\w)';
+const NOT_IN_NUMBER_AFTER = '(?![.,:/-]?\\d|%|\\w| by \\d)';
 
 const RE_CONTEXT = new RegExp(
   `(${TRIGGER}\\s+)(${YEAR})${NOT_IN_NUMBER_AFTER}(?:(\\s+(?:to|and|through|or)\\s+)(${YEAR})${NOT_IN_NUMBER_AFTER})?`,
@@ -34,7 +35,7 @@ const RE_CONTEXT = new RegExp(
 // A count, not a year, when one of these nouns follows a mid-sentence
 // "in/of/by/after/before/from/between": "a context of 2048 tokens", "by 1500
 // users". A closed list, and not after a sentence-opening "In 2020 people
-// stayed home" or a month ("May 2024 users"): those are years.
+// stayed home", a month ("May 2024 users") or "in" + people: those are years.
 export const COUNT_NOUNS = [
   'tokens',
   'users',
@@ -75,8 +76,12 @@ export const COUNT_NOUNS = [
   'customers',
   'employees',
   'students',
+  'dimensions',
 ];
 const RE_COUNT_LEAD = /^(?:in|of|by|after|before|from|between)\b/;
+// After "in", people are a year's subject ("back in 2020 people panicked").
+const RE_PEOPLE_AFTER_IN =
+  /^\s+(?:users|people|customers|employees|students)\b/i;
 const RE_COUNT_NOUN_NEXT = new RegExp(
   `^\\s+(?:${COUNT_NOUNS.join('|')})\\b`,
   'i',
@@ -110,7 +115,11 @@ export function expandYears(text: string): string {
       offset: number,
     ) =>
       RE_COUNT_LEAD.test(lead) &&
-      RE_COUNT_NOUN_NEXT.test(text.slice(offset + m.length))
+      RE_COUNT_NOUN_NEXT.test(text.slice(offset + m.length)) &&
+      !(
+        lead.startsWith('in') &&
+        RE_PEOPLE_AFTER_IN.test(text.slice(offset + m.length))
+      )
         ? m
         : lead + yearToWords(+a) + (join && b ? join + yearToWords(+b) : ''),
   );
@@ -126,9 +135,9 @@ const RE_CODE_DIGITS =
 export function expandCodeDigits(text: string): string {
   return text.replace(RE_CODE_DIGITS, (m: string, at: number, s: string) =>
     +m >= 1100
-      ? (/\S/.test(s[at - 1] ?? '') ? ' ' : '') +
+      ? (/[^\s-]/.test(s[at - 1] ?? '') ? ' ' : '') +
         yearToWords(+m) +
-        (/[^\s.,;:!?)\]»"']/.test(s[at + 4] ?? '') ? ' ' : '')
+        (/[^\s.,;:!?)\]»"'-]/.test(s[at + 4] ?? '') ? ' ' : '')
       : m,
   );
 }
