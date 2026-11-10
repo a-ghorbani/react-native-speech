@@ -35,7 +35,7 @@ import {neuralAudioPlayer} from '../NeuralAudioPlayer';
 import {createPhonemizer, NoOpPhonemizer, type IPhonemizer} from './Phonemizer';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {loadNativeDict} from '../../phonemization';
-import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
+import {normalizeForEngine} from '../../phonemization/normalizeForSpeech';
 import {TextNormalizer, type TextChunk} from './TextNormalizer';
 import {concatAudioBuffers, splitInHalves} from '../kitten/splitOversized';
 import {trimEdgeSilence} from '../../utils/trimEdgeSilence';
@@ -534,9 +534,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (raw) {
       phonemes = chunkText;
     } else {
-      const normalized = this.normalizer.normalize(
-        normalizeForSpeech(chunkText),
-      );
+      const normalized = normalizeForEngine(chunkText, 'kokoro');
 
       // Check stop between pipeline steps
       if (this.stopRequested) {

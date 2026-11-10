@@ -81,7 +81,7 @@ describe('postProcessPhonemes', () => {
     // Test: rejoin chunks (simulating native phonemization) -> postProcess = expected
     test.each(
       testCases
-        // Skip cases where chunks lack phonemes (e.g. after intToWords rewrote
+        // Skip cases where chunks lack phonemes (e.g. after the integer pass rewrote
         // the normalized text — upstream reference phonemes no longer apply).
         .filter(
           tc =>
@@ -106,7 +106,7 @@ describe('postProcessPhonemes', () => {
 
     test.each(
       testCases
-        // Skip cases where chunks lack phonemes (e.g. after intToWords rewrote
+        // Skip cases where chunks lack phonemes (e.g. after the integer pass rewrote
         // the normalized text — upstream reference phonemes no longer apply).
         .filter(
           tc =>

@@ -42,8 +42,8 @@ import {
   NoOpPhonemizer,
   type IPhonemizer,
 } from '../kokoro/Phonemizer';
-import {TextPreprocessor, loadNativeDict} from '../../phonemization';
-import {normalizeForSpeech} from '../../phonemization/normalizeForSpeech';
+import {loadNativeDict} from '../../phonemization';
+import {normalizeForEngine} from '../../phonemization/normalizeForSpeech';
 import {chunkTextWithPositions} from './chunkTextWithPositions';
 import {splitOversizedSource, concatAudioBuffers} from './splitOversized';
 import {trimEdgeSilence} from '../../utils/trimEdgeSilence';
@@ -102,7 +102,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   private tokenizer: IPATokenizer;
   private voiceLoader: VoiceLoader;
   private phonemizer: IPhonemizer;
-  private preprocessor: TextPreprocessor;
 
   private config: KittenConfig | null = null;
   private isInitialized = false;
@@ -129,19 +128,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.voiceLoader = new VoiceLoader();
     // Real phonemizer is created in initialize() once the dict is loaded.
     this.phonemizer = new NoOpPhonemizer();
-    // Upstream kittentts expands contractions and lowercases because its
-    // espeak backend needs neither. Our dict carries contractions
-    // ("don't" → dˈoʊnt) and the phonemizer uses case to spot acronyms
-    // ("GPT"), so both stay off — expanding turned "don't" into "do not".
-    this.preprocessor = new TextPreprocessor({
-      removePunctuation: false,
-      expandContractions: false,
-      lowercase: false,
-      // Handled (more strictly) by normalizeForSpeech: the loose upstream
-      // rules read "B2B" as "B two billion" and "5/1" as "five firsts".
-      expandScaleSuffixes: false,
-      expandFractions: false,
-    });
   }
 
   /**
@@ -298,7 +284,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       : null;
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
-        const processed = this.preprocessor.process(normalizeForSpeech(text));
+        const processed = normalizeForEngine(text, 'kitten');
         return this.inflight.track(
           this.synthesizeTextChunk(processed, voiceId, options),
         );
@@ -426,7 +412,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       // that whole-text normalization introduces.
       const sentenceChunks = chunkTextWithPositions(sourceText, maxChunkSize);
       chunks = sentenceChunks.map(c => ({
-        text: this.preprocessor.process(normalizeForSpeech(c.text)),
+        text: normalizeForEngine(c.text, 'kitten'),
         startIndex: c.startIndex,
         endIndex: c.endIndex,
       }));

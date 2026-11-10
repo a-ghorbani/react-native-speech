@@ -1,10 +1,11 @@
 /**
  * normalizeForSpeech — shared English text cleanup for LLM-generated input.
  *
- * Runs per chunk (after markdown stripping and sentence chunking) ahead of
- * the engine-specific normalizers (Kitten TextPreprocessor, Kokoro
- * TextNormalizer). It verbalizes things both engines previously dropped or
- * garbled because the phonemizer only understands letters:
+ * Runs per chunk (after markdown stripping and sentence chunking). Engines
+ * call normalizeForEngine (bottom), which runs this shared pipeline and then
+ * the engine's own steps (./engineTails). It verbalizes things both engines
+ * previously dropped or garbled because the phonemizer only understands
+ * letters:
  *
  *   - typographic quotes/apostrophes  ("don’t" → "don't")
  *   - emails and URLs                 ("a@b.com" → "a at b dot com")
@@ -15,8 +16,8 @@
  *   - dotted acronyms                 ("U.S." → "U-S-", spelled by the
  *                                      phonemizer's letter-sequence layer)
  *
- * Every step is idempotent on its own output, so the downstream engine
- * normalizers can still run their (overlapping) expansions safely.
+ * Every step is idempotent on its own output, so the engine tails can still
+ * run their (overlapping) expansions safely.
  */
 
 import {
@@ -27,7 +28,8 @@ import {
   expandPercentages,
   expandScientificNotation,
   expandUnits,
-} from './KittenPreprocessor';
+} from './textRules';
+import {kittenTail, kokoroTail} from './engineTails';
 import {lookupTable} from '../utils/lookupTable';
 
 const MONTHS = [
@@ -446,4 +448,16 @@ export function normalizeForSpeech(text: string): string {
   text = splitAlphanumeric(text);
   text = markDottedAcronyms(text);
   return text.replace(/ {2,}/g, ' ');
+}
+
+/**
+ * The full text → words path for an engine: the shared pipeline, then the
+ * engine's own steps (engineTails).
+ */
+export function normalizeForEngine(
+  text: string,
+  engine: 'kitten' | 'kokoro',
+): string {
+  const shared = normalizeForSpeech(text);
+  return engine === 'kitten' ? kittenTail(shared) : kokoroTail(shared);
 }

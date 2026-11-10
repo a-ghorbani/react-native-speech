@@ -19,7 +19,8 @@ lookups are zero-allocation on the hot path.
 Text Input
     ↓
 KokoroEngine / KittenEngine (application layer)
-    ↓ (TextNormalizer.normalize())
+    ↓ normalizeForEngine(text, 'kokoro' | 'kitten')
+    ↓   = normalizeForSpeech (shared) + the engine's tail (engineTails)
 Normalized Text
     ↓
 HansPhonemizer (src/phonemization/HansPhonemizer.ts)
@@ -31,16 +32,24 @@ IPA Phoneme String
 Engine-ready Phonemes
 ```
 
-**Key design:** Normalization happens at the engine layer
-(e.g., `KokoroEngine`), NOT inside the phonemizer.
+**Key design:** Text → words normalization happens before the phonemizer,
+in one place: `src/phonemization/normalizeForSpeech.ts`. The shared
+pipeline runs first, then the engine's tail (`engineTails.ts`), which holds
+the rules where Kitten and Kokoro still differ (number words joined with
+"-" vs " ", Kokoro's year-style numbers and « »). Numbers become words
+through one module, `numberWords.ts`.
 
 ## Components
 
-### TextNormalizer (`src/engines/kokoro/TextNormalizer.ts`)
+### normalizeForEngine (`src/phonemization/normalizeForSpeech.ts`)
 
-Preprocesses text before phonemization. Expands abbreviations, normalizes
-quotes/apostrophes, converts years and other numerals to words, and chunks
-long input by sentence boundaries.
+The shared pipeline (`normalizeForSpeech`: quotes, URLs and emails,
+abbreviations, symbols, numbers, units, dates, acronyms), then the engine
+tail (`engineTails.ts`): the kittentts-port steps for Kitten, the
+kokoro.js-port steps for Kokoro (abbreviations, years and times, money,
+decimals, capital possessives, dotted acronyms). `TextNormalizer`
+(`src/engines/kokoro/TextNormalizer.ts`) chunks long input by sentence
+boundaries; its `normalize()` runs the Kokoro tail alone.
 
 ### HansPhonemizer (`src/phonemization/HansPhonemizer.ts`)
 

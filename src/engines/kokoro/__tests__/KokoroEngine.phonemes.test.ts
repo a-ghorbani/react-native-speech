@@ -73,6 +73,7 @@ jest.mock('../../../utils/AssetLoader', () => ({
 }));
 
 import {KokoroEngine} from '../KokoroEngine';
+import {normalizeForEngine} from '../../../phonemization/normalizeForSpeech';
 import type {KokoroConfig} from '../../../types/Kokoro';
 
 const validConfig: KokoroConfig = {
@@ -160,6 +161,24 @@ describe('KokoroEngine - phoneme input bypasses g2p', () => {
     await expect(
       e.synthesize({phonemes: '   '}, {voiceId: 'af_bella'}),
     ).rejects.toThrow(/Phonemes cannot be empty/);
+  });
+
+  it('phonemizes normalizeForEngine(text, "kokoro") on speak and stream', async () => {
+    const text = 'Pay $5 at 3:30 in 1984 (Is it?).';
+    const expected = normalizeForEngine(text, 'kokoro');
+    for (const run of ['speak', 'stream'] as const) {
+      const e = new KokoroEngine();
+      await e.initialize(validConfig);
+      mockPhonemize.mockClear();
+      if (run === 'speak') {
+        await e.synthesize(text, {voiceId: 'af_bella'});
+      } else {
+        const handle = e.synthesizeStream({voiceId: 'af_bella'});
+        handle.append(text);
+        await handle.finalize();
+      }
+      expect(mockPhonemize).toHaveBeenCalledWith(expected, expect.anything());
+    }
   });
 
   it('rejects empty text input with the original message', async () => {

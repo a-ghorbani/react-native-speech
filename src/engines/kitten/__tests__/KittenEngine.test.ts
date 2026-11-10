@@ -46,20 +46,9 @@ const stubDictSource = {
   hasWord: () => false,
   size: () => 0,
 };
-const stubPreprocessor = class {
-  static lastOptions: Record<string, unknown> | undefined;
-  constructor(options?: Record<string, unknown>) {
-    stubPreprocessor.lastOptions = options;
-  }
-  process(t: string) {
-    return t;
-  }
-};
 jest.mock('../../../phonemization', () => ({
   loadNativeDict: jest.fn(async () => stubDictSource),
   loadDict: jest.fn(async () => stubDictSource),
-  TextPreprocessor: stubPreprocessor,
-  chunkText: (t: string) => [t],
   HansPhonemizer: class {},
 }));
 
@@ -72,6 +61,7 @@ jest.mock('../../../utils/AssetLoader', () => ({
 }));
 
 import {KittenEngine} from '../KittenEngine';
+import {normalizeForEngine} from '../../../phonemization/normalizeForSpeech';
 import {SpeechStreamImpl} from '../../SpeechStream';
 import type {KittenConfig} from '../../../types/Kitten';
 import type {TTSEngine} from '../../../types';
@@ -96,15 +86,6 @@ const sampleVoiceData = {
 describe('KittenEngine - construction & identity', () => {
   it('constructor does not throw', () => {
     expect(() => new KittenEngine()).not.toThrow();
-  });
-
-  it('leaves scale suffixes and fractions to normalizeForSpeech', () => {
-    // The upstream rules read "B2B" as "B two billion" and "5/1" as "five firsts".
-    expect(new KittenEngine()).toBeDefined();
-    expect(stubPreprocessor.lastOptions).toMatchObject({
-      expandScaleSuffixes: false,
-      expandFractions: false,
-    });
   });
 
   it('identifies itself as kitten engine', () => {
@@ -413,6 +394,28 @@ describe('KittenEngine - phoneme input bypasses g2p', () => {
     await e.synthesize('hello world', {voiceId: 'expr-voice-2-f'});
 
     expect(spy).toHaveBeenCalled();
+  });
+
+  it('phonemizes normalizeForEngine(text, "kitten") on speak and stream', async () => {
+    const text = 'Pay $5 at 3:30pm on 2024-05-01 (B2B, 5/1).';
+    const expected = normalizeForEngine(text, 'kitten');
+    for (const run of ['speak', 'stream'] as const) {
+      const e = new KittenEngine();
+      await e.initialize(validConfig);
+      const spy = jest.spyOn(
+        (e as unknown as {phonemizer: {phonemize: () => Promise<string>}})
+          .phonemizer,
+        'phonemize',
+      );
+      if (run === 'speak') {
+        await e.synthesize(text, {voiceId: 'expr-voice-2-f'});
+      } else {
+        const handle = e.synthesizeStream({voiceId: 'expr-voice-2-f'});
+        handle.append(text);
+        await handle.finalize();
+      }
+      expect(spy).toHaveBeenCalledWith(expected, expect.anything());
+    }
   });
 });
 

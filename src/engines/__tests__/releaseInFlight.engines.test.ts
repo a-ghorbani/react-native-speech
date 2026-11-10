@@ -20,11 +20,6 @@ jest.mock('../NeuralAudioPlayer', () => ({
 }));
 jest.mock('../../phonemization', () => ({
   loadNativeDict: jest.fn(),
-  TextPreprocessor: class {
-    process(t: string) {
-      return t;
-    }
-  },
 }));
 
 import {KokoroEngine} from '../kokoro/KokoroEngine';

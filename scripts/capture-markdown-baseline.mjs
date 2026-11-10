@@ -82,8 +82,8 @@ const {JsDictSource} = await import(`${LIB}/phonemization/JsDictSource.js`);
 const {postProcessPhonemes} = await import(
   `${LIB}/engines/kokoro/Phonemizer.js`
 );
-const {TextPreprocessor} = await import(
-  `${LIB}/phonemization/KittenPreprocessor.js`
+const {normalizeForEngine} = await import(
+  `${LIB}/phonemization/normalizeForSpeech.js`
 );
 const {chunkTextWithPositions} = await import(
   `${LIB}/engines/kitten/chunkTextWithPositions.js`
@@ -219,7 +219,7 @@ async function captureKokoroNonStream(text) {
   const chunks = normalizer.chunkBySentencesWithMetadata(input, 400);
   const out = [];
   for (const chunk of chunks) {
-    const normalized = normalizer.normalize(chunk.text);
+    const normalized = normalizeForEngine(chunk.text, 'kokoro');
     const ipa = await phonemizer.phonemize(normalized, 'en-us');
     out.push({
       rawChunk: chunk.text,
@@ -233,13 +233,12 @@ async function captureKokoroNonStream(text) {
 }
 
 async function captureKittenNonStream(text) {
-  const preprocessor = new TextPreprocessor({removePunctuation: false});
   const phonemizer = new HansPhonemizer({dict});
   const input = STRIP ? stripMarkdown(text) : text;
   const chunks = chunkTextWithPositions(input, 500);
   const out = [];
   for (const chunk of chunks) {
-    const processed = preprocessor.process(chunk.text);
+    const processed = normalizeForEngine(chunk.text, 'kitten');
     const ipa = await phonemizer.phonemize(processed, 'en-us');
     out.push({
       rawChunk: chunk.text,
@@ -275,7 +274,7 @@ async function captureKokoroStream(text) {
   const chunks = await drainChunker(chunker);
   const out = [];
   for (const chunk of chunks) {
-    const normalized = normalizer.normalize(chunk.text);
+    const normalized = normalizeForEngine(chunk.text, 'kokoro');
     const ipa = await phonemizer.phonemize(normalized, 'en-us');
     out.push({
       rawChunk: chunk.text,
@@ -290,7 +289,6 @@ async function captureKokoroStream(text) {
 
 async function captureKittenStream(text) {
   // Example app: Kitten streams with maxChunkSize=500.
-  const preprocessor = new TextPreprocessor({removePunctuation: false});
   const phonemizer = new HansPhonemizer({dict});
   const chunker = new StreamingChunker(500);
   const mdBuffer = STRIP ? createMarkdownStreamBuffer() : null;
@@ -310,7 +308,7 @@ async function captureKittenStream(text) {
   const chunks = await drainChunker(chunker);
   const out = [];
   for (const chunk of chunks) {
-    const processed = preprocessor.process(chunk.text);
+    const processed = normalizeForEngine(chunk.text, 'kitten');
     const ipa = await phonemizer.phonemize(processed, 'en-us');
     out.push({
       rawChunk: chunk.text,
