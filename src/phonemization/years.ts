@@ -87,6 +87,11 @@ const RE_COUNT_NOUN_NEXT = new RegExp(
   'i',
 );
 
+/** True when `rest` (the text after a number) starts with a count noun. */
+export function countNounFollows(rest: string): boolean {
+  return RE_COUNT_NOUN_NEXT.test(rest);
+}
+
 /** 1984 → "nineteen eighty-four", 2005 → "two thousand five". */
 export function yearToWords(year: number): string {
   if (year >= 2000 && year <= 2009) return numberToWords(year);
@@ -115,7 +120,7 @@ export function expandYears(text: string): string {
       offset: number,
     ) =>
       RE_COUNT_LEAD.test(lead) &&
-      RE_COUNT_NOUN_NEXT.test(text.slice(offset + m.length)) &&
+      countNounFollows(text.slice(offset + m.length)) &&
       !(
         lead.startsWith('in') &&
         RE_PEOPLE_AFTER_IN.test(text.slice(offset + m.length))
