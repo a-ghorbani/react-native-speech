@@ -17,6 +17,7 @@ trap 'rm -rf "$work"' EXIT
 
 status=0
 for patch in "${patches[@]}"; do
+  patch=$(cd "$(dirname "$patch")" && pwd)/$(basename "$patch")
   name=$(basename "$patch" .patch)
   pkg=${name%+*}
   version=${name##*+}

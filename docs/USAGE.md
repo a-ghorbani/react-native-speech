@@ -777,7 +777,7 @@ The patch ships with this package as `patches/onnxruntime-react-native+1.24.3.pa
    If you already patch `onnxruntime-react-native` (for example for 16 KB pages, as `example/patches/` does), add this file's `diff --git` section to your existing patch instead.
 3. Reinstall (`yarn`), then rebuild the native app (Android and iOS).
 
-To check that it works: in a debug build (`__DEV__`), a stop that ends an inference logs `Run terminated on stop: Error: Exiting due to terminate flag being set to true.`
+To check that it works: in a debug build (`__DEV__`), a stop that ends an inference logs `Run terminated on stop: Exiting due to terminate flag being set to true.`
 
 The patch is tied to the `onnxruntime-react-native` version. When you upgrade it, check that the patch still applies (patch-package fails the install otherwise) and take the matching file from this package; drop the patch once a release can terminate runs itself. Supertonic does not use this yet.
 
