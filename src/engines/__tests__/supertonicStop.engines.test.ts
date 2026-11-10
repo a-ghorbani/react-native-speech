@@ -302,6 +302,78 @@ describe.each<Binding>(['bridge', 'unpatched', 'patched'])(
   },
 );
 
+const TWO = 'The first reply is here. The second one follows it.';
+
+describe.each<Binding>(['unpatched', 'patched'])(
+  '%s binding, two chunks',
+  binding => {
+    beforeEach(() => bind(binding));
+
+    test.each(['speak', 'stream'])(
+      '%s: stop() while chunk 1 plays and chunk 2 is mid-diffusion: chunk 2 starts no further run',
+      async kind => {
+        const m = models(binding);
+        const e = await engine(m);
+        e.config = {maxChunkSize: 30};
+        let done: Promise<void>;
+        if (kind === 'speak') {
+          done = e.synthesize(TWO, opts);
+        } else {
+          const h = e.synthesizeStream(opts);
+          h.append(TWO);
+          done = h.finalize();
+        }
+        await advanceTo(m, RUNS_PER_CHUNK);
+        m.finishLast();
+        await until(() => play.mock.calls.length === 1);
+        await advanceTo(m, RUNS_PER_CHUNK + 4);
+        await e.stop();
+        m.finishLast();
+        await expect(done).resolves.toBeUndefined();
+        await tick(20);
+        expect(m.runs).toHaveLength(RUNS_PER_CHUNK + 4);
+        expect(play).toHaveBeenCalledTimes(1);
+      },
+    );
+  },
+);
+
+test('a stream unit still waiting for its voice style starts no run once a new speak() replaced it (#104)', async () => {
+  const m = models('unpatched');
+  const e = await engine(m);
+  let styleReady!: () => void;
+  const style = await e.styleLoader.getVoiceStyle('F1');
+  e.styleLoader.getVoiceStyle.mockImplementationOnce(
+    () => new Promise(r => (styleReady = () => r(style))),
+  );
+  const a = e.synthesizeStream(opts);
+  a.append(A);
+  const aDone = a.finalize();
+  await tick(20);
+  const b = e.synthesize(B, opts);
+  await until(() => m.runs.length === 1);
+  styleReady();
+  await expect(aDone).resolves.toBeUndefined();
+  await advanceTo(m, RUNS_PER_CHUNK);
+  m.finishLast();
+  await until(() => play.mock.calls.length === 1);
+  pendingPlays.splice(0).forEach(r => r());
+  await expect(b).resolves.toBeUndefined();
+  expect(m.runs.filter(r => r.text === A.length)).toHaveLength(0);
+});
+
+test('destroy() mid-chunk: no further run starts and speak resolves (no "session not initialized")', async () => {
+  const m = models('unpatched');
+  const e = await engine(m);
+  const spoken = e.synthesize(A, opts);
+  await advanceTo(m, 4);
+  await e.destroy();
+  m.finishLast();
+  await expect(spoken).resolves.toBeUndefined();
+  expect(m.runs).toHaveLength(4);
+  expect(play).not.toHaveBeenCalled();
+});
+
 describe('patched binding: the run in flight ends too', () => {
   beforeEach(() => bind('patched'));
 

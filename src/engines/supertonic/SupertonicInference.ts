@@ -27,7 +27,7 @@ import {
 } from './UnicodeProcessor';
 import {SUPERTONIC_CONSTANTS} from './constants';
 import {createComponentLogger} from '../../utils/logger';
-import {RunAborter} from '../RunAborter';
+import type {RunAborter} from '../RunAborter';
 
 const log = createComponentLogger('Supertonic', 'Inference');
 
@@ -146,7 +146,7 @@ export class SupertonicInference {
   private isInitialized = false;
   private unicodeProcessor: UnicodeProcessor | null = null;
 
-  constructor(private readonly runs = new RunAborter()) {}
+  constructor(private readonly runs: RunAborter) {}
 
   /**
    * Set the Unicode processor instance
@@ -255,7 +255,7 @@ export class SupertonicInference {
     voiceStyle: SupertonicVoiceStyle,
     inferenceSteps: number = 5,
     speed: number = 1.0,
-    isCancelled: () => boolean = () => false,
+    isCancelled: () => boolean,
   ): Promise<AudioBuffer> {
     try {
       return await this.runPipeline(
@@ -267,7 +267,7 @@ export class SupertonicInference {
       );
     } catch (e) {
       if (e instanceof Cancelled) {
-        log.debug('Synthesis stopped between model runs');
+        log.debug('Synthesis stopped (between model runs or mid-run)');
         return {
           samples: new Float32Array(0),
           sampleRate: this.sampleRate,
@@ -451,11 +451,9 @@ export class SupertonicInference {
     };
 
     try {
-      if (!this.durationPredictorSession) {
-        throw new Error('Duration predictor session not initialized');
-      }
       const results = await this.run(
         this.durationPredictorSession,
+        'Duration predictor',
         feeds,
         isCancelled,
       );
@@ -534,11 +532,9 @@ export class SupertonicInference {
     };
 
     try {
-      if (!this.textEncoderSession) {
-        throw new Error('Text encoder session not initialized');
-      }
       const results = await this.run(
         this.textEncoderSession,
+        'Text encoder',
         feeds,
         isCancelled,
       );
@@ -658,11 +654,9 @@ export class SupertonicInference {
       }
 
       try {
-        if (!this.vectorEstimatorSession) {
-          throw new Error('Vector estimator session not initialized');
-        }
         const results = await this.run(
           this.vectorEstimatorSession,
+          'Vector estimator',
           feeds,
           isCancelled,
         );
@@ -715,10 +709,12 @@ export class SupertonicInference {
     };
 
     try {
-      if (!this.vocoderSession) {
-        throw new Error('Vocoder session not initialized');
-      }
-      const results = await this.run(this.vocoderSession, feeds, isCancelled);
+      const results = await this.run(
+        this.vocoderSession,
+        'Vocoder',
+        feeds,
+        isCancelled,
+      );
 
       log.debug(`Vocoder output keys: ${Object.keys(results).join(', ')}`);
 
@@ -751,12 +747,18 @@ export class SupertonicInference {
    * binding; see RunAborter).
    */
   private async run(
-    session: OnnxInferenceSession,
+    session: OnnxInferenceSession | null,
+    name: string,
     feeds: Record<string, OnnxTensor>,
     isCancelled: () => boolean,
   ): Promise<Record<string, OnnxTensor>> {
+    // Before the session check: destroy() nulls the sessions under a
+    // stopped chunk.
     if (isCancelled()) {
       throw new Cancelled();
+    }
+    if (!session) {
+      throw new Error(`${name} session not initialized`);
     }
     const results = await this.runs.run(session, feeds);
     if (!results) {
