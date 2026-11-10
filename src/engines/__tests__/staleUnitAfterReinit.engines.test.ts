@@ -51,21 +51,23 @@ type Held = {release: () => void};
 function setup(name: 'Kitten' | 'Kokoro') {
   const log: string[] = [];
   const held: Held[] = [];
-  /** Which step of the old unit ("A ...") waits for releaseHeld(). */
-  const hold = {phonemize: false, embedding: false};
+  /** Which old step waits for releaseHeld(): phonemizing texts with this tag, or the first embedding. */
+  const hold = {phonemize: '', embedding: false};
   const session = (label: string) => ({
     release: jest.fn(async () => {}),
     run: jest.fn((feeds: {input_ids: {data: BigInt64Array}}) => {
       const tag = TAGS[Number(feeds.input_ids.data[0]) - 1];
       log.push(`${label}:${tag}`);
-      const out = {waveform: {data: new Float32Array(240).fill(0.1)}};
+      const out = {waveform: {data: new Float32Array(24000).fill(0.1)}};
       return new Promise(resolve => held.push({release: () => resolve(out)}));
     }),
   });
   const later = <T>(value: T) =>
     new Promise<T>(resolve => held.push({release: () => resolve(value)}));
   const phonemize = jest.fn((t: string) =>
-    hold.phonemize && t.includes('A') ? later(t) : Promise.resolve(t),
+    hold.phonemize && t.includes(hold.phonemize)
+      ? later(t)
+      : Promise.resolve(t),
   );
   // The old unit fetches the first embedding.
   const embedding = jest.fn(() => {
@@ -145,7 +147,7 @@ describe.each(['Kitten', 'Kokoro'] as const)(
 
     it('does not run a unit stopped mid-phonemize on the new session', async () => {
       const h = setup(name);
-      h.hold.phonemize = true;
+      h.hold.phonemize = 'A';
       const old = h.engine.synthesize('A one');
       await tick();
       expect(h.log).toEqual([]);
@@ -211,6 +213,27 @@ describe.each(['Kitten', 'Kokoro'] as const)(
       await Promise.all([old, next]);
 
       expect(h.log).toEqual(['old:NEW']);
+    });
+
+    it('does not run the prefetched next chunk after stop() + speak() (#104)', async () => {
+      const h = setup(name);
+      h.engine.config.maxChunkSize = 8;
+      h.hold.phonemize = 'B';
+      const old = h.engine.synthesize('A one. B two.');
+      await tick();
+      expect(h.log).toEqual(['old:A']);
+      h.releaseHeld(); // chunk A plays; chunk B is prefetched and held in g2p
+      await tick();
+
+      await h.engine.stop();
+      const next = h.engine.synthesize('NEW one');
+      await tick();
+      h.releaseHeld(); // B's g2p ends; so does NEW
+      await tick();
+      h.releaseHeld();
+      await Promise.all([old, next]);
+
+      expect(h.log).toEqual(['old:A', 'old:NEW']);
     });
   },
 );
