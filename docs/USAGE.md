@@ -761,6 +761,26 @@ When the headphones, Bluetooth device, AirPlay or CarPlay output that speech is 
 
 The pause holds, through an interruption that ends with `shouldResume` and for later chunks, until you call `Speech.resume()` (playback continues on the current output) or `Speech.stop()`. Show a paused state with a resume control when you get an `onPause` you did not request. A new `speak()` or stream ends it and plays normally (`onStopped` fires for the held one if it was held between chunks). Connecting a new output does not pause.
 
+### Faster first audio after a stop (onnxruntime-react-native patch)
+
+`onnxruntime-react-native` (1.24.3, the latest release) cannot stop a model inference once it has started. After `Speech.stop()`, or a new `speak()` or stream that replaces the current one, the inference that was running keeps going, and the next utterance's first inference shares the CPU with it until it ends. With Kokoro fp32 on a Pixel 9, the first audio after a stop takes about 7 s, against about 4 s when nothing is running (about 15 s at `maxChunkSize: 200`).
+
+Kokoro and Kitten pass an `AbortSignal` to every inference and abort it on `stop()`, on a replacing call, and on `release()`. The binding honors it only with a small patch to its C++ (`cpp/InferenceSessionHostObject.cpp`, shared by Android and iOS). With the patch, the running inference ends within about 10–40 ms (up to ~0.5 s with 200-char chunks), and first audio after a stop is about the same as from idle (Pixel 9, Kokoro fp32: about 3.5–4.2 s). Without the patch, nothing changes: the signal is ignored, and nothing is passed to the older bridge binding (1.23).
+
+The patch ships with this package as `patches/onnxruntime-react-native+1.24.3.patch` (also [on GitHub](../patches/onnxruntime-react-native+1.24.3.patch)), in [patch-package](https://github.com/ds300/patch-package) format:
+
+1. Add patch-package to your app (`yarn add -D patch-package`, with `"postinstall": "patch-package"` in `package.json`).
+2. If your app has no `patches/onnxruntime-react-native+1.24.3.patch` yet, copy the file into `patches/`:
+   ```sh
+   cp node_modules/@pocketpalai/react-native-speech/patches/onnxruntime-react-native+1.24.3.patch patches/
+   ```
+   If you already patch `onnxruntime-react-native` (for example for 16 KB pages, as `example/patches/` does), add this file's `diff --git` section to your existing patch instead.
+3. Reinstall (`yarn`), then rebuild the native app (Android and iOS).
+
+To check that it works: in a debug build (`__DEV__`), a stop that ends an inference logs `Run terminated on stop: Exiting due to terminate flag being set to true.`
+
+The patch is tied to the `onnxruntime-react-native` version. When you upgrade it, check that the patch still applies (patch-package fails the install otherwise) and take the matching file from this package; drop the patch once a release can terminate runs itself. Supertonic does not use this yet.
+
 ### Release / cleanup
 
 Neural engines hold ONNX sessions and voice buffers that can run to 200+ MB. Call `Speech.release()` when you're done to free the sessions. Re-initialize before the next call. See [ARCHITECTURE.md](./ARCHITECTURE.md) for memory characteristics per engine.
