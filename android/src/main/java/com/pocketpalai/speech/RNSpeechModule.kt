@@ -769,7 +769,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, promise)
   }
 
-  // [ducking] is unused: neural playback always requests may-duck focus, so other apps duck.
   override fun playPcm16(pcm: ByteArray, sampleRate: Int, channels: Int, ducking: Boolean, promise: Promise) {
     playPcm16({ pcm }, sampleRate, channels, promise)
   }
