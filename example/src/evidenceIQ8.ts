@@ -87,6 +87,70 @@ async function ensureFile(dir: string, name: string, url: string, bytes?: number
   return p;
 }
 
+// stopfa: I96's texts and timing (stories/I96/evidence/harness/evidenceI96.ts) so numbers compare.
+const STOP_A =
+  'The river ran past the old mill where the children used to play every summer afternoon. ' +
+  'Along the river bank there were tall trees that gave shade to anyone who walked by slowly. ' +
+  'In spring the river rose and covered the low fields with cold brown water for many weeks. ' +
+  'Fishermen came to the river at dawn and sat quietly on the wooden pier until the sun rose. ' +
+  'At night the river was calm and the lights of the small town were reflected in the water. ';
+const STOP_B =
+  'The mountain road climbed through the forest toward a small village near the top. ' +
+  'From the mountain pass you could see the whole valley spread out below in the sun. ';
+
+function startUtt(kind: string, text: string): Promise<void> {
+  if (kind === 'speak') return Speech.speak(text, VOICE, {firstChunk: 'clause'} as any);
+  const s = Speech.createSpeechStream(VOICE, {firstChunk: 'clause', targetChars: 300} as any);
+  const words = text.split(/(?<= )/);
+  return (async () => {
+    for (let i = 0; i < words.length; i += 3) {
+      s.append(words.slice(i, i + 3).join(''));
+      await wait(30);
+    }
+    await s.finalize();
+  })();
+}
+
+/**
+ * stopfa: A (speak|stream), <delay> ms after A's first play call: await Speech.stop(), then B (stream|speak).
+ * First audio = B's call -> B's first play call (null playback: where native onStart would follow).
+ * URL: a=speak|stream b=stream|speak runs=N delay=1200
+ */
+async function runStopFirstAudio(url: string, file: string) {
+  const a = q(url, 'a') ?? 'stream';
+  const b = q(url, 'b') ?? 'stream';
+  const runs = Number(q(url, 'runs') ?? '10');
+  const delay = Number(q(url, 'delay') ?? '1200');
+  const plays: number[] = [];
+  const playN: number[] = [];
+  (globalThis as any).__IQ8_ONPLAY = (buf: any) => { plays.push(Date.now()); playN.push(buf.samples.length); };
+  for (let r = 1; r <= runs; r++) {
+    plays.length = 0; playN.length = 0;
+    const t0 = Date.now();
+    log(`STOP_BEGIN file=${file} a=${a} b=${b} run=${r} t=${t0}`);
+    let aSettled = 'pending';
+    const aDone = startUtt(a, STOP_A).then(
+      () => (aSettled = 'resolved'),
+      e => (aSettled = 'rejected:' + String(e).slice(0, 80)),
+    );
+    for (let i = 0; i < 6000 && plays.length === 0; i++) await wait(5);
+    const tAplay = plays[0] ?? -1;
+    await wait(delay);
+    const nA = plays.length;
+    const tStop = Date.now();
+    await Speech.stop();
+    const tB = Date.now();
+    let bErr = '';
+    const bDone = startUtt(b, STOP_B).catch(e => (bErr = String(e).slice(0, 120)));
+    for (let i = 0; i < 6000 && plays.length <= nA; i++) await wait(2);
+    const tBplay = plays.length > nA ? plays[nA]! : -1;
+    await bDone;
+    await Promise.race([aDone, wait(30000)]);
+    log(`STOP_END file=${file} a=${a} b=${b} run=${r} aFirstPlayMs=${tAplay - t0} stopMs=${tB - tStop} firstAudioMs=${tBplay > 0 ? tBplay - tB : -1} aPlays=${nA} after=${JSON.stringify(plays.slice(nA).map((t, i) => [t - tB, playN[nA + i]]))} a=${aSettled} bErr=${bErr || 'none'}`);
+    await wait(1000);
+  }
+}
+
 export function isIQ8EvidenceUrl(url: string | null | undefined) {
   return !!url && url.startsWith('speechexample://evidence/iq8');
 }
@@ -132,6 +196,12 @@ export async function runIQ8Evidence(url: string): Promise<void> {
     log('WARMUP_BEGIN');
     await Speech.speak('Warm up.', VOICE).catch(e => log('WARMUP_ERROR ' + String(e)));
     log('WARMUP_END');
+    if (modes[0] === 'stopfa') {
+      await runStopFirstAudio(url, file);
+      await memLine('end');
+      log('DONE');
+      return;
+    }
     for (const key of keys) {
       for (const mode of modes) {
         const text = REPLIES[key]!;

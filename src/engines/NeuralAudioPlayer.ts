@@ -55,7 +55,10 @@ export class NeuralAudioPlayer {
       // IQ8: never reach the speaker; hold for the buffer's duration so the pipeline timing is kept.
       const ms = Math.round((audioBuffer.samples.length / audioBuffer.sampleRate) * 1000);
       (globalThis as any).__IQ8_ONPLAY?.(audioBuffer);
-      await this.playNative(() => new Promise<void>(r => setTimeout(r, ms)));
+      await this.playNative(() => new Promise<void>(r => {
+        const t = setTimeout(r, ms);
+        (globalThis as any).__IQ8_CANCEL = () => { clearTimeout(t); r(); };
+      }));
       return;
     }
     // Convert Float32Array to base64-encoded Int16 PCM
@@ -102,6 +105,7 @@ export class NeuralAudioPlayer {
       this.playGen++;
       this.isCurrentlyPlaying = false;
       this.nativeMayHold = false;
+      (globalThis as any).__IQ8_CANCEL?.(); // IQ8: null playback ends like a native stop
       await NativeNeuralAudioPlayer.stop();
     }
   }
