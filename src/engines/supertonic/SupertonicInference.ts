@@ -757,7 +757,8 @@ export class SupertonicInference {
     feeds: Record<string, OnnxTensor>,
     isCancelled: () => boolean,
   ): Promise<Record<string, OnnxTensor>> {
-    // Before the session check, for the same reason.
+    // Before the session check: destroy() nulls the sessions under a
+    // stopped chunk.
     if (isCancelled()) {
       throw new Cancelled();
     }
