@@ -124,6 +124,13 @@ describe('KokoroEngine - Mandarin voices', () => {
     expect(mockSessionRun).not.toHaveBeenCalled();
   });
 
+  it('a zh stream without the zh import fails at once, not at finalize', async () => {
+    const e = await initEngine();
+    expect(() => e.synthesizeStream({voiceId: 'zf_xiaoxiao'})).toThrow(
+      "import '@pocketpalai/react-native-speech/zh'",
+    );
+  });
+
   it('phoneme input on a zh voice still works without the zh import', async () => {
     const e = await initEngine();
     await e.synthesize({phonemes: 'ni↓xau↓'}, {voiceId: 'zf_xiaoxiao'});

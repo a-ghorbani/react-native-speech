@@ -49,6 +49,14 @@ import {
 import {KOKORO_CONSTANTS} from './constants';
 import {getKokoroG2P} from './languageG2P';
 
+function zhEntryMissing(voiceId: string): Error {
+  return new Error(
+    `Voice "${voiceId}" is Mandarin Chinese. Add ` +
+      "`import '@pocketpalai/react-native-speech/zh';` to your app " +
+      '(and install the `pinyin-pro` package) to enable Chinese text.',
+  );
+}
+
 const log = createComponentLogger('Kokoro', 'Engine');
 
 // Lazy-loaded ONNX Runtime references (loaded via dynamic require)
@@ -269,6 +277,13 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   synthesizeStream(options?: KokoroSynthesisOptions): EngineStreamHandle {
     if (!this.isInitialized || !this.session) {
       throw new Error('Kokoro engine not initialized');
+    }
+    const streamVoice = options?.voiceId || this.defaultVoiceId;
+    if (
+      this.getLanguageFromVoice(streamVoice) === 'zh' &&
+      !getKokoroG2P('zh')
+    ) {
+      throw zhEntryMissing(streamVoice);
     }
 
     // A new utterance replaces the previous speak() or stream.
@@ -545,11 +560,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       // runs in other scripts back through the English path.
       const g2p = getKokoroG2P(language);
       if (language === 'zh' && !g2p) {
-        throw new Error(
-          `Voice "${voiceId}" is Mandarin Chinese. Add ` +
-            "`import '@pocketpalai/react-native-speech/zh';` to your app " +
-            '(and install the `pinyin-pro` package) to enable Chinese text.',
-        );
+        throw zhEntryMissing(voiceId);
       }
       const normalized = g2p ? '' : normalizeForEngine(chunkText, 'kokoro');
 

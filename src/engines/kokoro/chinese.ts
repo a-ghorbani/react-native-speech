@@ -58,7 +58,13 @@ export function numbersToChinese(text: string): string {
   return text
     .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xfee0))
     .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
-    .replace(/\d{4}(?=年)/g, y => [...y].map(c => DIGITS[Number(c)]).join(''))
+    .replace(/\d{4}(?=年)/g, (y, at: number, all: string) =>
+      // 5000年 is a quantity (five thousand years); 2000年1月, 2000年代 are dates.
+      /^[1-9]000$/.test(y) &&
+      !/^年(?:代|\d|[一二三四五六七八九十]+月)/.test(all.slice(at + 4))
+        ? y
+        : [...y].map(c => DIGITS[Number(c)]).join(''),
+    )
     .replace(/(\d+(?:\.\d+)?)%/g, (_m, n: string) => '百分之' + n)
     .replace(/\d+(?:\.\d+)?/g, m => {
       const [int, frac] = m.split('.');
