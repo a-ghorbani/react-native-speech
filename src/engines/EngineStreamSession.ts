@@ -4,9 +4,10 @@
  *
  * This is the core of Tier 3 streaming: the loop never resets
  * between "batches" — it just keeps pulling chunks from the chunker
- * as they become ready, synthesizing the next chunk while the current
- * one plays. The only gap is genuine token-rate underrun (LLM slower
- * than playback).
+ * as they become ready, synthesizing up to LOOKAHEAD chunks ahead while
+ * the current one plays, each sized to what can be synthesized while the
+ * audio queued before it plays (#83). Gaps remain where text arrives
+ * slower than playback, or synthesis is slower than playback.
  *
  * Used by all neural engines via dependency injection:
  *   - `synthesizeChunk(text) → TAudio`  (`AudioBuffer` by default)
@@ -72,11 +73,26 @@ export type EngineStreamSessionConfig<TAudio = AudioBuffer> =
         });
 
 type ChunkInfo = {text: string; startIndex: number; endIndex: number};
+type Synthesized<TAudio> = {chunk: ChunkInfo; audio: TAudio};
+
+/** Chunks synthesized ahead of the playing one (#83). */
+const LOOKAHEAD = 2;
+/** The next chunk may always be this many times the last one, so chunks still grow when synthesis is slower than playback. */
+const MIN_GROWTH = 2;
 
 // Unknown shapes (JS callers without hasAudio) are treated as playable.
 function defaultHasAudio(audio: unknown): boolean {
   const samples = (audio as Partial<AudioBuffer> | null | undefined)?.samples;
   return samples == null || samples.length > 0;
+}
+
+// Ms of audio in an AudioBuffer; 0 for other shapes (no pacing data).
+function audioMs(audio: unknown): number {
+  const a = audio as Partial<AudioBuffer> | null | undefined;
+  const n = a?.samples?.length;
+  return typeof n === 'number' && a!.sampleRate
+    ? (n / a!.sampleRate) * 1000
+    : 0;
 }
 
 export interface EngineStreamHandle {
@@ -93,11 +109,20 @@ export class EngineStreamSession<
   private readonly hasAudio: (audio: TAudio) => boolean;
   private readonly loopPromise: Promise<void>;
   private cancelled = false;
+  /** Set when runLoop exits; a fetch chained behind it must not synthesize. */
+  private loopEnded = false;
   private stopSignalResolver: (() => void) | null = null;
   private firstError: Error | null = null;
   private readonly sessionStartTs = Date.now();
   private chunkCount = 0;
   private lastChunkEndTs: number | null = null;
+  /** Synthesis ms per char and length of the last synthesized chunk. */
+  private synthMsPerChar: number | null = null;
+  private lastChunkChars = 0;
+  /** When the playing chunk ends (epoch ms). */
+  private playingUntil = 0;
+  /** Ms of synthesized audio waiting to play. */
+  private queuedMs = 0;
 
   constructor(config: EngineStreamSessionConfig<TAudio>) {
     this.config = config;
@@ -107,6 +132,7 @@ export class EngineStreamSession<
       config.firstChunk,
       config.firstChunkMaxWords,
     );
+    this.chunker.setChunkCap(() => this.nextChunkCap());
     this.loopPromise = this.runLoop();
   }
 
@@ -166,9 +192,7 @@ export class EngineStreamSession<
   }
 
   /** Discard whatever a pending prefetch eventually yields. */
-  private discardPrefetch(
-    prefetch: Promise<{chunk: ChunkInfo; audio: TAudio} | null>,
-  ): void {
+  private discardPrefetch(prefetch: Promise<Synthesized<TAudio> | null>): void {
     prefetch.then(
       next => {
         if (next) {
@@ -198,10 +222,7 @@ export class EngineStreamSession<
     const stopSignal = this.createStopSignal();
     // Discarded if the loop ends early (cancel or error).
     let currentAudio: TAudio | null = null;
-    let prefetchPromise: Promise<{
-      chunk: ChunkInfo;
-      audio: TAudio;
-    } | null> | null = null;
+    const pending: Promise<Synthesized<TAudio> | null>[] = [];
 
     log.info(`stream session started, t+0ms`);
 
@@ -240,6 +261,9 @@ export class EngineStreamSession<
         );
 
         const audio: TAudio = currentAudio!;
+        const ms = audioMs(audio);
+        this.queuedMs -= ms;
+        this.playingUntil = chunkStartTs + ms;
 
         if (postProcess) {
           postProcess(audio);
@@ -252,12 +276,18 @@ export class EngineStreamSession<
           return;
         }
 
-        // Start fetching + synthesizing next chunk in background. Skips
-        // any no-audio chunks until it finds one with audio (or chunker
-        // drains).
-        prefetchPromise = this.fetchNextWithAudio(synthesizeChunk, stopSignal);
-        // Observed when awaited; avoids an unhandled rejection on early return.
-        prefetchPromise.catch(() => {});
+        // Keep LOOKAHEAD chunks fetched + synthesizing in the background,
+        // one after another. Each skips no-audio chunks until it finds one
+        // with audio (or the chunker drains).
+        while (pending.length < LOOKAHEAD) {
+          const prev = pending[pending.length - 1];
+          const fetch = () =>
+            this.fetchNextWithAudio(synthesizeChunk, stopSignal);
+          const next = prev ? prev.then(fetch) : fetch();
+          // Observed when awaited; avoids an unhandled rejection on early return.
+          next.catch(() => {});
+          pending.push(next);
+        }
 
         // Play current chunk (concurrent with prefetch). The player owns
         // the audio from here, so the finally block must not discard it.
@@ -274,9 +304,7 @@ export class EngineStreamSession<
         );
 
         // Get prefetched result.
-        const pending = prefetchPromise;
-        prefetchPromise = null;
-        const next = await pending;
+        const next = await pending.shift()!;
         if (!next) {
           return;
         }
@@ -295,11 +323,12 @@ export class EngineStreamSession<
       }
       log.error(`stream session error: ${error.message}`);
     } finally {
+      this.loopEnded = true;
       if (currentAudio !== null) {
         this.discard(currentAudio);
       }
-      if (prefetchPromise) {
-        this.discardPrefetch(prefetchPromise);
+      for (const p of pending) {
+        this.discardPrefetch(p);
       }
       log.info(
         `stream session ended: chunks=${this.chunkCount}, elapsed=${this.rel()}ms`,
@@ -321,12 +350,16 @@ export class EngineStreamSession<
   private async fetchNextWithAudio(
     synthesizeChunk: (text: string) => Promise<TAudio>,
     stopSignal: Promise<null>,
-  ): Promise<{chunk: ChunkInfo; audio: TAudio} | null> {
+  ): Promise<Synthesized<TAudio> | null> {
     while (true) {
-      const chunk = await this.chunker.getNextChunk();
-      if (!chunk || this.cancelled) {
+      if (this.loopEnded) {
         return null;
       }
+      const chunk = await this.chunker.getNextChunk();
+      if (!chunk || this.cancelled || this.loopEnded) {
+        return null;
+      }
+      const synthStart = Date.now();
       const synth = synthesizeChunk(chunk.text);
       // If the stop signal wins the race the result still arrives later
       // and must be discarded; cancel() sets `cancelled` before resolving
@@ -358,8 +391,29 @@ export class EngineStreamSession<
         this.discard(audio);
         continue;
       }
+      this.synthMsPerChar = (Date.now() - synthStart) / chunk.text.length;
+      this.lastChunkChars = chunk.text.length;
+      this.queuedMs += audioMs(audio);
       return {chunk, audio};
     }
+  }
+
+  /**
+   * Largest next chunk whose synthesis fits in the audio queued ahead of
+   * it (the rest of the playing chunk plus chunks already synthesized) at
+   * the last chunk's synthesis rate, and at least MIN_GROWTH times that
+   * chunk. Null before the first chunk is synthesized, or when nothing is
+   * queued (also the case for audio without durations): the
+   * chunker's own ramp applies.
+   */
+  private nextChunkCap(): number | null {
+    const queued = Math.max(0, this.playingUntil - Date.now()) + this.queuedMs;
+    if (this.synthMsPerChar === null || queued <= 0) {
+      return null;
+    }
+    return Math.floor(
+      Math.max(queued / this.synthMsPerChar, MIN_GROWTH * this.lastChunkChars),
+    );
   }
 
   private emitProgress(chunk: ChunkInfo, chunkIndex: number): void {

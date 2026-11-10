@@ -335,7 +335,8 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
 * `hasAudio?: (a: TAudio) => boolean` (default `a.samples.length > 0`).
 * `discard?: (a: TAudio) => void` — attached **to the synth promise itself**:
   `p.then(a => { if (this.cancelled || raceLost) discard(a) })`, and applied to
-  `prefetchPromise` on every early return of `runLoop`, plus skipped empty chunks.
+  each chunk still synthesizing or ready ahead (up to two, #83) on every early return of
+  `runLoop`, plus skipped empty chunks.
 * `onCancel?: () => void` — called synchronously at the start of `cancel()`, before
   `stopPlayback`. Phonon passes `() => NativePhonon.cancelUpTo(max(inflight))`.
 

@@ -978,3 +978,69 @@ describe('StreamingChunker: chunk-size ramp after a short first chunk (#70)', ()
     expect(Math.max(...sizes.slice(3, -1))).toBeGreaterThan(150);
   });
 });
+
+describe('StreamingChunker setChunkCap (#83)', () => {
+  test('a consumer cap tighter than the ramp cuts at a clause mark in its second half', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append(`${COUNT}. `);
+    expect(chunker.tryPeek()!.text).toBe('one, two, three, ');
+    chunker.setChunkCap(() => 30);
+    const second = chunker.tryPeek()!.text;
+    expect(second.length).toBeLessThanOrEqual(30);
+    expect(second.length).toBeGreaterThan(15);
+    expect(second).toMatch(/, $/);
+  });
+
+  test('without a clause mark in range a capped chunk is a whole sentence, never a word cut', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append('Sure. ');
+    chunker.append(
+      'Here is a sentence with no clause mark that runs well past the cap. ',
+    );
+    expect(chunker.tryPeek()!.text).toBe('Sure. ');
+    chunker.setChunkCap(() => 20);
+    expect(chunker.tryPeek()!.text).toBe(
+      'Here is a sentence with no clause mark that runs well past the cap. ',
+    );
+  });
+
+  test('a cap above the ramp cap leaves the ramp in charge; null removes the cap', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    chunker.append(`${COUNT}, ${COUNT}. `);
+    expect(chunker.tryPeek()!.text.length).toBe(17);
+    chunker.setChunkCap(() => 150);
+    expect(chunker.tryPeek()!.text.length).toBeLessThanOrEqual(68);
+    chunker.setChunkCap(() => 20);
+    expect(chunker.tryPeek()!.text.length).toBeLessThanOrEqual(20);
+    chunker.setChunkCap(null);
+    expect(chunker.tryPeek()!.text.length).toBeGreaterThan(20);
+  });
+
+  test('the cap is read when the chunk is cut, not when it is set', () => {
+    const chunker = new StreamingChunker(200, 'clause');
+    let cap = 150;
+    chunker.setChunkCap(() => cap);
+    chunker.append('one, two, three, ');
+    expect(chunker.tryPeek()!.text).toBe('one, two, three, ');
+    cap = 20;
+    chunker.append('four, five, six, seven, eight, nine, ten. ');
+    expect(chunker.tryPeek()!.text.length).toBeLessThanOrEqual(20);
+  });
+
+  test("firstChunk 'sentence' ignores the cap: no clause cuts", () => {
+    const chunker = new StreamingChunker(200, 'sentence');
+    chunker.setChunkCap(() => 20);
+    const text =
+      'Bread goes stale quickly. The starch inside it recrystallizes, pushing water out of the crumb and into the crust, which is why an old loaf feels dry. ';
+    chunker.append(text);
+    chunker.finalize();
+    const chunks: string[] = [];
+    let c = chunker.tryPeek();
+    while (c) {
+      chunks.push(c.text);
+      c = chunker.tryPeek();
+    }
+    expect(chunks.join('')).toBe(text);
+    expect(chunks.every(t => /\. ?$/.test(t))).toBe(true);
+  });
+});
