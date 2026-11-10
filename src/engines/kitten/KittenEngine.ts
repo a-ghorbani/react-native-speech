@@ -258,6 +258,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.stop();
 
     this.stopRequested = false;
+    const gen = this.utteranceGen;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
 
@@ -288,7 +289,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       synthesizeChunk: (text: string) => {
         const processed = normalizeForEngine(text, 'kitten');
         return this.inflight.track(
-          this.synthesizeTextChunk(processed, voiceId, options),
+          this.synthesizeTextChunk(processed, voiceId, gen, options),
         );
       },
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
@@ -455,7 +456,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         } else {
           audioBuffer = await this.raceWithStop(
             this.inflight.track(
-              this.synthesizeTextChunk(chunk.text, voiceId, options, raw),
+              this.synthesizeTextChunk(chunk.text, voiceId, gen, options, raw),
             ),
             stopSignal,
           );
@@ -481,7 +482,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       if (!this.isSuperseded(gen) && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex]!;
         nextAudioPromise = this.inflight.track(
-          this.synthesizeTextChunk(nextChunk.text, voiceId, options, raw),
+          this.synthesizeTextChunk(nextChunk.text, voiceId, gen, options, raw),
         );
       }
 
@@ -505,6 +506,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   private async synthesizeTextChunk(
     chunkStr: string,
     voiceId: string,
+    // The utterance this unit belongs to; a later speak() resets
+    // stopRequested but not this.
+    gen: number,
     options?: KittenSynthesisOptions,
     raw = false,
   ): Promise<AudioBuffer> {
@@ -517,7 +521,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
     try {
       // Text is already preprocessed by doSynthesize; go straight to phonemize.
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         return emptyBuffer();
       }
 
@@ -541,7 +545,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       log.debug(
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         return emptyBuffer();
       }
 
@@ -586,10 +590,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         }
         const subBuffers: AudioBuffer[] = [];
         for (const piece of pieces) {
-          if (this.stopRequested) return emptyBuffer();
+          if (this.isSuperseded(gen)) return emptyBuffer();
           const subAudio = await this.synthesizeTextChunk(
             piece,
             voiceId,
+            gen,
             options,
             raw,
           );
@@ -604,6 +609,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         tokens,
         voiceId,
         chunkStr.length,
+        gen,
         options,
       );
     } catch (error) {
@@ -636,6 +642,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     tokens: number[],
     voiceId: string,
     rawTextLength: number,
+    gen: number,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer> {
     const chunkStartTime = Date.now();
@@ -651,8 +658,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     );
     const voiceTime = Date.now() - voiceStartTime;
     // Stopped or released while this chunk was being prepared; the
-    // session may already be detached.
-    if (this.stopRequested) {
+    // session may already be detached or replaced.
+    if (this.isSuperseded(gen)) {
       return {
         samples: new Float32Array(0),
         sampleRate: SAMPLE_RATE,

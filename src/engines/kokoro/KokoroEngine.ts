@@ -276,6 +276,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     this.stop();
 
     this.stopRequested = false;
+    const gen = this.utteranceGen;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const language = this.getLanguageFromVoice(voiceId);
     const maxChunkSize = this.config?.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
@@ -295,7 +296,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.inflight.track(
-          this.synthesizeTextChunk(text, voiceId, language, options),
+          this.synthesizeTextChunk(text, voiceId, language, gen, options),
         ),
       playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
       stopPlayback: () => neuralAudioPlayer.stop(),
@@ -470,6 +471,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
               chunk.text,
               voiceId,
               language,
+              gen,
               options,
               raw,
             ),
@@ -498,6 +500,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
             nextChunk.text,
             voiceId,
             language,
+            gen,
             options,
             raw,
           ),
@@ -526,6 +529,9 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     chunkText: string,
     voiceId: string,
     language: string,
+    // The utterance this unit belongs to; a later speak() resets
+    // stopRequested but not this.
+    gen: number,
     options?: KokoroSynthesisOptions,
     raw = false,
   ): Promise<AudioBuffer> {
@@ -539,7 +545,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       const normalized = normalizeForEngine(chunkText, 'kokoro');
 
       // Check stop between pipeline steps
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         return {
           samples: new Float32Array(0),
           sampleRate: SAMPLE_RATE,
@@ -553,7 +559,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // Check stop after phonemization (can be slow)
-    if (this.stopRequested) {
+    if (this.isSuperseded(gen)) {
       return {
         samples: new Float32Array(0),
         sampleRate: SAMPLE_RATE,
@@ -593,11 +599,12 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
       const buffers: AudioBuffer[] = [];
       for (const piece of pieces) {
-        if (this.stopRequested) break;
+        if (this.isSuperseded(gen)) break;
         const audio = await this.synthesizeTextChunk(
           piece,
           voiceId,
           language,
+          gen,
           options,
           raw,
         );
@@ -614,7 +621,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // Generate audio for this chunk
-    return this.synthesizeChunk(tokens, voiceId, options);
+    return this.synthesizeChunk(tokens, voiceId, gen, options);
   }
 
   /**
@@ -624,6 +631,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   private async synthesizeChunk(
     tokens: number[],
     voiceId: string,
+    gen: number,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer> {
     const chunkStartTime = Date.now();
@@ -648,8 +656,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
     const voiceTime = Date.now() - voiceStartTime;
     // Stopped or released while this chunk was being prepared; the
-    // session may already be detached.
-    if (this.stopRequested) {
+    // session may already be detached or replaced.
+    if (this.isSuperseded(gen)) {
       return {
         samples: new Float32Array(0),
         sampleRate: SAMPLE_RATE,

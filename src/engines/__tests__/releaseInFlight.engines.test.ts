@@ -342,11 +342,21 @@ describe.each(ENGINES)(
  * empty buffer, rather than failing and logging "session not initialized".
  */
 describe.each([
-  ['Kokoro', () => new KokoroEngine() as any, 'getVoiceEmbedding'],
-  ['Kitten', () => new KittenEngine() as any, 'getStyleEmbedding'],
+  [
+    'Kokoro',
+    () => new KokoroEngine() as any,
+    'getVoiceEmbedding',
+    (e: any) => e.synthesizeChunk([1, 2, 3], 'v', e.utteranceGen),
+  ],
+  [
+    'Kitten',
+    () => new KittenEngine() as any,
+    'getStyleEmbedding',
+    (e: any) => e.synthesizeChunk([1, 2, 3], 'v', 3, e.utteranceGen),
+  ],
 ] as const)(
   '%s: a chunk preparing when release() runs',
-  (_n, create, embed) => {
+  (_n, create, embed, prepareChunk) => {
     test('ends empty without touching the session or logging an error', async () => {
       const e = create();
       const run = jest.fn();
@@ -360,7 +370,7 @@ describe.each([
       };
       const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
       try {
-        const chunk = e.inflight.track(e.synthesizeChunk([1, 2, 3], 'v', 3));
+        const chunk = e.inflight.track(prepareChunk(e));
         await tick();
         await e.release();
         embedded(new Float32Array(4));
