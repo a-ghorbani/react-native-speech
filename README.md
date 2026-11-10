@@ -150,7 +150,7 @@ Without the import, Chinese text on a `zf_*` or `zm_*` voice fails with an error
 
 Text splitting follows each script's punctuation (`。！？` for Chinese and Japanese, `।` for Hindi, `؟ ،` for Arabic). Text without spaces (Chinese, Japanese) is cut between characters when a long run has no punctuation.
 
-How well each Supertonic v3 language comes out is measured in [#14](https://github.com/a-ghorbani/react-native-speech/issues/14): 29 of 31 languages are read back by Whisper at under 10 % character error rate. Vietnamese is weaker (17.5 %, the model's own accuracy), and Hindi with numbers written as digits is less reliable (13.4 %, 6.2 % without digits).
+How well each Supertonic v3 language comes out is measured in [#107](https://github.com/a-ghorbani/react-native-speech/pull/107): 29 of 31 languages are read back by Whisper at under 10 % character error rate. Vietnamese is weaker (17.5 %, the model's own accuracy), and Hindi with numbers written as digits is less reliable (13.4 %, 6.2 % without digits).
 
 ## Phonon add-on
 
