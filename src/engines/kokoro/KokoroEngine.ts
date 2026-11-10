@@ -47,6 +47,7 @@ import {
   createMarkdownStreamBuffer,
 } from '../../utils/stripMarkdown';
 import {KOKORO_CONSTANTS} from './constants';
+import {getKokoroG2P} from './languageG2P';
 
 const log = createComponentLogger('Kokoro', 'Engine');
 
@@ -540,7 +541,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (raw) {
       phonemes = chunkText;
     } else {
-      const normalized = normalizeForEngine(chunkText, 'kokoro');
+      // A registered language G2P (e.g. zh) takes the raw chunk and sends
+      // runs in other scripts back through the English path.
+      const g2p = getKokoroG2P(language);
+      const normalized = g2p ? '' : normalizeForEngine(chunkText, 'kokoro');
 
       // Check stop between pipeline steps
       if (this.isSuperseded(gen)) {
@@ -553,7 +557,14 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       }
 
       // Phonemize (convert text to phonemes)
-      phonemes = await this.phonemizer.phonemize(normalized, language);
+      phonemes = g2p
+        ? await g2p(chunkText, other =>
+            this.phonemizer.phonemize(
+              normalizeForEngine(other, 'kokoro'),
+              'en-us',
+            ),
+          )
+        : await this.phonemizer.phonemize(normalized, language);
     }
 
     // Check stop after phonemization (can be slow)
@@ -1099,8 +1110,17 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         return 'en-us'; // American English
       case 'b':
         return 'en-gb'; // British English
+      case 'z':
+        if (!getKokoroG2P('zh')) {
+          throw new Error(
+            `Voice "${voiceId}" is Mandarin Chinese. Add ` +
+              "`import '@pocketpalai/react-native-speech/zh';` to your app " +
+              '(and install the `pinyin-pro` package) to enable Chinese text.',
+          );
+        }
+        return 'zh';
       default:
-        // es/fr/hi/it/ja/pt/zh voices: the model speaks these languages,
+        // es/fr/hi/it/ja/pt voices: the model speaks these languages,
         // but the built-in dict phonemizer is English-only, so text input
         // is mispronounced (Latin script) or dropped (other scripts).
         if (!this.warnedVoiceLanguages.has(langCode)) {

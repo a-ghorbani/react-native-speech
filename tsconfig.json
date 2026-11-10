@@ -16,6 +16,7 @@
     "paths": {
       "@pocketpalai/react-native-speech": ["./src/index"],
       "@pocketpalai/react-native-speech/engine-sdk": ["./src/engine-sdk"],
+      "@pocketpalai/react-native-speech/zh": ["./src/zh"],
       "@pocketpalai/react-native-speech-phonon": [
         "./packages/react-native-speech-phonon/src/index"
       ]

@@ -2781,6 +2781,7 @@ __metadata:
     jest: ^29.7.0
     onnxruntime-node: ^1.26.0
     phonemize: ^1.1.0
+    pinyin-pro: ^3.26.0
     prettier: ^3.0.3
     react: 19.2.3
     react-native: 0.87.1
