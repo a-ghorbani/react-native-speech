@@ -51,6 +51,13 @@ export class NeuralAudioPlayer {
     audioBuffer: AudioBuffer,
     options?: PlaybackOptions,
   ): Promise<void> {
+    if ((globalThis as any).__IQ8_NOPLAY) {
+      // IQ8: never reach the speaker; hold for the buffer's duration so the pipeline timing is kept.
+      const ms = Math.round((audioBuffer.samples.length / audioBuffer.sampleRate) * 1000);
+      (globalThis as any).__IQ8_ONPLAY?.(audioBuffer);
+      await this.playNative(() => new Promise<void>(r => setTimeout(r, ms)));
+      return;
+    }
     // Convert Float32Array to base64-encoded Int16 PCM
     const base64Audio = float32ToBase64Int16(audioBuffer.samples);
 

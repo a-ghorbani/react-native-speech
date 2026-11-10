@@ -526,6 +526,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     // For phoneme input, the chunk IS the IPA — skip normalization and
     // g2p entirely and tokenize it directly. For text input, run the
     // full normalize → phonemize pipeline as before.
+    const iq8t0 = Date.now(); // IQ8CHUNK
     let phonemes: string;
     if (raw) {
       phonemes = chunkText;
@@ -610,7 +611,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // Generate audio for this chunk
-    return this.synthesizeChunk(tokens, voiceId, options);
+    return this.synthesizeChunk(tokens, voiceId, {...options, __iq8: {chars: chunkText.length, t0: iq8t0, pre: Date.now() - iq8t0}} as any);
   }
 
   /**
@@ -680,8 +681,14 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     if (!this.session) {
       throw new Error('Kokoro session not initialized');
     }
+    const iq8inflight = ++(globalThis as any).__iq8inflight || ((globalThis as any).__iq8inflight = 1);
     const inferenceStartTime = Date.now();
-    const results = await this.session.run(feeds);
+    let results: any;
+    try {
+      results = await this.session.run(feeds);
+    } finally {
+      (globalThis as any).__iq8inflight--;
+    }
     const inferenceTime = Date.now() - inferenceStartTime;
 
     // Extract audio output (kokoro.js uses 'waveform')
@@ -693,7 +700,22 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     const modelAudio = audioTensor.data as Float32Array;
+    let iq8 = '';
+    {
+      let nan = 0, zero = 0, acc = 0, peak = 0, fin = 0;
+      for (let i = 0; i < modelAudio.length; i++) {
+        const v = modelAudio[i]!;
+        if (Number.isNaN(v)) { nan++; continue; }
+        if (v === 0) zero++;
+        acc += v * v; fin++;
+        const a = Math.abs(v); if (a > peak) peak = a;
+      }
+      const rms = fin ? Math.sqrt(acc / fin) : 0;
+      const m = (options as any)?.__iq8 ?? {};
+      iq8 = `[IQ8CHUNK] model=${this.config?.modelPath?.split('/').pop()} chars=${m.chars ?? -1} tokens=${tokens.length} samples=${modelAudio.length} nan=${nan} zero=${zero} rms_dbfs=${rms > 0 ? (20 * Math.log10(rms)).toFixed(1) : '-inf'} peak=${peak.toFixed(4)} pre_ms=${m.pre ?? -1} infer_ms=${inferenceTime} inflight=${iq8inflight} t0=${m.t0 ?? -1}`;
+    }
     if (hasNaN(modelAudio)) {
+      console.log(`${iq8} trimmed=-1 total_ms=${Date.now() - ((options as any)?.__iq8?.t0 ?? chunkStartTime)} rejected=1`);
       const ortVersion =
         require('onnxruntime-react-native').env?.versions?.common ?? '?';
       throw new Error(
@@ -704,6 +726,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     const audioData = trimEdgeSilence(modelAudio, SAMPLE_RATE);
+    console.log(`${iq8} trimmed=${audioData.length} total_ms=${Date.now() - ((options as any)?.__iq8?.t0 ?? chunkStartTime)} rejected=0`);
     const audioBuffer: AudioBuffer = {
       samples: audioData,
       sampleRate: SAMPLE_RATE,
