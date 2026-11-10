@@ -505,6 +505,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     voiceId: string,
     options?: KittenSynthesisOptions,
     raw = false,
+    // The utterance this unit belongs to; a later speak() resets
+    // stopRequested but not this.
+    gen = this.utteranceGen,
   ): Promise<AudioBuffer> {
     const emptyBuffer = (): AudioBuffer => ({
       samples: new Float32Array(0),
@@ -515,7 +518,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
     try {
       // Text is already preprocessed by doSynthesize; go straight to phonemize.
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         return emptyBuffer();
       }
 
@@ -539,7 +542,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       log.debug(
         `Phonemized: "${phonemes.substring(0, 80)}..." (${phonemes.length} chars)`,
       );
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         return emptyBuffer();
       }
 
@@ -584,12 +587,13 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         }
         const subBuffers: AudioBuffer[] = [];
         for (const piece of pieces) {
-          if (this.stopRequested) return emptyBuffer();
+          if (this.isSuperseded(gen)) return emptyBuffer();
           const subAudio = await this.synthesizeTextChunk(
             piece,
             voiceId,
             options,
             raw,
+            gen,
           );
           if (subAudio.samples.length > 0) subBuffers.push(subAudio);
         }
@@ -602,6 +606,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         tokens,
         voiceId,
         chunkStr.length,
+        gen,
         options,
       );
     } catch (error) {
@@ -634,6 +639,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     tokens: number[],
     voiceId: string,
     rawTextLength: number,
+    gen: number,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer> {
     const chunkStartTime = Date.now();
@@ -649,8 +655,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     );
     const voiceTime = Date.now() - voiceStartTime;
     // Stopped or released while this chunk was being prepared; the
-    // session may already be detached.
-    if (this.stopRequested) {
+    // session may already be detached or replaced.
+    if (this.isSuperseded(gen)) {
       return {
         samples: new Float32Array(0),
         sampleRate: SAMPLE_RATE,
