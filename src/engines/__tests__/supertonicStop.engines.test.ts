@@ -300,6 +300,30 @@ describe.each<Binding>(['bridge', 'unpatched', 'patched'])(
       await expect(b).resolves.toBeUndefined();
     });
 
+    test('cancel() of a finished stream while a new speak() runs: the new one runs every step and plays (#108)', async () => {
+      const m = models(binding);
+      const e = await engine(m);
+      const a = e.synthesizeStream(opts);
+      a.append(A);
+      const aDone = a.finalize();
+      await advanceTo(m, RUNS_PER_CHUNK);
+      m.finishLast();
+      await until(() => play.mock.calls.length === 1);
+      pendingPlays.splice(0).forEach(r => r());
+      await expect(aDone).resolves.toBeUndefined();
+      const b = e.synthesize(B, opts);
+      await advanceTo(m, RUNS_PER_CHUNK + 4);
+      await a.cancel();
+      await advanceTo(m, 2 * RUNS_PER_CHUNK);
+      expect(m.runs.slice(RUNS_PER_CHUNK).every(r => !r.signal?.aborted)).toBe(
+        true,
+      );
+      m.finishLast();
+      await until(() => play.mock.calls.length === 2);
+      pendingPlays.splice(0).forEach(r => r());
+      await expect(b).resolves.toBeUndefined();
+    });
+
     test('release() mid-chunk: no further run starts; the sessions are freed once the run in flight ends', async () => {
       const m = models(binding);
       const e = await engine(m);

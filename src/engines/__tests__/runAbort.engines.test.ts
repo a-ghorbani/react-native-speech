@@ -247,6 +247,28 @@ describe.each(ENGINES)('%s', (_name, make) => {
     await expect(b).resolves.toBeUndefined();
   });
 
+  test('patched binding: cancel() of a finished stream while a new speak() runs leaves the new one alone (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append('The first sentence is here.');
+    const aDone = a.finalize();
+    await until(() => m.runs.length === 1);
+    m.runs[0]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(aDone).resolves.toBeUndefined();
+    const b = e.synthesize('A new reply.');
+    await until(() => m.runs.length === 2);
+    await a.cancel();
+    expect(m.runs[1]!.signal?.aborted).toBe(false);
+    m.runs[1]!.resolve();
+    await until(() => play.mock.calls.length === 2);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(b).resolves.toBeUndefined();
+  });
+
   test('patched binding: a new stream right after a cancel() runs and plays (#108)', async () => {
     bind('patched');
     const m = session('patched');
