@@ -10,8 +10,10 @@ export const YEAR = '(?:1[1-9]\\d\\d|20\\d\\d)';
 const MONTH =
   '(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\\.?';
 
-// "May 5, 2024", "May first, 2024" (ISO dates arrive in this form)
-const DAY = '(?:\\d{1,2}|[a-z-]*(?:first|second|third|th)),?';
+// "May 5, 2024", "May first, 2024", "May twenty-first, 2024" (ISO dates
+// arrive in this form)
+const DAY =
+  '(?:\\d{1,2}|(?:twenty-|thirty-)?(?:first|second|third|(?:four|fif|six|seven|eigh|nin|ten|eleven|twelf|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)th|twentieth|thirtieth)),?';
 
 // Months are case-sensitive ("may" is a verb); prepositions take either case.
 const PREPOSITION =
@@ -29,9 +31,10 @@ const RE_CONTEXT = new RegExp(
   'g',
 );
 
-// A count, not a year, when one of these nouns follows: "a context of 2048
-// tokens", "by 1500 users". A closed list: "In 2020 researchers found" stays
-// a year.
+// A count, not a year, when one of these nouns follows a mid-sentence
+// "in/of/by/after/before/from/between": "a context of 2048 tokens", "by 1500
+// users". A closed list, and not after a sentence-opening "In 2020 people
+// stayed home" or a month ("May 2024 users"): those are years.
 export const COUNT_NOUNS = [
   'tokens',
   'users',
@@ -73,6 +76,7 @@ export const COUNT_NOUNS = [
   'employees',
   'students',
 ];
+const RE_COUNT_LEAD = /^(?:in|of|by|after|before|from|between)\b/;
 const RE_COUNT_NOUN_NEXT = new RegExp(
   `^\\s+(?:${COUNT_NOUNS.join('|')})\\b`,
   'i',
@@ -91,8 +95,8 @@ export function yearToWords(year: number): string {
 /**
  * A year behind "in/since/by/from/until/of/circa/before/after/between/
  * through" (optionally "roughly", "about", …), a month or a quarter ("Q4,
- * 2023"), plus the second year of "from 1990 to 2020"; not before a count
- * noun. Runs after units, so "of 1955 ms" is already words.
+ * 2023"), plus the second year of "from 1990 to 2020"; not a count ("of
+ * 2048 tokens", see COUNT_NOUNS). Runs after units, so "of 1955 ms" is already words.
  */
 export function expandYears(text: string): string {
   return text.replace(
@@ -105,6 +109,7 @@ export function expandYears(text: string): string {
       b: string | undefined,
       offset: number,
     ) =>
+      RE_COUNT_LEAD.test(lead) &&
       RE_COUNT_NOUN_NEXT.test(text.slice(offset + m.length))
         ? m
         : lead + yearToWords(+a) + (join && b ? join + yearToWords(+b) : ''),
@@ -119,7 +124,11 @@ const RE_CODE_DIGITS =
   /(?<=[A-Za-z])\d{4}(?!\d)|(?<![\w.])\d{4}(?=[A-Za-z]+\d)/g;
 
 export function expandCodeDigits(text: string): string {
-  return text.replace(RE_CODE_DIGITS, (m: string) =>
-    +m >= 1100 ? ` ${yearToWords(+m)} ` : m,
+  return text.replace(RE_CODE_DIGITS, (m: string, at: number, s: string) =>
+    +m >= 1100
+      ? (/\w/.test(s[at - 1] ?? '') ? ' ' : '') +
+        yearToWords(+m) +
+        (/\w/.test(s[at + 4] ?? '') ? ' ' : '')
+      : m,
   );
 }

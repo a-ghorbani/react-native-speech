@@ -29,6 +29,13 @@ describe('years behind a context word read as years (#32)', () => {
     ['CPUs from roughly 2019 on', 'from roughly twenty nineteen on'],
     ['through 1972', 'through nineteen seventy-two'],
     ['In 2020 researchers found', 'In twenty twenty researchers'],
+    ['In 2020 people stayed home.', 'In twenty twenty people'],
+    ['In 1968 students protested.', 'In nineteen sixty-eight students'],
+    ['By 2030 customers will expect it.', 'By twenty thirty customers'],
+    ['Q4 2023 results beat estimates.', 'Q four twenty twenty-three results'],
+    ['In May 2024 users reported bugs.', 'May twenty twenty-four users'],
+    ['since 2020 people work from home', 'since twenty twenty people'],
+    ['May twenty-first, 2024', 'May twenty-first, twenty twenty-four'],
     ['dropped (Q4, 2023)', 'Q four, twenty twenty-three'],
   ])('%s', (input, expected) => {
     const {kitten, kokoro} = both(input);
@@ -45,6 +52,7 @@ describe('other 4-digit numbers read as cardinals (#32)', () => {
     ['out of 2048 tokens', 'two thousand forty', 'tokens'],
     ['a context of 2048 tokens', 'two thousand forty', 'tokens'],
     ['by 1984 users', 'one thousand nine hundred eighty', 'users'],
+    ['May both 2024 teams', 'two thousand twenty', 'teams'],
     ['after 1984 steps', 'one thousand nine hundred eighty', 'steps'],
     ['from 1950 to 1984 people', 'one thousand nine hundred fifty', 'people'],
     ['a median of 1551 ms', 'one thousand five hundred fifty', 'milliseconds'],
@@ -69,6 +77,7 @@ describe('4-digit runs inside codes read in pairs (#32)', () => {
     ['MT6899 (Dimensity)', 'MT sixty-eight ninety-nine'],
     ['an RTX4090', 'RTX forty ninety'],
     ['commit 5228ea0', 'fifty-two twenty-eight'],
+    ['Buy the RTX4090, it rocks.', 'RTX forty ninety, it rocks.'],
   ])('%s', (input, expected) => {
     const {kitten, kokoro} = both(input);
     expect(kitten).toContain(expected);

@@ -59,21 +59,18 @@ export function kittenTail(text: string): string {
 
 /** Clock times split the kokoro.js way. */
 function splitNum(match: string): string {
-  if (match.includes('.')) {
+  if (!match.includes(':')) {
     return match;
-  } else if (match.includes(':')) {
-    const parts = match.split(':').map(Number);
-    const h = parts[0];
-    const m = parts[1];
-    if (m === 0) {
-      return `${h} o'clock`;
-    } else if (m !== undefined && m < 10) {
-      return `${h} oh ${m}`;
-    }
-    return `${h} ${m}`;
   }
-
-  return match;
+  const parts = match.split(':').map(Number);
+  const h = parts[0];
+  const m = parts[1];
+  if (m === 0) {
+    return `${h} o'clock`;
+  } else if (m !== undefined && m < 10) {
+    return `${h} oh ${m}`;
+  }
+  return `${h} ${m}`;
 }
 
 /** Money in spoken form. */
