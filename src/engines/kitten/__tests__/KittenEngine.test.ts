@@ -49,7 +49,6 @@ const stubDictSource = {
 jest.mock('../../../phonemization', () => ({
   loadNativeDict: jest.fn(async () => stubDictSource),
   loadDict: jest.fn(async () => stubDictSource),
-  chunkText: (t: string) => [t],
   HansPhonemizer: class {},
 }));
 

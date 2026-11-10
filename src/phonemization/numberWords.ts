@@ -96,7 +96,7 @@ const DIGIT_WORDS = [
   'nine',
 ];
 
-export function digitsToWords(digits: string): string {
+function digitsToWords(digits: string): string {
   return Array.from(digits, d => DIGIT_WORDS[+d]!).join(' ');
 }
 
