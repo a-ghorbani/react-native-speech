@@ -32,6 +32,7 @@ jest.mock('../../phonemization', () => ({
 import {KokoroEngine} from '../kokoro/KokoroEngine';
 import {KittenEngine} from '../kitten/KittenEngine';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
+import {SpeechStreamImpl} from '../SpeechStream';
 
 const play = neuralAudioPlayer.play as jest.Mock;
 const tick = (ms = 5) => new Promise(r => setTimeout(r, ms));
@@ -224,6 +225,24 @@ describe.each(ENGINES)('%s', (_name, make) => {
     expect(m.runs.every(r => r.signal?.aborted)).toBe(true);
     await expect(done).resolves.toBeUndefined();
     await tick(20);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test('patched binding: SpeechStream.cancel() (the public handle) terminates the run in flight (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const stream = new SpeechStreamImpl({
+      synthesize: async () => {},
+      stop: async () => {},
+      engineStreamFactory: () => e.synthesizeStream(),
+    });
+    stream.append(TWO);
+    const done = stream.finalize();
+    await until(() => m.runs.length >= 1);
+    await stream.cancel();
+    expect(m.runs.every(r => r.signal?.aborted)).toBe(true);
+    await expect(done).resolves.toBeUndefined();
     expect(play).not.toHaveBeenCalled();
   });
 
