@@ -71,6 +71,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
   // Chunking and progress tracking
   private stopRequested = false;
+  /** Bumped by stop(); a speak() loop from an older value is superseded. */
+  private utteranceGen = 0;
   private stopSignalResolver: (() => void) | null = null;
   private currentUtteranceId = 0;
   private chunkProgressCallback: ChunkProgressCallback | null = null;
@@ -212,7 +214,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       throw new Error('Supertonic engine not initialized');
     }
 
-    this.cancelActiveStream();
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
 
     this.stopRequested = false;
     const voiceId = options?.voiceId || this.defaultVoiceId;
@@ -353,9 +356,10 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     text: string,
     options?: SupertonicSynthesisOptions,
   ): Promise<AudioBuffer | void> {
-    // Reset stop flag and generate new utterance ID
+    // A new utterance replaces the previous speak() or stream.
+    this.stop();
     this.stopRequested = false;
-    this.stopSignalResolver = null;
+    const gen = this.utteranceGen;
     this.currentUtteranceId = Date.now();
     const utteranceId = this.currentUtteranceId;
 
@@ -392,7 +396,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     let nextAudioPromise: Promise<AudioBuffer> | null = null;
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-      if (this.stopRequested) {
+      if (this.isSuperseded(gen)) {
         log.debug('Stop requested, aborting synthesis');
         return undefined;
       }
@@ -438,7 +442,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         }
 
         // Stop signal won the race
-        if (audioBuffer === null || this.stopRequested) {
+        if (audioBuffer === null || this.isSuperseded(gen)) {
           log.debug('Stop requested, aborting synthesis');
           return undefined;
         }
@@ -449,7 +453,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
         throw synthError;
       }
 
-      if (this.stopRequested || audioBuffer.samples.length === 0) {
+      if (this.isSuperseded(gen) || audioBuffer.samples.length === 0) {
         log.debug('Stop requested before playback');
         return undefined;
       }
@@ -457,7 +461,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       // Start synthesizing next chunk in parallel
       // (only if not already stopping to avoid wasted work)
       const nextChunkIndex = chunkIndex + 1;
-      if (!this.stopRequested && nextChunkIndex < chunks.length) {
+      if (!this.isSuperseded(gen) && nextChunkIndex < chunks.length) {
         const nextChunk = chunks[nextChunkIndex] as TextChunk;
         nextAudioPromise = this.inflight.track(
           this.synthesizeChunk(
@@ -577,14 +581,20 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
    */
   async stop(): Promise<void> {
     this.stopRequested = true;
+    this.utteranceGen++;
     // Resolve stop signal so Promise.race exits immediately
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    await this.cancelActiveStream();
-    // Fire-and-forget native audio stop
+    // Sent before stop() yields, so it reaches native ahead of the next
+    // utterance's first chunk.
     neuralAudioPlayer.stop().catch(() => {});
+    await this.cancelActiveStream();
+  }
+
+  private isSuperseded(gen: number): boolean {
+    return this.stopRequested || gen !== this.utteranceGen;
   }
 
   /**

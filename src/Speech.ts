@@ -102,6 +102,17 @@ function resolveEngine(id: EngineId): AnyEngine | undefined {
   return created;
 }
 
+// The latest stream that feeds the engine through speak() batches (an
+// engine without synthesizeStream, e.g. the OS engine). A new speak() or
+// stream replaces it.
+let batchStream: SpeechStreamImpl | null = null;
+
+function cancelBatchStream(): void {
+  const stream = batchStream;
+  batchStream = null;
+  stream?.cancel().catch(() => {});
+}
+
 // Engines get `dispatchChunkProgress` at init; it fans out to the
 // `setChunkProgressCallback` slot and every `onChunkProgress` subscription.
 // Subscriptions are wrapped so one callback can be added twice and removed
@@ -328,6 +339,7 @@ export default class Speech {
     voiceId?: string,
     options?: SynthesisOptions,
   ): Promise<void> {
+    cancelBatchStream();
     if (neuralEngine(Speech.currentEngine)) {
       await neuralAudioPlayer.endHeldPause();
     }
@@ -413,7 +425,14 @@ export default class Speech {
         instance.synthesizeStream!({...streamVoiceOpt, ...opts});
     }
 
-    return new SpeechStreamImpl({
+    cancelBatchStream();
+    if (!engineStreamFactory) {
+      // The engine replaces its own utterance in synthesizeStream();
+      // here the stream replaces a speak() that is still playing.
+      Speech.stop().catch(err => log.warn('stop before stream failed:', err));
+    }
+
+    const stream = new SpeechStreamImpl({
       synthesize: (text: string) =>
         Speech.synthesizeOnCurrentEngine(text, voiceId, synthesisOptions),
       stop: () => Speech.stop(),
@@ -422,6 +441,10 @@ export default class Speech {
       engineStreamFactory,
       options,
     });
+    if (!engineStreamFactory) {
+      batchStream = stream;
+    }
+    return stream;
   }
 
   /**
