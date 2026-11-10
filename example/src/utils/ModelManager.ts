@@ -93,6 +93,15 @@ const AVAILABLE_VOICES: Record<string, string[]> = {
     'bf_lily',
     'bm_daniel',
     'bm_fable',
+    // Mandarin: needs `import '@pocketpalai/react-native-speech/zh'` (see engines.ts).
+    'zf_xiaobei',
+    'zf_xiaoni',
+    'zf_xiaoxiao',
+    'zf_xiaoyi',
+    'zm_yunjian',
+    'zm_yunxi',
+    'zm_yunxia',
+    'zm_yunyang',
   ],
 };
 
@@ -251,8 +260,7 @@ export class KokoroModelManager {
         size: totalDownloaded,
         isInstalled: true,
         path: modelPath,
-        languages:
-          this.modelVersion === '1.1-en' ? ['en'] : ['en', 'ja', 'zh', 'ko'],
+        languages: this.modelVersion === '1.1-en' ? ['en'] : ['en', 'zh'],
       });
 
       console.log(`Model ${modelKey} downloaded successfully`);
@@ -419,7 +427,7 @@ export class KokoroModelManager {
           size: fileInfo.size,
           isInstalled: true,
           path: modelPath,
-          languages: ['en', 'ja', 'zh', 'ko'], // v1.0 supports all languages
+          languages: ['en', 'zh'], // text input; zh needs the zh entry (README)
         });
       }
 
