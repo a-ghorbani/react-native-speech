@@ -29,7 +29,7 @@ sealed class FocusEvent {
 internal class FocusEventMapper {
   private enum class Loss { NONE, DUCKED, LOST }
 
-  @Volatile private var loss = Loss.NONE
+  private var loss = Loss.NONE
 
   val isDucked: Boolean
     get() = loss == Loss.DUCKED
@@ -82,9 +82,11 @@ internal class FocusEventGate(private val lock: Any) {
     get() = synchronized(lock) { mapper.isDucked }
 
   /** Starts a new request and returns its generation; callbacks of earlier ones are dropped. */
-  fun begin(): Int = synchronized(lock) {
-    mapper.reset()
-    ++generation
+  fun begin(): Int {
+    synchronized(lock) {
+      mapper.reset()
+      return ++generation
+    }
   }
 
   /** Ends the current request; its later callbacks are dropped. */
@@ -129,6 +131,8 @@ class AudioFocusManager(context: Context, private val lock: Any) {
       return true
     }
 
+    // After a transient loss the old request is still on the stack: drop it, or it would outlive us.
+    releaseRequest()
     val gen = gate.begin()
     // A listener per request: AudioManager keys requests by listener, so a shared one would route
     // a late callback of an abandoned request to the next request.
@@ -170,7 +174,14 @@ class AudioFocusManager(context: Context, private val lock: Any) {
   }
 
   fun abandonFocus(): Unit = synchronized(lock) {
-    val focusListener = focusChangeListener ?: return
+    if (!releaseRequest()) return
+    hasAudioFocus = false
+    gate.end()
+  }
+
+  /** Abandons the current request, if any; returns false when there was none. Under [lock]. */
+  private fun releaseRequest(): Boolean {
+    val focusListener = focusChangeListener ?: return false
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       audioFocusRequest?.let {
@@ -181,9 +192,7 @@ class AudioFocusManager(context: Context, private val lock: Any) {
       @Suppress("DEPRECATION")
       audioManager.abandonAudioFocus(focusListener)
     }
-
     focusChangeListener = null
-    hasAudioFocus = false
-    gate.end()
+    return true
   }
 }

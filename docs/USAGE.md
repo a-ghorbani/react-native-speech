@@ -225,9 +225,9 @@ Speech.initialize(options: VoiceOptions): void
 | `pitch`      | `number`                          | Pitch multiplier: Android `0.1`–`2.0`, iOS `0.5`–`2.0`                                          | Both             |
 | `rate`       | `number`                          | Speech rate: Android `0.1`–`2.0`, iOS varies based on `AVSpeechUtterance` limits                | Both             |
 | `ducking`    | `boolean`                         | If `true`, temporarily lowers audio from other apps while speech is active. Defaults to `false` | Both             |
+| `silentMode` | `'obey' \| 'respect' \| 'ignore'` | Controls how speech interacts with the device's silent switch. Ignored if `ducking` is `true`   | iOS only         |
 
 On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine.
-| `silentMode` | `'obey' \| 'respect' \| 'ignore'` | Controls how speech interacts with the device's silent switch. Ignored if `ducking` is `true`   | iOS only         |
 
 **silentMode Options (iOS only):**
 

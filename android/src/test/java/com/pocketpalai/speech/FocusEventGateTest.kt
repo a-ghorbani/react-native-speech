@@ -6,8 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 class FocusEventGateTest {
   private val lock = Any()
@@ -46,27 +44,28 @@ class FocusEventGateTest {
   }
 
   /**
-   * #51 case 2: the duck callback arrives while the host holds its lock to replace the track
-   * (abandon + new request). The duck must neither be recorded before the lock nor applied after
-   * the new request: nothing would restore it.
+   * #51 case 2: a duck callback arrives while the host holds its lock to end the request and start
+   * a new one (stop, then play). The duck must neither be recorded before the lock nor applied
+   * after the new request: nothing would restore it.
    */
-  @Test
-  fun duckRacingAReplaceIsDroppedNotStranded() {
+  @Test(timeout = 5000)
+  fun duckRacingAReRequestIsDroppedNotStranded() {
     val old = gate.begin()
-    val callbackBlocked = CountDownLatch(1)
     lateinit var callback: Thread
     synchronized(lock) {
       callback = Thread { change(old, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) }
       callback.start()
-      while (callback.state != Thread.State.BLOCKED) Thread.sleep(1)
-      callbackBlocked.countDown()
-      // Inside the replace: the duck must not have been recorded yet.
+      while (callback.state != Thread.State.BLOCKED && callback.state != Thread.State.TERMINATED) {
+        Thread.sleep(1)
+      }
+      assertEquals(Thread.State.BLOCKED, callback.state)
+      // Inside the host's critical section: the duck must not have been recorded yet.
       assertFalse(gate.isDucked)
       gate.end()
       gate.begin()
     }
-    assertTrue(callbackBlocked.await(1, TimeUnit.SECONDS))
     callback.join(1000)
+    assertFalse(callback.isAlive)
     assertFalse(gate.isDucked)
     assertTrue(delivered.isEmpty())
   }
