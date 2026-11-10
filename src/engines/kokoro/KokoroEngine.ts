@@ -42,6 +42,7 @@ import {trimEdgeSilence} from '../../utils/trimEdgeSilence';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {InferenceTracker} from '../InferenceTracker';
+import {RunAborter} from '../RunAborter';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -124,6 +125,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
   // Synthesis state tracking for safe resource release
   private readonly inflight = new InferenceTracker();
+  private readonly runs = new RunAborter();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
@@ -683,8 +685,17 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       throw new Error('Kokoro session not initialized');
     }
     const inferenceStartTime = Date.now();
-    const results = await this.session.run(feeds);
+    const results = await this.runs.run(this.session, feeds);
     const inferenceTime = Date.now() - inferenceStartTime;
+    // Aborted by stop() or release().
+    if (!results) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
+    }
 
     // Extract audio output (kokoro.js uses 'waveform')
     const audioTensor = results.waveform || results.audio;
@@ -764,6 +775,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   async stop(): Promise<void> {
     this.stopRequested = true;
     this.utteranceGen++;
+    this.runs.abortAll();
     // Resolve stop signal so Promise.race exits immediately
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
@@ -848,6 +860,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
     // 1. Signal stop
     this.stopRequested = true;
+    this.runs.abortAll();
     // Ends speak()'s wait on its current chunk, so it resolves rather
     // than failing on the detached session.
     this.stopSignalResolver?.();

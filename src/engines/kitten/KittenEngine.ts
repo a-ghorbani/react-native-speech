@@ -51,6 +51,7 @@ import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {InferenceTracker} from '../InferenceTracker';
+import {RunAborter} from '../RunAborter';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -120,6 +121,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
   // Synthesis state tracking for safe resource release
   private readonly inflight = new InferenceTracker();
+  private readonly runs = new RunAborter();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
@@ -685,14 +687,23 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     if (!this.session) {
       throw new Error('Kitten session not initialized');
     }
-    let results: Record<string, OnnxTensor>;
+    let results: Record<string, OnnxTensor> | null;
     try {
-      results = await this.session.run(feeds);
+      results = await this.runs.run(this.session, feeds);
     } catch (inferError) {
       log.error(
         `ONNX inference failed: ${inferError instanceof Error ? inferError.message : String(inferError)}`,
       );
       throw inferError;
+    }
+    // Aborted by stop() or release().
+    if (!results) {
+      return {
+        samples: new Float32Array(0),
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        duration: 0,
+      };
     }
     const inferenceTime = Date.now() - inferenceStartTime;
     log.debug(
@@ -770,6 +781,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   async stop(): Promise<void> {
     this.stopRequested = true;
     this.utteranceGen++;
+    this.runs.abortAll();
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
@@ -830,6 +842,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     }
 
     this.stopRequested = true;
+    this.runs.abortAll();
     // Ends speak()'s wait on its current chunk, so it resolves rather
     // than failing on the detached session.
     this.stopSignalResolver?.();
