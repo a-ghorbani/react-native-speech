@@ -505,6 +505,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       }
 
       // Play current chunk audio, racing against stop signal
+      console.log('[I97PLAY] ' + Date.now() + ' ' + JSON.stringify(chunk.text.slice(0, 30)));
       await this.raceWithStop(
         neuralAudioPlayer.play(audioBuffer, {
           ducking: options?.ducking,
@@ -512,6 +513,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
         }),
         stopSignal,
       );
+      console.log('[I97PEND] ' + Date.now());
     }
 
     log.debug('Synthesis complete');
@@ -529,6 +531,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     options?: KokoroSynthesisOptions,
     raw = false,
   ): Promise<AudioBuffer> {
+    console.log('[I97SYN] ' + Date.now() + ' ' + (((globalThis as any).__i97s = ((globalThis as any).__i97s || 0) + 1)) + ' ' + chunkText.length + ' ' + JSON.stringify(chunkText.slice(0, 30)));
     // For phoneme input, the chunk IS the IPA — skip normalization and
     // g2p entirely and tokenize it directly. For text input, run the
     // full normalize → phonemize pipeline as before.
@@ -614,6 +617,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // Generate audio for this chunk
+    (globalThis as any).__i97t = JSON.stringify(chunkText.slice(0, 20));
     return this.synthesizeChunk(tokens, voiceId, options);
   }
 
@@ -626,6 +630,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     voiceId: string,
     options?: KokoroSynthesisOptions,
   ): Promise<AudioBuffer> {
+    const __i97t = (globalThis as any).__i97t;
     const chunkStartTime = Date.now();
 
     // Get voice embedding
@@ -685,7 +690,10 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       throw new Error('Kokoro session not initialized');
     }
     const inferenceStartTime = Date.now();
+    const __i97 = ((globalThis as any).__i97 = ((globalThis as any).__i97 || 0) + 1);
+    console.log('[I97INF] S ' + Date.now() + ' ' + __i97 + ' n=' + tokens.length + ' ' + __i97t + (results ? '' : ' X'));
     const results = await this.runs.run(this.session, feeds);
+    console.log('[I97INF] E ' + Date.now() + ' ' + __i97 + ' n=' + tokens.length + ' ' + __i97t);
     const inferenceTime = Date.now() - inferenceStartTime;
     // Aborted by stop() or release().
     if (!results) {

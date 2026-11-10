@@ -292,7 +292,9 @@ export class EngineStreamSession<
         // Play current chunk (concurrent with prefetch). The player owns
         // the audio from here, so the finally block must not discard it.
         currentAudio = null;
+        console.log('[I97PLAY] ' + Date.now() + ' ' + JSON.stringify(currentChunk.text.slice(0, 30)));
         await this.raceWithStop(playAudio(audio, playbackOptions), stopSignal);
+        console.log('[I97PEND] ' + Date.now());
 
         if (this.cancelled) {
           return;

@@ -486,6 +486,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       }
 
       // Play current chunk
+      console.log('[I97PLAY] ' + Date.now() + ' ' + JSON.stringify(chunk.text.slice(0, 30)));
       await this.raceWithStop(
         neuralAudioPlayer.play(audioBuffer, {
           ducking: options?.ducking,
@@ -493,6 +494,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         }),
         stopSignal,
       );
+      console.log('[I97PEND] ' + Date.now());
     }
 
     log.debug('Synthesis complete');
@@ -508,6 +510,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     options?: KittenSynthesisOptions,
     raw = false,
   ): Promise<AudioBuffer> {
+    console.log('[I97SYN] ' + Date.now() + ' ' + (((globalThis as any).__i97s = ((globalThis as any).__i97s || 0) + 1)) + ' ' + chunkStr.length + ' ' + JSON.stringify(chunkStr.slice(0, 30)));
     const emptyBuffer = (): AudioBuffer => ({
       samples: new Float32Array(0),
       sampleRate: SAMPLE_RATE,
@@ -600,6 +603,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       }
 
       // 3. Run ONNX inference with length-dependent voice style.
+      (globalThis as any).__i97t = JSON.stringify(chunkStr.slice(0, 20));
       return await this.synthesizeChunk(
         tokens,
         voiceId,
@@ -638,6 +642,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     rawTextLength: number,
     options?: KittenSynthesisOptions,
   ): Promise<AudioBuffer> {
+    const __i97t = (globalThis as any).__i97t;
     const chunkStartTime = Date.now();
 
     // Resolve voice alias to internal name
@@ -689,7 +694,10 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     }
     let results: Record<string, OnnxTensor> | null;
     try {
+      const __i97 = ((globalThis as any).__i97 = ((globalThis as any).__i97 || 0) + 1);
+      console.log('[I97INF] S ' + Date.now() + ' ' + __i97 + ' n=' + tokens.length + ' ' + __i97t + (results ? '' : ' X'));
       results = await this.runs.run(this.session, feeds);
+      console.log('[I97INF] E ' + Date.now() + ' ' + __i97 + ' n=' + tokens.length + ' ' + __i97t);
     } catch (inferError) {
       log.error(
         `ONNX inference failed: ${inferError instanceof Error ? inferError.message : String(inferError)}`,
