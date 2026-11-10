@@ -103,6 +103,13 @@ jobs:
       - name: Check the core npm package has no Phonon
         run: packages/react-native-speech-phonon/scripts/check-npm-pack.sh --core --root . --list "$RUNNER_TEMP/npm-pack-core.txt"
 
+      # The run-termination patch consumers copy (docs/USAGE.md): shipped, and still applies to
+      # its onnxruntime-react-native version from npm.
+      - name: Check the onnxruntime-react-native patch
+        run: |
+          grep -q 'patches/onnxruntime-react-native+1.24.3.patch' "$RUNNER_TEMP/npm-pack-core.txt"
+          scripts/check-ort-patch.sh
+
       # Packs exactly what `npm publish` would (npm pack runs `prepare` again): the lock and the
       # Phonon build glue in, host tests, scripts and every Phonon binary out.
       - name: Check the add-on npm package contents
