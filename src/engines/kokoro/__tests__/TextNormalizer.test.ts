@@ -230,6 +230,11 @@ describe('TextNormalizer', () => {
       expect(normalizer.normalize("Two C's and a B's")).toBe(
         "Two C'S and a B'S",
       );
+      // Letter plurals without the apostrophe stay plurals ("G2Ps").
+      expect(normalizer.normalize('G 2 Ps and L L Ms')).toBe(
+        "G two P'S and L L M'S",
+      );
+      expect(normalizer.normalize("A's and I's")).toBe("A'S and I'S");
     });
   });
 
