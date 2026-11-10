@@ -227,6 +227,8 @@ Speech.initialize(options: VoiceOptions): void
 | `ducking`    | `boolean`                         | If `true`, temporarily lowers audio from other apps while speech is active. Defaults to `false` | Both             |
 | `silentMode` | `'obey' \| 'respect' \| 'ignore'` | Controls how speech interacts with the device's silent switch. Ignored if `ducking` is `true`   | iOS only         |
 
+On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine.
+
 **silentMode Options (iOS only):**
 
 - **`obey`** (default): Does not change the app's audio session. Speech follows the system default behavior.
@@ -798,6 +800,6 @@ import {
 
 Native PCM sinks (experimental, as the subpath; both play on the same single neural player as `playAudio`, so a new playback stops and replaces the current one):
 
-- **Android** `com.pocketpalai.speech.NeuralPcmSink`: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)`. `from` returns `null` until RNSpeech's module is loaded. Interleaved LE Int16 PCM; `channels` is 1 or 2 (below 1 plays as mono, above 2 rejects with `audio_error` without stopping the current playback). Callable from any thread; playback runs on the module's single audio executor. The promise resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies.
+- **Android** `com.pocketpalai.speech.NeuralPcmSink`: `NeuralPcmSink.from(reactContext)?.playPcm16(pcm, sampleRate, channels, ducking, promise)`. `ducking` is ignored on Android (neural playback always asks other apps to duck). `from` returns `null` until RNSpeech's module is loaded. Interleaved LE Int16 PCM; `channels` is 1 or 2 (below 1 plays as mono, above 2 rejects with `audio_error` without stopping the current playback). Callable from any thread; playback runs on the module's single audio executor. The promise resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `implementation project(":pocketpalai_react-native-speech")` to the add-on's Gradle dependencies.
 - **iOS** `<RNSpeech/RNSpeechAudioOutput.h>`: `[[RNSpeechAudioOutput shared] playFloatSamples:sampleRate:channels:ducking:silentMode:resolve:reject:]`. `shared` is `nil` until an RNSpeech module is alive. Interleaved float32 samples in [-1, 1]; `channels` as on Android; `silentMode` is `@"obey"` (default), `@"respect"` or `@"ignore"`, as `SynthesisOptions.silentMode`. Callable from any thread; work runs on RNSpeech's serial audio queue. It resolves when playback finishes or is stopped or replaced, and rejects with `audio_error` on failure. Add `s.dependency "RNSpeech"` to the add-on's podspec.
 
