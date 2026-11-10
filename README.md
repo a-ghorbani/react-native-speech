@@ -106,8 +106,6 @@ await Speech.speak('Hello from Supertonic.', 'F1');
 // 31 languages plus 'na' for language-agnostic synthesis. Pass a code via
 // `language` (v1 = en only; v2 = en/ko/es/pt/fr; v3 = all 31 + na). Voices
 // are language-agnostic — any voice works with any language.
-// v3 is 3.5–6x slower than v2 on Android: on older phones prefer v2 for
-// en/ko/es/pt/fr. See docs/USAGE.md#choosing-a-model-version.
 await Speech.speak('Bonjour le monde.', 'F1', {language: 'fr'});
 await Speech.speak('Mixed-language text, just works.', 'M2', {language: 'na'});
 
@@ -120,6 +118,8 @@ await Speech.initialize({
 });
 await Speech.speak('Hello from Kitten.', 'expr-voice-2-f');
 ```
+
+Supertonic v3 is 3.5–6× slower than v2 on Android. On Snapdragon 845-class phones (2018) it is slower than real time, so use v2 there for en/ko/es/pt/fr. See [Choosing a model version](docs/USAGE.md#choosing-a-model-version).
 
 Full options (execution providers, chunking, phonemizer selection) are documented in [USAGE.md](./docs/USAGE.md).
 

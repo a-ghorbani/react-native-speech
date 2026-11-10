@@ -661,7 +661,7 @@ Chunking: Supertonic is fast enough that larger chunks (400–800 chars) typical
 
 #### Choosing a model version
 
-The engine runs all three upstream models with the same files and API; the version is whichever files you pass.
+The engine runs all three upstream models with the same file layout and API; the version is whichever files you pass.
 
 | Model | Languages | Download |
 | --- | --- | --- |
@@ -678,17 +678,17 @@ Measured with the example app (release build, synthesis only, median of 3–5 ro
 | Phone | v2 RTF | v3 RTF | v2 first audio (stream) | v3 first audio (stream) | Peak RAM (v2 → v3) |
 | --- | --- | --- | --- | --- | --- |
 | Xiaomi, Snapdragon 8 Elite Gen 5 (2025) | 0.07 | 0.34 | 0.42 s | 0.92 s | ~820 → ~1060 MB |
-| OnePlus 6, Snapdragon 845 (2018) | 0.29 | 1.03 | 1.0 s | 6.0 s | — |
+| OnePlus 6, Snapdragon 845 (2018) | 0.29 | 1.03 | 1.0 s | 6.0 s | ~1050–1170 → ~1170–1290 MB |
 
 RTF is synthesis time ÷ audio duration, so above 1 the voice cannot keep up with playback and a stream stalls between chunks. First audio is for `createSpeechStream` with `firstChunk: 'clause'`, text arriving at 20 tokens/s.
 
-Quality: v3 is no worse than v2 in any language they share, and clearly better in English. Whisper large-v3 word error rate at 5 steps, v2 → v3: English 8.1 → 4.9 % (124 sentences × 4 voices), and on 40 [FLORES-200](https://github.com/facebookresearch/flores) sentences × 2 voices en 6.2 → 5.1, ko 15.9 → 14.1, es 11.0 → 6.2, pt 6.2 → 4.8, fr 8.8 → 8.6 %.
+Quality: v3 is clearly better than v2 in English; in ko, es, pt and fr the 40-sentence sample shows no significant difference either way (WER measures intelligibility, not naturalness). Whisper large-v3 word error rate at 5 steps, v2 → v3: English 8.1 → 4.9 % (124 sentences × 4 voices), and on 40 [FLORES-200](https://github.com/facebookresearch/flores) sentences × 2 voices en 6.2 → 5.1, ko 15.9 → 14.1, es 11.0 → 6.2, pt 6.2 → 4.8, fr 8.8 → 8.6 %.
 
 So:
 
-- On recent phones, use v3: it covers all 31 languages and is the better voice in the five it shares with v2.
-- For en, ko, es, pt and fr on older phones, use v2: on the 2018 phone above, v3 is slower than real time.
-- To trade a little quality for speed on v3, pass `inferenceSteps: 4` (or `defaultInferenceSteps: 4` in the config): 10–20 % faster, English WER 5.6 % instead of 4.9 %. It does not make v3 real-time on the 2018 phone above (RTF 0.93). Do not go below 4 on v3: at 3 steps the speech degrades (English WER 17 %).
+- On recent phones, use v3: it covers all 31 languages, is better in English and comparable in ko, es, pt and fr.
+- For en, ko, es, pt and fr on phones of the Snapdragon 845 class (2018), use v2: on that phone v3 is slower than real time.
+- To trade a little quality for speed on v3, pass `inferenceSteps: 4` (or `defaultInferenceSteps: 4` in the config): about 17 % faster on the 2025 phone above, English WER 5.6 % instead of 4.9 %. It does not make v3 reliably real-time on the 2018 phone (median RTF 0.93, p90 2.0). Do not go below 4 on v3: at 3 steps the speech degrades, for some voices severely (English WER 17 %).
 
 Keep the voice files with their model: the voice style files of v2 and v3 have the same names and shapes but are different embeddings, so load `voice_styles/` from the same repo as the ONNX files.
 
