@@ -70,6 +70,18 @@ class FocusEventGateTest {
     assertTrue(delivered.isEmpty())
   }
 
+  /** A request is committed only when granted: until then the current one keeps its callbacks. */
+  @Test
+  fun pendingRequestTakesOverOnlyOnBegin() {
+    val current = gate.begin()
+    val pending = gate.nextGeneration()
+    assertFalse(change(pending, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK))
+    assertTrue(change(current, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK))
+    assertEquals(pending, gate.begin())
+    assertFalse(change(current, AUDIOFOCUS_GAIN))
+    assertTrue(change(pending, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK))
+  }
+
   @Test
   fun resetDropsAnUnrestoredDuck() {
     val gen = gate.begin()

@@ -81,6 +81,9 @@ internal class FocusEventGate(private val lock: Any) {
   val isDucked: Boolean
     get() = synchronized(lock) { mapper.isDucked }
 
+  /** The generation the next [begin] returns. */
+  fun nextGeneration(): Int = synchronized(lock) { generation + 1 }
+
   /** Starts a new request and returns its generation; callbacks of earlier ones are dropped. */
   fun begin(): Int {
     synchronized(lock) {
@@ -125,15 +128,17 @@ class AudioFocusManager(context: Context, private val lock: Any) {
 
   var listener: ((FocusEvent) -> Unit)? = null
 
-  /** Returns true if focus is held. */
+  /**
+   * Returns true if focus is held. A new request replaces the current one only when granted; a
+   * refused one (during a call) leaves the current request on the stack, so it still gets the
+   * call's end.
+   */
   fun requestFocus(): Boolean = synchronized(lock) {
     if (hasAudioFocus) {
       return true
     }
 
-    // After a transient loss the old request is still on the stack: drop it, or it would outlive us.
-    releaseRequest()
-    val gen = gate.begin()
+    val gen = gate.nextGeneration()
     // A listener per request: AudioManager keys requests by listener, so a shared one would route
     // a late callback of an abandoned request to the next request.
     val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
@@ -146,20 +151,20 @@ class AudioFocusManager(context: Context, private val lock: Any) {
         listener?.invoke(event)
       }
     }
-    focusChangeListener = focusListener
 
+    var request: AudioFocusRequest? = null
     val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val audioAttributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
         .build()
 
-      audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+      request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
         .setAudioAttributes(audioAttributes)
         .setOnAudioFocusChangeListener(focusListener)
         .build()
 
-      audioManager.requestAudioFocus(audioFocusRequest!!)
+      audioManager.requestAudioFocus(request)
     } else {
       @Suppress("DEPRECATION")
       audioManager.requestAudioFocus(
@@ -168,9 +173,18 @@ class AudioFocusManager(context: Context, private val lock: Any) {
         AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
       )
     }
+    if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+      return false
+    }
 
-    hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    return hasAudioFocus
+    // After a transient loss the previous request is still on the stack: drop it, or it would
+    // outlive us.
+    releaseRequest()
+    gate.begin()
+    focusChangeListener = focusListener
+    audioFocusRequest = request
+    hasAudioFocus = true
+    return true
   }
 
   fun abandonFocus(): Unit = synchronized(lock) {
