@@ -45,6 +45,7 @@ import {SUPERTONIC_CONSTANTS} from './constants';
 import {EngineStreamSession} from '../EngineStreamSession';
 import {createComponentLogger} from '../../utils/logger';
 import {InferenceTracker} from '../InferenceTracker';
+import {RunAborter} from '../RunAborter';
 import {
   stripMarkdown,
   createMarkdownStreamBuffer,
@@ -79,11 +80,12 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
   // Synthesis state tracking for safe resource release
   private readonly inflight = new InferenceTracker();
+  private readonly runs = new RunAborter();
 
   private activeStreamSession: EngineStreamSession | null = null;
 
   constructor() {
-    this.inference = new SupertonicInference();
+    this.inference = new SupertonicInference(this.runs);
     this.styleLoader = new StyleLoader();
     this.unicodeProcessor = new UnicodeProcessor();
   }
@@ -218,6 +220,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     this.stop();
 
     this.stopRequested = false;
+    const gen = this.utteranceGen;
     const voiceId = options?.voiceId || this.defaultVoiceId;
     const inferenceSteps =
       options?.inferenceSteps || this.defaultInferenceSteps;
@@ -270,6 +273,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
             inferenceSteps,
             speed,
             language,
+            gen,
           ),
         );
       },
@@ -435,6 +439,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
                 inferenceSteps,
                 speed,
                 language,
+                gen,
               ),
             ),
             stopSignal,
@@ -470,6 +475,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
             inferenceSteps,
             speed,
             language,
+            gen,
           ),
         );
       }
@@ -521,27 +527,21 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     inferenceSteps: number,
     speed: number,
     language: string,
+    // The utterance this unit belongs to; a later speak() resets
+    // stopRequested but not this.
+    gen: number,
   ): Promise<AudioBuffer> {
     // Normalize text — wraps with <lang>...</lang> when the loaded model
     // supports language tags (v2/v3 indexers contain `<` / `>`).
     const normalized = this.unicodeProcessor.normalize(text, language);
 
-    // Check stop before expensive inference
-    if (this.stopRequested) {
-      return {
-        samples: new Float32Array(0),
-        sampleRate: SUPERTONIC_CONSTANTS.SAMPLE_RATE,
-        channels: 1,
-        duration: 0,
-      };
-    }
-
-    // Run inference pipeline
+    // Checked before each model run (about 3 + inferenceSteps per chunk).
     return this.inference.synthesize(
       normalized,
       voiceStyle,
       inferenceSteps,
       speed,
+      () => this.isSuperseded(gen),
     );
   }
 
@@ -582,6 +582,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
   async stop(): Promise<void> {
     this.stopRequested = true;
     this.utteranceGen++;
+    this.runs.abortAll();
     // Resolve stop signal so Promise.race exits immediately
     if (this.stopSignalResolver) {
       this.stopSignalResolver();
@@ -662,6 +663,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
     // 1. Signal stop
     this.stopRequested = true;
+    this.runs.abortAll();
     // Ends speak()'s wait on its current chunk, so it resolves rather
     // than failing on the detached session.
     this.stopSignalResolver?.();
@@ -683,7 +685,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // inference runs on it. Detached first: a later initialize() loads a
     // new pipeline this release never touches.
     const inference = this.inference;
-    this.inference = new SupertonicInference();
+    this.inference = new SupertonicInference(this.runs);
     let inferenceErrors: Error[] = [];
     try {
       await this.inflight.freeWhenIdle(async () => {

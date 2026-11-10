@@ -16,6 +16,7 @@ import type {
   AudioBuffer,
   OnnxInferenceSession,
   OnnxInferenceSessionConstructor,
+  OnnxTensor,
   OnnxTensorConstructor,
 } from '../../types';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
@@ -26,8 +27,12 @@ import {
 } from './UnicodeProcessor';
 import {SUPERTONIC_CONSTANTS} from './constants';
 import {createComponentLogger} from '../../utils/logger';
+import {RunAborter} from '../RunAborter';
 
 const log = createComponentLogger('Supertonic', 'Inference');
+
+/** Thrown between runs once the caller's utterance is stopped. */
+class Cancelled extends Error {}
 
 // Lazy import ONNX Runtime - initialized by ensureONNXRuntime()
 let InferenceSession: OnnxInferenceSessionConstructor;
@@ -141,6 +146,8 @@ export class SupertonicInference {
   private isInitialized = false;
   private unicodeProcessor: UnicodeProcessor | null = null;
 
+  constructor(private readonly runs = new RunAborter()) {}
+
   /**
    * Set the Unicode processor instance
    */
@@ -239,6 +246,8 @@ export class SupertonicInference {
    * @param voiceStyle - Voice style embeddings
    * @param inferenceSteps - Number of diffusion steps (default: 5)
    * @param speed - Speech speed multiplier (default: 1.0)
+   * @param isCancelled - Checked before each model run; once true, no
+   *   further run starts and the result is empty audio
    * @returns AudioBuffer with synthesized audio
    */
   async synthesize(
@@ -246,6 +255,36 @@ export class SupertonicInference {
     voiceStyle: SupertonicVoiceStyle,
     inferenceSteps: number = 5,
     speed: number = 1.0,
+    isCancelled: () => boolean = () => false,
+  ): Promise<AudioBuffer> {
+    try {
+      return await this.runPipeline(
+        text,
+        voiceStyle,
+        inferenceSteps,
+        speed,
+        isCancelled,
+      );
+    } catch (e) {
+      if (e instanceof Cancelled) {
+        log.debug('Synthesis stopped between model runs');
+        return {
+          samples: new Float32Array(0),
+          sampleRate: this.sampleRate,
+          channels: 1,
+          duration: 0,
+        };
+      }
+      throw e;
+    }
+  }
+
+  private async runPipeline(
+    text: string,
+    voiceStyle: SupertonicVoiceStyle,
+    inferenceSteps: number,
+    speed: number,
+    isCancelled: () => boolean,
   ): Promise<AudioBuffer> {
     if (!this.isInitialized) {
       throw new Error('SupertonicInference not initialized');
@@ -274,6 +313,7 @@ export class SupertonicInference {
       textMask,
       voiceStyle.styleDp,
       speed,
+      isCancelled,
     );
     const durationTime = Date.now() - durationStartTime;
 
@@ -293,6 +333,7 @@ export class SupertonicInference {
       textMask,
       voiceStyle.styleTtl,
       seqLen,
+      isCancelled,
     );
     const encoderTime = Date.now() - encoderStartTime;
     log.debug(`Text encoding: ${encoderTime}ms, embDim=${embDim}`);
@@ -308,13 +349,14 @@ export class SupertonicInference {
       latentLen,
       voiceStyle.styleTtl,
       inferenceSteps,
+      isCancelled,
     );
     const diffusionTime = Date.now() - diffusionStartTime;
     log.debug(`Diffusion (${inferenceSteps} steps): ${diffusionTime}ms`);
 
     // Step 5: Run vocoder
     const vocoderStartTime = Date.now();
-    let audioSamples = await this.vocode(latent, latentLen);
+    let audioSamples = await this.vocode(latent, latentLen, isCancelled);
     const vocoderTime = Date.now() - vocoderStartTime;
     log.debug(`Vocoding: ${vocoderTime}ms`);
 
@@ -378,6 +420,7 @@ export class SupertonicInference {
     textMask: Float32Array,
     styleDp: Float32Array,
     speed: number,
+    isCancelled: () => boolean,
   ): Promise<number> {
     const seqLen = textIds.length;
 
@@ -411,7 +454,11 @@ export class SupertonicInference {
       if (!this.durationPredictorSession) {
         throw new Error('Duration predictor session not initialized');
       }
-      const results = await this.durationPredictorSession.run(feeds);
+      const results = await this.run(
+        this.durationPredictorSession,
+        feeds,
+        isCancelled,
+      );
 
       log.debug(`Duration output keys: ${Object.keys(results).join(', ')}`);
 
@@ -439,7 +486,9 @@ export class SupertonicInference {
 
       return Math.max(0.1, durationSeconds); // Minimum 0.1 seconds
     } catch (error) {
-      log.error('predictDuration error:', error);
+      if (!(error instanceof Cancelled)) {
+        log.error('predictDuration error:', error);
+      }
       throw error;
     }
   }
@@ -461,6 +510,7 @@ export class SupertonicInference {
     textMask: Float32Array,
     styleTtl: Float32Array,
     seqLen: number,
+    isCancelled: () => boolean,
   ): Promise<{textEmbedding: Float32Array; embDim: number}> {
     // text_ids: [1, seqLen]
     const textIdsTensor = new Tensor('int64', textIds, [1, seqLen]);
@@ -487,7 +537,11 @@ export class SupertonicInference {
       if (!this.textEncoderSession) {
         throw new Error('Text encoder session not initialized');
       }
-      const results = await this.textEncoderSession.run(feeds);
+      const results = await this.run(
+        this.textEncoderSession,
+        feeds,
+        isCancelled,
+      );
 
       log.debug(`Text encoder output keys: ${Object.keys(results).join(', ')}`);
 
@@ -508,7 +562,9 @@ export class SupertonicInference {
         embDim,
       };
     } catch (error) {
-      log.error('encodeText error:', error);
+      if (!(error instanceof Cancelled)) {
+        log.error('encodeText error:', error);
+      }
       throw error;
     }
   }
@@ -537,6 +593,7 @@ export class SupertonicInference {
     latentLen: number,
     styleTtl: Float32Array,
     numSteps: number,
+    isCancelled: () => boolean,
   ): Promise<Float32Array> {
     log.debug(
       `estimateVector: seqLen=${seqLen}, embDim=${embDim}, latentLen=${latentLen}, numSteps=${numSteps}`,
@@ -604,7 +661,11 @@ export class SupertonicInference {
         if (!this.vectorEstimatorSession) {
           throw new Error('Vector estimator session not initialized');
         }
-        const results = await this.vectorEstimatorSession.run(feeds);
+        const results = await this.run(
+          this.vectorEstimatorSession,
+          feeds,
+          isCancelled,
+        );
 
         const xt =
           results.denoised_latent ||
@@ -619,7 +680,9 @@ export class SupertonicInference {
 
         latent = new Float32Array(xt.data as Float32Array);
       } catch (error) {
-        log.error(`estimateVector step ${step} error:`, error);
+        if (!(error instanceof Cancelled)) {
+          log.error(`estimateVector step ${step} error:`, error);
+        }
         throw error;
       }
     }
@@ -637,6 +700,7 @@ export class SupertonicInference {
   private async vocode(
     latent: Float32Array,
     latentLen: number,
+    isCancelled: () => boolean,
   ): Promise<Float32Array> {
     const latentTensor = new Tensor('float32', latent, [
       1,
@@ -654,7 +718,7 @@ export class SupertonicInference {
       if (!this.vocoderSession) {
         throw new Error('Vocoder session not initialized');
       }
-      const results = await this.vocoderSession.run(feeds);
+      const results = await this.run(this.vocoderSession, feeds, isCancelled);
 
       log.debug(`Vocoder output keys: ${Object.keys(results).join(', ')}`);
 
@@ -674,9 +738,31 @@ export class SupertonicInference {
 
       return new Float32Array(wav.data as Float32Array);
     } catch (error) {
-      log.error('vocode error:', error);
+      if (!(error instanceof Cancelled)) {
+        log.error('vocode error:', error);
+      }
       throw error;
     }
+  }
+
+  /**
+   * One model run. Throws Cancelled instead of starting a run once the
+   * utterance is stopped, or when stop() aborted the run (patched
+   * binding; see RunAborter).
+   */
+  private async run(
+    session: OnnxInferenceSession,
+    feeds: Record<string, OnnxTensor>,
+    isCancelled: () => boolean,
+  ): Promise<Record<string, OnnxTensor>> {
+    if (isCancelled()) {
+      throw new Cancelled();
+    }
+    const results = await this.runs.run(session, feeds);
+    if (!results) {
+      throw new Cancelled();
+    }
+    return results;
   }
 
   /**
