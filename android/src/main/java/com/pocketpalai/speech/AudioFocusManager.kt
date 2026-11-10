@@ -69,38 +69,80 @@ internal class FocusEventMapper {
 }
 
 /**
- * Helper class to manage audio focus for neural TTS playback.
- *
- * Consumers install a [listener] and call [requestFocus] / [abandonFocus].
+ * Owns the neural focus state under the host's [lock]: each focus request gets a generation, a
+ * callback is mapped and delivered under [lock] only while its request is the current one, so a
+ * duck can't land between a reset and the host's volume change, and a late callback of an
+ * abandoned request is dropped.
  */
-class AudioFocusManager(context: Context) {
+internal class FocusEventGate(private val lock: Any) {
+  private val mapper = FocusEventMapper()
+  private var generation = 0
+
+  val isDucked: Boolean
+    get() = synchronized(lock) { mapper.isDucked }
+
+  /** Starts a new request and returns its generation; callbacks of earlier ones are dropped. */
+  fun begin(): Int = synchronized(lock) {
+    mapper.reset()
+    ++generation
+  }
+
+  /** Ends the current request; its later callbacks are dropped. */
+  fun end() {
+    synchronized(lock) {
+      mapper.reset()
+      generation++
+    }
+  }
+
+  /** Returns false when [gen] is no longer the current request. */
+  fun onFocusChange(gen: Int, focusChange: Int, deliver: (FocusEvent) -> Unit): Boolean =
+    synchronized(lock) {
+      if (gen != generation) return false
+      mapper.onFocusChange(focusChange)?.let(deliver)
+      true
+    }
+}
+
+/**
+ * Audio focus for neural TTS playback: one `GAIN_TRANSIENT_MAY_DUCK` request, so other apps duck
+ * while speech plays. [listener] runs under [lock], on the focus callback thread.
+ */
+class AudioFocusManager(context: Context, private val lock: Any) {
 
   private val audioManager: AudioManager =
     context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
   private var audioFocusRequest: AudioFocusRequest? = null
+  private var focusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
   private var hasAudioFocus = false
 
-  private val mapper = FocusEventMapper()
+  private val gate = FocusEventGate(lock)
 
   val isDucked: Boolean
-    get() = mapper.isDucked
+    get() = gate.isDucked
 
   var listener: ((FocusEvent) -> Unit)? = null
 
-  private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-    when (focusChange) {
-      AudioManager.AUDIOFOCUS_GAIN -> hasAudioFocus = true
-      AudioManager.AUDIOFOCUS_LOSS,
-      AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> hasAudioFocus = false
-    }
-    mapper.onFocusChange(focusChange)?.let { listener?.invoke(it) }
-  }
-
-  /** Returns true if focus was granted. */
-  fun requestFocus(): Boolean {
+  /** Returns true if focus is held. */
+  fun requestFocus(): Boolean = synchronized(lock) {
     if (hasAudioFocus) {
       return true
     }
+
+    val gen = gate.begin()
+    // A listener per request: AudioManager keys requests by listener, so a shared one would route
+    // a late callback of an abandoned request to the next request.
+    val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+      gate.onFocusChange(gen, focusChange) { event ->
+        when (focusChange) {
+          AudioManager.AUDIOFOCUS_GAIN -> hasAudioFocus = true
+          AudioManager.AUDIOFOCUS_LOSS,
+          AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> hasAudioFocus = false
+        }
+        listener?.invoke(event)
+      }
+    }
+    focusChangeListener = focusListener
 
     val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val audioAttributes = AudioAttributes.Builder()
@@ -110,30 +152,25 @@ class AudioFocusManager(context: Context) {
 
       audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
         .setAudioAttributes(audioAttributes)
-        .setOnAudioFocusChangeListener(audioFocusChangeListener)
+        .setOnAudioFocusChangeListener(focusListener)
         .build()
 
       audioManager.requestAudioFocus(audioFocusRequest!!)
     } else {
       @Suppress("DEPRECATION")
       audioManager.requestAudioFocus(
-        audioFocusChangeListener,
+        focusListener,
         AudioManager.STREAM_MUSIC,
         AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
       )
     }
 
     hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-    if (hasAudioFocus) {
-      mapper.reset()
-    }
     return hasAudioFocus
   }
 
-  fun abandonFocus() {
-    if (!hasAudioFocus && audioFocusRequest == null) {
-      return
-    }
+  fun abandonFocus(): Unit = synchronized(lock) {
+    val focusListener = focusChangeListener ?: return
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       audioFocusRequest?.let {
@@ -142,10 +179,11 @@ class AudioFocusManager(context: Context) {
       audioFocusRequest = null
     } else {
       @Suppress("DEPRECATION")
-      audioManager.abandonAudioFocus(audioFocusChangeListener)
+      audioManager.abandonAudioFocus(focusListener)
     }
 
+    focusChangeListener = null
     hasAudioFocus = false
-    mapper.reset()
+    gate.end()
   }
 }

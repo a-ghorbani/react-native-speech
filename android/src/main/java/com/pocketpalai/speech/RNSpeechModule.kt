@@ -95,31 +95,26 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private var audioTrackPromise: Promise? = null
   private var isAudioPlayingState = false
   private var isAudioPausedState = false
-  private var isAudioDuckingState = false
   private var currentAudioUtteranceId = 0
   private val audioExecutor = Executors.newSingleThreadExecutor()
   private val audioLock = Any()
   // Set by invalidate(); audio tasks already dequeued must not touch the dead runtime.
   @Volatile private var audioInvalidated = false
-  private var audioFocusListenerNeural: AudioManager.OnAudioFocusChangeListener? = null
-  private var audioFocusRequestNeural: AudioFocusRequest? = null
 
   private val neuralFocusManager: AudioFocusManager by lazy {
-    AudioFocusManager(reactApplicationContext).apply {
+    AudioFocusManager(reactApplicationContext, audioLock).apply {
       listener = { event ->
         when (event) {
           is FocusEvent.LostTransient -> {
             // Pause neural playback on transient loss; leave state so JS can resume.
-            synchronized(audioLock) {
-              audioTrack?.setVolume(1f)
-              if (isAudioPlayingState && !isAudioPausedState) {
-                try {
-                  audioTrack?.pause()
-                  isAudioPausedState = true
-                  emitOnPause(getAudioEventData())
-                } catch (_: Exception) {
-                  // Ignore - best-effort pause.
-                }
+            audioTrack?.setVolume(1f)
+            if (isAudioPlayingState && !isAudioPausedState) {
+              try {
+                audioTrack?.pause()
+                isAudioPausedState = true
+                emitOnPause(getAudioEventData())
+              } catch (_: Exception) {
+                // Ignore - best-effort pause.
               }
             }
             emitOnAudioInterruption(
@@ -130,15 +125,15 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           }
           is FocusEvent.Lost -> {
             // Permanent loss - stop and abandon.
-            stopNeuralPlayback(releaseDucking = false)
+            stopNeuralPlayback()
             emitOnAudioInterruption(
               Arguments.createMap().apply {
                 putString("type", "began")
               }
             )
           }
-          is FocusEvent.Duck -> synchronized(audioLock) { audioTrack?.setVolume(DUCKED_VOLUME) }
-          is FocusEvent.Unduck -> synchronized(audioLock) { audioTrack?.setVolume(1f) }
+          is FocusEvent.Duck -> audioTrack?.setVolume(DUCKED_VOLUME)
+          is FocusEvent.Unduck -> audioTrack?.setVolume(1f)
           is FocusEvent.Gained -> {
             // Don't auto-resume; let JS decide based on the event.
             emitOnAudioInterruption(
@@ -740,48 +735,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun activateAudioDuckingSession() {
-    if (!isAudioDuckingState) return
-
-    audioFocusListenerNeural = AudioManager.OnAudioFocusChangeListener { }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val audioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .build()
-      val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(audioAttributes)
-        .setOnAudioFocusChangeListener(audioFocusListenerNeural!!)
-        .build()
-      audioFocusRequestNeural = focusRequest
-      audioManager.requestAudioFocus(focusRequest)
-    } else {
-      @Suppress("DEPRECATION")
-      audioManager.requestAudioFocus(
-        audioFocusListenerNeural,
-        AudioManager.STREAM_MUSIC,
-        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-      )
-    }
-  }
-
-  private fun deactivateAudioDuckingSession() {
-    if (!isAudioDuckingState) return
-    audioFocusListenerNeural ?: return
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      audioFocusRequestNeural?.let { request ->
-        audioManager.abandonAudioFocusRequest(request)
-      }
-    } else {
-      @Suppress("DEPRECATION")
-      audioManager.abandonAudioFocus(audioFocusListenerNeural)
-    }
-    audioFocusListenerNeural = null
-    audioFocusRequestNeural = null
-  }
-
   private fun cleanupAudio() {
     synchronized(audioLock) {
       audioTrack?.let { track ->
@@ -800,14 +753,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  private fun stopNeuralPlayback(releaseDucking: Boolean = true, abandonFocus: Boolean = true) =
-    stopNeuralPlaybackInOrder(
-      releaseDucking,
-      abandonFocus,
-      ::cleanupAudio,
-      ::deactivateAudioDuckingSession,
-      neuralFocusManager::abandonFocus,
-    )
+  private fun stopNeuralPlayback(abandonFocus: Boolean = true) {
+    cleanupAudio()
+    if (abandonFocus) neuralFocusManager.abandonFocus()
+  }
 
   override fun playAudio(audioData: String?, config: ReadableMap, promise: Promise) {
     if (audioData == null) {
@@ -817,13 +766,12 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
     val sampleRate = if (config.hasKey("sampleRate")) config.getInt("sampleRate") else 24000
     val channels = if (config.hasKey("channels")) config.getInt("channels") else 1
-    val ducking = if (config.hasKey("ducking")) config.getBoolean("ducking") else false
-
-    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, ducking, promise)
+    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, promise)
   }
 
+  // [ducking] is unused: neural playback always requests may-duck focus, so other apps duck.
   override fun playPcm16(pcm: ByteArray, sampleRate: Int, channels: Int, ducking: Boolean, promise: Promise) {
-    playPcm16({ pcm }, sampleRate, channels, ducking, promise)
+    playPcm16({ pcm }, sampleRate, channels, promise)
   }
 
   /** [pcm] (LE Int16) is evaluated on the audio executor, off the caller's thread. */
@@ -831,11 +779,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     pcm: () -> ByteArray,
     sampleRate: Int,
     channels: Int,
-    ducking: Boolean,
     promise: Promise
   ) {
     try {
-      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, ducking, promise) }
+      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, promise) }
     } catch (e: RejectedExecutionException) {
       // invalidate() shut the executor down.
       promise.reject("audio_error", "Audio player is shut down", e)
@@ -846,7 +793,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     pcm: () -> ByteArray,
     sampleRate: Int,
     channels: Int,
-    ducking: Boolean,
     promise: Promise
   ) {
     SpeechTrace.beginSection("TTS:playAudio")
@@ -908,10 +854,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
         audioTrack = track
 
-        isAudioDuckingState = ducking
-        activateAudioDuckingSession()
-
-        // Acquire audio focus so we get interruption callbacks.
+        // Acquire audio focus so we get interruption callbacks and other apps duck.
         neuralFocusManager.requestFocus()
         if (neuralFocusManager.isDucked) track.setVolume(DUCKED_VOLUME)
 
@@ -926,7 +869,6 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               if (audioTrackPromise !== promise) return
               audioTrackPromise = null
               isAudioPlayingState = false
-              deactivateAudioDuckingSession()
               neuralFocusManager.abandonFocus()
               SpeechTrace.endSection()
               emitOnFinish(getAudioEventData())
