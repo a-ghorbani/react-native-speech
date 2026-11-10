@@ -602,6 +602,16 @@ const RootView: React.FC = () => {
     }
   }, [selectedEngine, supertonicLanguage, spokenText]);
 
+  // Same for Kokoro: a Mandarin voice (zf_/zm_) gets the Chinese sample.
+  React.useEffect(() => {
+    if (selectedEngine !== TTSEngine.KOKORO) return;
+    if (!selectedVoice?.startsWith('z')) return;
+    if (!SAMPLE_TEXT_SET.has(spokenText)) return;
+    if (SAMPLE_TEXT.zh && SAMPLE_TEXT.zh !== spokenText) {
+      setSpokenText(SAMPLE_TEXT.zh);
+    }
+  }, [selectedEngine, selectedVoice, spokenText]);
+
   // Load installed models
   const loadInstalledModels = React.useCallback(async () => {
     await kokoroModelManager.scanInstalledModels();

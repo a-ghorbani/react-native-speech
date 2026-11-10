@@ -2792,10 +2792,13 @@ __metadata:
   peerDependencies:
     "@dr.pogodin/react-native-fs": ^2.36.1
     onnxruntime-react-native: ^1.23.0
+    pinyin-pro: ^3.26.0
     react: "*"
     react-native: "*"
   peerDependenciesMeta:
     onnxruntime-react-native:
+      optional: true
+    pinyin-pro:
       optional: true
   languageName: unknown
   linkType: soft
@@ -10493,6 +10496,7 @@ __metadata:
     "@types/react": ^19.2.0
     onnxruntime-react-native: ^1.23.2
     patch-package: ^8.0.1
+    pinyin-pro: ^3.26.0
     react: 19.2.3
     react-native: 0.87.1
     react-native-builder-bob: ^0.40.13
