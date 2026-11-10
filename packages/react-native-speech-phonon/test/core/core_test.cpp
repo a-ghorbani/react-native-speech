@@ -809,6 +809,102 @@ TEST(release_orphans_frees_cancelled_buffers_only) {
   CHECK_EQ(core->diagnostics().liveBuffers, size_t{0});
 }
 
+// 10 ms frames at 24 kHz: `lead` silent frames, `speech` frames at 0.25, `trail` silent frames.
+std::vector<float> edges(int lead, int speech, int trail) {
+  std::vector<float> v(static_cast<size_t>(240 * (lead + speech + trail)), 0.0f);
+  std::fill(v.begin() + 240 * lead, v.begin() + 240 * (lead + speech), 0.25f);
+  return v;
+}
+
+TEST(trim_edge_silence_cuts_to_100_ms_lead_and_150_ms_trail) {
+  std::vector<float> v = edges(60, 50, 40);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.size(), size_t{240 * (10 + 50 + 15)});
+  CHECK_EQ(v[2400], 0.25f);  // speech starts after the 100 ms pad, untouched
+  CHECK_EQ(v[0], 0.0f);
+}
+
+TEST(trim_edge_silence_keeps_audio_above_minus_35_db) {
+  // Frames at -30 dB of the peak count as sound; -40 dB is cut.
+  std::vector<float> v = edges(60, 50, 40);
+  std::fill(v.begin() + 240 * 30, v.begin() + 240 * 60, 0.25f * 0.0316f);   // -30 dB
+  std::fill(v.begin() + 240 * 110, v.begin() + 240 * 150, 0.25f * 0.01f);   // -40 dB
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.size(), size_t{240 * (10 + 30 + 50 + 15)});
+}
+
+TEST(trim_edge_silence_fades_only_cut_edges) {
+  std::vector<float> v = edges(60, 50, 0);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.size(), size_t{240 * (10 + 50)});
+  CHECK_EQ(v[0], 0.0f);
+  CHECK_EQ(v.back(), 0.25f);  // trail not cut, not faded
+  std::vector<float> w = edges(0, 50, 40);
+  trim_edge_silence(&w, 24000);
+  CHECK_EQ(w.size(), size_t{240 * (50 + 15)});
+  CHECK_EQ(w[0], 0.25f);
+  CHECK(w.back() < 1e-6f);  // faded cut edge
+}
+
+TEST(trim_edge_silence_leaves_silent_short_and_uncut_audio_alone) {
+  std::vector<float> silent(24000, 0.0f);
+  trim_edge_silence(&silent, 24000);
+  CHECK_EQ(silent.size(), size_t{24000});
+  std::vector<float> tiny(100, 0.25f);
+  trim_edge_silence(&tiny, 24000);
+  CHECK_EQ(tiny.size(), size_t{100});
+  std::vector<float> full = edges(5, 50, 10);
+  const std::vector<float> before = full;
+  trim_edge_silence(&full, 24000);
+  CHECK(full == before);
+}
+
+TEST(trim_edge_silence_fades_in_a_cut_lead) {
+  // -40 dB content in the cut lead: the kept 100 ms pad starts at 0 and ramps up over 5 ms.
+  std::vector<float> v = edges(60, 50, 0);
+  std::fill(v.begin(), v.begin() + 240 * 60, 0.0025f);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.size(), size_t{240 * (10 + 50)});
+  CHECK_EQ(v[0], 0.0f);
+  CHECK(v[60] > 0.0f && v[60] < 0.0025f);
+  CHECK_EQ(v[120], 0.0025f);
+}
+
+TEST(trim_edge_silence_leaves_non_finite_audio_alone) {
+  std::vector<float> inf = edges(60, 50, 40);
+  inf[240 * 80] = std::numeric_limits<float>::infinity();
+  const std::vector<float> infBefore = inf;
+  trim_edge_silence(&inf, 24000);
+  CHECK_EQ(inf.size(), infBefore.size());
+  std::vector<float> nan(24000, std::numeric_limits<float>::quiet_NaN());
+  trim_edge_silence(&nan, 24000);
+  CHECK_EQ(nan.size(), size_t{24000});
+}
+
+TEST(trim_edge_silence_releases_the_cut_capacity) {
+  std::vector<float> v = edges(60, 50, 40);
+  trim_edge_silence(&v, 24000);
+  CHECK_EQ(v.capacity(), v.size());
+}
+
+TEST(synthesize_stores_trimmed_audio) {
+  auto core = newCore();
+  const int64_t h = createOk(*core);
+  // 600 ms of silence, 500 ms of sound, 600 ms of silence, in 10 ms frames.
+  std::vector<float> frames(170, 0.0f);
+  std::fill(frames.begin() + 60, frames.begin() + 110, 0.25f);
+  fake().s().frame_size = 240;
+  fake().s().frames_per_speak = 170;
+  fake().s().frame_values = frames.data();
+  fake().s().frame_values_len = 170;
+  Synth s = synth(*core, h, core->allocRequestId());
+  CHECK_EQ(s.err, Err::None);
+  CHECK_EQ(s.r.samples, int64_t{240 * (10 + 50 + 15)});
+  std::vector<float> pcm;
+  CHECK(core->copyBuffer(s.r.bufferId, &pcm));
+  CHECK_EQ(pcm.size(), size_t{240 * (10 + 50 + 15)});
+}
+
 TEST(float_to_pcm16_clamp_gain_and_nan) {
   const float nan = std::numeric_limits<float>::quiet_NaN();
   const float inf = std::numeric_limits<float>::infinity();

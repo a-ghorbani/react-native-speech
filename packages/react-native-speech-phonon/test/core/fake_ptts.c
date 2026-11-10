@@ -172,6 +172,8 @@ EXPORT bool ptts_speak(PttsHandle *h, const char *text, PttsFrameFn cb, void *us
   const float value = g_state.sample_value;
   void (*on_frame)(int, void *) = g_state.on_frame;
   void *on_frame_arg = g_state.on_frame_arg;
+  const float *frame_values = g_state.frame_values;
+  const int frame_values_len = g_state.frame_values_len;
   pthread_mutex_unlock(&g_mu);
 
   if (strncmp(text, "fail", 4) == 0) {
@@ -187,6 +189,9 @@ EXPORT bool ptts_speak(PttsHandle *h, const char *text, PttsFrameFn cb, void *us
   int delivered = 0;
   int stopped = 0;
   for (int f = 0; f < frames; ++f) {
+    if (f < frame_values_len) {
+      for (int i = 0; i < frame_size; ++i) pcm[i] = frame_values[f];
+    }
     if (!cb(pcm, (size_t)frame_size, user)) {
       stopped = 1;
       break;
