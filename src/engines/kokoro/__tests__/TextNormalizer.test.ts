@@ -227,6 +227,8 @@ describe('TextNormalizer', () => {
         'As soon as it works',
       );
       expect(normalizer.normalize('Us: the team')).toBe('Us: the team');
+      // Curly quotes become straight before this rule.
+      expect(normalizer.normalize('\u201cIs it?\u201d')).toBe('"Is it?"');
       expect(normalizer.normalize("Two C's and a B's")).toBe(
         "Two C'S and a B'S",
       );
