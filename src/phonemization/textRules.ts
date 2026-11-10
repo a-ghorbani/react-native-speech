@@ -34,8 +34,12 @@ const RE_CURRENCY =
 const RE_TIME = /\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/gi;
 const RE_RANGE = /(?<!\w)(\d+)-(\d+)(?!\w)/g;
 const RE_MODEL_VER = /\b([a-zA-Z][a-zA-Z0-9]*)-(\d[\d.]*)(?=[^\d.]|$)/g;
-const RE_UNIT =
-  /(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(km|kg|mg|ml|gb|mb|kb|tb|hz|khz|mhz|ghz|mph|kph|°[cCfF]|[cCfF]°|ms|ns|µs)\b/gi;
+export const UNIT_NAMES =
+  'km|kg|mg|ml|gb|mb|kb|tb|hz|khz|mhz|ghz|mph|kph|°[cCfF]|[cCfF]°|ms|ns|µs';
+const RE_UNIT = new RegExp(
+  `(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)\\s*(${UNIT_NAMES})\\b`,
+  'gi',
+);
 const RE_SCI = /(?<![a-zA-Z\d])(-?\d+(?:\.\d+)?)[eE]([+-]?\d+)(?![a-zA-Z\d])/g;
 const RE_FRACTION = /\b(\d+)\s*\/\s*(\d+)\b/g;
 const RE_DECADE = /\b(\d{1,3})0s\b/g;
@@ -226,6 +230,8 @@ export function expandDecades(text: string): string {
     const decadeDigit = base % 10;
     const decadeWord = decadeMap[decadeDigit] || '';
     if (base < 10) return decadeWord;
+    // "2000s" → "two thousands", not "twenty hundreds"
+    if (base % 100 === 0) return `${numberToWords(base * 10)}s`;
     const centuryPart = Math.floor(base / 10);
     return `${numberToWords(centuryPart)} ${decadeWord}`;
   });

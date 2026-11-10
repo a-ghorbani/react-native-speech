@@ -4,13 +4,12 @@
  *
  * - Kitten: the kittentts.preprocess steps KittenEngine enables, in their
  *   upstream order.
- * - Kokoro: the kokoro.js-derived steps (years and times split, money,
+ * - Kokoro: the kokoro.js-derived steps (clock times split, money,
  *   decimals digit by digit, capital possessives, dotted acronyms, numbers
  *   joined with spaces, « » for parentheses).
  *
  * Known differences kept on purpose (#33 is a pure refactor): number words
- * joined with "-" vs " ", Kokoro's year-style 3–4 digit numbers (#32),
- * Kokoro's "PR'S" possessive and "package-json" dotted names, « ».
+ * joined with "-" vs " ", Kokoro's "PR'S" possessive and "package-json" dotted names, « ».
  */
 
 import {numberToWords} from './numberWords';
@@ -58,40 +57,20 @@ export function kittenTail(text: string): string {
   return removeExtraWhitespace(text);
 }
 
-/** Years, clock times and decimals split the kokoro.js way. */
+/** Clock times split the kokoro.js way. */
 function splitNum(match: string): string {
-  if (match.includes('.')) {
-    return match;
-  } else if (match.includes(':')) {
-    const parts = match.split(':').map(Number);
-    const h = parts[0];
-    const m = parts[1];
-    if (m === 0) {
-      return `${h} o'clock`;
-    } else if (m !== undefined && m < 10) {
-      return `${h} oh ${m}`;
-    }
-    return `${h} ${m}`;
-  }
-
-  const year = parseInt(match.slice(0, 4), 10);
-  if (year < 1100 || year % 1000 < 10) {
+  if (!match.includes(':')) {
     return match;
   }
-
-  const left = match.slice(0, 2);
-  const right = parseInt(match.slice(2, 4), 10);
-  const suffix = match.endsWith('s') ? 's' : '';
-
-  if (year % 1000 >= 100 && year % 1000 <= 999) {
-    if (right === 0) {
-      return `${left} hundred${suffix}`;
-    } else if (right < 10) {
-      return `${left} oh ${right}${suffix}`;
-    }
+  const parts = match.split(':').map(Number);
+  const h = parts[0];
+  const m = parts[1];
+  if (m === 0) {
+    return `${h} o'clock`;
+  } else if (m !== undefined && m < 10) {
+    return `${h} oh ${m}`;
   }
-
-  return `${left} ${right}${suffix}`;
+  return `${h} ${m}`;
 }
 
 /** Money in spoken form. */
@@ -176,9 +155,9 @@ export function kokoroTail(text: string): string {
   result = result.replace(/\b(y)eah?\b/gi, "$1e'a");
 
   // 6. Handle numbers and currencies
-  // Years, times, and decade numbers
+  // Clock times
   result = result.replace(
-    /\d*\.\d+|\b\d{4}s?\b|(?<!:)\b(?:[1-9]|1[0-2]):[0-5]\d\b(?!:)/g,
+    /\d*\.\d+|(?<!:)\b(?:[1-9]|1[0-2]):[0-5]\d\b(?!:)/g,
     m => splitNum(m),
   );
 

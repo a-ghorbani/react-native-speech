@@ -56,7 +56,7 @@ describe('normalizeForSpeech', () => {
     ['v2.1.0', 'version 2 point 1 point 0'],
     ['24/7 and 50/50', '24 7 and 50 50'],
     ['1/2 cup', 'one half cup'],
-    ['on 2024-05-01', 'on May first, 2024'],
+    ['on 2024-05-01', 'on May first, twenty twenty-four'],
     // Regression guards from the adversarial probe set.
     ['Open VS Code', 'Open VS Code'],
     [

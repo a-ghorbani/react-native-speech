@@ -134,18 +134,13 @@ describe('TextNormalizer', () => {
   });
 
   describe('number handling', () => {
-    test('splits years into two parts', () => {
-      // Years are split to "19 90" by splitNum, then the final integer pass
-      // converts the bare integer segments to words.
-      expect(normalizer.normalize('1990')).toBe('nineteen ninety');
-      expect(normalizer.normalize('2022')).toBe('twenty twenty two');
-    });
-
-    test('handles decade suffix', () => {
-      // Plural integers are converted too — leftover digits would be
-      // dropped by the phonemizer.
-      expect(normalizer.normalize('2022s')).toBe('twenty twenty twos');
-      expect(normalizer.normalize('1980s')).toBe('nineteen eighties');
+    test('reads a bare 4-digit number as a cardinal (#32)', () => {
+      // Years are read in normalizeForSpeech, only in a year context.
+      expect(normalizer.normalize('1990')).toBe(
+        'one thousand nine hundred ninety',
+      );
+      expect(normalizer.normalize('2022')).toBe('two thousand twenty two');
+      expect(normalizer.normalize('2022s')).toBe('two thousand twenty twos');
     });
 
     test('splits time format', () => {
