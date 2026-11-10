@@ -219,6 +219,18 @@ describe('TextNormalizer', () => {
       expect(normalizer.normalize("BOB's car")).toBe("BOB'S car"); // B is uppercase consonant
       expect(normalizer.normalize("Bob's car")).toBe("Bob's car"); // b is lowercase, no change
     });
+
+    test('a single capital needs the apostrophe (#91)', () => {
+      // "Is", "As", "Us" are words, not letter plurals.
+      expect(normalizer.normalize('Is that right?')).toBe('Is that right?');
+      expect(normalizer.normalize('As soon as it works')).toBe(
+        'As soon as it works',
+      );
+      expect(normalizer.normalize('Us: the team')).toBe('Us: the team');
+      expect(normalizer.normalize("Two C's and a B's")).toBe(
+        "Two C'S and a B'S",
+      );
+    });
   });
 
   describe('acronyms', () => {
