@@ -36,7 +36,7 @@ Engine-ready Phonemes
 in one place: `src/phonemization/normalizeForSpeech.ts`. The shared
 pipeline runs first, then the engine's tail (`engineTails.ts`), which holds
 the rules where Kitten and Kokoro still differ (number words joined with
-"-" vs " ", Kokoro's year-style numbers and « »). Numbers become words
+"-" vs " ", and « » on Kokoro). Numbers become words
 through one module, `numberWords.ts`.
 
 ## Components
@@ -44,9 +44,10 @@ through one module, `numberWords.ts`.
 ### normalizeForEngine (`src/phonemization/normalizeForSpeech.ts`)
 
 The shared pipeline (`normalizeForSpeech`: quotes, URLs and emails,
-abbreviations, symbols, numbers, units, dates, acronyms), then the engine
+abbreviations, symbols, numbers, units, dates, years in a year context
+such as "in 1984" or "May 2024" (`years.ts`), acronyms), then the engine
 tail (`engineTails.ts`): the kittentts-port steps for Kitten, the
-kokoro.js-port steps for Kokoro (abbreviations, years and times, money,
+kokoro.js-port steps for Kokoro (abbreviations, clock times, money,
 decimals, capital possessives, dotted acronyms). `TextNormalizer`
 (`src/engines/kokoro/TextNormalizer.ts`) chunks long input by sentence
 boundaries; its `normalize()` runs the Kokoro tail alone.

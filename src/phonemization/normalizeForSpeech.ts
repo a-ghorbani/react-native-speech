@@ -28,8 +28,10 @@ import {
   expandPercentages,
   expandScientificNotation,
   expandUnits,
+  UNIT_NAMES,
 } from './textRules';
 import {kittenTail, kokoroTail} from './engineTails';
+import {YEAR, expandYears, yearToWords} from './years';
 import {lookupTable} from '../utils/lookupTable';
 
 const MONTHS = [
@@ -275,6 +277,20 @@ export function expandScaledCurrency(text: string): string {
     );
 }
 
+// "2020-2021", "1914 – 1918": both ends read as years. Not "1200 - 1500"
+// (subtraction) and not a measurement ("1500-2000 ms"), whose unit needs the
+// digits.
+const RE_YEAR_RANGE = new RegExp(
+  `(?<![\\d.,:/$£€#-])\\b(${YEAR})(-|\\s*[–—]\\s*)(${YEAR})(?![.,:/-]?\\d|%|\\w)(?!\\s*(?:${UNIT_NAMES}|${Object.keys(EXTRA_UNITS).join('|')})\\b)`,
+  'gi',
+);
+
+export function expandYearRanges(text: string): string {
+  return text.replace(RE_YEAR_RANGE, (m: string, a: string, _d, b: string) =>
+    +b > +a ? `${yearToWords(+a)} to ${yearToWords(+b)}` : m,
+  );
+}
+
 export function expandNumericForms(text: string): string {
   return (
     text
@@ -427,6 +443,7 @@ export function normalizeForSpeech(text: string): string {
   text = expandScientificNotation(text);
   text = expandVersions(text);
   text = expandIpAddresses(text);
+  text = expandYearRanges(text);
   text = expandNumericForms(text);
   // Proper fractions with a common denominator ("3/4 cup", "2/5"); "5/1",
   // "0/10" and "4/7" are left to each engine.
@@ -444,6 +461,7 @@ export function normalizeForSpeech(text: string): string {
   text = expandUnits(text);
   text = singularizeUnits(text);
   text = expandClockTimes(text);
+  text = expandYears(text);
   text = spellTimeSuffixes(text);
   text = splitAlphanumeric(text);
   text = markDottedAcronyms(text);

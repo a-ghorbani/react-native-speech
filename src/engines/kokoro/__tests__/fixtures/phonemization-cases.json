@@ -382,10 +382,10 @@
     },
     {
       "input": "1990",
-      "normalized": "nineteen ninety",
+      "normalized": "one thousand nine hundred ninety",
       "chunks": [
         {
-          "text": "nineteen ninety",
+          "text": "one thousand nine hundred ninety",
           "isPunctuation": false
         }
       ],
@@ -404,10 +404,10 @@
     },
     {
       "input": "2022s",
-      "normalized": "twenty twenty twos",
+      "normalized": "two thousand twenty twos",
       "chunks": [
         {
-          "text": "twenty twenty twos",
+          "text": "two thousand twenty twos",
           "isPunctuation": false
         }
       ],
@@ -998,10 +998,10 @@
     },
     {
       "input": "1990",
-      "normalized": "nineteen ninety",
+      "normalized": "one thousand nine hundred ninety",
       "chunks": [
         {
-          "text": "nineteen ninety",
+          "text": "one thousand nine hundred ninety",
           "isPunctuation": false
         }
       ],
