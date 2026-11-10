@@ -27,7 +27,7 @@ function isSupportedLanguage(lang: string): lang is SupportedLanguage {
  *
  * @param text - Input text to normalize
  * @param lang - Language code (default: 'en')
- * @param addLanguageTags - Whether to add language tags (v2 only, v1 doesn't support them)
+ * @param addLanguageTags - Whether to add language tags (v2/v3; v1 doesn't support them)
  */
 function normalizeText(
   text: string,
@@ -105,7 +105,7 @@ function normalizeText(
     normalized += '.';
   }
 
-  // Add language tags only for v2 models (multilingual)
+  // Add language tags only for the multilingual models (v2, v3)
   // v1 models don't have < and > in their vocabulary
   if (addLanguageTags) {
     const validLang = isSupportedLanguage(lang) ? lang : 'en';
@@ -230,7 +230,7 @@ export function padFloat32Array(
 export class UnicodeProcessor {
   private indexer: number[] | null = null;
   private isInitialized = false;
-  private supportsLanguageTags = false; // v2 models support language tags, v1 doesn't
+  private supportsLanguageTags = false; // v2/v3 models support language tags, v1 doesn't
 
   /**
    * Initialize the Unicode processor by loading the indexer from JSON
@@ -244,7 +244,7 @@ export class UnicodeProcessor {
     this.isInitialized = true;
 
     // Check if this indexer supports language tags (< and > characters)
-    // v2 models have < at index 60 with vocab_idx 27, v1 has -1
+    // v2/v3 models have < at index 60 with vocab_idx 27, v1 has -1
     const lessThanIdx = this.indexer[60]; // '<' character
     const greaterThanIdx = this.indexer[62]; // '>' character
     this.supportsLanguageTags =
@@ -330,14 +330,14 @@ export class UnicodeProcessor {
    *
    * @param text - Input text
    * @param lang - Language code (default: 'en')
-   * @returns Normalized text (with language tags for v2 models)
+   * @returns Normalized text (with language tags for v2/v3 models)
    */
   normalize(text: string, lang: string = 'en'): string {
     return normalizeText(text, lang, this.supportsLanguageTags);
   }
 
   /**
-   * Check if this processor supports language tags (v2 models)
+   * Check if this processor supports language tags (v2/v3 models)
    */
   hasLanguageTagSupport(): boolean {
     return this.supportsLanguageTags;
