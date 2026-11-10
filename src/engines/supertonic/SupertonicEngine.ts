@@ -587,10 +587,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    // Sent before stop() yields, so it reaches native ahead of the next
-    // utterance's first chunk.
-    neuralAudioPlayer.stop().catch(() => {});
     await this.cancelActiveStream();
+    // Fire-and-forget native audio stop
+    neuralAudioPlayer.stop().catch(() => {});
   }
 
   private isSuperseded(gen: number): boolean {

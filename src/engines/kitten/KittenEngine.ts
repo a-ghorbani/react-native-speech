@@ -788,10 +788,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    // Sent before stop() yields, so it reaches native ahead of the next
-    // utterance's first chunk.
-    neuralAudioPlayer.stop().catch(() => {});
     await this.cancelActiveStream();
+    neuralAudioPlayer.stop().catch(() => {});
   }
 
   private isSuperseded(gen: number): boolean {

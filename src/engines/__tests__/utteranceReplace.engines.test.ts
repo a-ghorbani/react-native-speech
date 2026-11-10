@@ -48,8 +48,12 @@ import {KokoroEngine} from '../kokoro/KokoroEngine';
 import {KittenEngine} from '../kitten/KittenEngine';
 import {SupertonicEngine} from '../supertonic/SupertonicEngine';
 
+/** Synthesis time per chunk; 0 resolves without yielding to timers. */
+let synthMs = 5;
 const audioFor = async (text: string): Promise<Tagged> => {
-  await new Promise(r => setTimeout(r, 5));
+  if (synthMs > 0) {
+    await new Promise(r => setTimeout(r, synthMs));
+  }
   return {
     samples: new Float32Array(240).fill(0.1),
     sampleRate: 24000,
@@ -145,6 +149,7 @@ function start(engine: Engine, kind: Kind, text: string): Promise<unknown> {
 const plays = () => timeline.filter(t => t.startsWith('play:'));
 
 beforeEach(() => {
+  synthMs = 5;
   timeline.length = 0;
   pendingPlays.length = 0;
 });
@@ -159,28 +164,44 @@ const ORDERS: Array<[Kind, Kind]> = [
 describe.each(ENGINES)(
   '%s: a new utterance replaces the old one',
   (_n, make) => {
-    test.each(ORDERS)('%s -> %s', async (first, second) => {
-      const engine = make();
-      const aDone = start(engine, first, A);
-      await waitFor(() => plays().length >= 1);
+    const WHEN = [
+      ['its first chunk starts playing', 0, 5],
+      // #93 lookahead: the old utterance's next chunk is ready to play.
+      ['its next chunk is synthesized', 15, 5],
+      ['its first chunk starts playing, instant synthesis', 0, 0],
+    ] as const;
+    const CASES = ORDERS.flatMap(([a, b]) =>
+      WHEN.map(([when, waitMs, ms]) => [a, b, when, waitMs, ms] as const),
+    );
 
-      const bDone = start(engine, second, B);
-      expect(await outcome(aDone)).toBe('resolved');
-      expect(await outcome(bDone)).toBe('resolved');
+    test.each(CASES)(
+      '%s -> %s once %s',
+      async (first, second, _w, waitMs, ms) => {
+        synthMs = ms;
+        const engine = make();
+        const aDone = start(engine, first, A);
+        await waitFor(() => plays().length >= 1);
+        await tick(waitMs);
+        expect(plays()).toEqual(['play:Alpha one is here.']);
 
-      const firstB = timeline.indexOf('play:Bravo one is here.');
-      expect(firstB).toBeGreaterThan(0);
-      const lateA = timeline
-        .slice(firstB)
-        .filter(t => t.startsWith('play:Alpha'));
-      expect(lateA).toEqual([]);
-      // Playback was stopped (native onStopped) before B played.
-      expect(timeline.slice(0, firstB)).toContain('stop');
-      expect(plays().filter(t => t.startsWith('play:Bravo'))).toEqual([
-        'play:Bravo one is here.',
-        'play:Bravo two is here.',
-      ]);
-    });
+        const bDone = start(engine, second, B);
+        expect(await outcome(aDone)).toBe('resolved');
+        expect(await outcome(bDone)).toBe('resolved');
+
+        const firstB = timeline.indexOf('play:Bravo one is here.');
+        expect(firstB).toBeGreaterThan(0);
+        const lateA = timeline
+          .slice(firstB)
+          .filter(t => t.startsWith('play:Alpha'));
+        expect(lateA).toEqual([]);
+        // Playback was stopped (native onStopped) before B played.
+        expect(timeline.slice(0, firstB)).toContain('stop');
+        expect(plays().filter(t => t.startsWith('play:Bravo'))).toEqual([
+          'play:Bravo one is here.',
+          'play:Bravo two is here.',
+        ]);
+      },
+    );
 
     test.each(ORDERS)(
       '%s -> %s while the old one is still synthesizing its first chunk',
