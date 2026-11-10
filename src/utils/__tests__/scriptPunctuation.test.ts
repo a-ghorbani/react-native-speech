@@ -109,6 +109,13 @@ describe('text without spaces or punctuation', () => {
     expect([...out, ...drain(chunker)].join('')).toBe(ZH_RUN);
   });
 
+  test('the markdown stream buffer releases a long CJK run with no punctuation', () => {
+    const buf = createMarkdownStreamBuffer();
+    const out = buf.push(ZH_RUN);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.trim() + buf.flush()).toBe(ZH_RUN);
+  });
+
   test('splitInHalves splits a long CJK run instead of returning it whole', () => {
     const pieces = splitInHalves(ZH_RUN);
     expect(pieces.length).toBe(2);
