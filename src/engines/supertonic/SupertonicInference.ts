@@ -286,6 +286,11 @@ export class SupertonicInference {
     speed: number,
     isCancelled: () => boolean,
   ): Promise<AudioBuffer> {
+    // Before the readiness checks: destroy() leaves this pipeline
+    // uninitialized under a stopped stream.
+    if (isCancelled()) {
+      throw new Cancelled();
+    }
     if (!this.isInitialized) {
       throw new Error('SupertonicInference not initialized');
     }
@@ -752,8 +757,7 @@ export class SupertonicInference {
     feeds: Record<string, OnnxTensor>,
     isCancelled: () => boolean,
   ): Promise<Record<string, OnnxTensor>> {
-    // Before the session check: destroy() nulls the sessions under a
-    // stopped chunk.
+    // Before the session check, for the same reason.
     if (isCancelled()) {
       throw new Cancelled();
     }

@@ -362,6 +362,17 @@ test('a stream unit still waiting for its voice style starts no run once a new s
   expect(m.runs.filter(r => r.text === A.length)).toHaveLength(0);
 });
 
+test('destroy() with a stream open: a chunk that starts afterwards resolves to nothing; finalize() resolves', async () => {
+  const m = models('unpatched');
+  const e = await engine(m);
+  const h = e.synthesizeStream(opts);
+  await e.destroy();
+  h.append(A);
+  await expect(h.finalize()).resolves.toBeUndefined();
+  expect(m.runs).toHaveLength(0);
+  expect(play).not.toHaveBeenCalled();
+});
+
 test('destroy() mid-chunk: no further run starts and speak resolves (no "session not initialized")', async () => {
   const m = models('unpatched');
   const e = await engine(m);
