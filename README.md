@@ -264,6 +264,7 @@ The library ships no model or dictionary assets. Consumer apps fetch them from t
 ## Known limitations
 
 - First run per engine has a 200–2000 ms cold-start (model load + compilation).
+- **Android, screen off:** without a foreground service, Android moves the app to its background cores, and neural synthesis can slow by 2x to 18x depending on the phone; a streamed reply can then go silent between chunks. Run a `mediaPlayback` foreground service while speaking. See [Background playback on Android](./docs/USAGE.md#background-playback-on-android-screen-off).
 - Neural engines recommend a 3 GB+ RAM device (Phonon refuses to initialize below 3 GiB). Low-memory devices should prefer the Kitten nano/micro variants or fall back to `OS_NATIVE`.
 - OS TTS interruption handling is limited to what the platform provides — no library-level custom ducking beyond what iOS/Android expose.
 - Hermes is supported, but has no `TextDecoder` or WASM — relevant only if you extend the library's text pipeline.

@@ -793,6 +793,30 @@ To check that it works: in a debug build (`__DEV__`), a stop that ends an infere
 
 The patch is tied to the `onnxruntime-react-native` version. When you upgrade it, check that the patch still applies (patch-package fails the install otherwise) and take the matching file from this package; drop the patch once a release can terminate runs itself.
 
+### Background playback on Android (screen off)
+
+With the screen off, Android moves an app that has no foreground service out of the `top-app` cpuset into `background`, which is cores 0-3 on both phones measured below. Kokoro, Kitten and Supertonic synthesize on the CPU, so they slow down by as much as those cores are slower than the ones they had (Kitten and Supertonic measured; Kokoro not). How much depends on the phone (screen off for 60 s mid-reply, `maxChunkSize: 200`, CPU, Supertonic 5 steps):
+
+| Phone | Cores 0-3 | Kitten, screen off vs on | Supertonic v3 | Gaps mid-reply |
+| --- | --- | --- | --- | --- |
+| Pixel 9 (Tensor G4) | 4x Cortex-A520 (little) | 8.6x slower | 6x (diffusion), 18x (vocoder) | Supertonic v3: silences of up to 23 s at about half of the chunk boundaries |
+| MT6899 | 4x Cortex-A725 (same as the other cores) | 2.2x slower | 2.3x | none |
+
+When synthesizing the next chunk takes longer than playing the current one, a streamed reply goes silent until it catches up.
+
+**Fix: run a foreground service of type `mediaPlayback` while speaking** (or for as long as a hands-free or voice mode is on). The process then stays in the foreground scheduling group with the screen off. On the MT6899 (foreground cpuset: all 8 cores) synthesis runs at screen-on speed. On the Pixel 9 (cores 0-6; its fastest core, 7, stays outside) it runs 1.3x to 2x slower than with the screen on, which was enough to remove the gaps: Supertonic v3 diffusion went from 25.1 to 5.2 ms per frame (4.0 with the screen on), and 0 of 12 chunk boundaries had a gap over 150 ms, against 5 of 9 without the service. This is the app's job, not the library's: the service needs
+
+- the `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK` permissions and a `<service android:foregroundServiceType="mediaPlayback">` in your app's manifest;
+- an ongoing notification (on Android 13+, ask for `POST_NOTIFICATIONS` if you want it shown; the service runs either way);
+- a foreground-service declaration for `mediaPlayback` in the Play Console;
+- to be started while your app is in the foreground. Android 12+ refuses `startForegroundService()` from the background, so start it when speech or voice mode starts, not when the screen goes off.
+
+Also keep the engine alive while in the background: don't call `Speech.release()` on an `AppState` change to `background` while the service runs.
+
+The example app has a copyable reference: [`BackgroundPlaybackService.kt`](../example/android/app/src/main/java/speech/example/playback/BackgroundPlaybackService.kt), [`BackgroundPlaybackModule.kt`](../example/android/app/src/main/java/speech/example/playback/BackgroundPlaybackModule.kt), the manifest entries in [`AndroidManifest.xml`](../example/android/app/src/main/AndroidManifest.xml), and [`backgroundPlayback.ts`](../example/src/utils/backgroundPlayback.ts), turned on by the "Screen-off playback" toggle.
+
+What does not help (measured on both phones): a partial wake lock (the CPU does not sleep while audio plays), raising thread priority (nothing competes for the cores; the limit is which cores the app may use), and a lower `intraOpNumThreads` (slower; ONNX Runtime's default already matches the four cores).
+
 ### Release / cleanup
 
 Neural engines hold ONNX sessions and voice buffers that can run to 200+ MB. Call `Speech.release()` when you're done to free the sessions. Re-initialize before the next call. See [ARCHITECTURE.md](./ARCHITECTURE.md) for memory characteristics per engine.

@@ -57,6 +57,7 @@ import {
   visibleEngines,
 } from '../utils/engineSupport';
 import {saveChunksAsWav} from '../utils/wavWriter';
+import {setBackgroundPlayback} from '../utils/backgroundPlayback';
 import {onPhononSelfTestDone} from '../selftest/phononSelfTest';
 import {
   ENGLISH_DEFAULT_TEXT,
@@ -297,6 +298,12 @@ const RootView: React.FC = () => {
   // capture on-device output for offline verification (the Node harness
   // runs the same ASR round-trip against these files).
   const [saveWav, setSaveWav] = React.useState<boolean>(false);
+  // Android: a mediaPlayback foreground service keeps synthesis on the
+  // foreground cores with the screen off (docs/USAGE.md). The ref is read by the
+  // AppState handler, which must not release the engine meanwhile.
+  const [screenOffPlayback, setScreenOffPlayback] =
+    React.useState<boolean>(false);
+  const screenOffPlaybackRef = React.useRef(false);
   // When true, the input is sent as pre-phonemized IPA via
   // Speech.speak({ phonemes }), short-circuiting the engine's g2p.
   // Only meaningful for the IPA engines (Kokoro, Kitten).
@@ -638,7 +645,7 @@ const RootView: React.FC = () => {
   // Release engine resources when app goes to background
   React.useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'background') {
+      if (nextState === 'background' && !screenOffPlaybackRef.current) {
         // Release neural engine resources when app is backgrounded
         Speech.release().catch(err =>
           console.warn('[RootView] Background release failed:', err),
@@ -655,12 +662,24 @@ const RootView: React.FC = () => {
     return () => subscription.remove();
   }, []);
 
+  const onScreenOffPlaybackPress = React.useCallback(() => {
+    const next = !screenOffPlaybackRef.current;
+    setBackgroundPlayback(next).then(
+      () => {
+        screenOffPlaybackRef.current = next;
+        setScreenOffPlayback(next);
+      },
+      err => Alert.alert('Screen-off playback', String(err)),
+    );
+  }, []);
+
   // Release engine on unmount
   React.useEffect(() => {
     return () => {
       Speech.release().catch(err =>
         console.warn('[RootView] Unmount release failed:', err),
       );
+      setBackgroundPlayback(false).catch(() => undefined);
     };
   }, []);
 
@@ -2107,6 +2126,38 @@ const RootView: React.FC = () => {
               </View>
             )}
           </View>
+
+          {Platform.OS === 'android' && (
+            <View style={styles.supertonicRow}>
+              <TouchableOpacity
+                style={[
+                  styles.settingPill,
+                  screenOffPlayback
+                    ? themedStyles.btnSelectedGreen
+                    : themedStyles.bgCard,
+                ]}
+                onPress={onScreenOffPlaybackPress}>
+                <Text
+                  style={[
+                    styles.settingPillLabel,
+                    screenOffPlayback
+                      ? themedStyles.textWhite
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Screen-off playback
+                </Text>
+                <Text
+                  style={[
+                    styles.settingPillValue,
+                    screenOffPlayback
+                      ? themedStyles.textWhite
+                      : themedStyles.textPrimary,
+                  ]}>
+                  {screenOffPlayback ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Phonon: diagnostics + compute unit (iOS) */}
           {selectedEngine === PHONON && (
