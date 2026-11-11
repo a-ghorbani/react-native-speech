@@ -27,11 +27,16 @@ import {KittenEngine} from '../kitten/KittenEngine';
 import {SupertonicEngine} from '../supertonic/SupertonicEngine';
 import {SupertonicInference} from '../supertonic/SupertonicInference';
 
+const {neuralAudioPlayer} = require('../NeuralAudioPlayer') as {
+  neuralAudioPlayer: {play: jest.Mock; stop: jest.Mock};
+};
+
 type Engine = {
   release(): Promise<{success: boolean}>;
   destroy(): Promise<void>;
   initialize(config: object): Promise<void>;
   getStatus(): {isReady: boolean; isLoading: boolean; error: string | null};
+  synthesizeStream(): {append(t: string): void; finalize(): Promise<void>};
 };
 
 /** A model (ONNX session or Supertonic pipeline) and whether it was freed. */
@@ -60,6 +65,13 @@ const model = (): Model & {release: jest.Mock} => {
   return m;
 };
 
+const AUDIO = () => ({
+  samples: new Float32Array(240).fill(0.1),
+  sampleRate: 24000,
+  channels: 1,
+  duration: 0.01,
+});
+
 /** A loader whose clear() drops what load() put there. */
 function loader() {
   let has = false;
@@ -82,6 +94,7 @@ function sessionEngine(e: any, loadTokenizer: string): Built {
   e[loadTokenizer] = jest.fn(async () => tok.load());
   e.loadVoices = jest.fn(async () => voices.load());
   e.loadModel = jest.fn(async () => (e.session = model()));
+  e.synthesizeTextChunk = jest.fn(async () => AUDIO());
   return {
     engine: e,
     config: {dictPath: 'd', tokenizerPath: 't', voicesPath: 'v'},
@@ -108,7 +121,11 @@ const ENGINES: Array<[string, () => Built]> = [
       e.isInitialized = true;
       e.config = {maxChunkSize: 25};
       e.inference = first;
-      e.styleLoader = {clear: styles.clear};
+      e.styleLoader = {
+        getVoiceStyle: jest.fn(async () => ({})),
+        clear: styles.clear,
+      };
+      e.synthesizeChunk = jest.fn(async () => AUDIO());
       e.unicodeProcessor = {
         initialize: jest.fn(async () => uni.load()),
         clear: uni.clear,
@@ -153,15 +170,28 @@ beforeEach(() => {
 });
 afterEach(() => {
   jest.restoreAllMocks();
+  neuralAudioPlayer.play.mockClear();
   mockStop.gate = null;
   freeGate = null;
 });
 
-const WINDOWS = ['player stop', 'session free'] as const;
+const WINDOWS = ['stream cancel', 'player stop', 'session free'] as const;
 
-function openWindow(w: (typeof WINDOWS)[number]): () => void {
+/** Holds release() at the given await; returns what lets it go on. */
+async function openWindow(
+  w: (typeof WINDOWS)[number],
+  engine: Engine,
+): Promise<() => void> {
   const g = gate();
-  if (w === 'player stop') mockStop.gate = g.p;
+  if (w === 'stream cancel') {
+    // A stream is playing: release() first awaits its cancel, whose
+    // player stop is held.
+    const s = engine.synthesizeStream();
+    s.append('A stream is playing here. ');
+    s.finalize().catch(() => {});
+    while (neuralAudioPlayer.play.mock.calls.length === 0) await tick(5);
+    mockStop.gate = g.p;
+  } else if (w === 'player stop') mockStop.gate = g.p;
   else freeGate = g.p;
   return g.open;
 }
@@ -173,7 +203,7 @@ describe.each(ENGINES)(
       'an initialize() that finishes during the %s stays, with its model',
       async w => {
         const {engine, config, first, current, loadersFilled} = make();
-        const done = openWindow(w);
+        const done = await openWindow(w, engine);
 
         const rel = engine.release();
         await tick();
@@ -204,7 +234,7 @@ describe.each(ENGINES)(
       'an initialize() still loading when the %s ends is not undone',
       async w => {
         const {engine, config, first, current, loadersFilled} = make();
-        const done = openWindow(w);
+        const done = await openWindow(w, engine);
         const e = engine as any;
         const voices = gate();
         const loadVoices = e.loadVoices;
