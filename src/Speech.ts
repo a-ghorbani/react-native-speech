@@ -752,6 +752,8 @@ export default class Speech {
   }
 
   // Event listeners - unified for all engines (OS TTS and neural audio use the same events)
+  // onStart/onFinish: once per utterance for OS TTS, once per played chunk for
+  // neural engines; a neural speak() resolves when its last chunk has played.
   public static onError = TurboSpeech.onError;
   public static onStart = TurboSpeech.onStart;
   public static onFinish = TurboSpeech.onFinish;

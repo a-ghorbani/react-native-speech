@@ -379,7 +379,7 @@ errorSubscription.remove();
 
 #### **onStart**
 
-Triggers when speech starts.
+Triggers when speech starts. With the OS engine, once per utterance. With the neural engines (Kokoro, Kitten, Supertonic and add-on engines), once per chunk as it starts playing, so a long `speak()` or a stream fires it several times.
 
 ```ts
 const startSubscription = Speech.onStart(({id}) => {
@@ -392,7 +392,7 @@ startSubscription.remove();
 
 #### **onFinish**
 
-Triggers when speech completes.
+Triggers when speech completes. With the OS engine, once per utterance. With the neural engines, once per chunk as it finishes playing, so it is not the end of the utterance. To know when a neural `speak()` or stream has finished, await `Speech.speak()` or the stream's `finalize()`; both resolve once the last chunk has played (or after `stop()`).
 
 ```ts
 const finishSubscription = Speech.onFinish(({id}) => {
