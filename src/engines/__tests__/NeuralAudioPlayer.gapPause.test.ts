@@ -11,6 +11,7 @@ jest.mock('../../NativeAudioPlayer', () => ({
     stop: jest.fn(async () => {}),
     pause: jest.fn(async () => true),
     resume: jest.fn(async () => true),
+    isSpeaking: jest.fn(async () => false),
     onStart: jest.fn((cb: (e: {id: number}) => void) => {
       mockStart = cb;
       return {remove: () => {}};
@@ -42,6 +43,7 @@ beforeEach(() => {
   Object.values(native).forEach(fn => fn.mockClear());
   native.playAudio!.mockImplementation(async () => {});
   native.pause!.mockImplementation(async () => true);
+  native.isSpeaking!.mockImplementation(async () => false);
 });
 
 describe('NeuralAudioPlayer: pause between chunks (#134)', () => {
@@ -184,11 +186,30 @@ describe('NeuralAudioPlayer: pause between chunks (#134)', () => {
     const d = deferred();
     native.playAudio!.mockImplementationOnce(() => d.promise);
     native.pause!.mockImplementationOnce(async () => false);
+    native.isSpeaking!.mockImplementationOnce(async () => true);
     const playing = player.play(buffer, undefined, {});
     await expect(player.pause()).resolves.toBe(false);
     await player.resume();
     expect(native.resume).toHaveBeenCalledTimes(1);
     d.resolve();
     await playing;
+  });
+
+  it('a pause as the chunk ends (on its onFinish, before its settle) holds the next one', async () => {
+    const player = new NeuralAudioPlayer();
+    const u = {};
+    const d = deferred();
+    native.playAudio!.mockImplementationOnce(() => d.promise);
+    native.pause!.mockImplementationOnce(async () => false);
+    const chunk1 = player.play(buffer, undefined, u);
+    await expect(player.pause()).resolves.toBe(true);
+    d.resolve();
+    await chunk1;
+    const chunk2 = player.play(buffer, undefined, u);
+    await tick();
+    expect(native.playAudio).toHaveBeenCalledTimes(1);
+    await player.resume();
+    await chunk2;
+    expect(native.playAudio).toHaveBeenCalledTimes(2);
   });
 });

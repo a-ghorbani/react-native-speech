@@ -188,7 +188,25 @@ export class NeuralAudioPlayer {
       return true;
     }
     if (this.isCurrentlyPlaying && !this.awaitingStart) {
-      return NativeNeuralAudioPlayer.pause();
+      const gen = this.playGen;
+      if (await NativeNeuralAudioPlayer.pause()) {
+        return true;
+      }
+      // Native had nothing to pause: either it paused the chunk itself (a
+      // focus loss), or the chunk just ended and its settle is on its way.
+      if (
+        this.openUtterance === null ||
+        (await NativeNeuralAudioPlayer.isSpeaking())
+      ) {
+        return false;
+      }
+      if (this.gapPause) {
+        return true;
+      }
+      if (gen !== this.playGen && !this.awaitingStart) {
+        // The next chunk started meanwhile.
+        return NativeNeuralAudioPlayer.pause();
+      }
     }
     if (this.openUtterance === null) {
       return false;
