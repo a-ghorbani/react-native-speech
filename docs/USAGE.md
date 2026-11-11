@@ -108,6 +108,10 @@ Speech.getAvailableVoices(language?: string): Promise<VoiceProps[]>
 - `identifier`: The unique identifier for the voice.
 - `language`: The language tag (e.g., `'en-US'`, `'fr-FR'`).
 - `quality`: The quality level of the voice (`'Default'` or `'Enhanced'`).
+- `networkConnectionRequired` (Android only): `true` when the voice needs a network connection to synthesize.
+- `notInstalled` (Android only): `true` when the engine reports that the voice needs data that is not downloaded yet (`KEY_FEATURE_NOT_INSTALLED`). `false` means the engine did not report it as missing. Network voices can carry it too.
+
+On iOS both Android-only fields are `undefined`: `AVSpeechSynthesisVoice` lists only voices installed on the device and has no network flag.
 
 **Example Usage:**
 
