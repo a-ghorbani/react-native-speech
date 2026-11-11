@@ -688,6 +688,11 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     this.stopSignalResolver?.();
     this.stopSignalResolver = null;
 
+    // Detached before any await: an initialize() during release loads a
+    // new pipeline it never touches (#62).
+    const inference = this.inference;
+    this.inference = new SupertonicInference(this.runs);
+
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
 
@@ -701,10 +706,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     }
 
     // 3. Release the inference pipeline (4 ONNX sessions) once no
-    // inference runs on it. Detached first: a later initialize() loads a
-    // new pipeline this release never touches.
-    const inference = this.inference;
-    this.inference = new SupertonicInference(this.runs);
+    // inference runs on it.
     let inferenceErrors: Error[] = [];
     try {
       await this.inflight.freeWhenIdle(async () => {

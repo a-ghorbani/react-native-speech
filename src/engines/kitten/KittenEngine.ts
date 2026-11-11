@@ -874,6 +874,11 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     this.stopSignalResolver?.();
     this.stopSignalResolver = null;
 
+    // Detached before any await: no new inference can start on it, and an
+    // initialize() during release loads a new one it never touches (#62).
+    const session = this.session;
+    this.session = null;
+
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
 
@@ -885,10 +890,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    // Detached first: no new inference can start on it, and a later
-    // initialize() creates a new one this release never touches.
-    const session = this.session;
-    this.session = null;
     if (session) {
       try {
         await this.inflight.freeWhenIdle(async () => {
