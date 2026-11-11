@@ -289,6 +289,8 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       postProcess,
       // Bind unconditionally: a callback may be set after the stream starts.
       onChunkProgress: event => this.emitChunkProgress(event),
+      // The handle's own cancel(), without Speech.stop() (#108).
+      onCancel: () => this.cancelUtterance(gen),
     });
 
     this.activeStreamSession = session;
@@ -592,6 +594,19 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
     // utterance's first chunk.
     neuralAudioPlayer.stop().catch(() => {});
     await this.cancelActiveStream();
+  }
+
+  /**
+   * Ends a stream's units and its run in flight, unless a newer utterance
+   * has started (each new one calls stop() first, which bumps the
+   * generation): all runs in flight are then this stream's.
+   */
+  private cancelUtterance(gen: number): void {
+    if (gen !== this.utteranceGen) {
+      return;
+    }
+    this.utteranceGen++;
+    this.runs.abortAll();
   }
 
   private isSuperseded(gen: number): boolean {

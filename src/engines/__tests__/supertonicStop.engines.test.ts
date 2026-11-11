@@ -261,6 +261,69 @@ describe.each<Binding>(['bridge', 'unpatched', 'patched'])(
       expect(m.runs.filter(r => r.text === A.length)).toHaveLength(4);
     });
 
+    test("the stream handle's cancel() mid-chunk: no further run starts; the stream settles (#108)", async () => {
+      const m = models(binding);
+      const e = await engine(m);
+      const h = e.synthesizeStream(opts);
+      h.append(A);
+      const done = h.finalize();
+      await advanceTo(m, 4);
+      await h.cancel();
+      if (binding === 'patched') {
+        expect(m.runs[3]!.signal?.aborted).toBe(true);
+      }
+      m.finishLast();
+      await expect(done).resolves.toBeUndefined();
+      await tick(20);
+      expect(m.runs).toHaveLength(4);
+      expect(play).not.toHaveBeenCalled();
+    });
+
+    test('cancel() of a stream already replaced by a speak(): the new one runs every step and plays (#108)', async () => {
+      const m = models(binding);
+      const e = await engine(m);
+      const a = e.synthesizeStream(opts);
+      a.append(A);
+      const aDone = a.finalize();
+      await advanceTo(m, 4);
+      const aRun = m.runs[3]!;
+      const b = e.synthesize(B, opts);
+      aRun.resolve();
+      await until(() => m.runs.some(r => r.text === B.length));
+      await a.cancel();
+      await expect(aDone).resolves.toBeUndefined();
+      await advanceTo(m, 4 + RUNS_PER_CHUNK);
+      expect(m.runs.slice(4).every(r => !r.signal?.aborted)).toBe(true);
+      m.finishLast();
+      await until(() => play.mock.calls.length === 1);
+      pendingPlays.splice(0).forEach(r => r());
+      await expect(b).resolves.toBeUndefined();
+    });
+
+    test('cancel() of a finished stream while a new speak() runs: the new one runs every step and plays (#108)', async () => {
+      const m = models(binding);
+      const e = await engine(m);
+      const a = e.synthesizeStream(opts);
+      a.append(A);
+      const aDone = a.finalize();
+      await advanceTo(m, RUNS_PER_CHUNK);
+      m.finishLast();
+      await until(() => play.mock.calls.length === 1);
+      pendingPlays.splice(0).forEach(r => r());
+      await expect(aDone).resolves.toBeUndefined();
+      const b = e.synthesize(B, opts);
+      await advanceTo(m, RUNS_PER_CHUNK + 4);
+      await a.cancel();
+      await advanceTo(m, 2 * RUNS_PER_CHUNK);
+      expect(m.runs.slice(RUNS_PER_CHUNK).every(r => !r.signal?.aborted)).toBe(
+        true,
+      );
+      m.finishLast();
+      await until(() => play.mock.calls.length === 2);
+      pendingPlays.splice(0).forEach(r => r());
+      await expect(b).resolves.toBeUndefined();
+    });
+
     test('release() mid-chunk: no further run starts; the sessions are freed once the run in flight ends', async () => {
       const m = models(binding);
       const e = await engine(m);
@@ -371,6 +434,25 @@ test('destroy() with a stream open: a chunk that starts afterwards resolves to n
   await expect(h.finalize()).resolves.toBeUndefined();
   expect(m.runs).toHaveLength(0);
   expect(play).not.toHaveBeenCalled();
+});
+
+test("a stream unit still waiting for its voice style starts no run after the handle's cancel() (#108)", async () => {
+  const m = models('unpatched');
+  const e = await engine(m);
+  let styleReady!: () => void;
+  const style = await e.styleLoader.getVoiceStyle('F1');
+  e.styleLoader.getVoiceStyle.mockImplementationOnce(
+    () => new Promise(r => (styleReady = () => r(style))),
+  );
+  const a = e.synthesizeStream(opts);
+  a.append(A);
+  const aDone = a.finalize();
+  await tick(20);
+  await a.cancel();
+  styleReady();
+  await expect(aDone).resolves.toBeUndefined();
+  await tick(20);
+  expect(m.runs).toHaveLength(0);
 });
 
 test('destroy() mid-chunk: no further run starts and speak resolves (no "session not initialized")', async () => {

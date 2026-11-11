@@ -215,6 +215,50 @@ describe.each(['Kitten', 'Kokoro'] as const)(
       expect(h.log).toEqual(['old:NEW']);
     });
 
+    it("does not run a stream unit held in g2p once the stream handle's cancel() ran (#108)", async () => {
+      const h = setup(name);
+      h.hold.phonemize = 'A';
+      const stream = h.engine.synthesizeStream();
+      stream.append('A one.');
+      const done = stream.finalize();
+      await tick();
+      expect(h.phonemized()).toEqual(['A one.']);
+      await stream.cancel();
+      h.releaseHeld(); // A's g2p ends after the cancel
+      await tick();
+      await done;
+      expect(h.log).toEqual([]);
+    });
+
+    it("does not run the rest of an oversized chunk once the stream handle's cancel() ran (#108)", async () => {
+      const h = setup(name);
+      const stream = h.engine.synthesizeStream();
+      stream.append(OVERSIZED);
+      const done = stream.finalize();
+      await tick();
+      expect(h.log).toEqual(['old:A']);
+      await stream.cancel();
+      h.releaseHeld(); // piece A's run ends after the cancel
+      await tick();
+      await done;
+      expect(h.log).toEqual(['old:A']);
+      expect(h.phonemized().filter(t => t.startsWith('B'))).toEqual([]);
+    });
+
+    it("does not run a stream unit held in its voice load once the stream handle's cancel() ran (#108)", async () => {
+      const h = setup(name);
+      h.hold.embedding = true;
+      const stream = h.engine.synthesizeStream();
+      stream.append('A one.');
+      const done = stream.finalize();
+      await tick();
+      await stream.cancel();
+      h.releaseHeld(); // the embedding arrives after the cancel
+      await tick();
+      await done;
+      expect(h.log).toEqual([]);
+    });
+
     it('does not run the prefetched next chunk after stop() + speak() (#104)', async () => {
       const h = setup(name);
       h.engine.config.maxChunkSize = 8;

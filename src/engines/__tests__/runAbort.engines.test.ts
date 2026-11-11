@@ -32,6 +32,7 @@ jest.mock('../../phonemization', () => ({
 import {KokoroEngine} from '../kokoro/KokoroEngine';
 import {KittenEngine} from '../kitten/KittenEngine';
 import {neuralAudioPlayer} from '../NeuralAudioPlayer';
+import {SpeechStreamImpl} from '../SpeechStream';
 
 const play = neuralAudioPlayer.play as jest.Mock;
 const tick = (ms = 5) => new Promise(r => setTimeout(r, ms));
@@ -206,6 +207,102 @@ describe.each(ENGINES)('%s', (_name, make) => {
     expect(m.runs.slice(0, before).every(r => r.signal?.aborted)).toBe(true);
     expect(m.runs[before]!.signal?.aborted).toBe(false);
     await expect(aDone).resolves.toBeUndefined();
+    m.runs[before]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(bDone).resolves.toBeUndefined();
+  });
+
+  test("patched binding: the stream handle's cancel() terminates its run; the stream settles, nothing plays (#108)", async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const h = e.synthesizeStream();
+    h.append(TWO);
+    const done = h.finalize();
+    await until(() => m.runs.length >= 1);
+    await h.cancel();
+    expect(m.runs.every(r => r.signal?.aborted)).toBe(true);
+    await expect(done).resolves.toBeUndefined();
+    await tick(20);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test('patched binding: SpeechStream.cancel() (the public handle) terminates the run in flight (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const stream = new SpeechStreamImpl({
+      synthesize: async () => {},
+      stop: async () => {},
+      engineStreamFactory: () => e.synthesizeStream(),
+    });
+    stream.append(TWO);
+    const done = stream.finalize();
+    await until(() => m.runs.length >= 1);
+    await stream.cancel();
+    expect(m.runs.every(r => r.signal?.aborted)).toBe(true);
+    await expect(done).resolves.toBeUndefined();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  test('patched binding: cancel() of a stream already replaced by a speak() leaves the new run alone (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append(TWO);
+    const aDone = a.finalize();
+    await until(() => m.runs.length >= 1);
+    const before = m.runs.length;
+    const b = e.synthesize('A new reply.');
+    await until(() => m.runs.length === before + 1);
+    await a.cancel();
+    await expect(aDone).resolves.toBeUndefined();
+    expect(m.runs[before]!.signal?.aborted).toBe(false);
+    m.runs[before]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(b).resolves.toBeUndefined();
+  });
+
+  test('patched binding: cancel() of a finished stream while a new speak() runs leaves the new one alone (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append('The first sentence is here.');
+    const aDone = a.finalize();
+    await until(() => m.runs.length === 1);
+    m.runs[0]!.resolve();
+    await until(() => play.mock.calls.length === 1);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(aDone).resolves.toBeUndefined();
+    const b = e.synthesize('A new reply.');
+    await until(() => m.runs.length === 2);
+    await a.cancel();
+    expect(m.runs[1]!.signal?.aborted).toBe(false);
+    m.runs[1]!.resolve();
+    await until(() => play.mock.calls.length === 2);
+    pendingPlays.splice(0).forEach(r => r());
+    await expect(b).resolves.toBeUndefined();
+  });
+
+  test('patched binding: a new stream right after a cancel() runs and plays (#108)', async () => {
+    bind('patched');
+    const m = session('patched');
+    const e = make(m.session);
+    const a = e.synthesizeStream();
+    a.append(TWO);
+    a.finalize();
+    await until(() => m.runs.length >= 1);
+    await a.cancel();
+    const before = m.runs.length;
+    const b = e.synthesizeStream();
+    b.append('A new reply.');
+    const bDone = b.finalize();
+    await until(() => m.runs.length === before + 1);
+    expect(m.runs[before]!.signal?.aborted).toBe(false);
     m.runs[before]!.resolve();
     await until(() => play.mock.calls.length === 1);
     pendingPlays.splice(0).forEach(r => r());
