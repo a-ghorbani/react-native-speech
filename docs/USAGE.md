@@ -338,6 +338,8 @@ Speech.pause().then(isPaused => {
 });
 ```
 
+On the neural engines (Kokoro, Supertonic, Kitten), a pause works at any point of a `speak()` or stream, including between two chunks (while the next one is being synthesized, or while a stream waits for more text). There it resolves `true`, `onPause` fires, and the next chunk waits until `Speech.resume()` (`onResume` fires) or is dropped by `Speech.stop()` or a new utterance (`onStopped` fires). A paused stream's `finalize()` resolves only after it is resumed and has played. Between two utterances there is nothing to pause, and `pause()` resolves `false`.
+
 #### **Resume Speech**
 
 > **Note:** On Android, API 26+ (Android 8+) required.

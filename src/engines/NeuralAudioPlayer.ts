@@ -7,7 +7,10 @@
 
 import {Platform} from 'react-native';
 import NativeNeuralAudioPlayer from '../NativeAudioPlayer';
-import type {AudioPlayerConfig} from '../NativeAudioPlayer';
+import type {
+  AudioPlayerConfig,
+  AudioPlayerEventProps,
+} from '../NativeAudioPlayer';
 import type {AudioBuffer} from '../types';
 import {float32ToBase64Int16} from '../utils/AudioConverter';
 
@@ -44,6 +47,20 @@ export class NeuralAudioPlayer {
   private nativeMayHold = false;
   /** The utterance whose held chunk keeps Android's audio focus until a native stop. */
   private focusOwner: object | null = null;
+  /** The utterance whose chunks are playing, until it ends or stops. */
+  private openUtterance: object | null = null;
+  /** A pause between two chunks: the next chunk waits on it (#134). */
+  private gapPause: {promise: Promise<void>; release: () => void} | null = null;
+  private readonly gapListeners = {
+    pause: new Set<(e: AudioPlayerEventProps) => void>(),
+    resume: new Set<(e: AudioPlayerEventProps) => void>(),
+    stopped: new Set<(e: AudioPlayerEventProps) => void>(),
+  };
+  /** The playback in flight is still waiting on a gap pause, not started. */
+  private awaitingStart = false;
+  /** Id of the last chunk native started, for the gap pause events. */
+  private lastChunkId = 0;
+  private trackingIds = false;
 
   /**
    * Play an audio buffer
@@ -75,6 +92,10 @@ export class NeuralAudioPlayer {
     if (hold) {
       this.focusOwner = utterance;
     }
+    if (utterance !== undefined) {
+      this.openUtterance = utterance;
+      this.trackChunkIds();
+    }
     await this.playNative(() =>
       NativeNeuralAudioPlayer.playAudio(base64Audio, config),
     );
@@ -92,6 +113,14 @@ export class NeuralAudioPlayer {
     this.nativeMayHold = true;
 
     try {
+      while (this.gapPause) {
+        this.awaitingStart = true;
+        await this.gapPause.promise;
+        if (gen !== this.playGen) {
+          return;
+        }
+      }
+      this.awaitingStart = false;
       await start();
     } finally {
       if (gen === this.playGen) {
@@ -104,6 +133,9 @@ export class NeuralAudioPlayer {
    * Stop current playback
    */
   async stop(): Promise<void> {
+    this.openUtterance = null;
+    this.awaitingStart = false;
+    this.endGapPause();
     if (this.isCurrentlyPlaying || this.nativeMayHold) {
       this.playGen++;
       this.isCurrentlyPlaying = false;
@@ -119,6 +151,11 @@ export class NeuralAudioPlayer {
    * playback is in flight.
    */
   async endUtterance(utterance: object): Promise<void> {
+    if (this.openUtterance === utterance && !this.isCurrentlyPlaying) {
+      // A pause after the last chunk has nothing left to hold.
+      this.openUtterance = null;
+      this.endGapPause();
+    }
     if (this.focusOwner === utterance && !this.isCurrentlyPlaying) {
       await this.stop();
     }
@@ -136,22 +173,89 @@ export class NeuralAudioPlayer {
   }
 
   /**
-   * Pause current playback
+   * Pause current playback. Between two chunks of an utterance, the next
+   * chunk is held until `resume()` (or dropped by `stop()`).
    */
   async pause(): Promise<boolean> {
-    if (this.isCurrentlyPlaying) {
-      const result = await NativeNeuralAudioPlayer.pause();
-      return result;
+    if (this.gapPause) {
+      return true;
     }
-    return false;
+    if (this.isCurrentlyPlaying && !this.awaitingStart) {
+      return NativeNeuralAudioPlayer.pause();
+    }
+    if (this.openUtterance === null) {
+      return false;
+    }
+    let release!: () => void;
+    const promise = new Promise<void>(r => {
+      release = r;
+    });
+    this.gapPause = {promise, release};
+    this.emitGap('pause');
+    return true;
   }
 
   /**
    * Resume paused playback
    */
   async resume(): Promise<boolean> {
+    if (this.gapPause) {
+      const held = this.gapPause;
+      this.gapPause = null;
+      this.emitGap('resume');
+      held.release();
+      return true;
+    }
     const result = await NativeNeuralAudioPlayer.resume();
     return result;
+  }
+
+  /** onPause for a pause between chunks, which native never sees. */
+  onGapPause(listener: (e: AudioPlayerEventProps) => void): {
+    remove: () => void;
+  } {
+    this.gapListeners.pause.add(listener);
+    return {remove: () => this.gapListeners.pause.delete(listener)};
+  }
+
+  /** onResume for the end of a pause between chunks. */
+  onGapResume(listener: (e: AudioPlayerEventProps) => void): {
+    remove: () => void;
+  } {
+    this.gapListeners.resume.add(listener);
+    return {remove: () => this.gapListeners.resume.delete(listener)};
+  }
+
+  /** onStopped for a pause between chunks that ends without resume(). */
+  onGapStopped(listener: (e: AudioPlayerEventProps) => void): {
+    remove: () => void;
+  } {
+    this.gapListeners.stopped.add(listener);
+    return {remove: () => this.gapListeners.stopped.delete(listener)};
+  }
+
+  /** Ends a pause between chunks without playing what it held. */
+  private endGapPause(): void {
+    if (this.gapPause) {
+      this.gapPause.release();
+      this.gapPause = null;
+      this.emitGap('stopped');
+    }
+  }
+
+  private emitGap(kind: 'pause' | 'resume' | 'stopped'): void {
+    const event = {id: this.lastChunkId};
+    this.gapListeners[kind].forEach(listener => listener(event));
+  }
+
+  private trackChunkIds(): void {
+    if (this.trackingIds) {
+      return;
+    }
+    this.trackingIds = true;
+    NativeNeuralAudioPlayer.onStart?.(e => {
+      this.lastChunkId = e.id;
+    });
   }
 
   /**
