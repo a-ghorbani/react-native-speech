@@ -288,6 +288,40 @@ function spellOutLetters(
 }
 
 /**
+ * Lowercase Object.prototype names ("constructor", "__proto__"). hans00's
+ * own tables are plain objects, so such a token in its input comes back as
+ * ASCII or as "[object Object]" phonemized (#89).
+ */
+const HANS00_UNSAFE = new Set(
+  Object.getOwnPropertyNames(Object.prototype).filter(
+    n => n === n.toLowerCase(),
+  ),
+);
+
+/** hans00.toIPA, except that a token it breaks on is read from the dict (#89). */
+function hans00ToIPA(hans00: Hans00, text: string, dict: DictSource): string {
+  const segments = text.split(/([a-z_]+)/i);
+  if (!segments.some(s => HANS00_UNSAFE.has(s.toLowerCase()))) {
+    return hans00.toIPA(text, {stripStress: false});
+  }
+  return segments
+    .map(s => {
+      if (!/[a-z0-9]/i.test(s)) return '';
+      if (!HANS00_UNSAFE.has(s.toLowerCase())) {
+        return hans00.toIPA(s, {stripStress: false});
+      }
+      const c = s.toLowerCase().replace(/[^a-z']/g, '');
+      return (
+        dict.lookup(c) ??
+        (HANS00_UNSAFE.has(c)
+          ? (spellOutLetters(c, dict, null) ?? '')
+          : hans00.toIPA(c, {stripStress: false}))
+      );
+    })
+    .join('');
+}
+
+/**
  * Hyphen-joined single letters ("U-S-", "a-m-", "A-B") — the form the text
  * normalizers give dotted acronyms. Spelled before the dict lookup, since
  * the joined letters often collide with a real word ("us", "am").
@@ -543,9 +577,11 @@ function phonemizeWord(
   // Lowercased unless it's the short all-caps acronym case: hans00 spells
   // any all-caps input letter by letter ("COVID" → C-O-V-I-D).
   if (!ipa && hans00) {
-    let g2p = hans00.toIPA(forceSpellOut ? word : word.toLowerCase(), {
-      stripStress: false,
-    });
+    let g2p = hans00ToIPA(
+      hans00,
+      forceSpellOut ? word : word.toLowerCase(),
+      dict,
+    );
     g2p = g2p.replace(/- /g, '').replace(/ɫ/g, 'l');
 
     // Vowelless tokens ("gpt", "npm", "sql") are acronyms even when hans00
