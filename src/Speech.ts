@@ -80,6 +80,19 @@ const initializeAttempted = new WeakSet<AnyEngine>();
 // Bumped by every initialize(); only the latest call may switch the engine.
 let initGeneration = 0;
 
+/** `sub`, whose remove() also removes `extra`. */
+function withExtraSubscription<T extends {remove: () => void}>(
+  sub: T,
+  extra: {remove: () => void},
+): T {
+  const remove = sub.remove.bind(sub);
+  sub.remove = () => {
+    remove();
+    extra.remove();
+  };
+  return sub;
+}
+
 function registeredEngine(id: EngineId): AnyEngine | undefined {
   return engineManager.hasEngine(id) ? engineManager.getEngine(id) : undefined;
 }
@@ -766,9 +779,22 @@ export default class Speech {
    * await `speak()` or the stream's `finalize()`.
    */
   public static onFinish = TurboSpeech.onFinish;
-  public static onPause = TurboSpeech.onPause;
-  public static onResume = TurboSpeech.onResume;
-  public static onStopped = TurboSpeech.onStopped;
+  /** Also fires for a neural pause between two chunks (#134). */
+  public static onPause: typeof TurboSpeech.onPause = handler =>
+    withExtraSubscription(
+      TurboSpeech.onPause(handler),
+      neuralAudioPlayer.onGapPause(handler),
+    );
+  public static onResume: typeof TurboSpeech.onResume = handler =>
+    withExtraSubscription(
+      TurboSpeech.onResume(handler),
+      neuralAudioPlayer.onGapResume(handler),
+    );
+  public static onStopped: typeof TurboSpeech.onStopped = handler =>
+    withExtraSubscription(
+      TurboSpeech.onStopped(handler),
+      neuralAudioPlayer.onGapStopped(handler),
+    );
   public static onProgress = TurboSpeech.onProgress;
 }
 
