@@ -1,6 +1,7 @@
 import './engines';
 import React from 'react';
 import {View, Text, TouchableOpacity, StyleSheet, Linking} from 'react-native';
+import {isIOSPEvidenceUrl, runIOSPEvidence} from './evidenceIOSP';
 import RootView from './views/RootView';
 import BenchmarkView from './views/BenchmarkView';
 import StreamingView from './views/StreamingView';
@@ -32,6 +33,10 @@ function AppContent() {
   // Self-test deep link (adb `am start -d <url>` / devicectl `--payload-url`).
   React.useEffect(() => {
     const handle = (url: string | null | undefined) => {
+      if (isIOSPEvidenceUrl(url)) {
+        runIOSPEvidence(url!);
+        return;
+      }
       const params = url ? parseSelfTestUrl(url) : null;
       if (!params) return;
       if (isPhononSelfTestRunning()) {
