@@ -569,7 +569,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun stop(promise: Promise) {
     ensureInitialized(promise) {
-      if (synthesizer.isSpeaking || isPaused) {
+      // isSpeaking is false between two queued utterances; the queue still has one to speak.
+      val queued = synchronized(queueLock) { currentQueueIndex >= 0 }
+      if (synthesizer.isSpeaking || isPaused || queued) {
         synthesizer.stop()
         deactivateDuckingSession()
         synchronized(queueLock) {

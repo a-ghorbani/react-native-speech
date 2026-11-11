@@ -58,7 +58,8 @@ const log = createComponentLogger('Speech', 'Api');
 
 type AnyEngine = TTSEngineInterface<any>;
 
-engineManager.registerEngine(new OSEngine());
+const osEngine = new OSEngine();
+engineManager.registerEngine(osEngine);
 
 // Built-in neural engines are constructed on their first initialize().
 const builtinFactories: Record<string, () => AnyEngine> = {
@@ -356,6 +357,19 @@ export default class Speech {
     voiceId?: string,
     options?: SynthesisOptions,
   ): Promise<void> {
+    await Speech.queueOnCurrentEngine(input, voiceId, options);
+  }
+
+  /**
+   * As `synthesizeOnCurrentEngine`; on the OS engine it also reports when
+   * the audio starts (`onStart`) and ends (`ended`).
+   */
+  private static async queueOnCurrentEngine(
+    input: SpeechInput,
+    voiceId?: string,
+    options?: SynthesisOptions,
+    onStart?: ChunkProgressCallback,
+  ): Promise<{ended: Promise<void>}> {
     assertFirstChunkMaxWords(options?.firstChunkMaxWords);
     const engine = Speech.currentEngine;
 
@@ -366,10 +380,14 @@ export default class Speech {
     }
 
     const engineInstance = engineManager.getEngine(engine);
+    if (engineInstance === osEngine) {
+      return osEngine.speakTracked(input, {voiceId, ...options}, onStart);
+    }
     await engineInstance.synthesize(input, {
       voiceId,
       ...options,
     });
+    return {ended: Promise.resolve()};
   }
 
   /**
@@ -381,16 +399,14 @@ export default class Speech {
    * first sentence flushes as soon as it's complete (low latency) and
    * subsequent batches are packed up to `targetChars` characters.
    *
-   * **Engine support**: designed for the neural engines (Kokoro,
-   * Supertonic, Kitten), where each `speak()` resolves only after the
-   * batch finishes playing so the stream can pack large batches while
-   * earlier ones play. The OS engine's native `speak()` resolves on
-   * dispatch, which makes the adaptive batching effectively a no-op —
-   * the stream still works (the OS queues utterances natively) but
-   * sounds roughly the same as per-sentence `speak()`.
+   * **OS engine**: each batch is one native utterance, queued as soon as
+   * it is flushed (the OS speaks them in order). `onChunkProgress` and
+   * `onProgress` fire when a batch's audio starts, and `finalize()`
+   * resolves when the last batch's audio has ended. `firstChunk` is
+   * ignored.
    *
    * The stream replaces the utterance (speak or stream) the engine is
-   * speaking, as `stop()` would.
+   * speaking, as `stop()` would. `stop()` also ends the stream.
    *
    * @param voiceId - Voice identifier for the active engine
    * @param options - Synthesis options + stream-specific tuning
@@ -442,6 +458,16 @@ export default class Speech {
     const stream = new SpeechStreamImpl({
       synthesize: (text: string) =>
         Speech.synthesizeOnCurrentEngine(text, voiceId, synthesisOptions),
+      queueBatch:
+        Speech.currentEngine === TTSEngine.OS_NATIVE
+          ? (text: string, onStart: ChunkProgressCallback) =>
+              Speech.queueOnCurrentEngine(
+                text,
+                voiceId,
+                synthesisOptions,
+                onStart,
+              )
+          : undefined,
       stop: () => Speech.stop(),
       subscribeProgress: (cb: ChunkProgressCallback) =>
         Speech.onChunkProgress(cb),
@@ -656,6 +682,10 @@ export default class Speech {
    */
   public static async stop(): Promise<void> {
     const engine = Speech.currentEngine;
+    if (engine === TTSEngine.OS_NATIVE) {
+      cancelBatchStream();
+    }
+    osEngine.abandonPending();
 
     // Set stop flag synchronously — takes effect in synthesis loop immediately.
     // The executor also absorbs an add-on stop() that throws or returns no promise.
