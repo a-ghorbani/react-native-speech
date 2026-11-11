@@ -361,7 +361,11 @@ export async function runBenchmark(
           () => {
             const total = performance.now() - speakStart;
             cleanup();
-            resolve({ttfaMs: ttfa, totalSpeakMs: total});
+            if (ttfa < 0) {
+              reject(new Error(`No audio played in ${engineConfig.engine}`));
+            } else {
+              resolve({ttfaMs: ttfa, totalSpeakMs: total});
+            }
           },
           err => {
             cleanup();
