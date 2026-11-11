@@ -1174,3 +1174,44 @@ describe('createMarkdownStreamBuffer: a sentence end inside a code span (#77)', 
     );
   });
 });
+
+describe('createMarkdownStreamBuffer: a sentence end inside link text (#126)', () => {
+  function stream(text: string) {
+    const md = createMarkdownStreamBuffer();
+    let early = '';
+    for (const w of text.match(/\S+\s*/g) ?? []) early += md.push(w);
+    return {early, all: early + md.flush()};
+  }
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+  test.each([
+    'Read [the guide. It helps](https://x.com/a) first.',
+    'See ![a chart. It rises](c.png) below.',
+    'Check [the docs! Really][1] now.',
+    'Use [`a. b`](https://x.com) here.',
+  ])('"%s" streams as it strips whole', text => {
+    const {all} = stream(text);
+    expect(all).not.toMatch(/[[\]()]|https/);
+    expect(norm(all)).toBe(norm(stripMarkdown(text)));
+  });
+
+  test('the sentence after the link is still cut early', () => {
+    expect(
+      stream('Read [the guide. It helps](https://x.com/a) first. Then the rest')
+        .early,
+    ).toBe('Read the guide. It helps first. ');
+  });
+
+  test('a [ inside a code span does not hold the line', () => {
+    expect(
+      stream('In regex, `[a-z` is an unterminated class. Add `]` to fix it')
+        .early,
+    ).toBe('In regex, [a-z is an unterminated class. ');
+  });
+
+  test('a closed bracket pair before a sentence end still cuts', () => {
+    expect(stream('As shown in [1] it works. Then more').early).toBe(
+      'As shown in [1] it works. ',
+    );
+  });
+});
