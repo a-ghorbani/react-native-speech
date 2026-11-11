@@ -1,6 +1,8 @@
 package com.pocketpalai.speech
 
 import android.media.AudioManager.AUDIOFOCUS_GAIN
+import android.media.AudioManager.AUDIOFOCUS_LOSS
+import android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
 import android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,5 +90,41 @@ class FocusEventGateTest {
     change(gen, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
     gate.end()
     assertFalse(gate.isDucked)
+  }
+
+  /** #133: a held request abandoned during a transient loss goes after the loss's regain. */
+  @Test
+  fun abandonDuringATransientLossWaitsForTheRegain() {
+    val gen = gate.begin()
+    change(gen, AUDIOFOCUS_LOSS_TRANSIENT)
+    assertTrue(gate.isLost)
+    assertFalse(gate.mayAbandonNow())
+    assertFalse(gate.takeAbandonOnRegain())
+    change(gen, AUDIOFOCUS_GAIN)
+    assertEquals(listOf(FocusEvent.LostTransient, FocusEvent.Gained), delivered)
+    assertTrue(gate.takeAbandonOnRegain())
+    assertFalse(gate.takeAbandonOnRegain())
+  }
+
+  @Test
+  fun aChunkPlayingAgainKeepsTheRequestAfterTheRegain() {
+    val gen = gate.begin()
+    change(gen, AUDIOFOCUS_LOSS_TRANSIENT)
+    assertFalse(gate.mayAbandonNow())
+    gate.keep()
+    change(gen, AUDIOFOCUS_GAIN)
+    assertFalse(gate.takeAbandonOnRegain())
+  }
+
+  @Test
+  fun abandonIsImmediateWhenNotLostOrAfterAPermanentLoss() {
+    var gen = gate.begin()
+    assertTrue(gate.mayAbandonNow())
+    change(gen, AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+    assertTrue(gate.mayAbandonNow())
+    gen = gate.begin()
+    change(gen, AUDIOFOCUS_LOSS)
+    assertTrue(gate.isLost)
+    assertTrue(gate.mayAbandonNow())
   }
 }

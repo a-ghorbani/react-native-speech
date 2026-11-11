@@ -49,6 +49,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     private const val MAX_INIT_RETRIES = 3
     private const val INIT_TIMEOUT_MS = 5000L
     private const val DUCKED_VOLUME = 0.2f
+    // Covers synthesis and LLM waits between chunks without taking focus again.
+    private const val HELD_FOCUS_IDLE_MS = 5000L
 
     private val defaultOptions: Map<String, Any> = mapOf(
       "rate" to 0.5f,
@@ -147,6 +149,13 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       }
     }
   }
+
+  private val idleFocusRelease = IdleFocusRelease(
+    audioLock,
+    HELD_FOCUS_IDLE_MS,
+    { delayMs, task -> mainHandler.postDelayed(task, delayMs) },
+    { neuralFocusManager.abandonFocus() }
+  )
 
   init {
     initializeTTS()
@@ -760,6 +769,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   private fun stopNeuralPlayback(abandonFocus: Boolean = true) {
     cleanupAudio()
+    idleFocusRelease.cancel()
     if (abandonFocus) neuralFocusManager.abandonFocus()
   }
 
@@ -827,7 +837,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         val frames = decodedBytes.size / frameBytes
         if (frames == 0) {
           // A static track's 0 marker is never reached.
-          if (!holdFocus) neuralFocusManager.abandonFocus()
+          if (holdFocus) idleFocusRelease.arm() else neuralFocusManager.abandonFocus()
           SpeechTrace.endSection()
           promise.resolve(null)
           return
@@ -880,7 +890,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               if (audioTrackPromise !== promise) return
               audioTrackPromise = null
               isAudioPlayingState = false
-              if (!holdFocus) neuralFocusManager.abandonFocus()
+              if (holdFocus) idleFocusRelease.arm() else neuralFocusManager.abandonFocus()
               SpeechTrace.endSection()
               emitOnFinish(getAudioEventData())
               promise.resolve(null)
@@ -1015,7 +1025,10 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       audioInvalidated = true
       audioTrackPromise = null
     }
-    stopNeuralPlayback()
+    cleanupAudio()
+    idleFocusRelease.cancel()
+    // Now, not on regain: nothing may reach the dead runtime.
+    neuralFocusManager.abandonFocusNow()
     audioExecutor.shutdownNow()
   }
 }
