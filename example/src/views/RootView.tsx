@@ -683,6 +683,10 @@ const RootView: React.FC = () => {
     };
   }, []);
 
+  // While onStartPress awaits Speech.speak(), it resets the UI itself when
+  // speak() settles: neural engines fire onFinish per chunk (#116).
+  const speakPendingRef = React.useRef(false);
+
   // Speech event handlers
   React.useEffect(() => {
     const onSpeechEnd = () => {
@@ -693,7 +697,9 @@ const RootView: React.FC = () => {
     };
 
     const startSubscription = Speech.onStart(() => setIsStarted(true));
-    const finishSubscription = Speech.onFinish(() => onSpeechEnd());
+    const finishSubscription = Speech.onFinish(() => {
+      if (!speakPendingRef.current) onSpeechEnd();
+    });
     const pauseSubscription = Speech.onPause(() => setIsPaused(true));
     const resumeSubscription = Speech.onResume(() => setIsPaused(false));
     const stoppedSubscription = Speech.onStopped(() => onSpeechEnd());
@@ -769,6 +775,7 @@ const RootView: React.FC = () => {
         }
       : undefined;
 
+    speakPendingRef.current = true;
     try {
       if (selectedEngine === TTSEngine.SUPERTONIC) {
         await Speech.speak(spokenText, selectedVoice || undefined, {
@@ -784,6 +791,7 @@ const RootView: React.FC = () => {
         await Speech.speak(input, selectedVoice || undefined);
       }
     } finally {
+      speakPendingRef.current = false;
       // Speech finished or was stopped — ensure we reset
       setIsStarted(false);
       setIsPaused(false);

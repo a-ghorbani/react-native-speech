@@ -787,7 +787,16 @@ export default class Speech {
 
   // Event listeners - unified for all engines (OS TTS and neural audio use the same events)
   public static onError = TurboSpeech.onError;
+  /**
+   * Speech started: once per utterance for the OS engine, once per chunk as
+   * it starts playing for neural engines.
+   */
   public static onStart = TurboSpeech.onStart;
+  /**
+   * Speech finished: once per utterance for the OS engine, once per chunk as
+   * it finishes playing for neural engines. For the end of a neural utterance,
+   * await `speak()` or the stream's `finalize()`.
+   */
   public static onFinish = TurboSpeech.onFinish;
   public static onPause = TurboSpeech.onPause;
   public static onResume = TurboSpeech.onResume;
