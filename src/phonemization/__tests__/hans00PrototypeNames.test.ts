@@ -12,8 +12,8 @@ jest.mock('../../utils/logger', () => ({
   }),
 }));
 
-// hans00 1.1.0 as measured on Node: tokens split on separators, a
-// separator kept with a space after it, and the two broken names.
+// Approximates hans00 1.1.0 as measured on Node: tokens split on
+// separators, and the two broken names come back as ASCII or object text.
 jest.mock('phonemize', () => ({
   toIPA: jest.fn((text: string) =>
     text.replace(/([a-z_]+)|([^a-z_]+)/gi, (_m, tok, sep) => {

@@ -288,11 +288,6 @@ function spellOutLetters(
 }
 
 /**
- * Hyphen-joined single letters ("U-S-", "a-m-", "A-B") — the form the text
- * normalizers give dotted acronyms. Spelled before the dict lookup, since
- * the joined letters often collide with a real word ("us", "am").
- */
-/**
  * Lowercase Object.prototype names ("constructor", "__proto__"). hans00's
  * own tables are plain objects, so such a token in its input comes back as
  * ASCII or as "[object Object]" phonemized (#89).
@@ -326,6 +321,11 @@ function hans00ToIPA(hans00: Hans00, text: string, dict: DictSource): string {
     .join('');
 }
 
+/**
+ * Hyphen-joined single letters ("U-S-", "a-m-", "A-B") — the form the text
+ * normalizers give dotted acronyms. Spelled before the dict lookup, since
+ * the joined letters often collide with a real word ("us", "am").
+ */
 const LETTER_SEQUENCE = /^(?:[A-Za-z]-)+[A-Za-z]?-?$/;
 
 /**
