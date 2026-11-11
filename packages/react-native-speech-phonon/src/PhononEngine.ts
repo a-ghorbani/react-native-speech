@@ -622,6 +622,9 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
       },
       playAudio: chunk => this.playChunk(chunk, playbackOptions, volume, ctx),
       stopPlayback: () => neuralAudioPlayer.stop(),
+      endUtterance: async () => {
+        await neuralAudioPlayer.endUtterance?.(ctx);
+      },
       hasAudio: chunk => chunk.bufferId > 0 && chunk.samples > 0,
       discard: chunk => this.releaseChunk(chunk),
       onCancel: () => this.cancelIds(ctx.ids),
@@ -860,6 +863,8 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
       }
     } finally {
       dispose();
+      // Optional: cores before 2.11 have no endUtterance.
+      neuralAudioPlayer.endUtterance?.(ctx).catch(() => {});
       if (next) {
         next.then(
           c => this.releaseChunk(c),
@@ -1034,8 +1039,10 @@ export class PhononEngine implements TTSEngineInterface<PhononConfig> {
     const playStartTs = Date.now();
     try {
       const config = playConfig(chunk.sampleRate, playbackOptions, volume);
-      await neuralAudioPlayer.playNative(() =>
-        NativePhonon.playBuffer(chunk.bufferId, config),
+      // ctx is this call's utterance token: a pause between chunks holds the next.
+      await neuralAudioPlayer.playNative(
+        () => NativePhonon.playBuffer(chunk.bufferId, config),
+        ctx,
       );
     } finally {
       this.recordMetrics(chunk, ctx.path, playStartTs, Date.now());

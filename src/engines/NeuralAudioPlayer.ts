@@ -92,12 +92,9 @@ export class NeuralAudioPlayer {
     if (hold) {
       this.focusOwner = utterance;
     }
-    if (utterance !== undefined) {
-      this.openUtterance = utterance;
-      this.trackChunkIds();
-    }
-    await this.playNative(() =>
-      NativeNeuralAudioPlayer.playAudio(base64Audio, config),
+    await this.playNative(
+      () => NativeNeuralAudioPlayer.playAudio(base64Audio, config),
+      utterance,
     );
   }
 
@@ -106,8 +103,18 @@ export class NeuralAudioPlayer {
    * add-on playing through the native PCM sink), so `stop()` and
    * `pause()` reach native while it is pending.
    * @param start - Starts playback; resolves when it finishes or is stopped
+   * @param utterance - Token of the utterance this chunk belongs to, so a
+   *   pause between its chunks holds the next one; the caller then calls
+   *   `endUtterance(utterance)` when the utterance ends.
    */
-  async playNative(start: () => Promise<void>): Promise<void> {
+  async playNative(
+    start: () => Promise<void>,
+    utterance?: object,
+  ): Promise<void> {
+    if (utterance !== undefined) {
+      this.openUtterance = utterance;
+      this.trackChunkIds();
+    }
     const gen = ++this.playGen;
     this.isCurrentlyPlaying = true;
     this.nativeMayHold = true;

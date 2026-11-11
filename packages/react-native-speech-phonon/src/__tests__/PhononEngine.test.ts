@@ -1125,6 +1125,38 @@ describe('synthesize: stop and re-entry races', () => {
   });
 });
 
+describe('pause between two chunks (#134)', () => {
+  const TEXT = 'First sentence here. Second one now. Third and last.';
+
+  it('holds the next chunk until resume(); the call ends its utterance', async () => {
+    const engine = await ready({maxChunkSize: 25});
+    const done = engine.synthesize(TEXT);
+    await flush();
+    fake.synths[0]!.resolve();
+    await flush();
+    expect(fake.plays).toHaveLength(1);
+    // Chunk 0 ends while chunk 1 is still synthesizing: the gap.
+    fake.plays[0]!.resolve();
+    await flush();
+    await expect(neuralAudioPlayer.pause()).resolves.toBe(true);
+    expect(nativePlayer.pause).not.toHaveBeenCalled();
+    fake.synths[1]!.resolve();
+    await flush();
+    expect(fake.plays).toHaveLength(1);
+
+    await expect(neuralAudioPlayer.resume()).resolves.toBe(true);
+    await flush();
+    expect(fake.plays).toHaveLength(2);
+    fake.synths[2]!.resolve();
+    fake.plays[1]!.resolve();
+    await flush();
+    fake.plays[2]!.resolve();
+    await done;
+    // The utterance ended: nothing left to pause.
+    await expect(neuralAudioPlayer.pause()).resolves.toBe(false);
+  });
+});
+
 describe('synthesize: PCM copy races', () => {
   it('stop while copying PCM releases the buffer', async () => {
     const engine = await ready();
