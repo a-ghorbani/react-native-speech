@@ -298,8 +298,8 @@ const RootView: React.FC = () => {
   // capture on-device output for offline verification (the Node harness
   // runs the same ASR round-trip against these files).
   const [saveWav, setSaveWav] = React.useState<boolean>(false);
-  // Android: a mediaPlayback foreground service keeps synthesis at full
-  // speed with the screen off (docs/USAGE.md). The ref is read by the
+  // Android: a mediaPlayback foreground service keeps synthesis on the
+  // foreground cores with the screen off (docs/USAGE.md). The ref is read by the
   // AppState handler, which must not release the engine meanwhile.
   const [screenOffPlayback, setScreenOffPlayback] =
     React.useState<boolean>(false);

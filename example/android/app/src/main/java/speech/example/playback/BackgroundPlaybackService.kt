@@ -15,10 +15,9 @@ import speech.example.MainActivity
 /**
  * Foreground service of type mediaPlayback. While it runs, Android keeps the
  * app's process in the foreground scheduling group with the screen off, so
- * neural synthesis keeps the cores it has with the screen on. Without it the
- * process moves to the background cpuset (little cores only on many phones)
- * and synthesis can fall behind playback. See docs/USAGE.md, "Background
- * playback on Android".
+ * neural synthesis keeps the foreground cpuset instead of the background one
+ * (the little cores on a Pixel 9), and does not fall behind playback. See
+ * docs/USAGE.md, "Background playback on Android".
  */
 class BackgroundPlaybackService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
