@@ -21,18 +21,22 @@ import {isPhonemeInput} from '../types';
 /** An utterance handed to the native queue that has not ended yet. */
 interface PendingUtterance {
   text: string;
-  /** Native utterance id, known from its onStart. */
+  /** Id of its native events, from `speak()`; unknown until it resolves. */
   nativeId?: number;
+  started: boolean;
   onStart?: ChunkProgressCallback;
   end: () => void;
 }
 
+type NativeEvent = 'start' | 'end';
+
 export class OSEngine implements TTSEngineInterface<void> {
   readonly name: TTSEngine = 'os-native' as TTSEngine;
 
-  // In native queue order: each native onStart belongs to the first one
-  // without an id.
   private pending: PendingUtterance[] = [];
+  // Events whose id no pending utterance has yet: native can emit them
+  // before its speak() promise resolves.
+  private early = new Map<number, NativeEvent[]>();
   private chunkProgressCallback: ChunkProgressCallback | null = null;
   private listening = false;
 
@@ -47,6 +51,7 @@ export class OSEngine implements TTSEngineInterface<void> {
   abandonPending(): void {
     const pending = this.pending;
     this.pending = [];
+    this.early.clear();
     pending.forEach(u => u.end());
   }
 
@@ -55,36 +60,50 @@ export class OSEngine implements TTSEngineInterface<void> {
       return;
     }
     this.listening = true;
-    NativeSpeech.onStart(({id}) => {
-      // A repeated start of a bound utterance (Android resume) is not a new one.
-      if (this.pending.some(u => u.nativeId === id)) {
-        return;
-      }
-      const utterance = this.pending.find(u => u.nativeId === undefined);
-      if (!utterance) {
-        return;
-      }
-      utterance.nativeId = id;
-      const event: ChunkProgressEvent = {
-        id,
-        chunkIndex: 0,
-        totalChunks: 1,
-        chunkText: utterance.text,
-        textRange: {start: 0, end: utterance.text.length},
-        progress: 0,
-      };
-      this.chunkProgressCallback?.(event);
-      utterance.onStart?.(event);
-    });
-    const ended = ({id}: {id: number}) => {
-      const i = this.pending.findIndex(u => u.nativeId === id);
-      if (i >= 0) {
-        this.pending.splice(i, 1)[0]!.end();
-      }
-    };
+    NativeSpeech.onStart(({id}) => this.onNativeEvent(id, 'start'));
+    const ended = ({id}: {id: number}) => this.onNativeEvent(id, 'end');
     NativeSpeech.onFinish(ended);
     NativeSpeech.onError(ended);
     NativeSpeech.onStopped(ended);
+  }
+
+  private onNativeEvent(id: number, event: NativeEvent): void {
+    const utterance = this.pending.find(u => u.nativeId === id);
+    if (utterance) {
+      this.apply(utterance, event);
+    } else if (this.pending.some(u => u.nativeId === undefined)) {
+      this.early.set(id, [...(this.early.get(id) ?? []), event]);
+    }
+  }
+
+  private apply(utterance: PendingUtterance, event: NativeEvent): void {
+    if (event === 'end') {
+      this.settle(utterance);
+      return;
+    }
+    // Android resumes a paused utterance with a second onStart.
+    if (utterance.started) {
+      return;
+    }
+    utterance.started = true;
+    const progress: ChunkProgressEvent = {
+      id: utterance.nativeId!,
+      chunkIndex: 0,
+      totalChunks: 1,
+      chunkText: utterance.text,
+      textRange: {start: 0, end: utterance.text.length},
+      progress: 0,
+    };
+    this.chunkProgressCallback?.(progress);
+    utterance.onStart?.(progress);
+  }
+
+  private settle(utterance: PendingUtterance): void {
+    const i = this.pending.indexOf(utterance);
+    if (i >= 0) {
+      this.pending.splice(i, 1);
+    }
+    utterance.end();
   }
 
   /**
@@ -136,39 +155,45 @@ export class OSEngine implements TTSEngineInterface<void> {
     const ended = new Promise<void>(resolve => {
       end = resolve;
     });
-    const utterance: PendingUtterance = {text, onStart, end};
+    const utterance: PendingUtterance = {text, started: false, onStart, end};
     this.pending.push(utterance);
 
+    let id: unknown;
     try {
-      await this.speakNative(text, options);
+      id = await this.speakNative(text, options);
     } catch (err) {
-      const i = this.pending.indexOf(utterance);
-      if (i >= 0) {
-        this.pending.splice(i, 1);
-      }
-      end();
+      this.settle(utterance);
       throw err;
+    }
+    if (typeof id !== 'number') {
+      // A native module without event ids: nothing to track.
+      this.settle(utterance);
+    } else if (this.pending.includes(utterance)) {
+      utterance.nativeId = id;
+      const early = this.early.get(id) ?? [];
+      this.early.delete(id);
+      early.forEach(event => this.apply(utterance, event));
+      if (!this.pending.some(u => u.nativeId === undefined)) {
+        this.early.clear();
+      }
     }
     return {ended};
   }
 
-  private async speakNative(
+  private speakNative(
     text: string,
     options?: SynthesisOptions,
-  ): Promise<void> {
+  ): Promise<number> {
     if (options) {
-      // Use speakWithOptions if options provided
-      await NativeSpeech.speakWithOptions(text, {
+      return NativeSpeech.speakWithOptions(text, {
         language: options.language,
         voice: options.voiceId,
         pitch: options.pitch,
         rate: options.speed, // Map speed to rate
         volume: options.volume,
       });
-    } else {
-      // Use simple speak
-      await NativeSpeech.speak(text);
     }
+    return NativeSpeech.speak(text);
   }
 
   /**

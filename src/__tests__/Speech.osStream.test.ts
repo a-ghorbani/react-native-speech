@@ -13,6 +13,10 @@ const mockQueue: {id: number; text: string}[] = [];
 const mockLog: string[] = [];
 let mockNextId = 1;
 let mockSpeakError: Error | null = null;
+// Set to emit the new utterance's onStart before speak() resolves.
+let mockStartBeforeResolve = false;
+// Set to resolve speak() without an id, like a native module without one.
+let mockNoId = false;
 
 jest.mock('../NativeSpeech', () => {
   const emitter = (name: string) => (cb: Listener) => {
@@ -23,8 +27,13 @@ jest.mock('../NativeSpeech', () => {
     if (mockSpeakError) {
       throw mockSpeakError;
     }
-    mockQueue.push({id: mockNextId++, text});
+    const id = mockNextId++;
+    mockQueue.push({id, text});
     mockLog.push(`speak:${text.trim()}`);
+    if (mockStartBeforeResolve && mockQueue.length === 1) {
+      mockEmit('onStart', id);
+    }
+    return mockNoId ? undefined : id;
   });
   const store: Record<string, unknown> = {
     speak,
@@ -91,6 +100,8 @@ beforeEach(async () => {
   mockQueue.length = 0;
   mockLog.length = 0;
   mockSpeakError = null;
+  mockStartBeforeResolve = false;
+  mockNoId = false;
   progress.length = 0;
   unsub = Speech.onChunkProgress(e => progress.push(e));
   jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -276,6 +287,67 @@ describe('OS engine: event edge cases', () => {
       'Bravo two.',
     ]);
     finishHead();
+  });
+});
+
+describe('OS engine: events matched by the id speak() resolves with', () => {
+  test('an utterance that errors before it starts does not shift the next one', async () => {
+    const stream = Speech.createSpeechStream();
+    stream.append('Alpha one. Bravo two. ');
+    const fin = stream.finalize();
+    await tick();
+    const a = mockQueue.shift()!;
+    mockEmit('onError', a.id);
+    startHead();
+    expect(progress.map(e => e.chunkText.trim())).toEqual(['Bravo two.']);
+    finishHead();
+    await fin;
+  });
+
+  test('a late onStart from before stop() is not taken for the next utterance', async () => {
+    await Speech.speak('Alpha one.');
+    await Speech.speak('Bravo two.');
+    startHead();
+    finishHead();
+    const b = mockQueue[0]!;
+    const stream = Speech.createSpeechStream(); // stops natively
+    stream.append('Charlie three. ');
+    await tick();
+    let done = false;
+    const fin = stream.finalize().then(() => {
+      done = true;
+    });
+    mockEmit('onStart', b.id);
+    mockEmit('onStopped', b.id);
+    await tick(20);
+    expect(done).toBe(false);
+    expect(progress.map(e => e.chunkText.trim())).toEqual(['Alpha one.']);
+    startHead();
+    finishHead();
+    await fin;
+    expect(progress.map(e => e.chunkText.trim())).toEqual([
+      'Alpha one.',
+      'Charlie three.',
+    ]);
+  });
+
+  test('an onStart that arrives before speak() resolves still counts', async () => {
+    mockStartBeforeResolve = true;
+    const stream = Speech.createSpeechStream();
+    stream.append('Alpha one. ');
+    const fin = stream.finalize();
+    await tick();
+    expect(progress.map(e => e.chunkText.trim())).toEqual(['Alpha one.']);
+    finishHead();
+    await fin;
+  });
+
+  test('a native module without ids: finalize() does not wait for audio', async () => {
+    mockNoId = true;
+    const stream = Speech.createSpeechStream();
+    stream.append('Alpha one. ');
+    await stream.finalize();
+    expect(progress).toHaveLength(0);
   });
 });
 

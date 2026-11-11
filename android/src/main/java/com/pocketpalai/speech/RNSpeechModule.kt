@@ -645,7 +645,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           processNextQueueItem()
         }
       }
-      promise.resolve(null)
+      // The id its onStart/onFinish/onStopped/onError events carry.
+      promise.resolve(utteranceId.hashCode())
     }
   }
 
@@ -674,7 +675,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           processNextQueueItem()
         }
       }
-      promise.resolve(null)
+      // The id its onStart/onFinish/onStopped/onError events carry.
+      promise.resolve(utteranceId.hashCode())
     }
   }
 

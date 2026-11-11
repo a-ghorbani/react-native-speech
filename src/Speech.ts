@@ -776,11 +776,11 @@ export default class Speech {
   /**
    * Speaks text with custom options (OS TTS)
    */
-  public static speakWithOptions(
+  public static async speakWithOptions(
     text: string,
     options: VoiceOptions,
   ): Promise<void> {
-    return TurboSpeech.speakWithOptions(text, options);
+    await TurboSpeech.speakWithOptions(text, options);
   }
 
   // Event listeners - unified for all engines (OS TTS and neural audio use the same events)

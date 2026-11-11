@@ -446,7 +446,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 
     utterance = [self getUtterance:text withOptions:self.globalOptions];
     [self.synthesizer speakUtterance:utterance];
-    resolve(nil);
+    // The id its onStart/onFinish/onStopped/onError events carry.
+    resolve(@(utterance.hash));
   }
   @catch (NSException *exception) {
     [self deactivateDuckingSession];
@@ -476,7 +477,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     
     utterance = [self getUtterance:text withOptions:validatedOptions];
     [self.synthesizer speakUtterance:utterance];
-    resolve(nil);
+    // The id its onStart/onFinish/onStopped/onError events carry.
+    resolve(@(utterance.hash));
   }
   @catch (NSException *exception) {
     [self deactivateDuckingSession];
