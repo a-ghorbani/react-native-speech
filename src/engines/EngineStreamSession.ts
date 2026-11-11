@@ -31,6 +31,7 @@ const log = createComponentLogger('EngineStream', 'Engine');
 export interface EngineStreamSessionBaseConfig<TAudio = AudioBuffer> {
   synthesizeChunk: (text: string) => Promise<TAudio>;
   playAudio: (audio: TAudio, options?: PlaybackOptions) => Promise<void>;
+  /** Called by `cancel()` while the loop runs; not once it has ended (#112). */
   stopPlayback: () => Promise<void>;
   maxChunkSize: number;
   firstChunk?: FirstChunkMode;
@@ -168,10 +169,13 @@ export class EngineStreamSession<
       this.stopSignalResolver();
       this.stopSignalResolver = null;
     }
-    try {
-      await this.config.stopPlayback();
-    } catch (err) {
-      log.warn('stopPlayback failed during cancel:', err);
+    // An ended loop plays nothing; the shared player may be a newer utterance's.
+    if (!this.loopEnded) {
+      try {
+        await this.config.stopPlayback();
+      } catch (err) {
+        log.warn('stopPlayback failed during cancel:', err);
+      }
     }
     await this.loopPromise.catch(() => {});
   }
