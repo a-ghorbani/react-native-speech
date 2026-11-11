@@ -591,6 +591,8 @@ pod 'onnxruntime-c', JSON.parse(File.read(ort_package))['version']
 
 If your `Podfile.lock` already has a different `onnxruntime-c`, run `pod update onnxruntime-c` once; a plain `pod install` stops with a version conflict.
 
+Not every `onnxruntime-react-native` release has an `onnxruntime-c` pod of the same version (there is no 1.23.2, for example). If `pod install` reports that no spec satisfies the version, pin the nearest published one by hand (`pod 'onnxruntime-c', '1.23.0'`).
+
 All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
 ### Kokoro
