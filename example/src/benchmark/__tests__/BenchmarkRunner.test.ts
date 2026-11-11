@@ -13,6 +13,8 @@ const mockState = {
   metrics: new Set<Listener>(),
   requestId: 0,
   markers: [] as string[],
+  /** What performance.now() returns; speak() advances it per chunk. */
+  clock: 0,
 };
 
 function mockEmit(set: Set<Listener>, ...args: any[]) {
@@ -39,7 +41,10 @@ jest.mock('@pocketpalai/react-native-speech', () => {
       let t = Date.now();
       MOCK_CHUNKS.forEach((c, i) => {
         mockEmit(mockState.chunk, {chunkIndex: i});
-        if (i === 0) mockEmit(mockState.start);
+        // Native start/finish fire per played chunk (#116): 10 ms of
+        // synthesis, then 100 ms of audio.
+        mockState.clock += 10;
+        mockEmit(mockState.start);
         mockEmit(mockState.metrics, {
           event: 'PHONON_CHUNK',
           path: 'synth',
@@ -54,8 +59,9 @@ jest.mock('@pocketpalai/react-native-speech', () => {
           ...c,
         });
         t += 10;
+        mockState.clock += 100;
+        mockEmit(mockState.finish);
       });
-      mockEmit(mockState.finish);
     }),
     onStart: sub('start'),
     onFinish: sub('finish'),
@@ -106,6 +112,8 @@ jest.mock('@pocketpalai/react-native-speech-phonon', () => ({
 import {runBenchmark} from '../BenchmarkRunner';
 
 beforeEach(() => {
+  mockState.clock = 0;
+  jest.spyOn(performance, 'now').mockImplementation(() => mockState.clock);
   jest.spyOn(console, 'log').mockImplementation(() => {});
   // Skip the GC pauses between iterations.
   jest.spyOn(global, 'setTimeout').mockImplementation(((cb: () => void) => {
@@ -156,4 +164,30 @@ it('reports the first chunk of each call as the Phonon ttfa', async () => {
   expect(summary!.stats.nativeTtfaMs).toMatchObject({min: 90, max: 90});
   const speakEnd = mockState.markers.find(m => m.includes('SPEAK_END'))!;
   expect(speakEnd).toContain('"ttfaMs":90');
+});
+
+it('times a multi-chunk speak from its first chunk to its end (#116)', async () => {
+  const [summary] = await runBenchmark(
+    {
+      engines: [
+        {
+          engine: 'kitten',
+          label: 'Kitten',
+          getInitConfig: () => ({modelPath: '/m'}),
+        } as any,
+      ],
+      iterations: 1,
+      warmupIterations: 0,
+      testPhrase: 'One. Two. Three.',
+      providerLabel: 'CPU',
+      providers: ['cpu'],
+    },
+    () => {},
+  );
+
+  // Three chunks of 10 ms synthesis + 100 ms audio.
+  expect(summary!.iterations[0]).toMatchObject({
+    ttfaMs: 10,
+    totalSpeakMs: 330,
+  });
 });

@@ -321,23 +321,21 @@ export async function runBenchmark(
 
       const speakStart = performance.now();
 
-      // Set up one-shot listeners for TTFA and completion
+      // TTFA from the first onStart. onStart/onFinish fire per played
+      // chunk on neural engines (#116), so the speak ends when speak()
+      // resolves, not on the first onFinish.
       const speakResult = new Promise<{
         ttfaMs: number;
         totalSpeakMs: number;
       }>((resolve, reject) => {
         let ttfa = -1;
-        let startUnsub: {remove: () => void} | null = null;
-        let finishUnsub: {remove: () => void} | null = null;
-        let errorUnsub: {remove: () => void} | null = null;
-
         const cleanup = () => {
-          startUnsub?.remove();
-          finishUnsub?.remove();
-          errorUnsub?.remove();
+          startUnsub.remove();
+          errorUnsub.remove();
         };
 
-        startUnsub = Speech.onStart(() => {
+        const startUnsub = Speech.onStart(() => {
+          if (ttfa >= 0) return;
           ttfa = performance.now() - speakStart;
           emitBenchmark('AUDIO_START', {
             runId,
@@ -346,13 +344,7 @@ export async function runBenchmark(
           });
         });
 
-        finishUnsub = Speech.onFinish(() => {
-          const total = performance.now() - speakStart;
-          cleanup();
-          resolve({ttfaMs: ttfa, totalSpeakMs: total});
-        });
-
-        errorUnsub = Speech.onError(() => {
+        const errorUnsub = Speech.onError(() => {
           cleanup();
           reject(
             new Error(
@@ -361,15 +353,25 @@ export async function runBenchmark(
           );
         });
 
-        // Fire speak
         Speech.speak(
           config.testPhrase,
           voiceId || undefined,
           engineConfig.speakOptions,
-        ).catch(err => {
-          cleanup();
-          reject(err);
-        });
+        ).then(
+          () => {
+            const total = performance.now() - speakStart;
+            cleanup();
+            if (ttfa < 0) {
+              reject(new Error(`No audio played in ${engineConfig.engine}`));
+            } else {
+              resolve({ttfaMs: ttfa, totalSpeakMs: total});
+            }
+          },
+          err => {
+            cleanup();
+            reject(err);
+          },
+        );
       });
       let ttfaMs: number;
       let totalSpeakMs: number;
