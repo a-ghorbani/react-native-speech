@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.2.0...phonon-v0.2.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* a new speak() or stream replaces the previous utterance ([#95](https://github.com/a-ghorbani/react-native-speech/issues/95)) ([6823a1f](https://github.com/a-ghorbani/react-native-speech/commit/6823a1f8b3d152d98f01989cf0f9810cb844954e))
+* keep the space between sentences TextChunker groups into one chunk ([#61](https://github.com/a-ghorbani/react-native-speech/issues/61)) ([88b092a](https://github.com/a-ghorbani/react-native-speech/commit/88b092a2116d10795fc850e60d4009c29286be0d))
+* **phonon:** accept core 2.10 in the peer range ([#131](https://github.com/a-ghorbani/react-native-speech/issues/131)) ([fc7b563](https://github.com/a-ghorbani/react-native-speech/commit/fc7b5637488e26080f1a9b6ab7c03e0fbd51eb14))
+* **phonon:** trim edge silence before storing a buffer ([#85](https://github.com/a-ghorbani/react-native-speech/issues/85)) ([e4ea93c](https://github.com/a-ghorbani/react-native-speech/commit/e4ea93cc4b718b1dc9498037369359251060054c))
+* **streaming:** synthesize two chunks ahead and size chunks to the synthesis rate ([#93](https://github.com/a-ghorbani/react-native-speech/issues/93)) ([73dc7f9](https://github.com/a-ghorbani/react-native-speech/commit/73dc7f92c6b67c18d339886e6003ea27da04d27a))
+
 # [0.2.0](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.1.3...phonon-v0.2.0) (2026-11-08)
 
 
