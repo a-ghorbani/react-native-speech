@@ -106,6 +106,8 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
   private config: KittenConfig | null = null;
   private isInitialized = false;
+  /** Bumped when initialize() starts loading; release() keeps a newer load (#62). */
+  private initGen = 0;
   private isLoading = false;
   private initError: string | null = null;
 
@@ -160,6 +162,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
     }
 
     this.isLoading = true;
+    this.initGen++;
     this.initError = null;
     const initStart = Date.now();
 
@@ -863,12 +866,18 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       };
     }
 
+    const initGen = this.initGen;
     this.stopRequested = true;
     this.runs.abortAll();
     // Ends speak()'s wait on its current chunk, so it resolves rather
     // than failing on the detached session.
     this.stopSignalResolver?.();
     this.stopSignalResolver = null;
+
+    // Detached before any await: no new inference can start on it, and an
+    // initialize() during release loads a new one it never touches (#62).
+    const session = this.session;
+    this.session = null;
 
     // Otherwise the stream's finalize() hangs once playback is torn down.
     await this.cancelActiveStream();
@@ -881,10 +890,6 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       errors.push({component: 'audioPlayer', error: e as Error});
     }
 
-    // Detached first: no new inference can start on it, and a later
-    // initialize() creates a new one this release never touches.
-    const session = this.session;
-    this.session = null;
     if (session) {
       try {
         await this.inflight.freeWhenIdle(async () => {
@@ -897,6 +902,16 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
         log.warn('Failed to release ONNX session:', e);
         errors.push({component: 'session', error: e as Error});
       }
+    }
+
+    // An initialize() started during the awaits above; leave its state alone.
+    if (this.initGen !== initGen) {
+      log.info('Engine re-initialized during release; keeping it');
+      return {
+        success: errors.length === 0,
+        partialRelease: errors.length > 0,
+        errors,
+      };
     }
 
     try {
