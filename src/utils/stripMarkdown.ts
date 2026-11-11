@@ -375,9 +375,23 @@ function hasOpenInlineMarker(prefix: string): boolean {
 }
 
 /**
+ * Whether `prefix` ends inside a code span or a link (its text, or its
+ * `](target` before the `)`): cutting there would strip each half alone, so
+ * the backticks or the brackets and URL would be spoken (#77, #126).
+ */
+function inOpenSpanOrLink(prefix: string): boolean {
+  let rest = applyPasses(prefix, CODE_SPAN_PASSES);
+  if (rest.includes('`')) return true;
+  rest = applyPasses(rest, LINK_PASSES);
+  // A bracket pair not followed by `(` or `[` can't become a link (`[1]`).
+  rest = rest.replace(/\[([^\]]*)\](?![([])/g, '$1');
+  return rest.includes('[');
+}
+
+/**
  * The buffer's first sentence end that is a cut point (`end`, 0 if none),
- * scanning from `from`. A sentence end inside a code span is skipped for the
- * next one (#77): the halves would each keep a backtick. An unspaced mark
+ * scanning from `from`. A sentence end inside a code span or a link is
+ * skipped for the next one (#77, #126). An unspaced mark
  * (`。` `।` `؟` …) inside another inline construct holds the line, as a `.!?`
  * end never does (prose with a stray `*` is not held). `resume` is where the
  * next scan of this growing buffer may start: skipped ends stay skipped.
@@ -391,7 +405,7 @@ function streamSentenceEnd(
   for (let m; (m = STREAM_SENTENCE_END_RE.exec(buffer)); ) {
     const end = m.index + m[0].length;
     const prefix = buffer.slice(0, end);
-    if (applyPasses(prefix, CODE_SPAN_PASSES).includes('`')) {
+    if (inOpenSpanOrLink(prefix)) {
       resume = end;
       continue;
     }
