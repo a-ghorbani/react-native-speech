@@ -71,6 +71,11 @@ describe('TextChunker.chunkByParagraphs ranges (#60)', () => {
       'Intro.\n\n\n\n\nFirst sentence here. Second sentence here. Third one.',
       25,
     ],
+    [
+      'padded long paragraph after a wide gap',
+      'Intro.\n\n\n  \tFirst sentence here. Second sentence here.  \n\nEnd.',
+      25,
+    ],
   ])('%s: each chunk is the slice its range names', (_n, text, max) => {
     const chunks = TextChunker.chunkByParagraphs(text, max);
     expect(chunks.length).toBeGreaterThan(1);
