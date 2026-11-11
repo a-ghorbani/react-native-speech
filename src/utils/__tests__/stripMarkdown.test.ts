@@ -1155,6 +1155,13 @@ describe('createMarkdownStreamBuffer: a sentence end inside a code span (#77)', 
     expect(norm(all)).toBe(norm(stripMarkdown(text)));
   });
 
+  test('a short sentence after the cut is not skipped', () => {
+    const md = createMarkdownStreamBuffer();
+    expect(md.push('Run `aaaaaaaaaaaa. b` now. Hi. More')).toBe(
+      'Run aaaaaaaaaaaa. b now. Hi. ',
+    );
+  });
+
   test('the sentence after the code span is still cut early', () => {
     expect(stream('Call `a. b` then go. And the rest here').early).toBe(
       'Call a. b then go. ',
