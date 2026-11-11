@@ -795,7 +795,7 @@ The patch is tied to the `onnxruntime-react-native` version. When you upgrade it
 
 ### Background playback on Android (screen off)
 
-With the screen off, Android moves an app that has no foreground service out of the `top-app` cpuset into `background`, which on most phones is cores 0-3. Kokoro, Kitten and Supertonic synthesize on the CPU, so they slow down by as much as those cores are slower than the ones they had. How much depends on the phone (screen off for 60 s mid-reply, `maxChunkSize: 200`, CPU, Supertonic 5 steps):
+With the screen off, Android moves an app that has no foreground service out of the `top-app` cpuset into `background`, which is cores 0-3 on both phones measured below. Kokoro, Kitten and Supertonic synthesize on the CPU, so they slow down by as much as those cores are slower than the ones they had (Kitten and Supertonic measured; Kokoro not). How much depends on the phone (screen off for 60 s mid-reply, `maxChunkSize: 200`, CPU, Supertonic 5 steps):
 
 | Phone | Cores 0-3 | Kitten, screen off vs on | Supertonic v3 | Gaps mid-reply |
 | --- | --- | --- | --- | --- |
@@ -804,7 +804,7 @@ With the screen off, Android moves an app that has no foreground service out of 
 
 When synthesizing the next chunk takes longer than playing the current one, a streamed reply goes silent until it catches up.
 
-**Fix: run a foreground service of type `mediaPlayback` while speaking** (or for as long as a hands-free or voice mode is on). The process then stays in the foreground scheduling group with the screen off (cores 0-6 on the phones above), and synthesis runs at close to screen-on speed: on the Pixel 9, Supertonic v3 diffusion went from 25.1 to 5.2 ms per frame (4.0 with the screen on) and the gaps went away (0 of 12 chunk boundaries over 150 ms, against 5 of 9 without the service). This is the app's job, not the library's: the service needs
+**Fix: run a foreground service of type `mediaPlayback` while speaking** (or for as long as a hands-free or voice mode is on). The process then stays in the foreground scheduling group with the screen off. On the MT6899 (foreground cpuset: all 8 cores) synthesis runs at screen-on speed. On the Pixel 9 (cores 0-6; its fastest core, 7, stays outside) it runs 1.3x to 2x slower than with the screen on, which was enough to remove the gaps: Supertonic v3 diffusion went from 25.1 to 5.2 ms per frame (4.0 with the screen on), and 0 of 12 chunk boundaries had a gap over 150 ms, against 5 of 9 without the service. This is the app's job, not the library's: the service needs
 
 - the `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_MEDIA_PLAYBACK` permissions and a `<service android:foregroundServiceType="mediaPlayback">` in your app's manifest;
 - an ongoing notification (on Android 13+, ask for `POST_NOTIFICATIONS` if you want it shown; the service runs either way);

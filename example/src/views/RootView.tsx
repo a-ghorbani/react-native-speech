@@ -2127,38 +2127,37 @@ const RootView: React.FC = () => {
             )}
           </View>
 
-          {Platform.OS === 'android' &&
-            selectedEngine !== TTSEngine.OS_NATIVE && (
-              <View style={styles.supertonicRow}>
-                <TouchableOpacity
+          {Platform.OS === 'android' && (
+            <View style={styles.supertonicRow}>
+              <TouchableOpacity
+                style={[
+                  styles.settingPill,
+                  screenOffPlayback
+                    ? themedStyles.btnSelectedGreen
+                    : themedStyles.bgCard,
+                ]}
+                onPress={onScreenOffPlaybackPress}>
+                <Text
                   style={[
-                    styles.settingPill,
+                    styles.settingPillLabel,
                     screenOffPlayback
-                      ? themedStyles.btnSelectedGreen
-                      : themedStyles.bgCard,
-                  ]}
-                  onPress={onScreenOffPlaybackPress}>
-                  <Text
-                    style={[
-                      styles.settingPillLabel,
-                      screenOffPlayback
-                        ? themedStyles.textWhite
-                        : themedStyles.textSecondary,
-                    ]}>
-                    Screen-off playback
-                  </Text>
-                  <Text
-                    style={[
-                      styles.settingPillValue,
-                      screenOffPlayback
-                        ? themedStyles.textWhite
-                        : themedStyles.textPrimary,
-                    ]}>
-                    {screenOffPlayback ? 'ON' : 'OFF'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                      ? themedStyles.textWhite
+                      : themedStyles.textSecondary,
+                  ]}>
+                  Screen-off playback
+                </Text>
+                <Text
+                  style={[
+                    styles.settingPillValue,
+                    screenOffPlayback
+                      ? themedStyles.textWhite
+                      : themedStyles.textPrimary,
+                  ]}>
+                  {screenOffPlayback ? 'ON' : 'OFF'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* Phonon: diagnostics + compute unit (iOS) */}
           {selectedEngine === PHONON && (

@@ -1,6 +1,7 @@
 package speech.example.playback
 
 import android.content.Intent
+import androidx.core.content.ContextCompat
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule
 import com.facebook.react.bridge.Promise
@@ -18,7 +19,7 @@ class BackgroundPlaybackModule(private val context: ReactApplicationContext) :
   @ReactMethod
   fun start(promise: Promise) {
     try {
-      context.startForegroundService(Intent(context, BackgroundPlaybackService::class.java))
+      ContextCompat.startForegroundService(context, Intent(context, BackgroundPlaybackService::class.java))
       promise.resolve(null)
     } catch (e: Exception) {
       promise.reject("background_playback", e.message, e)

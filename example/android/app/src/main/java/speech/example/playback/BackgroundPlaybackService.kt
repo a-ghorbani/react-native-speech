@@ -1,6 +1,5 @@
 package speech.example.playback
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -9,6 +8,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import speech.example.MainActivity
 
 /**
@@ -23,28 +24,30 @@ class BackgroundPlaybackService : Service() {
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val manager = getSystemService(NotificationManager::class.java)
-    manager.createNotificationChannel(
-      NotificationChannel(CHANNEL_ID, "Speech playback", NotificationManager.IMPORTANCE_LOW),
-    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      getSystemService(NotificationManager::class.java).createNotificationChannel(
+        NotificationChannel(CHANNEL_ID, "Speech playback", NotificationManager.IMPORTANCE_LOW),
+      )
+    }
     val openApp = PendingIntent.getActivity(
       this,
       0,
       Intent(this, MainActivity::class.java),
       PendingIntent.FLAG_IMMUTABLE,
     )
-    val notification = Notification.Builder(this, CHANNEL_ID)
+    val notification = NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle("Speech playback")
       .setContentText("Speaking with the screen off")
       .setSmallIcon(android.R.drawable.ic_media_play)
       .setContentIntent(openApp)
       .setOngoing(true)
       .build()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-    } else {
-      startForeground(NOTIFICATION_ID, notification)
-    }
+    ServiceCompat.startForeground(
+      this,
+      NOTIFICATION_ID,
+      notification,
+      ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+    )
     return START_NOT_STICKY
   }
 
