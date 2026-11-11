@@ -118,6 +118,8 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
   private config: KokoroConfig | null = null;
   private isInitialized = false;
+  /** Bumped when initialize() starts loading; release() keeps a newer load (#62). */
+  private initGen = 0;
   private isLoading = false;
   private initError: string | null = null;
 
@@ -179,6 +181,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     this.isLoading = true;
+    this.initGen++;
     this.initError = null;
     const initStart = Date.now();
 
@@ -911,6 +914,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // 1. Signal stop
+    const initGen = this.initGen;
     this.stopRequested = true;
     this.runs.abortAll();
     // Ends speak()'s wait on its current chunk, so it resolves rather
@@ -950,6 +954,16 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
     }
 
     // 4. Clear voice embeddings cache
+    // An initialize() started during the awaits above; leave its state alone.
+    if (this.initGen !== initGen) {
+      log.info('Engine re-initialized during release; keeping it');
+      return {
+        success: errors.length === 0,
+        partialRelease: errors.length > 0,
+        errors,
+      };
+    }
+
     try {
       this.voiceLoader.clear();
       log.debug('Voice loader cleared');
