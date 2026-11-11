@@ -1147,6 +1147,14 @@ describe('createMarkdownStreamBuffer: a sentence end inside a code span (#77)', 
     expect(early).toBe('运行 a。b 然后。 ');
   });
 
+  test.each([
+    '请看[文档。See the docs. More](https://x.com)。',
+    'Use `a。b` and _note。 this. here_ ok.',
+  ])('an unspaced mark inside a link or emphasis still holds "%s"', text => {
+    const {all} = stream(text);
+    expect(norm(all)).toBe(norm(stripMarkdown(text)));
+  });
+
   test('the sentence after the code span is still cut early', () => {
     expect(stream('Call `a. b` then go. And the rest here').early).toBe(
       'Call a. b then go. ',
