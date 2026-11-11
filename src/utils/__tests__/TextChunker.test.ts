@@ -59,3 +59,28 @@ describe('TextChunker.chunkBySentences', () => {
     ).toEqual(['First sentence here.', 'Second one now.', 'Third and last.']);
   });
 });
+
+describe('TextChunker.chunkByParagraphs ranges (#60)', () => {
+  test.each([
+    ['3+ newlines', 'Aa.\n\n\n\nBb here. Cc here.', 5],
+    ['3 newlines, short paragraphs', 'One.\n\n\nTwo.\n\n\n\n\nThree.', 100],
+    ['indented paragraph', 'One here.\n\n   Two here.  \n\nThree.', 100],
+    ['leading separator', '\n\n\nOne here.\n\nTwo.', 100],
+    [
+      'long paragraph after a wide gap',
+      'Intro.\n\n\n\n\nFirst sentence here. Second sentence here. Third one.',
+      25,
+    ],
+    [
+      'padded long paragraph after a wide gap',
+      'Intro.\n\n\n  \tFirst sentence here. Second sentence here.  \n\nEnd.',
+      25,
+    ],
+  ])('%s: each chunk is the slice its range names', (_n, text, max) => {
+    const chunks = TextChunker.chunkByParagraphs(text, max);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(text.slice(c.startIndex, c.endIndex)).toBe(c.text);
+    }
+  });
+});

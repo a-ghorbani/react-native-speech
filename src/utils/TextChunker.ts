@@ -257,13 +257,18 @@ export class TextChunker {
    */
   static chunkByParagraphs(text: string, maxChunkSize: number): TextChunk[] {
     const chunks: TextChunk[] = [];
-    const paragraphs = text.split(/\n\n+/);
+    // Paragraph spans between the real separators, whatever their length.
+    const spans: Array<[number, number]> = [];
+    let start = 0;
+    for (const sep of text.matchAll(/\n\n+/g)) {
+      spans.push([start, sep.index!]);
+      start = sep.index! + sep[0].length;
+    }
+    spans.push([start, text.length]);
 
-    let currentOffset = 0;
-
-    for (const paragraph of paragraphs) {
+    for (const [spanStart, spanEnd] of spans) {
+      const paragraph = text.slice(spanStart, spanEnd);
       if (paragraph.trim().length === 0) {
-        currentOffset += paragraph.length + 2;
         continue;
       }
 
@@ -273,19 +278,18 @@ export class TextChunker {
         for (const chunk of sentenceChunks) {
           chunks.push({
             text: chunk.text,
-            startIndex: currentOffset + chunk.startIndex,
-            endIndex: currentOffset + chunk.endIndex,
+            startIndex: spanStart + chunk.startIndex,
+            endIndex: spanStart + chunk.endIndex,
           });
         }
       } else {
+        const lead = paragraph.length - paragraph.trimStart().length;
         chunks.push({
           text: paragraph.trim(),
-          startIndex: currentOffset,
-          endIndex: currentOffset + paragraph.length,
+          startIndex: spanStart + lead,
+          endIndex: spanStart + paragraph.trimEnd().length,
         });
       }
-
-      currentOffset += paragraph.length + 2;
     }
 
     return chunks;
