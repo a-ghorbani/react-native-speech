@@ -583,12 +583,14 @@ export default class Speech {
   }
 
   // ============================================================
-  // CHUNK PROGRESS (Neural TTS only)
+  // CHUNK PROGRESS
   // ============================================================
 
   /**
-   * Set callback for chunk progress events (Neural TTS only)
-   * This is called when each sentence/chunk starts being spoken
+   * Set callback for chunk progress events.
+   * This is called when each sentence/chunk starts being spoken. On the OS
+   * engine a chunk is one `speak()` call or stream batch (one OS utterance),
+   * reported when its audio starts.
    *
    * @param callback - Function to call on chunk progress, or null to remove
    * @example
