@@ -7,6 +7,7 @@
 
 import {kokoroTail} from '../../phonemization/engineTails';
 import {isAbbreviationPeriod} from '../../utils/abbreviations';
+import {UNSPACED_SENTENCE_ENDS} from '../../utils/firstClause';
 
 export class TextNormalizer {
   /**
@@ -48,8 +49,12 @@ export class TextNormalizer {
     // Use a pattern that requires sentence-ending punctuation to be followed by:
     // - Whitespace and an uppercase letter (new sentence)
     // - End of string
-    // This avoids splitting on decimal numbers like "0.76" or "3.14"
-    const sentenceEndPattern = /[.!?]+(?:\s+(?=[A-Z])|$)/g;
+    // This avoids splitting on decimal numbers like "0.76" or "3.14".
+    // Unspaced marks (。！？ । ؟ …) end a sentence on their own.
+    const sentenceEndPattern = new RegExp(
+      `[.!?]+(?:\\s+(?=[A-Z])|$)|[${UNSPACED_SENTENCE_ENDS}]+\\s*`,
+      'g',
+    );
 
     let lastIndex = 0;
     let match;

@@ -597,7 +597,7 @@ All neural engines accept a `maxChunkSize` (default 400 chars) and `executionPro
 
 ### Kokoro
 
-Kokoro-82M, Apache-2.0. The v1.0 model has voices for American and British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese and Mandarin, but the built-in phonemizer is **English-only**: text input works for `a*`/`b*` voices. For the other voices, pass IPA yourself (`Speech.speak({phonemes})`, phonemized with the conventions Kokoro was trained on: espeak-ng for es/fr/hi/it/pt, misaki for ja/zh), or use Supertonic for multilingual text.
+Kokoro-82M, Apache-2.0. The v1.0 model has voices for American and British English, Spanish, French, Hindi, Italian, Japanese, Brazilian Portuguese and Mandarin, and text input works for English (`a*`/`b*` voices) and, opt-in, Mandarin (`z*` voices, after `import '@pocketpalai/react-native-speech/zh'` with `pinyin-pro` installed). For the other voices, the library has no phonemizer: pass IPA yourself (`Speech.speak({phonemes})`, phonemized with the conventions Kokoro was trained on: espeak-ng for es/fr/hi/it/pt, misaki for ja), or use Supertonic for multilingual text. See [Supported languages](../README.md#supported-languages).
 
 Required config fields:
 

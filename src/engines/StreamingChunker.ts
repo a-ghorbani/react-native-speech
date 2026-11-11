@@ -19,6 +19,7 @@ import {
   SENTENCE_END_RE,
   assertFirstChunkMaxWords,
   findFirstClauseEnd,
+  lastCjkCharEnd,
   lastClauseEnd,
   lastWordEnd,
 } from '../utils/firstClause';
@@ -281,7 +282,11 @@ export class StreamingChunker {
     }
     let end = lastClauseEnd(this.buffer, max);
     if (end < max / 2) {
-      end = Math.max(end, lastWordEnd(this.buffer, max));
+      end = Math.max(
+        end,
+        lastWordEnd(this.buffer, max),
+        lastCjkCharEnd(this.buffer, max),
+      );
     }
     if (end <= 0) {
       // A single word longer than maxChunkSize: cut right after it.

@@ -1,0 +1,6 @@
+{
+  "source": "../src/zh.ts",
+  "main": "../lib/module/zh.js",
+  "module": "../lib/module/zh.js",
+  "types": "../lib/typescript/src/zh.d.ts"
+}

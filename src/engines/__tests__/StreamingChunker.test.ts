@@ -654,11 +654,12 @@ describe('StreamingChunker: text without a sentence end (#48)', () => {
     for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
   });
 
-  test('an early CJK clause mark still cuts text with no spaces', () => {
+  test('an early CJK clause mark does not make a tiny chunk either (#14)', () => {
     const text = '我们去公园散步，' + '天气很好阳光明媚'.repeat(30);
     const {open, all} = streamInPieces(new StreamingChunker(200), text, 6);
     expectContiguous(all, text);
-    expect(open[0]?.text).toBe('我们去公园散步，');
+    expect(open[0]!.text.length).toBeGreaterThan(100);
+    for (const c of all) expect(c.text.length).toBeLessThanOrEqual(200);
   });
 
   test('text with no punctuation at all is cut at a word within maxChunkSize', () => {

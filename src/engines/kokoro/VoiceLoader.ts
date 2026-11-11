@@ -397,7 +397,11 @@ export class VoiceLoader {
 
     // Determine language
     let language: 'en' | 'zh' | 'ko' | 'ja' = 'en';
-    if (firstPart === 'zh' || voiceId.startsWith('zh_')) {
+    if (
+      firstPart === 'zh' ||
+      voiceId.startsWith('zh_') ||
+      /^z[fm]$/.test(firstPart ?? '')
+    ) {
       language = 'zh';
     } else if (firstPart === 'ko' || voiceId.startsWith('ko_')) {
       language = 'ko';
