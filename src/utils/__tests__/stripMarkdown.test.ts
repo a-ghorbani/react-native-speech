@@ -1119,3 +1119,36 @@ describe("createMarkdownStreamBuffer: firstChunk 'clause' tables and lines", () 
     expect(first && (first as {text: string}).text).toBe('one two\nthree, ');
   });
 });
+
+describe('createMarkdownStreamBuffer: a sentence end inside a code span (#77)', () => {
+  function stream(text: string) {
+    const md = createMarkdownStreamBuffer();
+    let early = '';
+    for (const w of text.match(/\S+\s*/g) ?? []) early += md.push(w);
+    return {early, all: early + md.flush()};
+  }
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+  test.each([
+    'Either run `! npm login` here or add trusted publishing.',
+    'It reads `config.providers ?? defaults()` and stops.',
+    'Call `a. b` then go.',
+    'Run ``x. y`` now. Then stop.',
+  ])('"%s" streams as it strips whole', text => {
+    const {all} = stream(text);
+    expect(all).not.toContain('`');
+    expect(norm(all)).toBe(norm(stripMarkdown(text)));
+  });
+
+  test('the sentence after the code span is still cut early', () => {
+    expect(stream('Call `a. b` then go. And the rest here').early).toBe(
+      'Call a. b then go. ',
+    );
+  });
+
+  test('prose with a stray * still cuts at each sentence', () => {
+    expect(stream('So 5 * 3 is 15. Then 2 * 2 is 4. And more').early).toBe(
+      'So 5 * 3 is 15. Then 2 * 2 is 4. ',
+    );
+  });
+});

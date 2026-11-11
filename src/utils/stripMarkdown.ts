@@ -36,11 +36,13 @@ import {
 const ENDS_SENTENCE_RE = new RegExp(`[.!?:${UNSPACED_SENTENCE_ENDS}]$`);
 
 /**
- * The stream buffer's first complete sentence: `.!?` followed by a space
- * or tab, or an unspaced sentence mark (`。` `।` `؟` …) with or without one.
+ * A sentence end in the stream buffer: `.!?` followed by a space or tab, or
+ * an unspaced sentence mark (`。` `।` `؟` …) with or without one; group 1 is
+ * the mark.
  */
-const STREAM_SENTENCE_RE = new RegExp(
-  `^([\\s\\S]*?(?:[.!?]+(?=[ \\t])|[${UNSPACED_SENTENCE_ENDS}]+))([ \\t]*)`,
+const STREAM_SENTENCE_END_RE = new RegExp(
+  `([.!?]+(?=[ \\t])|[${UNSPACED_SENTENCE_ENDS}]+)[ \\t]*`,
+  'g',
 );
 
 /**
@@ -372,6 +374,29 @@ function hasOpenInlineMarker(prefix: string): boolean {
   return INLINE_OPENER_RE.test(rest);
 }
 
+/**
+ * End of the buffer's first sentence that is a cut point, or 0. A sentence
+ * end inside a code span is not one (#77): the halves would each keep a
+ * backtick. An unspaced mark (`。` `।` `؟` …) inside any inline construct is
+ * not one either. A `.!?` end after another open marker still cuts, so prose
+ * with a stray `*` is not held.
+ */
+function streamSentenceEnd(buffer: string): number {
+  for (const m of buffer.matchAll(STREAM_SENTENCE_END_RE)) {
+    const end = m.index! + m[0].length;
+    const prefix = buffer.slice(0, end);
+    const unspaced = UNSPACED_SENTENCE_ENDS.includes(m[1]!.slice(-1));
+    if (
+      unspaced
+        ? !hasOpenInlineMarker(prefix)
+        : !applyPasses(prefix, CODE_SPAN_PASSES).includes('`')
+    ) {
+      return end;
+    }
+  }
+  return 0;
+}
+
 // A newline-less tail this long with no sentence end is released at its
 // last clause or word end, so the chunker can cut it before the stream
 // ends (#48).
@@ -501,20 +526,8 @@ export function createMarkdownStreamBuffer(
           }
         }
         if (cut <= 0) {
-          const sentMatch = buffer.match(STREAM_SENTENCE_RE);
-          const sentEnd = sentMatch
-            ? sentMatch[1]!.length + sentMatch[2]!.length
-            : 0;
-          // An unspaced mark (`。` `।` `؟` …) inside a link or code span
-          // is not a cut point: the marker would be spoken. (`.!?` cuts
-          // need a following space and keep their old behaviour.)
-          const unspaced = sentMatch
-            ? UNSPACED_SENTENCE_ENDS.includes(sentMatch[1]!.slice(-1))
-            : false;
-          if (
-            sentEnd > 0 &&
-            !(unspaced && hasOpenInlineMarker(buffer.slice(0, sentEnd)))
-          ) {
+          const sentEnd = streamSentenceEnd(buffer);
+          if (sentEnd > 0) {
             cut = sentEnd;
           } else if (buffer.length >= LONG_TAIL_CHARS) {
             const soft = Math.max(
