@@ -36,11 +36,13 @@ import {
 const ENDS_SENTENCE_RE = new RegExp(`[.!?:${UNSPACED_SENTENCE_ENDS}]$`);
 
 /**
- * The stream buffer's first complete sentence: `.!?` followed by a space
- * or tab, or an unspaced sentence mark (`。` `।` `؟` …) with or without one.
+ * A sentence end in the stream buffer: `.!?` followed by a space or tab, or
+ * an unspaced sentence mark (`。` `।` `؟` …) with or without one; group 1 is
+ * the mark.
  */
-const STREAM_SENTENCE_RE = new RegExp(
-  `^([\\s\\S]*?(?:[.!?]+(?=[ \\t])|[${UNSPACED_SENTENCE_ENDS}]+))([ \\t]*)`,
+const STREAM_SENTENCE_END_RE = new RegExp(
+  `([.!?]+(?=[ \\t])|[${UNSPACED_SENTENCE_ENDS}]+)[ \\t]*`,
+  'g',
 );
 
 /**
@@ -372,6 +374,34 @@ function hasOpenInlineMarker(prefix: string): boolean {
   return INLINE_OPENER_RE.test(rest);
 }
 
+/**
+ * The buffer's first sentence end that is a cut point (`end`, 0 if none),
+ * scanning from `from`. A sentence end inside a code span is skipped for the
+ * next one (#77): the halves would each keep a backtick. An unspaced mark
+ * (`。` `।` `؟` …) inside another inline construct holds the line, as a `.!?`
+ * end never does (prose with a stray `*` is not held). `resume` is where the
+ * next scan of this growing buffer may start: skipped ends stay skipped.
+ */
+function streamSentenceEnd(
+  buffer: string,
+  from: number,
+): {end: number; resume: number} {
+  STREAM_SENTENCE_END_RE.lastIndex = from;
+  let resume = from;
+  for (let m; (m = STREAM_SENTENCE_END_RE.exec(buffer)); ) {
+    const end = m.index + m[0].length;
+    const prefix = buffer.slice(0, end);
+    if (applyPasses(prefix, CODE_SPAN_PASSES).includes('`')) {
+      resume = end;
+      continue;
+    }
+    const unspaced = UNSPACED_SENTENCE_ENDS.includes(m[1]!.slice(-1));
+    if (unspaced && hasOpenInlineMarker(prefix)) break;
+    return {end, resume};
+  }
+  return {end: 0, resume};
+}
+
 // A newline-less tail this long with no sentence end is released at its
 // last clause or word end, so the chunker can cut it before the stream
 // ends (#48).
@@ -400,6 +430,8 @@ export function createMarkdownStreamBuffer(
   let atLineStart = true;
   // Whether the last mid-line cut ended in whitespace (not a CJK mark).
   let cutAtSpace = false;
+  // Where the next sentence-end scan of `buffer` starts (see streamSentenceEnd).
+  let scanFrom = 0;
 
   function strip(text: string, continuation: boolean): string {
     if (!continuation) return stripMarkdown(text, opts);
@@ -460,6 +492,7 @@ export function createMarkdownStreamBuffer(
       if (lastNl >= 0) {
         const complete = buffer.slice(0, lastNl + 1);
         buffer = buffer.slice(lastNl + 1);
+        scanFrom = 0;
         const continuation = !atLineStart;
         atLineStart = true;
         const visible = filterFences(complete, continuation);
@@ -501,20 +534,9 @@ export function createMarkdownStreamBuffer(
           }
         }
         if (cut <= 0) {
-          const sentMatch = buffer.match(STREAM_SENTENCE_RE);
-          const sentEnd = sentMatch
-            ? sentMatch[1]!.length + sentMatch[2]!.length
-            : 0;
-          // An unspaced mark (`。` `।` `؟` …) inside a link or code span
-          // is not a cut point: the marker would be spoken. (`.!?` cuts
-          // need a following space and keep their old behaviour.)
-          const unspaced = sentMatch
-            ? UNSPACED_SENTENCE_ENDS.includes(sentMatch[1]!.slice(-1))
-            : false;
-          if (
-            sentEnd > 0 &&
-            !(unspaced && hasOpenInlineMarker(buffer.slice(0, sentEnd)))
-          ) {
+          const {end: sentEnd, resume} = streamSentenceEnd(buffer, scanFrom);
+          scanFrom = resume;
+          if (sentEnd > 0) {
             cut = sentEnd;
           } else if (buffer.length >= LONG_TAIL_CHARS) {
             const soft = Math.max(
@@ -536,6 +558,7 @@ export function createMarkdownStreamBuffer(
         }
         const sentence = buffer.slice(0, cut);
         buffer = buffer.slice(cut);
+        scanFrom = 0;
         const stripped = strip(sentence, !atLineStart);
         atLineStart = false;
         cutAtSpace = /\s$/.test(sentence);
@@ -560,12 +583,14 @@ export function createMarkdownStreamBuffer(
       atLineStart = true;
       if (inFence) {
         buffer = '';
+        scanFrom = 0;
         inFence = false;
         return '';
       }
       if (!buffer) return '';
       const out = strip(buffer, continuation);
       buffer = '';
+      scanFrom = 0;
       return out;
     },
   };

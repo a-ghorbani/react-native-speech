@@ -1119,3 +1119,58 @@ describe("createMarkdownStreamBuffer: firstChunk 'clause' tables and lines", () 
     expect(first && (first as {text: string}).text).toBe('one two\nthree, ');
   });
 });
+
+describe('createMarkdownStreamBuffer: a sentence end inside a code span (#77)', () => {
+  function stream(text: string) {
+    const md = createMarkdownStreamBuffer();
+    let early = '';
+    for (const w of text.match(/\S+\s*/g) ?? []) early += md.push(w);
+    return {early, all: early + md.flush()};
+  }
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+
+  test.each([
+    'Either run `! npm login` here or add trusted publishing.',
+    'It reads `config.providers ?? defaults()` and stops.',
+    'Call `a. b` then go.',
+    'Run ``x. y`` now. Then stop.',
+  ])('"%s" streams as it strips whole', text => {
+    const {all} = stream(text);
+    expect(all).not.toContain('`');
+    expect(norm(all)).toBe(norm(stripMarkdown(text)));
+  });
+
+  test('an unspaced mark inside a code span is skipped for the next end', () => {
+    const md = createMarkdownStreamBuffer();
+    let early = '';
+    for (const ch of '运行 `a。b` 然后。继续') early += md.push(ch);
+    expect(early).toBe('运行 a。b 然后。 ');
+  });
+
+  test.each([
+    '请看[文档。See the docs. More](https://x.com)。',
+    'Use `a。b` and _note。 this. here_ ok.',
+  ])('an unspaced mark inside a link or emphasis still holds "%s"', text => {
+    const {all} = stream(text);
+    expect(norm(all)).toBe(norm(stripMarkdown(text)));
+  });
+
+  test('a short sentence after the cut is not skipped', () => {
+    const md = createMarkdownStreamBuffer();
+    expect(md.push('Run `aaaaaaaaaaaa. b` now. Hi. More')).toBe(
+      'Run aaaaaaaaaaaa. b now. Hi. ',
+    );
+  });
+
+  test('the sentence after the code span is still cut early', () => {
+    expect(stream('Call `a. b` then go. And the rest here').early).toBe(
+      'Call a. b then go. ',
+    );
+  });
+
+  test('prose with a stray * still cuts at each sentence', () => {
+    expect(stream('So 5 * 3 is 15. Then 2 * 2 is 4. And more').early).toBe(
+      'So 5 * 3 is 15. Then 2 * 2 is 4. ',
+    );
+  });
+});
