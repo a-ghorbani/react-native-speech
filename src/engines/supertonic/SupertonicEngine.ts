@@ -211,7 +211,12 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       throw new Error('Text cannot be empty');
     }
 
-    return this.doSynthesize(text, options);
+    const utterance = {};
+    try {
+      return await this.doSynthesize(text, options, utterance);
+    } finally {
+      neuralAudioPlayer.endUtterance(utterance).catch(() => {});
+    }
   }
 
   synthesizeStream(options?: SupertonicSynthesisOptions): EngineStreamHandle {
@@ -266,6 +271,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
           }
         : undefined;
 
+    const utterance = {};
     const session = new EngineStreamSession({
       synthesizeChunk: async (text: string) => {
         const voiceStyle = await voiceStylePromise;
@@ -280,7 +286,9 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
           ),
         );
       },
-      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      playAudio: (buffer, playOpts) =>
+        neuralAudioPlayer.play(buffer, playOpts, utterance),
+      endUtterance: () => neuralAudioPlayer.endUtterance(utterance),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
@@ -364,6 +372,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
   private async doSynthesize(
     text: string,
     options?: SupertonicSynthesisOptions,
+    utterance?: object,
   ): Promise<AudioBuffer | void> {
     // A new utterance replaces the previous speak() or stream.
     this.stop();
@@ -511,10 +520,14 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
 
       // Play current chunk, racing against stop signal
       await this.raceWithStop(
-        neuralAudioPlayer.play(audioBuffer, {
-          ducking: options?.ducking,
-          silentMode: options?.silentMode,
-        }),
+        neuralAudioPlayer.play(
+          audioBuffer,
+          {
+            ducking: options?.ducking,
+            silentMode: options?.silentMode,
+          },
+          utterance,
+        ),
         stopSignal,
       );
     }

@@ -33,6 +33,8 @@ export interface EngineStreamSessionBaseConfig<TAudio = AudioBuffer> {
   playAudio: (audio: TAudio, options?: PlaybackOptions) => Promise<void>;
   /** Called by `cancel()` while the loop runs; not once it has ended (#112). */
   stopPlayback: () => Promise<void>;
+  /** Called once when the loop ends, however it ends. */
+  endUtterance?: () => Promise<void>;
   maxChunkSize: number;
   firstChunk?: FirstChunkMode;
   firstChunkMaxWords?: number;
@@ -328,6 +330,9 @@ export class EngineStreamSession<
       log.error(`stream session error: ${error.message}`);
     } finally {
       this.loopEnded = true;
+      this.config.endUtterance?.().catch(err => {
+        log.warn('endUtterance failed:', err);
+      });
       if (currentAudio !== null) {
         this.discard(currentAudio);
       }

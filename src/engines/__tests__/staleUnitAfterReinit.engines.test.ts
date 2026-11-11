@@ -20,6 +20,7 @@ jest.mock(
 );
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn(async () => {}),
     stop: jest.fn(async () => {}),
   },

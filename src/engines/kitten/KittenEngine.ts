@@ -249,7 +249,12 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       );
     }
 
-    return this.doSynthesize(input, options);
+    const utterance = {};
+    try {
+      return await this.doSynthesize(input, options, utterance);
+    } finally {
+      neuralAudioPlayer.endUtterance(utterance).catch(() => {});
+    }
   }
 
   synthesizeStream(options?: KittenSynthesisOptions): EngineStreamHandle {
@@ -288,6 +293,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           firstChunkMaxWords: options?.firstChunkMaxWords,
         })
       : null;
+    const utterance = {};
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) => {
         const processed = normalizeForEngine(text, 'kitten');
@@ -295,7 +301,9 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
           this.synthesizeTextChunk(processed, voiceId, gen, options),
         );
       },
-      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      playAudio: (buffer, playOpts) =>
+        neuralAudioPlayer.play(buffer, playOpts, utterance),
+      endUtterance: () => neuralAudioPlayer.endUtterance(utterance),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
@@ -372,6 +380,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
   private async doSynthesize(
     input: SpeechInput,
     options?: KittenSynthesisOptions,
+    utterance?: object,
   ): Promise<AudioBuffer | void> {
     // Phoneme input short-circuits g2p: no markdown strip, no
     // preprocessing, no sentence chunking. The IPA is a single unit.
@@ -493,10 +502,14 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
 
       // Play current chunk
       await this.raceWithStop(
-        neuralAudioPlayer.play(audioBuffer, {
-          ducking: options?.ducking,
-          silentMode: options?.silentMode,
-        }),
+        neuralAudioPlayer.play(
+          audioBuffer,
+          {
+            ducking: options?.ducking,
+            silentMode: options?.silentMode,
+          },
+          utterance,
+        ),
         stopSignal,
       );
     }

@@ -11,6 +11,7 @@ jest.mock('onnxruntime-react-native', () => ({}), {virtual: true});
 const pendingPlays: Array<() => void> = [];
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     // Playback lasts until stop(), like a long reply still speaking.
     play: jest.fn(() => new Promise<void>(r => pendingPlays.push(r))),
     stop: jest.fn(async () => {

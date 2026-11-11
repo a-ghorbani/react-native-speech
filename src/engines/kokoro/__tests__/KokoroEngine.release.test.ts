@@ -2,6 +2,7 @@ jest.mock('@dr.pogodin/react-native-fs', () => ({}), {virtual: true});
 jest.mock('onnxruntime-react-native', () => ({}), {virtual: true});
 jest.mock('../../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn().mockResolvedValue(undefined),
     stop: jest.fn().mockResolvedValue(undefined),
   },

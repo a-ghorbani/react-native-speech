@@ -12,6 +12,7 @@ jest.mock('onnxruntime-react-native', () => ({}), {virtual: true});
 const mockStop: {gate: Promise<void> | null} = {gate: null};
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn(() => new Promise<void>(() => {})),
     stop: jest.fn(async () => {
       await mockStop.gate;

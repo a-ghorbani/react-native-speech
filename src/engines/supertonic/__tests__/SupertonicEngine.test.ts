@@ -16,6 +16,7 @@ const mockSessionCreate = jest.fn(async () => ({
 
 jest.mock('../../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn().mockResolvedValue(undefined),
     stop: jest.fn().mockResolvedValue(undefined),
   },

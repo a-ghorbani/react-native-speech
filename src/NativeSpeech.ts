@@ -137,6 +137,12 @@ export interface AudioPlayerConfig {
    */
   ducking?: boolean;
   /**
+   * Android: keep audio focus when this chunk ends, for the utterance's next
+   * chunk; `stopAudio()` abandons it. iOS ignores it.
+   * @default false
+   */
+  holdFocus?: boolean;
+  /**
    * Determines how speech audio interacts with the device's silent (ringer) switch.
    * @platform iOS
    *

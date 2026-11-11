@@ -771,22 +771,28 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
     val sampleRate = if (config.hasKey("sampleRate")) config.getInt("sampleRate") else 24000
     val channels = if (config.hasKey("channels")) config.getInt("channels") else 1
-    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, promise)
+    val holdFocus = config.hasKey("holdFocus") && config.getBoolean("holdFocus")
+    playPcm16({ Base64.decode(audioData, Base64.DEFAULT) }, sampleRate, channels, holdFocus, promise)
   }
 
   override fun playPcm16(pcm: ByteArray, sampleRate: Int, channels: Int, ducking: Boolean, promise: Promise) {
-    playPcm16({ pcm }, sampleRate, channels, promise)
+    playPcm16({ pcm }, sampleRate, channels, holdFocus = false, promise)
   }
 
-  /** [pcm] (LE Int16) is evaluated on the audio executor, off the caller's thread. */
+  /**
+   * [pcm] (LE Int16) is evaluated on the audio executor, off the caller's thread. With [holdFocus],
+   * the chunk's natural end keeps the focus request for the utterance's next chunk; stopAudio
+   * abandons it.
+   */
   private fun playPcm16(
     pcm: () -> ByteArray,
     sampleRate: Int,
     channels: Int,
+    holdFocus: Boolean,
     promise: Promise
   ) {
     try {
-      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, promise) }
+      audioExecutor.execute { playPcm16Now(pcm, sampleRate, channels, holdFocus, promise) }
     } catch (e: RejectedExecutionException) {
       // invalidate() shut the executor down.
       promise.reject("audio_error", "Audio player is shut down", e)
@@ -797,6 +803,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     pcm: () -> ByteArray,
     sampleRate: Int,
     channels: Int,
+    holdFocus: Boolean,
     promise: Promise
   ) {
     SpeechTrace.beginSection("TTS:playAudio")
@@ -820,7 +827,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         val frames = decodedBytes.size / frameBytes
         if (frames == 0) {
           // A static track's 0 marker is never reached.
-          neuralFocusManager.abandonFocus()
+          if (!holdFocus) neuralFocusManager.abandonFocus()
           SpeechTrace.endSection()
           promise.resolve(null)
           return
@@ -873,7 +880,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
               if (audioTrackPromise !== promise) return
               audioTrackPromise = null
               isAudioPlayingState = false
-              neuralFocusManager.abandonFocus()
+              if (!holdFocus) neuralFocusManager.abandonFocus()
               SpeechTrace.endSection()
               emitOnFinish(getAudioEventData())
               promise.resolve(null)

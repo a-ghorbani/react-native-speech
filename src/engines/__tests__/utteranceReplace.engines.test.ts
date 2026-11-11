@@ -20,6 +20,7 @@ const timeline: string[] = [];
 const pendingPlays: Array<() => void> = [];
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     // A chunk plays for 30 ms, or until stopped or replaced.
     play: jest.fn((buf: Tagged) => {
       timeline.push(`play:${buf.tag}`);

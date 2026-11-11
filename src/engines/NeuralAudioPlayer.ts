@@ -5,6 +5,7 @@
  * Provides a unified interface for playing synthesized audio
  */
 
+import {Platform} from 'react-native';
 import NativeNeuralAudioPlayer from '../NativeAudioPlayer';
 import type {AudioPlayerConfig} from '../NativeAudioPlayer';
 import type {AudioBuffer} from '../types';
@@ -41,16 +42,24 @@ export class NeuralAudioPlayer {
    * native ignores a stop with nothing to stop.
    */
   private nativeMayHold = false;
+  /** The utterance whose held chunk keeps Android's audio focus until a native stop. */
+  private focusOwner: object | null = null;
 
   /**
    * Play an audio buffer
    * @param audioBuffer - Audio buffer from neural TTS engine
    * @param options - Playback options
+   * @param utterance - Token of the utterance this chunk belongs to: keep
+   *   audio focus when the chunk ends, for the next one (Android). The
+   *   caller then calls `endUtterance(utterance)` when the utterance ends.
    */
   async play(
     audioBuffer: AudioBuffer,
     options?: PlaybackOptions,
+    utterance?: object,
   ): Promise<void> {
+    const hold = utterance !== undefined && Platform.OS === 'android';
+
     // Convert Float32Array to base64-encoded Int16 PCM
     const base64Audio = float32ToBase64Int16(audioBuffer.samples);
 
@@ -60,8 +69,12 @@ export class NeuralAudioPlayer {
       channels: audioBuffer.channels,
       ducking: options?.ducking,
       silentMode: options?.silentMode,
+      ...(hold && {holdFocus: true}),
     };
 
+    if (hold) {
+      this.focusOwner = utterance;
+    }
     await this.playNative(() =>
       NativeNeuralAudioPlayer.playAudio(base64Audio, config),
     );
@@ -95,7 +108,19 @@ export class NeuralAudioPlayer {
       this.playGen++;
       this.isCurrentlyPlaying = false;
       this.nativeMayHold = false;
+      this.focusOwner = null;
       await NativeNeuralAudioPlayer.stop();
+    }
+  }
+
+  /**
+   * End of an utterance played with its token: release the audio focus it
+   * kept, unless a newer utterance has played since (it then owns it) or a
+   * playback is in flight.
+   */
+  async endUtterance(utterance: object): Promise<void> {
+    if (this.focusOwner === utterance && !this.isCurrentlyPlaying) {
+      await this.stop();
     }
   }
 
