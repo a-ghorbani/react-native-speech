@@ -2,6 +2,8 @@
 #import "RNSpeechTrace.h"
 #import "NativeDictWrapper.h"
 #import <React/RCTLog.h>
+#import <objc/runtime.h>
+#include <atomic>
 #import "RNSpeechAudioOutput+Internal.h"
 
 using namespace JS::NativeSpeech;
@@ -9,6 +11,11 @@ using namespace JS::NativeSpeech;
 static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
 // Covers a slow producer between the chunks of one stream.
 static const NSTimeInterval kOutputWatchIdleDelay = 30.0;
+
+// Id of an utterance's events: unique per utterance (the object's hash is its
+// address, which a later utterance can reuse).
+static char kUtteranceIdKey;
+static std::atomic<int> nextUtteranceId{1};
 
 @implementation RNSpeech
 {
@@ -283,9 +290,14 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   }
 }
 
+- (NSNumber *)utteranceId:(AVSpeechUtterance *)utterance {
+  NSNumber *utteranceId = objc_getAssociatedObject(utterance, &kUtteranceIdKey);
+  return utteranceId ?: @0;
+}
+
 - (NSDictionary *)getEventData:(AVSpeechUtterance *)utterance {
   return @{
-    @"id": @(utterance.hash)
+    @"id": [self utteranceId:utterance]
   };
 }
 
@@ -331,6 +343,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 
 - (AVSpeechUtterance *)getUtterance:(NSString *)text withOptions:(NSDictionary *)options {
   AVSpeechUtterance *utterance = [[AVSpeechUtterance alloc] initWithString:text];
+  objc_setAssociatedObject(utterance, &kUtteranceIdKey, @(nextUtteranceId++),
+                           OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
   if (options[@"voice"]) {
     AVSpeechSynthesisVoice *voice = [AVSpeechSynthesisVoice voiceWithIdentifier:options[@"voice"]];
@@ -447,7 +461,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     utterance = [self getUtterance:text withOptions:self.globalOptions];
     [self.synthesizer speakUtterance:utterance];
     // The id its onStart/onFinish/onStopped/onError events carry.
-    resolve(@(utterance.hash));
+    resolve([self utteranceId:utterance]);
   }
   @catch (NSException *exception) {
     [self deactivateDuckingSession];
@@ -478,7 +492,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     utterance = [self getUtterance:text withOptions:validatedOptions];
     [self.synthesizer speakUtterance:utterance];
     // The id its onStart/onFinish/onStopped/onError events carry.
-    resolve(@(utterance.hash));
+    resolve([self utteranceId:utterance]);
   }
   @catch (NSException *exception) {
     [self deactivateDuckingSession];
@@ -495,7 +509,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer
   willSpeakRangeOfSpeechString:(NSRange)characterRange utterance:(AVSpeechUtterance *)utterance {
   [self emitOnProgress:@{
-    @"id": @(utterance.hash),
+    @"id": [self utteranceId:utterance],
     @"length": @(characterRange.length),
     @"location": @(characterRange.location)
   }];
