@@ -392,8 +392,7 @@ function streamSentenceEnd(
     const end = m.index + m[0].length;
     const prefix = buffer.slice(0, end);
     if (applyPasses(prefix, CODE_SPAN_PASSES).includes('`')) {
-      // Rescan from this match: its mark run or trailing space may grow.
-      resume = m.index;
+      resume = end;
       continue;
     }
     const unspaced = UNSPACED_SENTENCE_ENDS.includes(m[1]!.slice(-1));
