@@ -276,7 +276,12 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       );
     }
 
-    return this.doSynthesize(input, options);
+    const utterance = {};
+    try {
+      return await this.doSynthesize(input, options, utterance);
+    } finally {
+      neuralAudioPlayer.endUtterance(utterance).catch(() => {});
+    }
   }
 
   synthesizeStream(options?: KokoroSynthesisOptions): EngineStreamHandle {
@@ -312,12 +317,15 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
           firstChunkMaxWords: options?.firstChunkMaxWords,
         })
       : null;
+    const utterance = {};
     const session = new EngineStreamSession({
       synthesizeChunk: (text: string) =>
         this.inflight.track(
           this.synthesizeTextChunk(text, voiceId, language, gen, options),
         ),
-      playAudio: (buffer, playOpts) => neuralAudioPlayer.play(buffer, playOpts),
+      playAudio: (buffer, playOpts) =>
+        neuralAudioPlayer.play(buffer, playOpts, utterance),
+      endUtterance: () => neuralAudioPlayer.endUtterance(utterance),
       stopPlayback: () => neuralAudioPlayer.stop(),
       maxChunkSize,
       firstChunk: options?.firstChunk,
@@ -401,6 +409,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
   private async doSynthesize(
     input: SpeechInput,
     options?: KokoroSynthesisOptions,
+    utterance?: object,
   ): Promise<AudioBuffer | void> {
     // Phoneme input short-circuits g2p: no markdown strip, no
     // normalization, no sentence chunking. The IPA is treated as a
@@ -530,10 +539,14 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
 
       // Play current chunk audio, racing against stop signal
       await this.raceWithStop(
-        neuralAudioPlayer.play(audioBuffer, {
-          ducking: options?.ducking,
-          silentMode: options?.silentMode,
-        }),
+        neuralAudioPlayer.play(
+          audioBuffer,
+          {
+            ducking: options?.ducking,
+            silentMode: options?.silentMode,
+          },
+          utterance,
+        ),
         stopSignal,
       );
     }

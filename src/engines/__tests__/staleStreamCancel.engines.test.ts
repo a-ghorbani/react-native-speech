@@ -21,6 +21,7 @@ const pendingPlays: Array<() => void> = [];
 let mockHoldPrefix = '';
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn((buf: Tagged) => {
       timeline.push(`play:${buf.tag}`);
       return new Promise<void>(resolve => {

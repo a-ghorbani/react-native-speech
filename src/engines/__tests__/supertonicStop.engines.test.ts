@@ -28,6 +28,7 @@ jest.mock(
 const pendingPlays: Array<() => void> = [];
 jest.mock('../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn(() => new Promise<void>(r => pendingPlays.push(r))),
     stop: jest.fn(async () => {
       pendingPlays.splice(0).forEach(r => r());

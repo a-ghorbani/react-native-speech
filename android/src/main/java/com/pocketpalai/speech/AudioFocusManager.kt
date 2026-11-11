@@ -27,12 +27,20 @@ sealed class FocusEvent {
  * pause or stop, [FocusEvent.Unduck] only after a duck, and nothing on the initial grant.
  */
 internal class FocusEventMapper {
-  private enum class Loss { NONE, DUCKED, LOST }
+  private enum class Loss { NONE, DUCKED, PAUSED, LOST }
 
   private var loss = Loss.NONE
 
   val isDucked: Boolean
     get() = loss == Loss.DUCKED
+
+  /** A loss event went out and its [FocusEvent.Gained] has not. */
+  val isLost: Boolean
+    get() = loss == Loss.PAUSED || loss == Loss.LOST
+
+  /** A transient loss: focus comes back to this request when it ends. */
+  val isTransientlyLost: Boolean
+    get() = loss == Loss.PAUSED
 
   fun onFocusChange(focusChange: Int): FocusEvent? = when (focusChange) {
     AudioManager.AUDIOFOCUS_LOSS -> {
@@ -40,7 +48,7 @@ internal class FocusEventMapper {
       FocusEvent.Lost
     }
     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-      loss = Loss.LOST
+      loss = Loss.PAUSED
       FocusEvent.LostTransient
     }
     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -55,7 +63,7 @@ internal class FocusEventMapper {
       val event = when (loss) {
         Loss.NONE -> null
         Loss.DUCKED -> FocusEvent.Unduck
-        Loss.LOST -> FocusEvent.Gained
+        Loss.PAUSED, Loss.LOST -> FocusEvent.Gained
       }
       loss = Loss.NONE
       event
@@ -77,9 +85,38 @@ internal class FocusEventMapper {
 internal class FocusEventGate(private val lock: Any) {
   private val mapper = FocusEventMapper()
   private var generation = 0
+  private var abandonOnRegain = false
 
   val isDucked: Boolean
     get() = synchronized(lock) { mapper.isDucked }
+
+  val isLost: Boolean
+    get() = synchronized(lock) { mapper.isLost }
+
+  /**
+   * False during a transient loss: the request is then abandoned when focus comes back, after its
+   * [FocusEvent.Gained], so a loss event always gets its regain (see [takeAbandonOnRegain]).
+   */
+  fun mayAbandonNow(): Boolean = synchronized(lock) {
+    if (mapper.isTransientlyLost) {
+      abandonOnRegain = true
+      false
+    } else {
+      true
+    }
+  }
+
+  /** The current request plays again: it is no longer abandoned on regain. */
+  fun keep() {
+    synchronized(lock) { abandonOnRegain = false }
+  }
+
+  /** True once after a regain whose request was to be abandoned. */
+  fun takeAbandonOnRegain(): Boolean = synchronized(lock) {
+    val take = abandonOnRegain && !mapper.isLost
+    if (take) abandonOnRegain = false
+    take
+  }
 
   /** The generation the next [begin] returns. */
   fun nextGeneration(): Int = synchronized(lock) { generation + 1 }
@@ -88,6 +125,7 @@ internal class FocusEventGate(private val lock: Any) {
   fun begin(): Int {
     synchronized(lock) {
       mapper.reset()
+      abandonOnRegain = false
       return ++generation
     }
   }
@@ -96,6 +134,7 @@ internal class FocusEventGate(private val lock: Any) {
   fun end() {
     synchronized(lock) {
       mapper.reset()
+      abandonOnRegain = false
       generation++
     }
   }
@@ -134,6 +173,7 @@ class AudioFocusManager(context: Context, private val lock: Any) {
    * call's end.
    */
   fun requestFocus(): Boolean = synchronized(lock) {
+    gate.keep()
     if (hasAudioFocus) {
       return true
     }
@@ -149,6 +189,7 @@ class AudioFocusManager(context: Context, private val lock: Any) {
           AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> hasAudioFocus = false
         }
         listener?.invoke(event)
+        if (gate.takeAbandonOnRegain()) abandonFocusNow()
       }
     }
 
@@ -178,16 +219,23 @@ class AudioFocusManager(context: Context, private val lock: Any) {
     }
 
     // After a transient loss the previous request is still on the stack: drop it, or it would
-    // outlive us.
+    // outlive us. The loss is over for us, so its "ended" goes out now.
+    val wasLost = gate.isLost
     releaseRequest()
     gate.begin()
     focusChangeListener = focusListener
     audioFocusRequest = request
     hasAudioFocus = true
+    if (wasLost) listener?.invoke(FocusEvent.Gained)
     return true
   }
 
+  /** During a transient loss, abandons when focus comes back instead (see [FocusEventGate.mayAbandonNow]). */
   fun abandonFocus(): Unit = synchronized(lock) {
+    if (gate.mayAbandonNow()) abandonFocusNow()
+  }
+
+  fun abandonFocusNow(): Unit = synchronized(lock) {
     if (!releaseRequest()) return
     hasAudioFocus = false
     gate.end()

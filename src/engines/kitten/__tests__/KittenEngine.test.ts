@@ -22,6 +22,7 @@ jest.mock('@dr.pogodin/react-native-fs', () => ({}), {virtual: true});
 const mockPlayer = {playHangs: false};
 jest.mock('../../NeuralAudioPlayer', () => ({
   neuralAudioPlayer: {
+    endUtterance: jest.fn().mockResolvedValue(undefined),
     play: jest.fn(() =>
       mockPlayer.playHangs ? new Promise<void>(() => {}) : Promise.resolve(),
     ),
