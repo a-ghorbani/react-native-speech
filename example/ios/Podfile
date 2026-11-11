@@ -19,6 +19,10 @@ end
 
 target 'SpeechExample' do
   config = use_native_modules!
+  # onnxruntime-react-native's podspec leaves onnxruntime-c unpinned; pin it to the JS version.
+  ort_package = Pod::Executable.execute_command('node', ['-p',
+    'require.resolve("onnxruntime-react-native/package.json", {paths: [process.argv[1]]})', __dir__]).strip
+  pod 'onnxruntime-c', JSON.parse(File.read(ort_package))['version']
 
   use_react_native!(
     :path => config[:reactNativePath],
