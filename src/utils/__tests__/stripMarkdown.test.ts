@@ -1202,6 +1202,13 @@ describe('createMarkdownStreamBuffer: a sentence end inside link text (#126)', (
     ).toBe('Read the guide. It helps first. ');
   });
 
+  test('a [ inside a code span does not hold the line', () => {
+    expect(
+      stream('In regex, `[a-z` is an unterminated class. Add `]` to fix it')
+        .early,
+    ).toBe('In regex, [a-z is an unterminated class. ');
+  });
+
   test('a closed bracket pair before a sentence end still cuts', () => {
     expect(stream('As shown in [1] it works. Then more').early).toBe(
       'As shown in [1] it works. ',

@@ -380,7 +380,12 @@ function hasOpenInlineMarker(prefix: string): boolean {
  * the backticks or the brackets and URL would be spoken (#77, #126).
  */
 function inOpenSpanOrLink(prefix: string): boolean {
-  let rest = applyPasses(prefix, CODE_SPAN_PASSES);
+  // A complete code span becomes a bracket-free placeholder, so a `[` inside
+  // it (`[a-z`) does not read as an open link.
+  let rest = CODE_SPAN_PASSES.reduce(
+    (out, [re]) => out.replace(re, 'c'),
+    prefix,
+  );
   if (rest.includes('`')) return true;
   rest = applyPasses(rest, LINK_PASSES);
   // A bracket pair not followed by `(` or `[` can't become a link (`[1]`).
