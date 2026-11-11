@@ -242,6 +242,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       putString("name", voice.name)
       putString("identifier", voice.name)
       putString("language", voice.locale.toLanguageTag())
+      putBoolean("networkConnectionRequired", voice.isNetworkConnectionRequired)
+      putBoolean(
+        "notInstalled",
+        voice.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) == true
+      )
     }
   }
 

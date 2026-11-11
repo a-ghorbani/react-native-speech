@@ -28,6 +28,18 @@ export interface VoiceProps {
   language: string;
   /** The unique identifier for the voice */
   identifier: string;
+  /**
+   * `true` when the voice synthesizes on a server and needs a network connection.
+   * `undefined` on iOS.
+   * @platform android
+   */
+  networkConnectionRequired?: boolean;
+  /**
+   * `true` when the voice's data is not downloaded on the device yet.
+   * `undefined` on iOS.
+   * @platform android
+   */
+  notInstalled?: boolean;
 }
 export interface VoiceOptions {
   /**
