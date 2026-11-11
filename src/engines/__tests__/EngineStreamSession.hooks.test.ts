@@ -279,4 +279,28 @@ describe('EngineStreamSession hooks', () => {
     await expect(session.finalize()).resolves.toBeUndefined();
     expect(playAudio).toHaveBeenCalledTimes(1);
   });
+
+  test.each(['drained', 'failed'] as const)(
+    'cancel() after the loop %s calls onCancel but not stopPlayback (#112)',
+    async end => {
+      const {session, synth, player, onCancel, stopPlayback} = makeSession();
+      session.append('Hello there. ');
+      const done = session.finalize();
+      await flush();
+      if (end === 'failed') {
+        synth.calls[0]!.reject(new Error('boom'));
+        await expect(done).rejects.toThrow('boom');
+      } else {
+        synth.calls[0]!.resolve(synth.audio());
+        await flush();
+        player.plays[0]!.resolve();
+        await expect(done).resolves.toBeUndefined();
+      }
+
+      await session.cancel();
+
+      expect(onCancel).toHaveBeenCalledTimes(1);
+      expect(stopPlayback).not.toHaveBeenCalled();
+    },
+  );
 });
