@@ -161,13 +161,15 @@ export interface Spec extends TurboModule {
   pause: () => Promise<boolean>;
   resume: () => Promise<boolean>;
   isSpeaking: () => Promise<boolean>;
-  speak: (text: string) => Promise<void>;
+  /** Resolves once queued, with the `id` of the utterance's events. */
+  speak: (text: string) => Promise<number>;
   getEngines: () => Promise<EngineProps[]>;
   initialize: (options: VoiceOptions) => void;
   openVoiceDataInstaller: () => Promise<void>;
   setEngine: (engineName: string) => Promise<void>;
   getAvailableVoices: (language?: string) => Promise<VoiceProps[]>;
-  speakWithOptions: (text: string, options: VoiceOptions) => Promise<void>;
+  /** Resolves once queued, with the `id` of the utterance's events. */
+  speakWithOptions: (text: string, options: VoiceOptions) => Promise<number>;
 
   // Neural Audio Player Methods
   /**

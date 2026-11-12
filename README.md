@@ -30,7 +30,7 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 - **License-neutral runner**: the library is MIT and ships no model or dictionary data. Consumer apps supply both at runtime. See [LICENSES.md](./docs/LICENSES.md).
 - **On-device synthesis**: neural TTS runs entirely on-device. The library performs no network I/O during synthesis. Any initial model or dictionary download is performed by the consumer app using its own network stack.
 - **Interruption-aware audio**: iOS `AVAudioSession` and Android `AudioFocus` are wired through a JS `onAudioInterruption` event so apps can react to phone calls and other interruptions.
-- **Turbo-module native layer**: native audio playback, progress events, and chunk progress for neural engines.
+- **Turbo-module native layer**: native audio playback, progress events, and chunk progress for every engine.
 - **Permissive phonemization**: default is [`phonemize`](https://github.com/hans00/phonemize) (MIT). Optionally supply a mmap'd EPD1 dict via the `NativeDict` API for higher accuracy — see [PHONEMIZATION.md](./docs/PHONEMIZATION.md).
 - **[`HighlightedText`](./docs/USAGE.md#highlightedtext) component**: highlight spoken text as it synthesizes.
 - **TypeScript**: full type definitions; per-engine config is a discriminated union on the `engine` field.
@@ -199,7 +199,7 @@ await stream.finalize(); // flushes the tail and resolves when playback ends
 
 Per-sentence `speak()` chains produce audible gaps: each call resets the engine's internal synth pipeline, starting a fresh F0 contour and a cold first-chunk inference. The stream avoids this by keeping one continuous synth+play loop alive for the stream's entire lifetime — the next chunk is synthesized while the current one plays, so the only gap is genuine token-rate underrun (LLM slower than playback).
 
-On neural engines you can also track playback position with stream-absolute offsets:
+You can also track playback position with stream-absolute offsets:
 
 ```ts
 stream.onProgress(event => {
@@ -208,7 +208,7 @@ stream.onProgress(event => {
 });
 ```
 
-The OS engine does not emit chunk progress, so `stream.onProgress` never fires there.
+On the OS engine each batch is one OS utterance: `onProgress` fires when a batch's audio starts (one event per batch), and `finalize()` resolves when the last batch's audio has ended. `Speech.stop()` and `stream.cancel()` silence it at once, and nothing is emitted afterwards.
 
 For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. So that the next chunk is synthesized while a short first chunk plays, the chunks after it grow step by step: each is limited to about 4 times the previous one, and on Kokoro, Kitten and Supertonic also to what the measured synthesis speed can finish while the audio already synthesized plays (at least twice the previous chunk, or the same size after a cut between two words). A limited chunk is cut at a sentence end or, failing that, at a clause mark; a longer sentence with no clause mark stays whole. The exception is on Kokoro, Kitten and Supertonic, after a chunk that already ended between two words (a first chunk cut at `firstChunkMaxWords`, or a chunk cut this way): the next chunk is then cut at a word so that its synthesis fits in the audio before it, instead of leaving seconds of silence. Without a limit below `maxChunkSize`, chunks break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 

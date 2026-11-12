@@ -62,7 +62,9 @@ describe('OS engine: a stream replaces, speak() queues', () => {
     await Speech.speak('Alpha one.');
     const s = Speech.createSpeechStream();
     s.append('Bravo one. ');
-    await s.finalize();
+    // finalize() resolves when the audio ends; this fake never plays.
+    s.finalize();
+    await tick();
     const firstB = mockNative.indexOf('speak:Bravo one.');
     expect(firstB).toBeGreaterThan(0);
     expect(mockNative.slice(1, firstB)).toContain('stop');
@@ -80,7 +82,8 @@ describe('OS engine: a stream replaces, speak() queues', () => {
       } else {
         const b = Speech.createSpeechStream();
         b.append('Bravo one. ');
-        await b.finalize();
+        b.finalize();
+        await tick();
       }
       // The old stream's source (e.g. an LLM) keeps producing.
       a.append('Alpha two. ');

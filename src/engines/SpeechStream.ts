@@ -29,6 +29,7 @@
 
 import type {
   ChunkProgressCallback,
+  ChunkProgressEvent,
   EngineStreamHandle,
   SpeechStream as ISpeechStream,
   SpeechStreamOptions,
@@ -66,6 +67,16 @@ export interface SpeechStreamConfig {
    * by the OS engine and any engine that doesn't support streaming.
    */
   engineStreamFactory?: (options?: SpeechStreamOptions) => EngineStreamHandle;
+  /**
+   * Used instead of `synthesize` by engines that queue a batch natively and
+   * play it later (the OS engine). Resolves once the batch is queued, with
+   * `ended` for when its audio ends; `onStart` is called when its audio
+   * starts. `finalize()` then also waits for every batch's audio to end.
+   */
+  queueBatch?: (
+    text: string,
+    onStart: ChunkProgressCallback,
+  ) => Promise<{ended: Promise<void>}>;
   /** User-supplied options — only `targetChars` and `onError` are read here. */
   options?: SpeechStreamOptions;
 }
@@ -92,6 +103,8 @@ export class SpeechStreamImpl implements ISpeechStream {
   private buffer = '';
   private queue: QueuedBatch[] = [];
   private inflight: Promise<void> | null = null;
+  // `ended` of every batch handed to `queueBatch`.
+  private playing: Promise<void>[] = [];
 
   private firstFlushDone = false;
   private finalized = false;
@@ -111,6 +124,7 @@ export class SpeechStreamImpl implements ISpeechStream {
 
   private readonly targetChars: number;
   private readonly synthesize: (text: string) => Promise<void>;
+  private readonly queueBatch?: SpeechStreamConfig['queueBatch'];
   private readonly stopFn: () => Promise<void>;
   private readonly subscribeProgress?: (
     cb: ChunkProgressCallback,
@@ -119,6 +133,7 @@ export class SpeechStreamImpl implements ISpeechStream {
 
   constructor(config: SpeechStreamConfig) {
     this.synthesize = config.synthesize;
+    this.queueBatch = config.queueBatch;
     this.stopFn = config.stop;
     this.subscribeProgress = config.subscribeProgress;
     this.targetChars = Math.max(
@@ -231,6 +246,7 @@ export class SpeechStreamImpl implements ISpeechStream {
     );
     this.tryFlush();
     await this.waitForDrain();
+    await Promise.all(this.playing);
     log.info(`drained: batches=${this.batchCount}, elapsed=${this.rel()}ms`);
     if (this.firstError) {
       throw this.firstError;
@@ -378,9 +394,19 @@ export class SpeechStreamImpl implements ISpeechStream {
         `, preview="${previewText(batch.text)}", t+${this.rel()}ms`,
     );
 
-    const unsubscribeProgress = this.installProgressForwarder(batch);
+    const queueBatch = this.queueBatch;
+    const unsubscribeProgress = queueBatch
+      ? null
+      : this.installProgressForwarder(batch);
+    const run = queueBatch
+      ? queueBatch(batch.text, event =>
+          this.forwardProgress(batch, event),
+        ).then(({ended}) => {
+          this.playing.push(ended);
+        })
+      : this.synthesize(batch.text);
 
-    this.inflight = this.synthesize(batch.text)
+    this.inflight = run
       .catch(err => {
         const error = err instanceof Error ? err : new Error(String(err));
         if (!this.firstError) {
@@ -428,27 +454,32 @@ export class SpeechStreamImpl implements ISpeechStream {
       return null;
     }
     try {
-      return this.subscribeProgress(event => {
-        const streamEvent: StreamProgressEvent = {
-          chunkText: event.chunkText,
-          streamRange: {
-            start: batch.startOffset + event.textRange.start,
-            end: batch.startOffset + event.textRange.end,
-          },
-          chunkIndex: event.chunkIndex,
-          batchIndex: batch.batchIndex,
-        };
-        for (const listener of this.progressListeners) {
-          try {
-            listener(streamEvent);
-          } catch (listenerErr) {
-            log.warn('stream onProgress listener threw:', listenerErr);
-          }
-        }
-      });
+      return this.subscribeProgress(event =>
+        this.forwardProgress(batch, event),
+      );
     } catch (err) {
       log.warn('subscribeProgress threw, progress events disabled:', err);
       return null;
+    }
+  }
+
+  /** Fan a batch's chunk event out to `onProgress` listeners, with stream-absolute offsets. */
+  private forwardProgress(batch: QueuedBatch, event: ChunkProgressEvent): void {
+    const streamEvent: StreamProgressEvent = {
+      chunkText: event.chunkText,
+      streamRange: {
+        start: batch.startOffset + event.textRange.start,
+        end: batch.startOffset + event.textRange.end,
+      },
+      chunkIndex: event.chunkIndex,
+      batchIndex: batch.batchIndex,
+    };
+    for (const listener of this.progressListeners) {
+      try {
+        listener(streamEvent);
+      } catch (listenerErr) {
+        log.warn('stream onProgress listener threw:', listenerErr);
+      }
     }
   }
 
