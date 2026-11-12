@@ -107,6 +107,14 @@ const ACCEL_DEFAULT: AccelState =
         coreMlFlags: 0,
       };
 
+// The library runs Supertonic on the bare CPU on iOS (CoreML got v3
+// jetsam-killed, #115); start the picker there too.
+function accelDefaultFor(engine: EngineId): AccelState {
+  return Platform.OS === 'ios' && engine === TTSEngine.SUPERTONIC
+    ? {selected: new Set<AccelEpName>(), coreMlFlags: DEFAULT_COREML_FLAGS}
+    : ACCEL_DEFAULT;
+}
+
 /**
  * Translate the multi-select acceleration state into the array form
  * `Speech.initialize({executionProviders})` expects. CPU is always the
@@ -510,6 +518,7 @@ const RootView: React.FC = () => {
           if (outcome.action === 'hide') {
             hideEngine(PHONON, outcome.reason);
             setSelectedEngine(outcome.fallbackTo);
+            setAccel(accelDefaultFor(outcome.fallbackTo));
           } else {
             console.log(`[Phonon] init failed: ${String(error)}`);
             setPhononError(outcome.message);
@@ -2072,6 +2081,7 @@ const RootView: React.FC = () => {
                       setSpokenText(ENGLISH_DEFAULT_TEXT);
                     }
                     setSelectedEngine(item.engine);
+                    setAccel(accelDefaultFor(item.engine));
                   }}
                   disabled={isInitializing || isStarted}>
                   <Text

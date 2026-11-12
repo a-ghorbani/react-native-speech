@@ -606,7 +606,7 @@ All neural engines accept a `maxChunkSize` (default 400 chars) and `executionPro
 | Kokoro, Kitten | CoreML, xnnpack, cpu | xnnpack, cpu (cpu only on x86/x86_64) |
 | Supertonic (v1–v3) | cpu | xnnpack, cpu (cpu only on x86/x86_64) |
 
-Supertonic runs on the bare CPU on iOS. On an iPhone 13 Pro, CoreML ran it slower than the CPU and at several times the memory (v2: 2.2 GB vs 0.3 GB), and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115)); xnnpack was no faster than the bare CPU there. Passing `executionProviders` yourself still uses exactly what you pass.
+Supertonic runs on the bare CPU on iOS. On an iPhone 13 Pro, CoreML with the default flags ran it slower than the CPU and at several times the memory (v2: 2.2 GB vs 0.3 GB), and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115)); xnnpack was no faster than the bare CPU there. Passing `executionProviders` yourself still uses exactly what you pass.
 
 Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
