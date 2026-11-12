@@ -137,8 +137,7 @@ export async function runI142Evidence(url: string): Promise<void> {
         } else {
           S.forEach(s => stream.append(s));
           if (mode === 'stopgrace') {
-            await stream.finalize();
-            await until(() => count('onFinish') >= 4, 30000);
+            await stream.finalize(); // resolves after the last utterance's audio (#132)
             await wait(2000);
             rec('stop call');
             await Speech.stop();
