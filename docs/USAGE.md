@@ -231,7 +231,7 @@ Speech.initialize(options: VoiceOptions): void
 | `ducking`    | `boolean`                         | If `true`, temporarily lowers audio from other apps while speech is active. Defaults to `false` | Both             |
 | `silentMode` | `'obey' \| 'respect' \| 'ignore'` | Controls how speech interacts with the device's silent switch. Ignored if `ducking` is `true`   | iOS only         |
 
-On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine. For the OS engine, `ducking` and `silentMode` can be set in `Speech.initialize({engine: 'os-native', ducking, silentMode})` and in a speak's or stream's options; a speak's own value wins. With `ducking: true`, Android OS speech also gets call and alarm interruptions (see [Audio interruptions](#audio-interruptions)).
+On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine. For the OS engine, `ducking` and `silentMode` can be set in `Speech.initialize({engine: 'os-native', ducking, silentMode})` and in a speak's or stream's options; a speak's own value wins. With `ducking: true`, Android OS speech also gets call and alarm interruptions (see [Audio interruptions](#audio-interruptions)). On both platforms, OS speech with `ducking: true` keeps other apps ducked for its whole queue or stream and lets them back up 5 s after it goes idle, or at once on `Speech.stop()`.
 
 **silentMode Options (iOS only):**
 
