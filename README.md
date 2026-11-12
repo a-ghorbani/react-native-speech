@@ -221,6 +221,8 @@ const stream = Speech.createSpeechStream('af_bella', {
 });
 ```
 
+When synthesis shares the CPU with other work, such as an on-device LLM still writing the reply, each chunk also costs a fixed overhead on top of its per-character time. On a Galaxy S23 with Kokoro int8 under such load, one fit gave about 950 ms per chunk plus 43 ms per character, for 59 ms of audio per character. So a chunk shorter than about 60 characters (950 / (59 − 43)), or more for other fits, takes longer to synthesize than to play. After a short word-capped first chunk, the following pieces of that sentence then cannot grow, and each comes out about a word shorter than the one before. The time lost becomes a wait of up to about two seconds before the next sentence. Sizing the later chunks differently can only shorten this wait by moving it earlier, into the middle of the sentence. What helps is faster synthesis (a faster engine, model or quantization, or less other work on the CPU at the same time), or a longer first chunk: on that phone, `firstChunkMaxWords: 20` removed most of these waits, while 16 did not. A longer first chunk delays first audio.
+
 If you need `streamRange` to index into your own text exactly, strip markdown yourself with the exported `createMarkdownStreamBuffer()` and pass `stripMarkdown: false`:
 
 ```ts
