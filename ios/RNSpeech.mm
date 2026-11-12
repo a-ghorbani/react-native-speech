@@ -40,8 +40,8 @@ static std::atomic<int> nextUtteranceId{1};
   BOOL _interruptionPaused;
   // OS speech activated a ducking session that is still held. Both only touched on _audioQueue.
   BOOL _osDuckActive;
-  // Bumped by OS speak/resume/pause/stop, each idle arm and neural playback; a pending idle deactivation
-  // then does nothing.
+  // Bumped by OS speak/resume/pause/stop, each idle arm (utterance end or failed speak) and neural
+  // playback; a pending idle deactivation then does nothing.
   NSUInteger _osDuckGeneration;
 }
 
@@ -129,6 +129,12 @@ RCT_EXPORT_MODULE();
   // Dropped, never resolved into a dead runtime.
   _pendingResolve = nil;
   [self cleanupAudio];
+  // A pending idle deactivation dies with this module; other audio must not stay ducked.
+  if (_osDuckActive) {
+    [[AVAudioSession sharedInstance] setActive:NO
+                                   withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+                                         error:nil];
+  }
 }
 
 - (void)handleAudioInterruption:(NSNotification *)notification {
@@ -248,6 +254,8 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 - (void)activateDuckingSession {
   _osDuckGeneration++;
   if (!isDucking) {
+    // This utterance must not play on the session a ducking one left held.
+    [self deactivateDuckingSession];
     return;
   }
   NSError *error = nil;
@@ -296,12 +304,19 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
       return;
     }
     NSUInteger generation = ++strongSelf->_osDuckGeneration;
+    AVAudioSessionCategory category = [AVAudioSession sharedInstance].category;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kOSDuckIdleDeactivationDelay * NSEC_PER_SEC)),
                    strongSelf->_audioQueue, ^{
       RNSpeech *s = weakSelf;
-      if (s && s->_osDuckGeneration == generation && !s.synthesizer.isSpeaking) {
-        [s deactivateDuckingSession];
+      if (!s || s->_osDuckGeneration != generation || s.synthesizer.isSpeaking) {
+        return;
       }
+      if (![[AVAudioSession sharedInstance].category isEqualToString:category]) {
+        // The app took the session over (e.g. opened the mic): not ours to end.
+        s->_osDuckActive = NO;
+        return;
+      }
+      [s deactivateDuckingSession];
     });
   });
 }
