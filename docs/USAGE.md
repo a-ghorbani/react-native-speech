@@ -231,7 +231,7 @@ Speech.initialize(options: VoiceOptions): void
 | `ducking`    | `boolean`                         | If `true`, temporarily lowers audio from other apps while speech is active. Defaults to `false` | Both             |
 | `silentMode` | `'obey' \| 'respect' \| 'ignore'` | Controls how speech interacts with the device's silent switch. Ignored if `ducking` is `true`   | iOS only         |
 
-On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine.
+On Android, neural engines (Kokoro, Kitten, Supertonic and add-ons) always ask other apps to duck while they speak, whatever `ducking` says; the option applies to the OS engine. For the OS engine, `ducking` and `silentMode` can be set in `Speech.initialize({engine: 'os-native', ducking, silentMode})` and in a speak's or stream's options; a speak's own value wins. With `ducking: true`, Android OS speech also gets call and alarm interruptions (see [Audio interruptions](#audio-interruptions)).
 
 **silentMode Options (iOS only):**
 
@@ -772,6 +772,8 @@ const subscription = onAudioInterruption(event => {
 // Later:
 subscription.remove();
 ```
+
+**OS engine.** On iOS, OS speech pauses on an interruption (a call, an alarm) and both events fire, whatever `ducking` says. On Android, OS speech gets them only with `ducking: true` (in `Speech.initialize({engine: 'os-native', ducking: true})` or a speak's options): Android tells only an app that holds audio focus, and holding focus ducks other apps, so `ducking: false` takes no focus and gets no events. With `ducking: true`, OS speech holds focus for its whole queue or stream and releases it 5 s after it goes idle. A call or alarm pauses it (`onPause`, then `began`); when it ends, `ended` arrives with `shouldResume: true`, and speech stays paused until you call `Speech.resume()` (it continues from the paused sentence) or `Speech.stop()`. If another app takes focus for good (it starts playing music), OS speech stops (`onStopped`, then `began`).
 
 ### Headphones or Bluetooth removed (iOS, neural engines)
 
