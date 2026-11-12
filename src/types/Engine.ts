@@ -125,7 +125,10 @@ export interface SynthesisOptions {
    * `firstChunkMaxWords` complete words, so audio starts sooner. In a
    * stream, the chunks after it grow from there, each limited to about 4
    * times the previous one and cut at a sentence end or else a clause mark
-   * (a longer sentence with no clause mark stays whole), until the limit
+   * (a longer sentence with no clause mark stays whole; on engines that
+   * measure synthesis speed, a chunk after one that ended between two
+   * words, such as a first chunk cut at `firstChunkMaxWords`, may be cut at
+   * a word so its synthesis keeps up), until the limit
    * reaches `maxChunkSize`; later chunks keep sentence boundaries. Ignored
    * by the OS engine.
    * @platform neural-engines

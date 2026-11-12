@@ -411,17 +411,19 @@ export class EngineStreamSession<
    * Largest next chunk whose synthesis fits in the audio queued ahead of
    * it (the rest of the playing chunk plus chunks already synthesized) at
    * the last chunk's synthesis rate, and at least MIN_GROWTH times that
-   * chunk. Null before the first chunk is synthesized, or when nothing is
-   * queued (also the case for audio without durations): the
-   * chunker's own ramp applies.
+   * chunk, or the same size when that chunk ended mid-phrase: the phrase
+   * is cut already, and a chunk that fits beats a long wait (#137). Null
+   * before the first chunk is synthesized, or when nothing is queued (also
+   * the case for audio without durations): the chunker's own ramp applies.
    */
   private nextChunkCap(): number | null {
     const queued = Math.max(0, this.playingUntil - Date.now()) + this.queuedMs;
     if (this.synthMsPerChar === null || queued <= 0) {
       return null;
     }
+    const growth = this.chunker.endsMidPhrase ? 1 : MIN_GROWTH;
     return Math.floor(
-      Math.max(queued / this.synthMsPerChar, MIN_GROWTH * this.lastChunkChars),
+      Math.max(queued / this.synthMsPerChar, growth * this.lastChunkChars),
     );
   }
 

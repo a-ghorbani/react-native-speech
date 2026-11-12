@@ -62,6 +62,7 @@ async function timedStream(
   synthMsPerChar: number,
   audioMsPerChar = 66,
   firstChunk: 'clause' | 'sentence' = 'clause',
+  firstChunkMaxWords?: number,
 ) {
   const t0 = Date.now();
   const plays: {text: string; start: number; end: number}[] = [];
@@ -83,6 +84,7 @@ async function timedStream(
     stopPlayback: async () => {},
     maxChunkSize: 200,
     firstChunk,
+    firstChunkMaxWords,
   });
   let done = false;
   (async () => {
@@ -304,5 +306,49 @@ describe('EngineStreamSession pacing (#83)', () => {
     expect(texts[0]).toBe('one, two, three, ');
     expect(texts[1]!.length).toBeLessThanOrEqual(68);
     expect(texts[1]!.length).toBeGreaterThan(34);
+  });
+
+  // A first sentence with no clause mark: chunk 1 is cut at firstChunkMaxWords (#137).
+  const LONG_FIRST =
+    'The best time to plant tomatoes outdoors in most temperate climates is a week or two after the last spring frost when the soil has warmed up to at least sixteen degrees and the nights stay mild. Start the seeds indoors about six weeks earlier. Water them deeply but not too often, and give them plenty of sun. ';
+
+  test('after a word-capped first chunk, synthesis at 0.83x real time: no wait after chunk 1 (#137)', async () => {
+    jest.useFakeTimers();
+    const {chunks, gaps} = await timedStream(LONG_FIRST, 55, 66, 'clause', 16);
+    expect(chunks.join('')).toBe(LONG_FIRST);
+    expect(chunks[0]!.trim().split(/\s+/)).toHaveLength(16);
+    // Base: chunk 2 may be 2x chunk 1, so it takes the rest of the sentence and the next one (159 chars), ~3 s gap.
+    expect(gaps[0]).toBeLessThanOrEqual(0);
+    // Cut at a word within the sentence, sized to chunk 1's audio.
+    expect(chunks[1]).toMatch(/[a-z] $/);
+    expect(chunks[0]!.length + chunks[1]!.length).toBeLessThan(
+      LONG_FIRST.indexOf('Start'),
+    );
+  });
+
+  test('after a word-capped first chunk, fast synthesis still gets the rest of the sentence whole', async () => {
+    jest.useFakeTimers();
+    const {chunks, gaps} = await timedStream(LONG_FIRST, 15, 66, 'clause', 16);
+    expect(chunks[0]!.length + chunks[1]!.length).toBe(
+      LONG_FIRST.indexOf('Start'),
+    );
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(0);
+  });
+
+  test('after a word-capped first chunk, synthesis slower than playback: chunk 2 is not smaller than chunk 1', async () => {
+    jest.useFakeTimers();
+    const {chunks} = await timedStream(LONG_FIRST, 100, 66, 'clause', 16);
+    expect(chunks.join('')).toBe(LONG_FIRST);
+    expect(chunks[1]!.length).toBeGreaterThanOrEqual(chunks[0]!.length - 10);
+  });
+
+  test('after a word-capped first chunk, the last word of a sentence is never cut off on its own', async () => {
+    jest.useFakeTimers();
+    for (const synth of [36, 38, 40, 42, 44]) {
+      const {chunks} = await timedStream(LONG_FIRST, synth);
+      expect(chunks.join('')).toBe(LONG_FIRST);
+      expect(chunks).not.toContain('mild. ');
+      expect(chunks.some(c => c.startsWith('mild.'))).toBe(false);
+    }
   });
 });

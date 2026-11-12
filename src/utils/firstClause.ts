@@ -81,6 +81,33 @@ export function lastWordEnd(text: string, limit: number): number {
 }
 
 /**
+ * End (after its whitespace) of the first word whose last character is at
+ * `limit - 1` or later: the word that crosses `limit`, or the next one
+ * when a word ends exactly there. -1 while that word is still incomplete.
+ */
+export function nextWordEnd(text: string, limit: number): number {
+  const re = /\S\s+/g;
+  re.lastIndex = Math.max(0, limit - 1);
+  const m = re.exec(text);
+  return m ? m.index + m[0].length : -1;
+}
+
+/**
+ * Whether `text` ends at a sentence end (not an abbreviation's period) or
+ * a clause mark.
+ */
+export function endsAtBreak(text: string): boolean {
+  const clause = new RegExp(
+    `(?:${CLAUSE_END_RE.source}|${CJK_CLAUSE_END_RE.source})$`,
+  );
+  if (clause.test(text)) {
+    return true;
+  }
+  const sentence = new RegExp(`(?:${SENTENCE_END_RE.source})$`).exec(text);
+  return sentence !== null && !isAbbreviationPeriod(text, sentence.index);
+}
+
+/**
  * End of the last CJK character within `limit`, for text written without
  * spaces when it has no punctuation to cut at either. -1 if there is none.
  */

@@ -1045,3 +1045,103 @@ describe('StreamingChunker setChunkCap (#83)', () => {
     expect(chunks.every(t => /\. ?$/.test(t))).toBe(true);
   });
 });
+
+describe('StreamingChunker after a word-capped first chunk (#137)', () => {
+  const LONG =
+    'The best time to plant tomatoes outdoors in most temperate climates is a week or two after the last spring frost when the soil has warmed up to at least sixteen degrees and the nights stay mild. ';
+
+  test('a first chunk cut at firstChunkMaxWords ends mid-phrase; one cut at a clause mark does not', () => {
+    const capped = new StreamingChunker(200, 'clause', 6);
+    capped.append(LONG);
+    expect(capped.tryPeek()!.text).toBe('The best time to plant tomatoes ');
+    expect(capped.endsMidPhrase).toBe(true);
+
+    const clause = new StreamingChunker(200, 'clause', 6);
+    clause.append(`${COUNT}. `);
+    expect(clause.tryPeek()!.text).toBe('one, two, three, ');
+    expect(clause.endsMidPhrase).toBe(false);
+  });
+
+  test('with no clause mark in range, the next chunk is cut at the last word end within the cap', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append(LONG);
+    chunker.tryPeek();
+    chunker.setChunkCap(() => 40);
+    const second = chunker.tryPeek()!.text;
+    expect(second).toBe('outdoors in most temperate climates is ');
+    expect(second.length).toBeLessThanOrEqual(40);
+    expect(chunker.endsMidPhrase).toBe(true);
+    // Still mid-phrase: the chunk after it is cut the same way.
+    expect(chunker.tryPeek()!.text).toBe(
+      'a week or two after the last spring ',
+    );
+  });
+
+  test('a clause mark in the second half of the cap still wins over a word end', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append(
+      'The best time to plant tomatoes outdoors is after the frost, when the soil has warmed up to at least sixteen degrees. ',
+    );
+    chunker.tryPeek();
+    chunker.setChunkCap(() => 40);
+    expect(chunker.tryPeek()!.text).toBe('outdoors is after the frost, ');
+    expect(chunker.endsMidPhrase).toBe(false);
+  });
+
+  test('when the ramp cap is the tighter one, the sentence stays whole (no word cut on the ramp alone)', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append(LONG);
+    chunker.tryPeek();
+    // Ramp cap 4 x 32 = 128 binds; no consumer cap.
+    expect(chunker.tryPeek()!.text).toBe(LONG.slice(32));
+    expect(chunker.endsMidPhrase).toBe(false);
+  });
+
+  test('a consumer cap above the rest of the sentence keeps it whole', () => {
+    // 12 words: ramp cap 4 x 73 is past maxChunkSize, so only the consumer cap applies.
+    const chunker = new StreamingChunker(200, 'clause', 12);
+    chunker.append(LONG);
+    const first = chunker.tryPeek()!.text;
+    expect(chunker.endsMidPhrase).toBe(true);
+    chunker.setChunkCap(() => 130);
+    expect(chunker.tryPeek()!.text).toBe(LONG.slice(first.length));
+    expect(chunker.endsMidPhrase).toBe(false);
+  });
+
+  test('after a first chunk that ends at a clause mark, a capped chunk is never a word cut', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append(`Yes, of course, ${LONG}`);
+    expect(chunker.tryPeek()!.text).toBe('Yes, of course, ');
+    chunker.setChunkCap(() => 40);
+    expect(chunker.tryPeek()!.text).toBe(LONG);
+  });
+
+  test('a sentence that ends with the word crossing the cap stays whole', () => {
+    const chunker = new StreamingChunker(200, 'clause', 12);
+    chunker.append(LONG);
+    const first = chunker.tryPeek()!.text;
+    const rest = LONG.slice(first.length);
+    // The cap ends inside "mild.", the last word of the sentence.
+    chunker.setChunkCap(() => rest.length - 3);
+    expect(chunker.tryPeek()!.text).toBe(rest);
+    expect(chunker.endsMidPhrase).toBe(false);
+  });
+
+  test('waits for the word crossing the cap before cutting', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append('The best time to plant tomatoes outdoors in most temper');
+    chunker.tryPeek();
+    chunker.setChunkCap(() => 20);
+    // "temper" may still grow into "temperate." and end the sentence.
+    expect(chunker.tryPeek()).toBeUndefined();
+    chunker.append('ate climates is ');
+    expect(chunker.tryPeek()!.text).toBe('outdoors in most ');
+  });
+
+  test("a first chunk cut right after an abbreviation's period is still mid-phrase", () => {
+    const chunker = new StreamingChunker(200, 'clause', 3);
+    chunker.append('Ask the Dr. Smith about the dosage before you start. ');
+    expect(chunker.tryPeek()!.text).toBe('Ask the Dr. ');
+    expect(chunker.endsMidPhrase).toBe(true);
+  });
+});
