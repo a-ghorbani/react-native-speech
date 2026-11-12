@@ -13,9 +13,7 @@ import android.content.Context
 import android.speech.tts.Voice
 import android.media.AudioFormat
 import android.media.AudioTrack
-import android.media.AudioManager
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.annotation.SuppressLint
 import android.speech.tts.TextToSpeech
 import android.util.Base64
@@ -81,14 +79,12 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   private var isPaused = false
   private var isResuming = false
+  // Why OS speech is on hold: the app's pause(), or a focus loss while nothing was playing.
+  private var pausedByApp = false
+  private var heldWhileIdle = false
   private var currentQueueIndex = -1
   private val speechQueue = mutableListOf<SpeechQueueItem>()
 
-  private val audioManager: AudioManager by lazy {
-    reactApplicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-  }
-  private var audioFocusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
-  private var audioFocusRequest: AudioFocusRequest? = null
   private var isDucking = false
 
   // Neural Audio Player state
@@ -157,52 +153,113 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     { neuralFocusManager.abandonFocus() }
   )
 
+  // OS speech (TextToSpeech) holds focus only with `ducking`, for the whole queue: released
+  // HELD_FOCUS_IDLE_MS after it goes idle, so other audio does not swell between utterances.
+  // Listener and timer run under queueLock.
+  private val osFocusManager: AudioFocusManager by lazy {
+    AudioFocusManager(reactApplicationContext, queueLock).apply {
+      listener = { event ->
+        when (event) {
+          is FocusEvent.LostTransient -> {
+            pauseOsSpeech()
+            emitOnAudioInterruption(Arguments.createMap().apply { putString("type", "began") })
+          }
+          is FocusEvent.Lost -> {
+            stopOsSpeech()
+            emitOnAudioInterruption(Arguments.createMap().apply { putString("type", "began") })
+          }
+          is FocusEvent.Gained -> {
+            // A hold with nothing queued during it has nothing to resume: lift it.
+            if (heldWhileIdle && speechQueue.none { it.status == SpeechStatus.PENDING }) {
+              isPaused = false
+            }
+            heldWhileIdle = false
+            // Don't auto-resume; let JS decide based on the event. Speech the app paused stays paused.
+            emitOnAudioInterruption(
+              Arguments.createMap().apply {
+                putString("type", "ended")
+                putBoolean("shouldResume", !pausedByApp)
+              }
+            )
+          }
+          // TextToSpeech sets the volume per utterance; keep playing.
+          is FocusEvent.Duck, is FocusEvent.Unduck -> Unit
+        }
+      }
+    }
+  }
+
+  private val osIdleFocusRelease = IdleFocusRelease(
+    queueLock,
+    HELD_FOCUS_IDLE_MS,
+    { delayMs, task -> mainHandler.postDelayed(task, delayMs) },
+    { osFocusManager.abandonFocus() }
+  )
+
+  /**
+   * With `ducking`, before OS speech is queued. While on hold the current request waits for the
+   * regain; during a loss (also after a stop() during it) what is queued is held until [resume].
+   */
+  private fun holdOsFocus() {
+    synchronized(queueLock) {
+      if (osFocusManager.isLost && !isPaused) {
+        isPaused = true
+        heldWhileIdle = true
+      }
+      if (isPaused || osFocusManager.isLost) return
+      osIdleFocusRelease.cancel()
+      osFocusManager.requestFocus()
+    }
+  }
+
+  /**
+   * Holds OS speech for a transient focus loss (a call, an alarm): what plays pauses at its
+   * position, and nothing queued during the loss starts until [resume]. Focus is released after the
+   * idle grace if speech is not resumed.
+   */
+  private fun pauseOsSpeech() {
+    synchronized(queueLock) {
+      osIdleFocusRelease.arm()
+      if (isPaused) return
+      if (!isSupportedPausing) {
+        // Before Android 8 TextToSpeech cannot pause: stop rather than talk over the call.
+        stopOsSpeech()
+        return
+      }
+      val active = synthesizer.isSpeaking || speechQueue.any {
+        it.status == SpeechStatus.PENDING || it.status == SpeechStatus.SPEAKING
+      }
+      isPaused = true
+      if (active) synthesizer.stop() else heldWhileIdle = true
+    }
+  }
+
+  /** Stops OS speech and drops its queue; releases its focus (after the regain, during a transient loss). */
+  private fun stopOsSpeech() {
+    // isSpeaking is false between two queued utterances; the queue still has one to speak.
+    val queued = synchronized(queueLock) {
+      speechQueue.any { it.status == SpeechStatus.PENDING || it.status == SpeechStatus.SPEAKING }
+    }
+    if (synthesizer.isSpeaking || isPaused || queued) {
+      synthesizer.stop()
+      synchronized(queueLock) {
+        if (currentQueueIndex in speechQueue.indices) {
+          val item = speechQueue[currentQueueIndex]
+          emitOnStopped(getEventData(item.utteranceId))
+        }
+        resetQueueState()
+      }
+    }
+    synchronized(queueLock) {
+      osIdleFocusRelease.cancel()
+      osFocusManager.abandonFocus()
+    }
+  }
+
   init {
     initializeTTS()
     // Touch the lazy manager so the listener is installed up front.
     neuralFocusManager
-  }
-
-  private fun activateDuckingSession() {
-    if (!isDucking) return
-
-    audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val audioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .build()
-      val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(audioAttributes)
-        .setOnAudioFocusChangeListener(audioFocusChangeListener!!)
-        .build()
-      audioFocusRequest = focusRequest
-      audioManager.requestAudioFocus(focusRequest)
-    } else {
-      @Suppress("DEPRECATION")
-      audioManager.requestAudioFocus(
-        audioFocusChangeListener,
-        AudioManager.STREAM_MUSIC,
-        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-      )
-    }
-  }
-
-  private fun deactivateDuckingSession() {
-    if (!isDucking) return
-    audioFocusChangeListener ?: return
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      audioFocusRequest?.let { request ->
-        audioManager.abandonAudioFocusRequest(request)
-      }
-    } else {
-      @Suppress("DEPRECATION")
-      audioManager.abandonAudioFocus(audioFocusChangeListener)
-    }
-    audioFocusChangeListener = null
-    audioFocusRequest = null
   }
 
   private fun processPendingOperations() {
@@ -269,6 +326,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       currentQueueIndex = -1
       isPaused = false
       isResuming = false
+      pausedByApp = false
+      heldWhileIdle = false
     }
   }
 
@@ -330,6 +389,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
           override fun onStart(utteranceId: String) {
             synchronized(queueLock) {
               speechQueue.find { it.utteranceId == utteranceId }?.let { item ->
+                osIdleFocusRelease.cancel()
                 item.status = SpeechStatus.SPEAKING
                 if (isResuming && item.position > 0) {
                   emitOnResume(getEventData(utteranceId))
@@ -344,11 +404,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
             synchronized(queueLock) {
               speechQueue.find { it.utteranceId == utteranceId }?.let { item ->
                 item.status = SpeechStatus.COMPLETED
-                deactivateDuckingSession()
                 emitOnFinish(getEventData(utteranceId))
                 if (!isPaused) {
                   currentQueueIndex++
                   processNextQueueItem()
+                  if (currentQueueIndex < 0) osIdleFocusRelease.arm()
                 }
               }
             }
@@ -357,11 +417,11 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
             synchronized(queueLock) {
               speechQueue.find { it.utteranceId == utteranceId }?.let { item ->
                 item.status = SpeechStatus.ERROR
-                deactivateDuckingSession()
                 emitOnError(getEventData(utteranceId))
                 if (!isPaused) {
                   currentQueueIndex++
                   processNextQueueItem()
+                  if (currentQueueIndex < 0) osIdleFocusRelease.arm()
                 }
               }
             }
@@ -578,56 +638,60 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun stop(promise: Promise) {
     ensureInitialized(promise) {
-      // isSpeaking is false between two queued utterances; the queue still has one to speak.
-      val queued = synchronized(queueLock) {
-        speechQueue.any { it.status == SpeechStatus.PENDING || it.status == SpeechStatus.SPEAKING }
-      }
-      if (synthesizer.isSpeaking || isPaused || queued) {
-        synthesizer.stop()
-        deactivateDuckingSession()
-        synchronized(queueLock) {
-          if (currentQueueIndex in speechQueue.indices) {
-            val item = speechQueue[currentQueueIndex]
-            emitOnStopped(getEventData(item.utteranceId))
-          }
-          resetQueueState()
-        }
-      }
+      stopOsSpeech()
       promise.resolve(null)
     }
   }
 
   override fun pause(promise: Promise) {
     ensureInitialized(promise) {
-      if (!isSupportedPausing || isPaused || !synthesizer.isSpeaking || speechQueue.isEmpty()) {
-        promise.resolve(false)
-      } else {
-        isPaused = true
-        synthesizer.stop()
-        deactivateDuckingSession()
-        promise.resolve(true)
+      synchronized(queueLock) {
+        if (!isSupportedPausing || isPaused || !synthesizer.isSpeaking || speechQueue.isEmpty()) {
+          promise.resolve(false)
+        } else {
+          isPaused = true
+          pausedByApp = true
+          synthesizer.stop()
+          osIdleFocusRelease.arm()
+          promise.resolve(true)
+        }
       }
     }
   }
 
   override fun resume(promise: Promise) {
     ensureInitialized(promise) {
-      if (!isSupportedPausing || !isPaused || speechQueue.isEmpty() || currentQueueIndex < 0) {
-        promise.resolve(false)
-        return@ensureInitialized
-      }
       synchronized(queueLock) {
-        val pausedItemIndex = speechQueue.indexOfFirst { it.status == SpeechStatus.PAUSED }
-        if (pausedItemIndex >= 0) {
-          currentQueueIndex = pausedItemIndex
-          isPaused = false
-          activateDuckingSession()
-          processNextQueueItem()
-          promise.resolve(true)
-        } else {
-          isPaused = false
+        // Without pause support (before Android 8) nothing is PAUSED, but a held queue still resumes.
+        if (!isPaused) {
           promise.resolve(false)
+          return@ensureInitialized
         }
+        // The paused utterance, else the first one queued during the hold.
+        val index = speechQueue.indexOfFirst { it.status == SpeechStatus.PAUSED }
+          .takeIf { it >= 0 } ?: speechQueue.indexOfFirst { it.status == SpeechStatus.PENDING }
+        if (index < 0) {
+          isPaused = false
+          pausedByApp = false
+          heldWhileIdle = false
+          promise.resolve(false)
+          return@ensureInitialized
+        }
+        if (isDucking) {
+          osIdleFocusRelease.cancel()
+          // Refused during a call: stay paused.
+          if (!osFocusManager.requestFocus()) {
+            osIdleFocusRelease.arm()
+            promise.resolve(false)
+            return@ensureInitialized
+          }
+        }
+        isPaused = false
+        pausedByApp = false
+        heldWhileIdle = false
+        currentQueueIndex = index
+        processNextQueueItem()
+        promise.resolve(true)
       }
     }
   }
@@ -646,7 +710,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     }
     ensureInitialized(promise) {
       isDucking = globalOptions["ducking"] as? Boolean ?: false
-      activateDuckingSession()
+      if (isDucking) holdOsFocus()
       val utteranceId = getUniqueID()
       val queueItem = SpeechQueueItem(text = text, options = emptyMap(), utteranceId = utteranceId)
       synchronized(queueLock) {
@@ -676,7 +740,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     ensureInitialized(promise) {
       val validatedOptions = getValidatedOptions(options)
       isDucking = validatedOptions["ducking"] as? Boolean ?: false
-      activateDuckingSession()
+      if (isDucking) holdOsFocus()
       val utteranceId = getUniqueID()
       val queueItem = SpeechQueueItem(text = text, options = validatedOptions, utteranceId = utteranceId)
       synchronized(queueLock) {
@@ -1035,6 +1099,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     idleFocusRelease.cancel()
     // Now, not on regain: nothing may reach the dead runtime.
     neuralFocusManager.abandonFocusNow()
+    osIdleFocusRelease.cancel()
+    osFocusManager.abandonFocusNow()
     audioExecutor.shutdownNow()
   }
 }

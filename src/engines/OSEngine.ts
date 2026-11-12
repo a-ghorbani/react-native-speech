@@ -39,6 +39,20 @@ export class OSEngine implements TTSEngineInterface<void> {
   private early = new Map<number, NativeEvent[]>();
   private chunkProgressCallback: ChunkProgressCallback | null = null;
   private listening = false;
+  private audioDefaults: Pick<SynthesisOptions, 'ducking' | 'silentMode'> = {};
+
+  /**
+   * `ducking` / `silentMode` from `Speech.initialize({engine: 'os-native'})`,
+   * used when a speak's own options leave them out.
+   */
+  setAudioDefaults(
+    defaults: Pick<SynthesisOptions, 'ducking' | 'silentMode'>,
+  ): void {
+    this.audioDefaults = {
+      ducking: defaults.ducking,
+      silentMode: defaults.silentMode,
+    };
+  }
 
   setChunkProgressCallback(callback: ChunkProgressCallback | null): void {
     this.chunkProgressCallback = callback;
@@ -184,13 +198,17 @@ export class OSEngine implements TTSEngineInterface<void> {
     text: string,
     options?: SynthesisOptions,
   ): Promise<number> {
-    if (options) {
+    const ducking = options?.ducking ?? this.audioDefaults.ducking;
+    const silentMode = options?.silentMode ?? this.audioDefaults.silentMode;
+    if (options || ducking !== undefined || silentMode !== undefined) {
       return NativeSpeech.speakWithOptions(text, {
-        language: options.language,
-        voice: options.voiceId,
-        pitch: options.pitch,
-        rate: options.speed, // Map speed to rate
-        volume: options.volume,
+        language: options?.language,
+        voice: options?.voiceId,
+        pitch: options?.pitch,
+        rate: options?.speed, // Map speed to rate
+        volume: options?.volume,
+        ducking,
+        silentMode,
       });
     }
     return NativeSpeech.speak(text);

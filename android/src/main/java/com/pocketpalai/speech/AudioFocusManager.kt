@@ -165,6 +165,10 @@ class AudioFocusManager(context: Context, private val lock: Any) {
   val isDucked: Boolean
     get() = gate.isDucked
 
+  /** A loss went out and its regain has not. */
+  val isLost: Boolean
+    get() = gate.isLost
+
   var listener: ((FocusEvent) -> Unit)? = null
 
   /**
