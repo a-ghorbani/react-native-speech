@@ -26,6 +26,11 @@ import {
 
 export {findFirstClauseEnd} from '../utils/firstClause';
 
+/** Text that ends at a sentence end or a clause mark. */
+const BREAK_END_RE = new RegExp(
+  `(?:${SENTENCE_END_RE.source}|[,;:—–،؛，；：、]\\s*)$`,
+);
+
 /**
  * With `firstChunk: 'clause'`, each chunk after the first may be at most
  * this many times the previous one, so it is synthesized while the
@@ -45,6 +50,8 @@ export class StreamingChunker {
   private firstTaken = false;
   /** Size limit for the next chunk while ramping up; null once the ramp ends. */
   private rampCap: number | null = null;
+  /** The last chunk was cut between two words of a phrase (#137). */
+  private midPhrase = false;
   /** Consumer's size limit, read when a chunk is cut (`setChunkCap`). */
   private chunkCap: (() => number | null) | null = null;
 
@@ -138,6 +145,15 @@ export class StreamingChunker {
     this.chunkCap = cap;
   }
 
+  /**
+   * Whether the last chunk ended between two words: a first chunk cut at
+   * `firstChunkMaxWords`, or a chunk after it cut at a word to fit the
+   * consumer cap.
+   */
+  get endsMidPhrase(): boolean {
+    return this.midPhrase;
+  }
+
   /** Total chars appended so far. */
   get totalAppended(): number {
     return this.absoluteOffset + this.buffer.length;
@@ -184,25 +200,31 @@ export class StreamingChunker {
     return chunk;
   }
 
-  /** The tighter of the ramp cap and the consumer's; null when neither is below maxChunkSize. */
-  private currentCap(): number | null {
+  /**
+   * The tighter of the ramp cap and the consumer's, and whether the
+   * consumer's is the one that applies; null when neither is below
+   * maxChunkSize.
+   */
+  private currentCap(): {cap: number; byConsumer: boolean} | null {
     const consumer =
       this.firstChunk === 'clause' && this.chunkCap ? this.chunkCap() : null;
     const cap = Math.min(this.rampCap ?? Infinity, consumer ?? Infinity);
-    return cap < this.maxChunkSize ? cap : null;
+    return cap < this.maxChunkSize ? {cap, byConsumer: cap === consumer} : null;
   }
 
   /**
    * While ramping: sentences up to the cap; else, once the buffer reaches
-   * the cap, the last clause mark in its second half; else the first
-   * sentence alone, however long. Null (no sentence end yet) leaves the
-   * cut to the soft cut.
+   * the cap, the last clause mark in its second half, or, when the last
+   * chunk already ended mid-phrase and the consumer's cap applies, the last
+   * word end (#137); else the first sentence alone, however long. Null (no sentence end yet) leaves
+   * the cut to the soft cut.
    */
   private extractRamped(): TextChunk | null {
-    const cap = this.currentCap();
-    if (cap === null) {
+    const limit = this.currentCap();
+    if (limit === null) {
       return null;
     }
+    const {cap, byConsumer} = limit;
     const sentences = this.extractSentences(cap, false);
     if (sentences) {
       return sentences;
@@ -211,6 +233,11 @@ export class StreamingChunker {
       const end = lastClauseEnd(this.buffer, cap);
       if (end >= cap / 2) {
         return this.take(end);
+      }
+      const word =
+        this.midPhrase && byConsumer ? lastWordEnd(this.buffer, cap) : -1;
+      if (word > end) {
+        return this.take(word, true);
       }
     }
     return this.extractSentences(cap);
@@ -221,7 +248,7 @@ export class StreamingChunker {
     if (end <= 0) {
       return null;
     }
-    return this.take(end);
+    return this.take(end, !BREAK_END_RE.test(this.buffer.slice(0, end)));
   }
 
   /**
@@ -300,7 +327,8 @@ export class StreamingChunker {
   }
 
   /** Remove the first `end` chars of the buffer as a chunk. */
-  private take(end: number): TextChunk {
+  private take(end: number, midPhrase = false): TextChunk {
+    this.midPhrase = midPhrase;
     const chunk: TextChunk = {
       text: this.buffer.slice(0, end),
       startIndex: this.absoluteOffset,
