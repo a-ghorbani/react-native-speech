@@ -273,6 +273,9 @@ export default class Speech {
       log.debug(`initialize(${engine}) superseded by a later call`);
       return;
     }
+    if (instance === osEngine) {
+      osEngine.setAudioDefaults(engineConfig as SpeechInitAudioDefaults);
+    }
     engineManager.setDefaultEngine(engine);
     Speech.currentEngine = engine;
     log.debug(`currentEngine set to: ${Speech.currentEngine}`);
