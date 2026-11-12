@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.content.Intent
 import android.content.Context
 import android.speech.tts.Voice
@@ -803,8 +802,7 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       val packageManager = activity.packageManager
       val enginePackage = VoiceInstallerTarget.enginePackage(
         selected = selectedEngine,
-        instanceDefault = if (::synthesizer.isInitialized) synthesizer.defaultEngine else null,
-        settingDefault = Settings.Secure.getString(activity.contentResolver, Settings.Secure.TTS_DEFAULT_SYNTH),
+        default = if (::synthesizer.isInitialized) synthesizer.defaultEngine else null,
         hasInstaller = { pkg ->
           Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(pkg).resolveActivity(packageManager) != null
         }

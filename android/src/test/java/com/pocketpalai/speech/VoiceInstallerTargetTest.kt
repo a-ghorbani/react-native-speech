@@ -11,27 +11,22 @@ class VoiceInstallerTargetTest {
 
   @Test
   fun selectedEngineWins() {
-    assertEquals(samsung, VoiceInstallerTarget.enginePackage(samsung, google, google, both::contains))
+    assertEquals(samsung, VoiceInstallerTarget.enginePackage(samsung, google, both::contains))
   }
 
   @Test
-  fun instanceDefaultWhenNothingSelected() {
-    assertEquals(google, VoiceInstallerTarget.enginePackage(null, google, samsung, both::contains))
-  }
-
-  @Test
-  fun settingDefaultWhenTtsNotCreatedYet() {
-    assertEquals(samsung, VoiceInstallerTarget.enginePackage(null, null, samsung, both::contains))
-    assertEquals(samsung, VoiceInstallerTarget.enginePackage("", "", samsung, both::contains))
+  fun defaultEngineWhenNothingSelected() {
+    assertEquals(google, VoiceInstallerTarget.enginePackage(null, google, both::contains))
+    assertEquals(google, VoiceInstallerTarget.enginePackage("", google, both::contains))
   }
 
   @Test
   fun noPackageWhenTheEngineHasNoInstaller() {
-    assertNull(VoiceInstallerTarget.enginePackage(null, "com.example.noinstaller", google, both::contains))
+    assertNull(VoiceInstallerTarget.enginePackage("com.example.noinstaller", google, both::contains))
   }
 
   @Test
   fun noPackageWhenNoEngineIsKnown() {
-    assertNull(VoiceInstallerTarget.enginePackage(null, null, null, both::contains))
+    assertNull(VoiceInstallerTarget.enginePackage(null, null, both::contains))
   }
 }
