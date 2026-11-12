@@ -193,6 +193,8 @@ if (engines.length > 0) {
 
 Opens the system activity that allows the user to install or manage TTS voice data.
 
+It opens the installer of the engine set with `setEngine()`, or of the default engine, so a phone with several TTS engines (for example Samsung TTS and Google TTS) does not show an engine chooser. If that engine has no installer, Android picks the activity as before. On Samsung phones with Samsung TTS as the system default, apps speak with Google TTS (Samsung blocks other apps from its engine), so Google's installer opens. The promise rejects with `UNSUPPORTED_OPERATION` when no installer exists.
+
 **API Definition**
 
 ```ts

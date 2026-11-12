@@ -679,7 +679,8 @@ export default class Speech {
   }
 
   /**
-   * Opens the system UI to install or update TTS voice data
+   * Opens the system UI to install or update TTS voice data, for the engine set with
+   * `setEngine()` or else the default engine
    * @platform Android
    */
   public static openVoiceDataInstaller(): Promise<void> {
