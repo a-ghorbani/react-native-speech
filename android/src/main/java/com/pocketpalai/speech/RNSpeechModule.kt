@@ -79,6 +79,9 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   private var isPaused = false
   private var isResuming = false
+  // Why OS speech is on hold: the app's pause(), or a focus loss while nothing was playing.
+  private var pausedByApp = false
+  private var heldWhileIdle = false
   private var currentQueueIndex = -1
   private val speechQueue = mutableListOf<SpeechQueueItem>()
 
@@ -166,11 +169,16 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
             emitOnAudioInterruption(Arguments.createMap().apply { putString("type", "began") })
           }
           is FocusEvent.Gained -> {
-            // Don't auto-resume; let JS decide based on the event.
+            // A hold with nothing queued during it has nothing to resume: lift it.
+            if (heldWhileIdle && speechQueue.none { it.status == SpeechStatus.PENDING }) {
+              isPaused = false
+            }
+            heldWhileIdle = false
+            // Don't auto-resume; let JS decide based on the event. Speech the app paused stays paused.
             emitOnAudioInterruption(
               Arguments.createMap().apply {
                 putString("type", "ended")
-                putBoolean("shouldResume", true)
+                putBoolean("shouldResume", !pausedByApp)
               }
             )
           }
@@ -188,23 +196,29 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     { osFocusManager.abandonFocus() }
   )
 
-  /** Called with `ducking` before OS speech plays. */
+  /** With `ducking`, before OS speech is queued. While on hold or lost, the current request waits for the regain. */
   private fun holdOsFocus() {
     synchronized(queueLock) {
+      if (isPaused || osFocusManager.isLost) return
       osIdleFocusRelease.cancel()
       osFocusManager.requestFocus()
     }
   }
 
-  /** Pauses OS speech for a transient focus loss; the paused utterance resumes from its position. */
+  /**
+   * Holds OS speech for a transient focus loss (a call, an alarm): what plays pauses at its
+   * position, and nothing queued during the loss starts until [resume]. Focus is released after the
+   * idle grace if speech is not resumed.
+   */
   private fun pauseOsSpeech() {
     synchronized(queueLock) {
-      val active = speechQueue.any {
+      osIdleFocusRelease.arm()
+      if (!isSupportedPausing || isPaused) return
+      val active = synthesizer.isSpeaking || speechQueue.any {
         it.status == SpeechStatus.PENDING || it.status == SpeechStatus.SPEAKING
       }
-      if (!isSupportedPausing || isPaused || !(synthesizer.isSpeaking || active)) return
       isPaused = true
-      synthesizer.stop()
+      if (active) synthesizer.stop() else heldWhileIdle = true
     }
   }
 
@@ -300,6 +314,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
       currentQueueIndex = -1
       isPaused = false
       isResuming = false
+      pausedByApp = false
+      heldWhileIdle = false
     }
   }
 
@@ -617,35 +633,52 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
 
   override fun pause(promise: Promise) {
     ensureInitialized(promise) {
-      if (!isSupportedPausing || isPaused || !synthesizer.isSpeaking || speechQueue.isEmpty()) {
-        promise.resolve(false)
-      } else {
-        isPaused = true
-        synthesizer.stop()
-        osIdleFocusRelease.arm()
-        promise.resolve(true)
+      synchronized(queueLock) {
+        if (!isSupportedPausing || isPaused || !synthesizer.isSpeaking || speechQueue.isEmpty()) {
+          promise.resolve(false)
+        } else {
+          isPaused = true
+          pausedByApp = true
+          synthesizer.stop()
+          osIdleFocusRelease.arm()
+          promise.resolve(true)
+        }
       }
     }
   }
 
   override fun resume(promise: Promise) {
     ensureInitialized(promise) {
-      if (!isSupportedPausing || !isPaused || speechQueue.isEmpty() || currentQueueIndex < 0) {
-        promise.resolve(false)
-        return@ensureInitialized
-      }
       synchronized(queueLock) {
-        val pausedItemIndex = speechQueue.indexOfFirst { it.status == SpeechStatus.PAUSED }
-        if (pausedItemIndex >= 0) {
-          currentQueueIndex = pausedItemIndex
-          isPaused = false
-          if (isDucking) holdOsFocus()
-          processNextQueueItem()
-          promise.resolve(true)
-        } else {
-          isPaused = false
+        if (!isSupportedPausing || !isPaused) {
           promise.resolve(false)
+          return@ensureInitialized
         }
+        // The paused utterance, else the first one queued during the hold.
+        val index = speechQueue.indexOfFirst { it.status == SpeechStatus.PAUSED }
+          .takeIf { it >= 0 } ?: speechQueue.indexOfFirst { it.status == SpeechStatus.PENDING }
+        if (index < 0) {
+          isPaused = false
+          pausedByApp = false
+          heldWhileIdle = false
+          promise.resolve(false)
+          return@ensureInitialized
+        }
+        if (isDucking) {
+          osIdleFocusRelease.cancel()
+          // Refused during a call: stay paused.
+          if (!osFocusManager.requestFocus()) {
+            osIdleFocusRelease.arm()
+            promise.resolve(false)
+            return@ensureInitialized
+          }
+        }
+        isPaused = false
+        pausedByApp = false
+        heldWhileIdle = false
+        currentQueueIndex = index
+        processNextQueueItem()
+        promise.resolve(true)
       }
     }
   }
