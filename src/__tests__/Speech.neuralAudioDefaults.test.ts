@@ -187,6 +187,7 @@ describe.each(NEURAL)('%s: init defaults', engine => {
   test('a call that sets only one value keeps the other default', async () => {
     await Speech.initialize({engine, ...DEFAULTS} as any);
     await Speech.speak(TEXT, undefined, {ducking: false});
+    expect(mockPlayConfigs.length).toBeGreaterThan(0);
     mockPlayConfigs.forEach(c =>
       expect(audioOf(c)).toEqual({ducking: false, silentMode: 'ignore'}),
     );
@@ -255,7 +256,30 @@ describe('defaults belong to the engine they were given with', () => {
     native.speak.mockClear();
     await Speech.speak('Hello there.');
     const call = native.speakWithOptions.mock.calls[0];
+    expect(call).toBeDefined();
     expect(audioOf(call?.[1])).toEqual({
+      ducking: undefined,
+      silentMode: undefined,
+    });
+  });
+
+  test('a superseded initialize() does not set the defaults', async () => {
+    const spy = KittenEngine.prototype.initialize as jest.Mock;
+    const original = spy.getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>(r => (release = r));
+    spy.mockImplementationOnce(async function (this: any, ...args: any[]) {
+      await gate;
+      return original.apply(this, args);
+    });
+    await Speech.initialize({engine: 'kokoro'} as any);
+    const slow = Speech.initialize({engine: 'kitten', ...DEFAULTS} as any);
+    await Speech.initialize({engine: 'mock-addon'} as any);
+    release();
+    await slow;
+    expect(Speech.getCurrentEngineId()).toBe('mock-addon');
+    await Speech.speak(TEXT);
+    expect(audioOf(addon.calls[0]!.options)).toEqual({
       ducking: undefined,
       silentMode: undefined,
     });
