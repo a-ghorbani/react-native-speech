@@ -2080,8 +2080,10 @@ const RootView: React.FC = () => {
                       setPhonemeMode(false);
                       setSpokenText(ENGLISH_DEFAULT_TEXT);
                     }
+                    if (item.engine !== selectedEngine) {
+                      setAccel(accelDefaultFor(item.engine));
+                    }
                     setSelectedEngine(item.engine);
-                    setAccel(accelDefaultFor(item.engine));
                   }}
                   disabled={isInitializing || isStarted}>
                   <Text
