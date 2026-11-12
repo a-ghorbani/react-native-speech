@@ -254,8 +254,11 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 - (void)activateDuckingSession {
   _osDuckGeneration++;
   if (!isDucking) {
-    // This utterance must not play on the session a ducking one left held.
-    [self deactivateDuckingSession];
+    // This utterance must not play on the session a ducking one left held. While one still plays, its
+    // didFinish releases it instead.
+    if (!self.synthesizer.isSpeaking) {
+      [self deactivateDuckingSession];
+    }
     return;
   }
   NSError *error = nil;
