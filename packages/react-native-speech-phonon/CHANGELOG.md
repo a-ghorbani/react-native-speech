@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.2.1...phonon-v0.2.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* pause() between two chunks holds the next chunk until resume() ([#136](https://github.com/a-ghorbani/react-native-speech/issues/136)) ([788f2ef](https://github.com/a-ghorbani/react-native-speech/commit/788f2efa4d31a6e349362ed512e873c3f951e138))
+* **phonon:** accept core 2.11 in the peer range ([#143](https://github.com/a-ghorbani/react-native-speech/issues/143)) ([fd8ac6d](https://github.com/a-ghorbani/react-native-speech/commit/fd8ac6d8ec1a386b6cc83c2295d527e9a2266a80))
+
 ## [0.2.1](https://github.com/a-ghorbani/react-native-speech/compare/phonon-v0.2.0...phonon-v0.2.1) (2026-11-11)
 
 
