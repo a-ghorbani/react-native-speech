@@ -341,4 +341,14 @@ describe('EngineStreamSession pacing (#83)', () => {
     expect(chunks.join('')).toBe(LONG_FIRST);
     expect(chunks[1]!.length).toBeGreaterThanOrEqual(chunks[0]!.length - 10);
   });
+
+  test('after a word-capped first chunk, the last word of a sentence is never cut off on its own', async () => {
+    jest.useFakeTimers();
+    for (const synth of [36, 38, 40, 42, 44]) {
+      const {chunks} = await timedStream(LONG_FIRST, synth);
+      expect(chunks.join('')).toBe(LONG_FIRST);
+      expect(chunks).not.toContain('mild. ');
+      expect(chunks.some(c => c.startsWith('mild.'))).toBe(false);
+    }
+  });
 });

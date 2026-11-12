@@ -1069,6 +1069,7 @@ describe('StreamingChunker after a word-capped first chunk (#137)', () => {
     chunker.setChunkCap(() => 40);
     const second = chunker.tryPeek()!.text;
     expect(second).toBe('outdoors in most temperate climates is ');
+    expect(second.length).toBeLessThanOrEqual(40);
     expect(chunker.endsMidPhrase).toBe(true);
     // Still mid-phrase: the chunk after it is cut the same way.
     expect(chunker.tryPeek()!.text).toBe(
@@ -1113,5 +1114,34 @@ describe('StreamingChunker after a word-capped first chunk (#137)', () => {
     expect(chunker.tryPeek()!.text).toBe('Yes, of course, ');
     chunker.setChunkCap(() => 40);
     expect(chunker.tryPeek()!.text).toBe(LONG);
+  });
+
+  test('a sentence that ends with the word crossing the cap stays whole', () => {
+    const chunker = new StreamingChunker(200, 'clause', 12);
+    chunker.append(LONG);
+    const first = chunker.tryPeek()!.text;
+    const rest = LONG.slice(first.length);
+    // The cap ends inside "mild.", the last word of the sentence.
+    chunker.setChunkCap(() => rest.length - 3);
+    expect(chunker.tryPeek()!.text).toBe(rest);
+    expect(chunker.endsMidPhrase).toBe(false);
+  });
+
+  test('waits for the word crossing the cap before cutting', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append('The best time to plant tomatoes outdoors in most temper');
+    chunker.tryPeek();
+    chunker.setChunkCap(() => 20);
+    // "temper" may still grow into "temperate." and end the sentence.
+    expect(chunker.tryPeek()).toBeUndefined();
+    chunker.append('ate climates is ');
+    expect(chunker.tryPeek()!.text).toBe('outdoors in most ');
+  });
+
+  test("a first chunk cut right after an abbreviation's period is still mid-phrase", () => {
+    const chunker = new StreamingChunker(200, 'clause', 3);
+    chunker.append('Ask the Dr. Smith about the dosage before you start. ');
+    expect(chunker.tryPeek()!.text).toBe('Ask the Dr. ');
+    expect(chunker.endsMidPhrase).toBe(true);
   });
 });

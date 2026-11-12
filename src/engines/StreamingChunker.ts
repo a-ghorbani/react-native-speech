@@ -18,18 +18,15 @@ import {isAbbreviationPeriod} from '../utils/abbreviations';
 import {
   SENTENCE_END_RE,
   assertFirstChunkMaxWords,
+  endsAtBreak,
   findFirstClauseEnd,
   lastCjkCharEnd,
   lastClauseEnd,
   lastWordEnd,
+  nextWordEnd,
 } from '../utils/firstClause';
 
 export {findFirstClauseEnd} from '../utils/firstClause';
-
-/** Text that ends at a sentence end or a clause mark. */
-const BREAK_END_RE = new RegExp(
-  `(?:${SENTENCE_END_RE.source}|[,;:—–،؛，；：、]\\s*)$`,
-);
 
 /**
  * With `firstChunk: 'clause'`, each chunk after the first may be at most
@@ -216,8 +213,10 @@ export class StreamingChunker {
    * While ramping: sentences up to the cap; else, once the buffer reaches
    * the cap, the last clause mark in its second half, or, when the last
    * chunk already ended mid-phrase and the consumer's cap applies, the last
-   * word end (#137); else the first sentence alone, however long. Null (no sentence end yet) leaves
-   * the cut to the soft cut.
+   * word end within it, or the end of the word that crosses it when that
+   * word ends the sentence or a clause (#137); else the first sentence
+   * alone, however long. Null (no sentence end yet) leaves the cut to the soft
+   * cut.
    */
   private extractRamped(): TextChunk | null {
     const limit = this.currentCap();
@@ -234,10 +233,15 @@ export class StreamingChunker {
       if (end >= cap / 2) {
         return this.take(end);
       }
-      const word =
-        this.midPhrase && byConsumer ? lastWordEnd(this.buffer, cap) : -1;
-      if (word > end) {
-        return this.take(word, true);
+      if (this.midPhrase && byConsumer) {
+        const over = nextWordEnd(this.buffer, cap);
+        if (over > 0 && endsAtBreak(this.buffer.slice(0, over))) {
+          return this.take(over);
+        }
+        const word = lastWordEnd(this.buffer, cap);
+        if (over > 0 && word > end) {
+          return this.take(word, true);
+        }
       }
     }
     return this.extractSentences(cap);
@@ -248,7 +252,7 @@ export class StreamingChunker {
     if (end <= 0) {
       return null;
     }
-    return this.take(end, !BREAK_END_RE.test(this.buffer.slice(0, end)));
+    return this.take(end, !endsAtBreak(this.buffer.slice(0, end)));
   }
 
   /**
