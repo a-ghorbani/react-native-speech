@@ -196,9 +196,16 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
     { osFocusManager.abandonFocus() }
   )
 
-  /** With `ducking`, before OS speech is queued. While on hold or lost, the current request waits for the regain. */
+  /**
+   * With `ducking`, before OS speech is queued. While on hold the current request waits for the
+   * regain; during a loss (also after a stop() during it) what is queued is held until [resume].
+   */
   private fun holdOsFocus() {
     synchronized(queueLock) {
+      if (osFocusManager.isLost && !isPaused) {
+        isPaused = true
+        heldWhileIdle = true
+      }
       if (isPaused || osFocusManager.isLost) return
       osIdleFocusRelease.cancel()
       osFocusManager.requestFocus()
@@ -213,7 +220,12 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   private fun pauseOsSpeech() {
     synchronized(queueLock) {
       osIdleFocusRelease.arm()
-      if (!isSupportedPausing || isPaused) return
+      if (isPaused) return
+      if (!isSupportedPausing) {
+        // Before Android 8 TextToSpeech cannot pause: stop rather than talk over the call.
+        stopOsSpeech()
+        return
+      }
       val active = synthesizer.isSpeaking || speechQueue.any {
         it.status == SpeechStatus.PENDING || it.status == SpeechStatus.SPEAKING
       }
