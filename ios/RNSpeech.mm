@@ -19,6 +19,19 @@ static const NSTimeInterval kOutputWatchIdleDelay = 30.0;
 static char kUtteranceIdKey;
 static std::atomic<int> nextUtteranceId{1};
 
+
+static void I142Trace(NSString *what) {
+  NSString *dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+  NSString *path = [dir stringByAppendingPathComponent:@"i142-native.log"];
+  long long ms = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
+  NSString *line = [NSString stringWithFormat:@"DUCK %@ %lld\n", what, ms];
+  @synchronized ([NSFileManager class]) {
+    NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (!h) { [line writeToFile:path atomically:NO encoding:NSUTF8StringEncoding error:nil]; return; }
+    [h seekToEndOfFile]; [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; [h closeFile];
+  }
+}
+
 @implementation RNSpeech
 {
   BOOL isDucking;
@@ -272,6 +285,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     NSLog(@"[Speech] Failed to set audio session configuration for ducking: %@", error.localizedDescription);
     return;
   }
+  I142Trace(@"activate");
   [session setActive:YES error:&error];
   if (error) {
     NSLog(@"[Speech] Failed to activate audio session for ducking: %@", error.localizedDescription);
@@ -288,9 +302,11 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   }
   _osDuckActive = NO;
   NSError *error = nil;
+  I142Trace(@"deactivate-begin");
   [[AVAudioSession sharedInstance] setActive:NO
                                  withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
                                        error:&error];
+  I142Trace(error ? [@"deactivate-end-ERR " stringByAppendingString:error.localizedDescription] : @"deactivate-end");
 
   if (error) {
     NSLog(@"[Speech] AVAudioSession setActive (deactivate) error: %@", error.localizedDescription);
