@@ -1,7 +1,7 @@
 /**
  * I115 evidence harness (throwaway, do not merge). Deep link:
  *   speechexample://evidence/i115?label=X&engine=supertonic|kokoro|kitten
- *     &ver=v3|v2&eps=default|cpu|cml:<hex flags>&steps=5&voice=F1
+ *     &ver=v3|v2 (kokoro: quantized|full|fp16|q8)&eps=default|cpu|cml:<hex flags>&steps=5&voice=F1
  * One run per fresh process. Samples phys_footprint (what jetsam counts) every
  * 150 ms and appends every line to Documents/i115-trace.log right away, so the
  * last samples survive a jetsam kill.
@@ -101,14 +101,22 @@ async function configFor(engine: string, ver: string) {
     };
   }
   if (engine === 'kokoro') {
+    // ver = Kokoro variant: quantized (int8) | full (fp32) | fp16 | q8 (q8f16).
+    const variant = (
+      ['full', 'fp16', 'q8'].includes(ver) ? ver : 'quantized'
+    ) as 'quantized' | 'full' | 'fp16' | 'q8';
     await kokoroModelManager.scanInstalledModels();
-    if (!kokoroModelManager.getInstalledModels().length) {
-      log('DOWNLOAD kokoro quantized');
-      await kokoroModelManager.downloadModel('quantized');
+    if (
+      !kokoroModelManager.getInstalledModels().some(x => x.variant === variant)
+    ) {
+      log(`DOWNLOAD kokoro ${variant}`);
+      await kokoroModelManager.downloadModel(variant);
       await kokoroModelManager.scanInstalledModels();
     }
-    const models = kokoroModelManager.getInstalledModels();
-    const m = models.find(x => x.variant === 'quantized') ?? models[0]!;
+    const m = kokoroModelManager
+      .getInstalledModels()
+      .find(x => x.variant === variant)!;
+    log(`MODEL kokoro ${m.version}-${m.variant}`);
     return {
       engine: TTSEngine.KOKORO,
       ...kokoroModelManager.getDownloadedModelConfig(m.version, m.variant),
@@ -123,6 +131,7 @@ async function configFor(engine: string, ver: string) {
     await kittenModelManager.downloadModel();
     await kittenModelManager.scanInstalledModel();
   }
+  log(`MODEL kitten ${kittenModelManager.getInstalledModel()?.variant}`);
   return {
     engine: TTSEngine.KITTEN,
     ...kittenModelManager.getDownloadedModelConfig(),
