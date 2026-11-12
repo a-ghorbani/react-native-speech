@@ -81,9 +81,9 @@ export function lastWordEnd(text: string, limit: number): number {
 }
 
 /**
- * End of the first whitespace-terminated word that ends at or after
- * `limit` (the word that crosses it), or -1 while that word is still
- * incomplete.
+ * End (after its whitespace) of the first word whose last character is at
+ * `limit - 1` or later: the word that crosses `limit`, or the next one
+ * when a word ends exactly there. -1 while that word is still incomplete.
  */
 export function nextWordEnd(text: string, limit: number): number {
   const re = /\S\s+/g;
