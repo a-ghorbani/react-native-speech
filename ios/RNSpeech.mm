@@ -9,6 +9,8 @@
 using namespace JS::NativeSpeech;
 
 static const NSTimeInterval kSessionIdleDeactivationDelay = 1.0;
+// OS speech with ducking keeps its session (other audio ducked) between utterances for this long.
+static const NSTimeInterval kOSDuckIdleDeactivationDelay = 5.0;
 // Covers a slow producer between the chunks of one stream.
 static const NSTimeInterval kOutputWatchIdleDelay = 30.0;
 
@@ -36,6 +38,11 @@ static std::atomic<int> nextUtteranceId{1};
   BOOL _outputRemoved;
   // Paused by an interruption, which reports `began` but no onPause.
   BOOL _interruptionPaused;
+  // OS speech activated a ducking session that is still held. Both only touched on _audioQueue.
+  BOOL _osDuckActive;
+  // Bumped by OS speak/resume/pause/stop, each idle arm and neural playback; a pending idle deactivation
+  // then does nothing.
+  NSUInteger _osDuckGeneration;
 }
 
 RCT_EXPORT_MODULE();
@@ -237,7 +244,9 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   });
 }
 
+// Runs on _audioQueue.
 - (void)activateDuckingSession {
+  _osDuckGeneration++;
   if (!isDucking) {
     return;
   }
@@ -255,13 +264,18 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   [session setActive:YES error:&error];
   if (error) {
     NSLog(@"[Speech] Failed to activate audio session for ducking: %@", error.localizedDescription);
-  }
-}
-
-- (void)deactivateDuckingSession {
-  if (!isDucking) {
     return;
   }
+  _osDuckActive = YES;
+}
+
+// Runs on _audioQueue.
+- (void)deactivateDuckingSession {
+  _osDuckGeneration++;
+  if (!_osDuckActive) {
+    return;
+  }
+  _osDuckActive = NO;
   NSError *error = nil;
   [[AVAudioSession sharedInstance] setActive:NO
                                  withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
@@ -270,6 +284,26 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   if (error) {
     NSLog(@"[Speech] AVAudioSession setActive (deactivate) error: %@", error.localizedDescription);
   }
+}
+
+// An utterance ended: release the ducking session once nothing more is spoken within the grace, so
+// other audio stays ducked across a queue or stream instead of swelling between utterances.
+- (void)deactivateDuckingSessionWhenIdle {
+  __weak RNSpeech *weakSelf = self;
+  dispatch_async(_audioQueue, ^{
+    RNSpeech *strongSelf = weakSelf;
+    if (!strongSelf || !strongSelf->_osDuckActive) {
+      return;
+    }
+    NSUInteger generation = ++strongSelf->_osDuckGeneration;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kOSDuckIdleDeactivationDelay * NSEC_PER_SEC)),
+                   strongSelf->_audioQueue, ^{
+      RNSpeech *s = weakSelf;
+      if (s && s->_osDuckGeneration == generation && !s.synthesizer.isSpeaking) {
+        [s deactivateDuckingSession];
+      }
+    });
+  });
 }
 
 - (void)configureSilentModeSession:(NSString *)silentMode {
@@ -418,13 +452,18 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   if (self.synthesizer.isSpeaking) {
     [self.synthesizer stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
   }
+  dispatch_async(_audioQueue, ^{
+    [self deactivateDuckingSession];
+  });
   resolve(nil);
 }
 
 - (void)pause:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (self.synthesizer.isSpeaking && !self.synthesizer.isPaused) {
     BOOL paused = [self.synthesizer pauseSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-    [self deactivateDuckingSession];
+    dispatch_async(_audioQueue, ^{
+      [self deactivateDuckingSession];
+    });
     resolve(@(paused));
   } else {
     resolve(@(false));
@@ -433,7 +472,9 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 
 - (void)resume:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject {
   if (self.synthesizer.isPaused) {
-    [self activateDuckingSession];
+    dispatch_sync(_audioQueue, ^{
+      [self activateDuckingSession];
+    });
     BOOL resumed = [self.synthesizer continueSpeaking];
     resolve(@(resumed));
   } else {
@@ -455,7 +496,9 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
   @try {
     isDucking = [self.globalOptions[@"ducking"] boolValue];
 
-    [self activateDuckingSession];
+    dispatch_sync(_audioQueue, ^{
+      [self activateDuckingSession];
+    });
     [self configureSilentModeSession:self.globalOptions[@"silentMode"]];
 
     utterance = [self getUtterance:text withOptions:self.globalOptions];
@@ -464,7 +507,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     resolve([self utteranceId:utterance]);
   }
   @catch (NSException *exception) {
-    [self deactivateDuckingSession];
+    [self deactivateDuckingSessionWhenIdle];
     [self emitOnError:[self getEventData:utterance]];
     reject(@"speech_error", exception.reason, nil);
   }
@@ -486,7 +529,9 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     NSDictionary *validatedOptions = [self getValidatedOptions:options];
     isDucking = [validatedOptions[@"ducking"] boolValue];
 
-    [self activateDuckingSession];
+    dispatch_sync(_audioQueue, ^{
+      [self activateDuckingSession];
+    });
     [self configureSilentModeSession:validatedOptions[@"silentMode"]];
     
     utterance = [self getUtterance:text withOptions:validatedOptions];
@@ -495,7 +540,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
     resolve([self utteranceId:utterance]);
   }
   @catch (NSException *exception) {
-    [self deactivateDuckingSession];
+    [self deactivateDuckingSessionWhenIdle];
     [self emitOnError:[self getEventData:utterance]];
     reject(@"speech_error", exception.reason, nil);
   }
@@ -517,7 +562,7 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer
   didFinishSpeechUtterance:(AVSpeechUtterance *)utterance {
-  [self deactivateDuckingSession];
+  [self deactivateDuckingSessionWhenIdle];
   [self emitOnFinish:[self getEventData:utterance]];
 }
 
@@ -533,13 +578,16 @@ static NSArray<NSString *> *RNSpeechOutputPorts(AVAudioSessionRouteDescription *
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer
   didCancelSpeechUtterance:(AVSpeechUtterance *)utterance {
-  [self deactivateDuckingSession];
   [self emitOnStopped:[self getEventData:utterance]];
 }
 
 // MARK: - Neural Audio Player Methods
 
+// Runs on _audioQueue.
 - (void)activateAudioSession:(BOOL)ducking silentMode:(NSString *)silentMode {
+  // The session is the neural player's now: an OS idle deactivation must not end it.
+  _osDuckGeneration++;
+  _osDuckActive = NO;
   AVAudioSession *audioSession = [AVAudioSession sharedInstance];
   NSError *error = nil;
 
