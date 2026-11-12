@@ -662,7 +662,8 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
   override fun resume(promise: Promise) {
     ensureInitialized(promise) {
       synchronized(queueLock) {
-        if (!isSupportedPausing || !isPaused) {
+        // Without pause support (before Android 8) nothing is PAUSED, but a held queue still resumes.
+        if (!isPaused) {
           promise.resolve(false)
           return@ensureInitialized
         }
