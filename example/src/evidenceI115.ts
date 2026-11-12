@@ -76,6 +76,7 @@ NeuralAudioPlayer.prototype.play = async function (buffer, options, ...rest) {
 function parseEps(eps: string): ExecutionProvider[] | undefined {
   if (eps === 'default') return undefined;
   if (eps === 'cpu') return ['xnnpack', 'cpu'];
+  if (eps === 'cpuonly') return ['cpu'];
   if (eps.startsWith('cml:')) {
     return [
       {name: 'coreml', coreMlFlags: parseInt(eps.slice(4), 16)},
@@ -137,6 +138,7 @@ export async function runI115Evidence(url: string): Promise<void> {
   const eps = q(url, 'eps') ?? 'default';
   const steps = Number(q(url, 'steps') ?? '5');
   const voiceArg = q(url, 'voice');
+  const initOnly = q(url, 'mode') === 'init';
   let limitMB = 0;
   const sampler = setInterval(async () => {
     try {
@@ -173,6 +175,12 @@ export async function runI115Evidence(url: string): Promise<void> {
     log(`INIT_DONE ms=${initMs}`);
     phase = 'postinit';
     await wait(1000);
+    if (initOnly) {
+      log(
+        `SUMMARY label=${label} ok=1 init_only=1 init_ms=${initMs} limit_mb=${limitMB.toFixed(0)} peaks=${JSON.stringify(peaks)}`,
+      );
+      return;
+    }
     const voices = await Speech.getVoices();
     const voice =
       voiceArg ?? (engine === 'supertonic' ? 'F1' : voices[0]) ?? '';
