@@ -227,3 +227,45 @@ describe('SupertonicEngine - synthesize() chunk text', () => {
     ]);
   });
 });
+
+describe('SupertonicEngine - execution providers (#115)', () => {
+  const {Platform} = require('react-native');
+  const providersOfEachCreate = () =>
+    mockSessionCreate.mock.calls.map(
+      c =>
+        ((c as unknown as unknown[])[1] as {executionProviders: unknown})
+          .executionProviders,
+    );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetSessionCreate();
+    configureAssetLoader();
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('iOS default is bare CPU (CoreML was jetsam-killed, #115)', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    await new SupertonicEngine().initialize(validConfig);
+    expect(providersOfEachCreate()).toEqual(Array(4).fill(['cpu']));
+  });
+
+  it('iOS honors explicit CoreML providers from the app', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    const executionProviders = [
+      {name: 'coreml' as const, coreMlFlags: 0x10},
+      'cpu' as const,
+    ];
+    await new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders,
+    });
+    expect(providersOfEachCreate()).toEqual(Array(4).fill(executionProviders));
+  });
+
+  it('Android default is unchanged', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    await new SupertonicEngine().initialize(validConfig);
+    expect(providersOfEachCreate()).toEqual(Array(4).fill(['xnnpack', 'cpu']));
+  });
+});

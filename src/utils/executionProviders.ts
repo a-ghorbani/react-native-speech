@@ -2,7 +2,10 @@
  * Default ONNX execution providers when the caller doesn't specify any.
  *
  *   - iOS: CoreML (Metal/ANE) with sensible flags, xnnpack second, bare
- *     CPU last.
+ *     CPU last. Supertonic: bare CPU only. On an iPhone 13 Pro, CoreML
+ *     (default flags) ran it slower at several times the memory (v3 grew
+ *     past the 3 GB limit and iOS killed the app, #115), and xnnpack was
+ *     no faster than CPU.
  *   - Android: xnnpack + CPU. NNAPI was removed (deprecated in Android
  *     15) and there is no other public GPU/NPU EP exposed by
  *     `onnxruntime-react-native`.
@@ -21,7 +24,12 @@ function primaryAbi(): string | undefined {
   return TurboModuleRegistry.get<Spec>('RNSpeech')?.getConstants().primaryAbi;
 }
 
-export function getDefaultExecutionProviders(): ExecutionProvider[] {
+export function getDefaultExecutionProviders(
+  engine?: 'supertonic',
+): ExecutionProvider[] {
+  if (Platform.OS === 'ios' && engine === 'supertonic') {
+    return ['cpu'];
+  }
   if (Platform.OS === 'ios') {
     return [
       {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},

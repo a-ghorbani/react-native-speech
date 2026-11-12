@@ -162,7 +162,7 @@ export class SupertonicInference {
     ensureONNXRuntime();
 
     const executionProviders =
-      config.executionProviders ?? getDefaultExecutionProviders();
+      config.executionProviders ?? getDefaultExecutionProviders('supertonic');
 
     log.info(
       'Loading models with execution providers:',
