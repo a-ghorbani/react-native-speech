@@ -154,7 +154,7 @@ How well each Supertonic v3 language comes out is measured in [#107](https://git
 
 ## Phonon add-on
 
-[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.9.0 <2.10.0`). Register the engine once, before the first `initialize` that uses it:
+[`@pocketpalai/react-native-speech-phonon`](./packages/react-native-speech-phonon/README.md) runs Gradium's Phonon natively: a Rust library on the CPU on Android, Core ML on iOS. Each add-on release pins the core minors it was tested against (currently `>=2.9.0 <2.12.0`). Register the engine once, before the first `initialize` that uses it:
 
 ```sh
 yarn add @pocketpalai/react-native-speech-phonon
