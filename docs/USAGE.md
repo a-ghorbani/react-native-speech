@@ -599,7 +599,16 @@ If your `Podfile.lock` already has a different `onnxruntime-c`, run `pod update 
 
 Not every `onnxruntime-react-native` release has an `onnxruntime-c` pod of the same version (there is no 1.23.2, for example). If `pod install` reports that no spec satisfies the version, pin the closest published version with the same major.minor by hand (`pod 'onnxruntime-c', '1.23.0'`).
 
-All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use sensible platform defaults: CoreML+xnnpack+cpu on iOS, xnnpack+cpu on Android. Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
+All neural engines accept a `maxChunkSize` (default 400 chars) and `executionProviders`, an array of EPs in fallback order (`'coreml' | 'xnnpack' | 'cpu'`, or option objects like `{name: 'coreml', coreMlFlags}`). Omit it to use the platform defaults:
+
+| Engine | iOS | Android |
+| --- | --- | --- |
+| Kokoro, Kitten | CoreML, xnnpack, cpu | xnnpack, cpu (cpu only on x86/x86_64) |
+| Supertonic (v1–v3) | cpu | xnnpack, cpu (cpu only on x86/x86_64) |
+
+Supertonic runs on the bare CPU on iOS. On an iPhone 13 Pro, CoreML ran it slower than the CPU and at several times the memory (v2: 2.2 GB vs 0.3 GB), and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115)); xnnpack was no faster than the bare CPU there. Passing `executionProviders` yourself still uses exactly what you pass.
+
+Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
 ### Kokoro
 
