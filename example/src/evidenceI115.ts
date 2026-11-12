@@ -146,6 +146,8 @@ export async function runI115Evidence(url: string): Promise<void> {
   const ver = q(url, 'ver') ?? 'v3';
   const eps = q(url, 'eps') ?? 'default';
   const steps = Number(q(url, 'steps') ?? '5');
+  // vol=0 plays silently (synthesis and playback timing unchanged).
+  const volume = Number(q(url, 'vol') ?? '1');
   const voiceArg = q(url, 'voice');
   const initOnly = q(url, 'mode') === 'init';
   let limitMB = 0;
@@ -195,9 +197,10 @@ export async function runI115Evidence(url: string): Promise<void> {
       voiceArg ?? (engine === 'supertonic' ? 'F1' : voices[0]) ?? '';
     phase = 'speak';
     t0 = Date.now();
-    log(`SPEAK voice=${voice} steps=${steps}`);
+    log(`SPEAK voice=${voice} steps=${steps} vol=${volume}`);
     await Speech.speak(ENGLISH_DEFAULT_TEXT, voice, {
       inferenceSteps: steps,
+      volume,
     } as any);
     log(`SPEAK_RESOLVED ms=${Date.now() - t0}`);
     phase = 'done';
