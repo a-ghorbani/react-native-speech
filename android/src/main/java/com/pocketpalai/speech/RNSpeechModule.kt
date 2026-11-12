@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.content.Intent
 import android.content.Context
 import android.speech.tts.Voice
@@ -799,8 +800,19 @@ class RNSpeechModule(reactContext: ReactApplicationContext) :
         promise.reject("ACTIVITY_UNAVAILABLE", "The current activity is not available to launch the installer.")
         return
       }
-      val installIntent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
-      if (installIntent.resolveActivity(activity.packageManager) != null) {
+      val packageManager = activity.packageManager
+      val enginePackage = VoiceInstallerTarget.enginePackage(
+        selected = selectedEngine,
+        instanceDefault = if (::synthesizer.isInitialized) synthesizer.defaultEngine else null,
+        settingDefault = Settings.Secure.getString(activity.contentResolver, Settings.Secure.TTS_DEFAULT_SYNTH),
+        hasInstaller = { pkg ->
+          Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(pkg).resolveActivity(packageManager) != null
+        }
+      )
+      val installIntent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).apply {
+        if (enginePackage != null) setPackage(enginePackage)
+      }
+      if (installIntent.resolveActivity(packageManager) != null) {
         activity.startActivity(installIntent)
         promise.resolve(null)
       } else {
