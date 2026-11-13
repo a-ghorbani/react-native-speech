@@ -481,6 +481,16 @@ describe('EngineStreamSession pacing after a first chunk that ends at a break (#
     expect(capped.gaps[0]).toBeGreaterThan(0);
   });
 
+  test('maxFirstChunkHoldMs: the first chunk starts once chunk 2 is predicted to finish within it, not when chunk 2 is done', async () => {
+    // No fixed cost, 1.2x slower than real time: the rate from chunk 1 predicts chunk 2 well.
+    const EVEN = {fixed: 0, perChar: 79, audio0: 0, audioPerChar: 66};
+    const off = await costStream(SHORT_FIRST, EVEN);
+    const on = await costStream(SHORT_FIRST, EVEN, 10000);
+    const second = on.chunks[1]!.length * EVEN.perChar;
+    expect(on.first - off.first).toBeLessThan(second - 500);
+    expect(on.gaps[0]).toBeLessThanOrEqual(50);
+  });
+
   test('maxFirstChunkHoldMs: a first chunk that synthesizes faster than it plays never waits', async () => {
     const off = await costStream(SHORT_FIRST, FAST);
     const on = await costStream(SHORT_FIRST, FAST, 2000);
