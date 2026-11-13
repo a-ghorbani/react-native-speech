@@ -19,6 +19,7 @@ import type {
   OnnxTensor,
   OnnxTensorConstructor,
 } from '../../types';
+import type {ExecutionProvider} from '../../types/Kokoro';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {
   createTextMask,
@@ -169,68 +170,58 @@ export class SupertonicInference {
       JSON.stringify(executionProviders),
     );
 
-    const sessionOptions = {executionProviders};
-
     try {
-      // Load all 4 models in parallel for faster initialization
       const startTime = Date.now();
-
-      const [
-        durationSession,
-        textEncoderSession,
-        vectorSession,
-        vocoderSession,
-      ] = await Promise.all([
-        InferenceSession.create(config.durationPredictorPath, sessionOptions),
-        InferenceSession.create(config.textEncoderPath, sessionOptions),
-        InferenceSession.create(config.vectorEstimatorPath, sessionOptions),
-        InferenceSession.create(config.vocoderPath, sessionOptions),
-      ]);
-
-      this.durationPredictorSession = durationSession;
-      this.textEncoderSession = textEncoderSession;
-      this.vectorEstimatorSession = vectorSession;
-      this.vocoderSession = vocoderSession;
-
-      const loadTime = Date.now() - startTime;
-      log.info(`All models loaded in ${loadTime}ms`);
-
-      this.isInitialized = true;
+      await this.loadSessions(config, executionProviders);
+      log.info(`All models loaded in ${Date.now() - startTime}ms`);
     } catch (error) {
-      // Try CPU fallback
       log.warn(
         'Failed to load with acceleration, trying CPU fallback:',
         error instanceof Error ? error.message : 'Unknown error',
       );
-
-      const cpuOptions = {executionProviders: ['cpu']};
-
       try {
-        const [
-          durationSession,
-          textEncoderSession,
-          vectorSession,
-          vocoderSession,
-        ] = await Promise.all([
-          InferenceSession.create(config.durationPredictorPath, cpuOptions),
-          InferenceSession.create(config.textEncoderPath, cpuOptions),
-          InferenceSession.create(config.vectorEstimatorPath, cpuOptions),
-          InferenceSession.create(config.vocoderPath, cpuOptions),
-        ]);
-
-        this.durationPredictorSession = durationSession;
-        this.textEncoderSession = textEncoderSession;
-        this.vectorEstimatorSession = vectorSession;
-        this.vocoderSession = vocoderSession;
-
+        await this.loadSessions(config, ['cpu']);
         log.info('Models loaded with CPU fallback');
-        this.isInitialized = true;
       } catch (fallbackError) {
         throw new Error(
           `Failed to load Supertonic models: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
         );
       }
     }
+    this.isInitialized = true;
+  }
+
+  /**
+   * ONNX Runtime before 1.31 sets up XNNPACK's process-wide allocator
+   * without a lock in the first XNNPACK session it creates; creating several
+   * at once can crash natively in Gemm::PrePack (#148,
+   * microsoft/onnxruntime#32461). With XNNPACK, create the smallest model
+   * alone first, then the other three in parallel. This does not guard
+   * against another engine creating its session at the same time.
+   */
+  private async loadSessions(
+    config: SupertonicConfig,
+    executionProviders: ExecutionProvider[],
+  ): Promise<void> {
+    const options = {executionProviders};
+    const create = (path: string) => InferenceSession.create(path, options);
+    const usesXnnpack = executionProviders.some(
+      ep => (typeof ep === 'string' ? ep : ep.name) === 'xnnpack',
+    );
+    const first = usesXnnpack
+      ? await create(config.durationPredictorPath)
+      : undefined;
+    [
+      this.durationPredictorSession,
+      this.textEncoderSession,
+      this.vectorEstimatorSession,
+      this.vocoderSession,
+    ] = await Promise.all([
+      first ?? create(config.durationPredictorPath),
+      create(config.textEncoderPath),
+      create(config.vectorEstimatorPath),
+      create(config.vocoderPath),
+    ]);
   }
 
   /**

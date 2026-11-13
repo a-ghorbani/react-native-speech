@@ -269,3 +269,120 @@ describe('SupertonicEngine - execution providers (#115)', () => {
     expect(providersOfEachCreate()).toEqual(Array(4).fill(['xnnpack', 'cpu']));
   });
 });
+
+describe('SupertonicEngine - session creation order (#148)', () => {
+  // Creates that resolve only when the test says so, to observe overlap.
+  let pending: Array<() => void>;
+  let inFlight: number;
+  let maxInFlight: number;
+  let rejectNext: ((e: Error) => void) | undefined;
+  const created: Array<{path: string; providers: unknown}> = [];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    configureAssetLoader();
+    pending = [];
+    inFlight = 0;
+    maxInFlight = 0;
+    created.length = 0;
+    mockSessionCreate.mockReset();
+    mockSessionCreate.mockImplementation(((
+      path: string,
+      opts: {executionProviders: unknown},
+    ) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      created.push({path, providers: opts.executionProviders});
+      return new Promise((resolve, reject) => {
+        rejectNext = reject;
+        pending.push(() => {
+          inFlight--;
+          resolve({
+            inputNames: [],
+            outputNames: [],
+            run: mockSessionRun,
+            release: mockSessionRelease,
+          });
+        });
+      });
+    }) as any);
+  });
+
+  // Lets the init run until it waits on creates, then reports who started.
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+  };
+
+  it('with xnnpack, creates one session alone before the other three', async () => {
+    const executionProviders = ['xnnpack' as const, 'cpu' as const];
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders,
+    });
+    await settle();
+    expect(created.map(c => c.path)).toEqual([
+      validConfig.durationPredictorPath,
+    ]);
+    pending.shift()!();
+    await settle();
+    expect(created.map(c => c.path)).toEqual([
+      validConfig.durationPredictorPath,
+      validConfig.textEncoderPath,
+      validConfig.vectorEstimatorPath,
+      validConfig.vocoderPath,
+    ]);
+    expect(inFlight).toBe(3);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(created.map(c => c.providers)).toEqual(
+      Array(4).fill(executionProviders),
+    );
+  });
+
+  it('an xnnpack option object counts as xnnpack', async () => {
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders: [{name: 'xnnpack'}, 'cpu'],
+    });
+    await settle();
+    expect(created).toHaveLength(1);
+    pending.shift()!();
+    await settle();
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(maxInFlight).toBe(3);
+  });
+
+  it('cpu-only creates all 4 sessions in parallel', async () => {
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders: ['cpu'],
+    });
+    await settle();
+    expect(inFlight).toBe(4);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+  });
+
+  it('after a failed xnnpack create, the CPU fallback creates all 4 in parallel', async () => {
+    const e = new SupertonicEngine();
+    const init = e.initialize({
+      ...validConfig,
+      executionProviders: ['xnnpack', 'cpu'],
+    });
+    await settle();
+    expect(created).toHaveLength(1);
+    pending.length = 0;
+    inFlight = 0;
+    // Fail the first create; the fallback should then start 4 CPU creates.
+    rejectNext!(new Error('xnnpack create failed'));
+    await settle();
+    expect(created.slice(1).map(c => c.providers)).toEqual(
+      Array(4).fill(['cpu']),
+    );
+    expect(inFlight).toBe(4);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(await e.isReady()).toBe(true);
+  });
+});
