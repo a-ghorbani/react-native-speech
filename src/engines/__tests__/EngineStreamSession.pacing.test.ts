@@ -358,23 +358,33 @@ describe('EngineStreamSession pacing (#83)', () => {
  * synthesis time and a fixed audio length per chunk (Kokoro's edge
  * silence), as measured on a slow phone while an LLM runs (#153).
  */
+type Cost = {
+  fixed: number;
+  perChar: number;
+  audio0: number;
+  audioPerChar: number;
+};
+
 async function costStream(
   text: string,
-  p: {fixed: number; perChar: number; audio0: number; audioPerChar: number},
+  p: Cost & {first?: Pick<Cost, 'fixed' | 'perChar'>},
   maxFirstChunkHoldMs?: number,
   textDelayMs = 0,
   firstChunk: 'clause' | 'sentence' = 'clause',
 ) {
   const t0 = Date.now();
   const plays: {text: string; start: number; end: number}[] = [];
+  let synthesized = 0;
   const session = new EngineStreamSession<AudioBuffer & {tag: string}>({
-    synthesizeChunk: chunk =>
-      new Promise(resolve =>
+    synthesizeChunk: chunk => {
+      const s = synthesized++ === 0 ? (p.first ?? p) : p;
+      return new Promise(resolve =>
         setTimeout(
           () => resolve(audio(p.audio0 + chunk.length * p.audioPerChar, chunk)),
-          p.fixed + chunk.length * p.perChar,
+          s.fixed + chunk.length * s.perChar,
         ),
-      ),
+      );
+    },
     playAudio: buffer =>
       new Promise<void>(resolve => {
         const start = Date.now() - t0;
@@ -627,5 +637,54 @@ describe('EngineStreamSession pacing after a first chunk that ends at a break (#
     expect(plays[0]! - t0).toBeLessThanOrEqual(1210);
     await jest.runAllTimersAsync();
     await done;
+  });
+});
+
+describe('EngineStreamSession pacing after a slow first chunk that ends at a comma (#158)', () => {
+  // Kokoro int8 on a mid-range phone while an LLM generates (2.11.3 field
+  // report): chunk 1 synthesizes at ~1.2x its audio; the LLM is done before
+  // chunk 2, which runs faster. PERSIST: the load lasts.
+  const FIRST = {fixed: 839, perChar: 52.2};
+  const AUDIO = {audio0: 190, audioPerChar: 50.4};
+  const AFTER_LLM = {first: FIRST, fixed: 650, perChar: 43.6, ...AUDIO};
+  const PERSIST = {first: FIRST, ...FIRST, ...AUDIO};
+  const TEXT =
+    'When you finally reach the old harbor town after the long drive through the hills, vineyards, and little villages with their white houses and red roofs, you should walk down to the water and find the small cafe near the lighthouse. The fish there is always fresh. ';
+  const CLAUSE =
+    'vineyards, and little villages with their white houses and red roofs, ';
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  test('chunk 2 is the clause that fits, not the rest of the sentence: no wait', async () => {
+    const {chunks, gaps} = await costStream(TEXT, AFTER_LLM);
+    expect(chunks.join('')).toBe(TEXT);
+    expect(chunks[0]).toMatch(/hills, $/);
+    // Base: chunk 2 is the 149-char rest of the sentence, ~2.6 s gap.
+    expect(chunks[1]).toBe(CLAUSE);
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(0);
+  });
+
+  test('under lasting load the pause moves to the next clause mark, shorter', async () => {
+    const {chunks, gaps} = await costStream(TEXT, PERSIST);
+    expect(chunks[1]).toBe(CLAUSE);
+    // Base: one ~4.2 s pause after "hills,"; here ~0.1 s, then ~2.9 s after "roofs,".
+    expect(gaps[0]).toBeLessThan(300);
+    expect(gaps.reduce((a, b) => a + b, 0)).toBeLessThan(3500);
+    gaps.forEach((g, i) => {
+      if (g > 0) {
+        expect(chunks[i]).toMatch(/[.!?,;:]\s*$/);
+      }
+    });
+  });
+
+  test('a fitting clause shorter than 40 chars is not cut at 1x: chunk 3 would grow 2x and wait longer', async () => {
+    const text =
+      'Before you start the engine, check the oil, then drive slowly down to the harbor and park near the gate where the guard can see the car. Then walk. ';
+    const {chunks} = await costStream(text, AFTER_LLM);
+    expect(chunks.join('')).toBe(text);
+    expect(chunks[0]).toBe('Before you start the engine, ');
+    expect(chunks[1]).not.toBe('check the oil, ');
   });
 });
