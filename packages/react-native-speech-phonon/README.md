@@ -76,7 +76,7 @@ React Native 0.74 or later with the New Architecture is required: from 0.74 all 
 share one method queue, which keeps the add-on's playback calls ordered with the core's stop and
 pause on iOS.
 
-The core package must be `>=2.9.0 <2.12.0`: the add-on builds on the core's experimental engine SDK
+The core package must be `>=2.9.0 <2.13.0`: the add-on builds on the core's experimental engine SDK
 (`@pocketpalai/react-native-speech/engine-sdk` and the native PCM sinks), which may change in a
 core minor release, so each add-on release pins the core minors it was tested against. Register the
 engine once, before the first `Speech.initialize` that uses it (for example at module load of
