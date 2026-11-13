@@ -19,6 +19,7 @@ import type {
   OnnxTensor,
   OnnxTensorConstructor,
 } from '../../types';
+import type {ExecutionProvider} from '../../types/Kokoro';
 import {getDefaultExecutionProviders} from '../../utils/executionProviders';
 import {
   createTextMask,
@@ -169,68 +170,52 @@ export class SupertonicInference {
       JSON.stringify(executionProviders),
     );
 
-    const sessionOptions = {executionProviders};
-
     try {
-      // Load all 4 models in parallel for faster initialization
       const startTime = Date.now();
-
-      const [
-        durationSession,
-        textEncoderSession,
-        vectorSession,
-        vocoderSession,
-      ] = await Promise.all([
-        InferenceSession.create(config.durationPredictorPath, sessionOptions),
-        InferenceSession.create(config.textEncoderPath, sessionOptions),
-        InferenceSession.create(config.vectorEstimatorPath, sessionOptions),
-        InferenceSession.create(config.vocoderPath, sessionOptions),
-      ]);
-
-      this.durationPredictorSession = durationSession;
-      this.textEncoderSession = textEncoderSession;
-      this.vectorEstimatorSession = vectorSession;
-      this.vocoderSession = vocoderSession;
-
-      const loadTime = Date.now() - startTime;
-      log.info(`All models loaded in ${loadTime}ms`);
-
-      this.isInitialized = true;
+      await this.loadSessions(config, executionProviders);
+      log.info(`All models loaded in ${Date.now() - startTime}ms`);
     } catch (error) {
-      // Try CPU fallback
       log.warn(
         'Failed to load with acceleration, trying CPU fallback:',
         error instanceof Error ? error.message : 'Unknown error',
       );
-
-      const cpuOptions = {executionProviders: ['cpu']};
-
       try {
-        const [
-          durationSession,
-          textEncoderSession,
-          vectorSession,
-          vocoderSession,
-        ] = await Promise.all([
-          InferenceSession.create(config.durationPredictorPath, cpuOptions),
-          InferenceSession.create(config.textEncoderPath, cpuOptions),
-          InferenceSession.create(config.vectorEstimatorPath, cpuOptions),
-          InferenceSession.create(config.vocoderPath, cpuOptions),
-        ]);
-
-        this.durationPredictorSession = durationSession;
-        this.textEncoderSession = textEncoderSession;
-        this.vectorEstimatorSession = vectorSession;
-        this.vocoderSession = vocoderSession;
-
+        await this.loadSessions(config, ['cpu']);
         log.info('Models loaded with CPU fallback');
-        this.isInitialized = true;
       } catch (fallbackError) {
         throw new Error(
           `Failed to load Supertonic models: ${fallbackError instanceof Error ? fallbackError.message : 'Unknown error'}`,
         );
       }
     }
+    this.isInitialized = true;
+  }
+
+  /**
+   * Create the 4 sessions one at a time: creating XNNPACK sessions in
+   * parallel can crash natively in Gemm::PrePack (#148).
+   */
+  private async loadSessions(
+    config: SupertonicConfig,
+    executionProviders: ExecutionProvider[],
+  ): Promise<void> {
+    const options = {executionProviders};
+    this.durationPredictorSession = await InferenceSession.create(
+      config.durationPredictorPath,
+      options,
+    );
+    this.textEncoderSession = await InferenceSession.create(
+      config.textEncoderPath,
+      options,
+    );
+    this.vectorEstimatorSession = await InferenceSession.create(
+      config.vectorEstimatorPath,
+      options,
+    );
+    this.vocoderSession = await InferenceSession.create(
+      config.vocoderPath,
+      options,
+    );
   }
 
   /**
