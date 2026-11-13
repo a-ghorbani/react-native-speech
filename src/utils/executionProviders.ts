@@ -1,11 +1,11 @@
 /**
  * Default ONNX execution providers when the caller doesn't specify any.
  *
- *   - iOS: CoreML (Metal/ANE) with sensible flags, xnnpack second, bare
- *     CPU last. Supertonic: bare CPU only. On an iPhone 13 Pro, CoreML
- *     (default flags) ran it slower at several times the memory (v3 grew
- *     past the 3 GB limit and iOS killed the app, #115), and xnnpack was
- *     no faster than CPU.
+ *   - iOS: bare CPU, for every engine. On an iPhone 13 Pro, CoreML (default
+ *     flags) was never faster and used several times the memory: Supertonic
+ *     v3 grew past the 3 GB limit and iOS killed the app (#115), Kokoro used
+ *     ~3-4x the memory, and its fp16/q8f16 models failed in the first
+ *     run (#150). xnnpack was no faster than the bare CPU.
  *   - Android: xnnpack + CPU. NNAPI was removed (deprecated in Android
  *     15) and there is no other public GPU/NPU EP exposed by
  *     `onnxruntime-react-native`.
@@ -15,7 +15,7 @@
  */
 import {Platform, TurboModuleRegistry} from 'react-native';
 import type {Spec} from '../NativeSpeech';
-import {DEFAULT_COREML_FLAGS, type ExecutionProvider} from '../types/Kokoro';
+import type {ExecutionProvider} from '../types/Kokoro';
 
 /** Primary Android ABI (e.g. `arm64-v8a`), or undefined when unknown. */
 function primaryAbi(): string | undefined {
@@ -24,20 +24,8 @@ function primaryAbi(): string | undefined {
   return TurboModuleRegistry.get<Spec>('RNSpeech')?.getConstants().primaryAbi;
 }
 
-export function getDefaultExecutionProviders(
-  engine?: 'supertonic',
-): ExecutionProvider[] {
-  if (Platform.OS === 'ios' && engine === 'supertonic') {
-    return ['cpu'];
-  }
-  if (Platform.OS === 'ios') {
-    return [
-      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-      'xnnpack',
-      'cpu',
-    ];
-  }
-  if (primaryAbi()?.startsWith('x86')) {
+export function getDefaultExecutionProviders(): ExecutionProvider[] {
+  if (Platform.OS === 'ios' || primaryAbi()?.startsWith('x86')) {
     return ['cpu'];
   }
   return ['xnnpack', 'cpu'];

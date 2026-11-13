@@ -40,11 +40,7 @@ const IOS_SCENARIOS: EpScenario[] = [
   {
     key: 'auto',
     label: 'AUTO',
-    providers: [
-      {name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS},
-      'xnnpack',
-      'cpu',
-    ],
+    providers: ['cpu'],
   },
   {
     key: 'coreml',

@@ -605,10 +605,18 @@ All neural engines accept a `maxChunkSize` (default 400 chars) and `executionPro
 
 | Engine | iOS | Android |
 | --- | --- | --- |
-| Kokoro, Kitten | CoreML, xnnpack, cpu | xnnpack, cpu (cpu only on x86/x86_64) |
-| Supertonic (v1–v3) | cpu | xnnpack, cpu (cpu only on x86/x86_64) |
+| Kokoro, Kitten, Supertonic | cpu | xnnpack, cpu (cpu only on x86/x86_64) |
 
-Supertonic runs on the bare CPU on iOS. On an iPhone 13 Pro, CoreML with the default flags ran it slower than the CPU and at several times the memory (v2: 2.2 GB vs 0.3 GB), and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115)); xnnpack was no faster than the bare CPU there. Passing `executionProviders` yourself still uses exactly what you pass.
+All neural engines run on the bare CPU on iOS. On an iPhone 13 Pro, CoreML with the default flags was never faster than the CPU and cost up to several times the memory:
+
+| iPhone 13 Pro, median of 3 | CoreML (old default): RTF, peak memory | cpu: RTF, peak memory |
+| --- | --- | --- |
+| Kokoro `model_quantized.onnx` | 0.84, 1.1 GB | 0.78, 0.27 GB |
+| Kokoro `model.onnx` | 0.62, 1.4 GB | 0.58, 0.49 GB |
+| Kokoro `model_fp16.onnx`, `model_q8f16.onnx` | fails in the first `speak()` | 0.57 / 0.79, 0.53 / 0.27 GB |
+| Kitten nano (fp32) | 0.17, 0.18 GB | 0.17, 0.18 GB |
+
+Supertonic v2 on CoreML ran slower than the CPU at 2.2 GB instead of 0.3 GB, and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app. Phones with less RAM give an app a much lower memory limit than the 13 Pro's 3 GB ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115), [#150](https://github.com/a-ghorbani/react-native-speech/issues/150)). xnnpack was no faster than the bare CPU there either. Passing `executionProviders` yourself still uses exactly what you pass.
 
 Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
@@ -652,7 +660,7 @@ Voice blending: pass multiple voice IDs (see `src/engines/kokoro/VoiceLoader.ts`
 > | 1.18 – 1.23 | ok | ok | ok | NaN on some inputs |
 > | 1.24 – 1.26 | ok | ok | NaN on every input | NaN on some inputs |
 >
-> With `model_q8f16.onnx` on onnxruntime 1.24+, each chunk is also at least 8× slower to synthesize. Measured on arm64 with onnxruntime-node and on Android with onnxruntime-react-native 1.24.3 (#71).
+> With `model_q8f16.onnx` on onnxruntime 1.24+, each chunk is also at least 8× slower to synthesize. Measured on arm64 with onnxruntime-node and on Android with onnxruntime-react-native 1.24.3 (#71). On an iPhone 13 Pro with 1.24.3, both files gave clean audio on the bare CPU for the test text, at about the speed of `model_quantized.onnx` ([#150](https://github.com/a-ghorbani/react-native-speech/issues/150)), so the guard may not trigger there; `model_quantized.onnx` or `model.onnx` remain the safe choice.
 
 ### Supertonic
 

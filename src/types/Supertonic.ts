@@ -129,7 +129,7 @@ export interface SupertonicConfig extends SupertonicModelPaths {
   maxChunkSize?: number;
   /**
    * Execution providers for ONNX Runtime inference, in fallback order.
-   * Defaults to bare cpu on iOS (no CoreML, #115), xnnpack+cpu on Android
+   * Defaults to bare cpu on iOS (no CoreML, #115, #150), xnnpack+cpu on Android
    * (cpu only on x86/x86_64) when omitted. Otherwise as `KokoroConfig.executionProviders`.
    */
   executionProviders?: ExecutionProvider[];

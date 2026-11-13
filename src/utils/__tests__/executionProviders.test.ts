@@ -33,24 +33,10 @@ describe('getDefaultExecutionProviders', () => {
     expect(getDefaultExecutionProviders()).toEqual(['xnnpack', 'cpu']);
   });
 
-  test('iOS: CoreML, xnnpack, CPU', () => {
+  test('iOS: bare CPU, whatever the ABI (#150)', () => {
     mockPlatform.OS = 'ios';
-    mockConstants = {primaryAbi: 'x86_64'};
-    const eps = getDefaultExecutionProviders();
-    expect(eps[0]).toEqual(expect.objectContaining({name: 'coreml'}));
-    expect(eps.slice(1)).toEqual(['xnnpack', 'cpu']);
-  });
-
-  test('Supertonic: bare CPU on iOS, the usual default on Android', () => {
-    mockPlatform.OS = 'ios';
-    expect(getDefaultExecutionProviders('supertonic')).toEqual(['cpu']);
-    mockPlatform.OS = 'android';
-    mockConstants = {primaryAbi: 'x86_64'};
-    expect(getDefaultExecutionProviders('supertonic')).toEqual(['cpu']);
+    expect(getDefaultExecutionProviders()).toEqual(['cpu']);
     mockConstants = {primaryAbi: 'arm64-v8a'};
-    expect(getDefaultExecutionProviders('supertonic')).toEqual([
-      'xnnpack',
-      'cpu',
-    ]);
+    expect(getDefaultExecutionProviders()).toEqual(['cpu']);
   });
 });

@@ -702,3 +702,39 @@ describe('KittenEngine - edge silence', () => {
     expect(played().map(s => s.length)).toEqual([24000 - TRIM, 24000 - TRIM]);
   });
 });
+
+describe('KittenEngine - execution providers (#150)', () => {
+  const {Platform} = require('react-native');
+  const providers = () =>
+    (mockSessionCreate.mock.calls as unknown as unknown[][]).map(
+      c => (c[1] as {executionProviders: unknown}).executionProviders,
+    );
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLoadAssetAsJSON.mockResolvedValue(sampleVoiceData);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('iOS default is bare CPU', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    await new KittenEngine().initialize(validConfig);
+    expect(providers()).toEqual([['cpu']]);
+  });
+
+  it('iOS honors explicit CoreML providers from the app', async () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
+    const executionProviders = [
+      {name: 'coreml' as const, coreMlFlags: 0x20},
+      'cpu' as const,
+    ];
+    await new KittenEngine().initialize({...validConfig, executionProviders});
+    expect(providers()).toEqual([executionProviders]);
+  });
+
+  it('Android default is unchanged', async () => {
+    jest.replaceProperty(Platform, 'OS', 'android');
+    await new KittenEngine().initialize(validConfig);
+    expect(providers()).toEqual([['xnnpack', 'cpu']]);
+  });
+});

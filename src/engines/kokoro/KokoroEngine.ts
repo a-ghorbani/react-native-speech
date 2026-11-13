@@ -6,7 +6,7 @@
  *
  * Features:
  * - High-quality neural voice synthesis
- * - Hardware acceleration (CoreML on iOS, NNAPI on Android)
+ * - ONNX Runtime execution providers (default: CPU on iOS, xnnpack + CPU on Android)
  * - Pipelined synthesis for seamless playback
  * - Voice blending support
  */
