@@ -156,7 +156,8 @@ export class StreamingChunker {
    * `cap()` chars, read when each chunk is cut, e.g. to what can be
    * synthesized while the queued audio plays (#83). It cuts like the ramp:
    * at a clause mark in its second half, else after whole sentences. A
-   * null result, or null `cap`, sets no limit.
+   * null result, or null `cap`, sets no limit. After a slow first chunk
+   * `cap` may be read twice per cut, once with `keepsSize` true (#158).
    */
   setChunkCap(cap: (() => number | null) | null): void {
     this.chunkCap = cap;
@@ -323,7 +324,7 @@ export class StreamingChunker {
     if (!this.afterFirstChunk || this.midPhrase || !this.lastSlow) {
       return null;
     }
-    let limit;
+    let limit: ReturnType<StreamingChunker['currentCap']>;
     this.slowFit = true;
     try {
       limit = this.currentCap();
