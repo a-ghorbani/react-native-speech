@@ -42,6 +42,11 @@ const RAMP_FACTOR = 4;
  * play, so the chunks after it can't keep up (#139, #153).
  */
 const MIN_WORD_FIT = 60;
+/**
+ * Shortest chunk 2 cut at 1x after a slow first chunk (#158): a shorter
+ * one leaves chunk 3 to the 2x growth, and the pause moves on, longer.
+ */
+const MIN_SLOW_FIT = 40;
 
 export class StreamingChunker {
   private buffer = '';
@@ -62,6 +67,8 @@ export class StreamingChunker {
   private fitClause = false;
   /** The last chunk synthesized slower than it plays (`setLastChunkSlow`). */
   private lastSlow = false;
+  /** Reading the 1x cap for chunk 2 after a slow first chunk (#158). */
+  private slowFit = false;
   /** Consumer's size limit, read when a chunk is cut (`setChunkCap`). */
   private chunkCap: (() => number | null) | null = null;
 
@@ -149,7 +156,8 @@ export class StreamingChunker {
    * `cap()` chars, read when each chunk is cut, e.g. to what can be
    * synthesized while the queued audio plays (#83). It cuts like the ramp:
    * at a clause mark in its second half, else after whole sentences. A
-   * null result, or null `cap`, sets no limit.
+   * null result, or null `cap`, sets no limit. After a slow first chunk
+   * `cap` may be read twice per cut, once with `keepsSize` true (#158).
    */
   setChunkCap(cap: (() => number | null) | null): void {
     this.chunkCap = cap;
@@ -168,11 +176,14 @@ export class StreamingChunker {
    * Whether the next chunk should be sized to fit rather than grow past
    * the last one: the last chunk ended mid-phrase (#137), or, unless it
    * synthesized slower than it plays, was the first chunk (`firstChunk:
-   * 'clause'`) or followed it and was cut at a clause to fit (#153).
+   * 'clause'`) or followed it and was cut at a clause to fit (#153). A
+   * `setChunkCap` callback reads it to choose its growth: the chunker
+   * also sets it while reading the 1x cap after a slow first chunk (#158).
    */
   get keepsSize(): boolean {
     return (
       this.midPhrase ||
+      this.slowFit ||
       (!this.lastSlow && (this.afterFirstChunk || this.fitClause))
     );
   }
@@ -262,6 +273,10 @@ export class StreamingChunker {
    * Null (no sentence end yet) leaves the cut to the soft cut.
    */
   private extractRamped(): TextChunk | null {
+    const fit = this.extractSlowFit();
+    if (fit) {
+      return fit;
+    }
     const limit = this.currentCap();
     if (limit === null) {
       return null;
@@ -299,6 +314,40 @@ export class StreamingChunker {
     return this.extractSentences(cap);
   }
 
+  /**
+   * After a first chunk that ended at a break but synthesized slower than
+   * it plays: whole sentences, else a clause mark in the second half, that
+   * fit the consumer's cap at 1x the first chunk and are at least
+   * MIN_SLOW_FIT long (#158). Null leaves chunk 2 to the 2x growth.
+   */
+  private extractSlowFit(): TextChunk | null {
+    if (!this.afterFirstChunk || this.midPhrase || !this.lastSlow) {
+      return null;
+    }
+    let limit: ReturnType<StreamingChunker['currentCap']>;
+    this.slowFit = true;
+    try {
+      limit = this.currentCap();
+    } finally {
+      this.slowFit = false;
+    }
+    if (!limit?.byConsumer) {
+      return null;
+    }
+    const {cap} = limit;
+    const sentences = this.sentencesEnd(cap, false);
+    if (sentences >= MIN_SLOW_FIT) {
+      return this.take(sentences);
+    }
+    if (this.buffer.length >= cap) {
+      const clause = lastClauseEnd(this.buffer, cap);
+      if (clause >= cap / 2 && clause >= MIN_SLOW_FIT) {
+        return this.take(clause, false, true);
+      }
+    }
+    return null;
+  }
+
   private extractFirstClause(): TextChunk | null {
     const end = findFirstClauseEnd(this.buffer, this.firstChunkMaxWords);
     if (end <= 0) {
@@ -317,6 +366,12 @@ export class StreamingChunker {
     limit?: number,
     allowLonger = true,
   ): TextChunk | null {
+    const end = this.sentencesEnd(limit, allowLonger);
+    return end > 0 ? this.take(end) : null;
+  }
+
+  /** End of the sentences `extractSentences` would take, or -1. */
+  private sentencesEnd(limit?: number, allowLonger = true): number {
     const max = limit ?? this.maxChunkSize;
     const re = new RegExp(SENTENCE_END_RE.source, 'g');
     let m: RegExpExecArray | null;
@@ -342,13 +397,13 @@ export class StreamingChunker {
     }
 
     if (lastGoodEnd === -1) {
-      return null;
+      return -1;
     }
 
     if (this.buffer.slice(0, lastGoodEnd).trim().length === 0) {
-      return null;
+      return -1;
     }
-    return this.take(lastGoodEnd);
+    return lastGoodEnd;
   }
 
   /**

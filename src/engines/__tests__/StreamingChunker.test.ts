@@ -1191,3 +1191,100 @@ describe('StreamingChunker after a word-capped first chunk (#137)', () => {
     expect(chunker.endsMidPhrase).toBe(true);
   });
 });
+
+describe('StreamingChunker after a slow first chunk that ends at a break (#158)', () => {
+  const HARBOR =
+    'When you get to the harbor after the long and winding drive, ';
+
+  // Like EngineStreamSession: 1x the first chunk while it keeps its size, else 2x.
+  function slowChunker(text: string, slow = true, base = HARBOR.length) {
+    const chunker = new StreamingChunker(200, 'clause', 24);
+    chunker.append(text);
+    expect(chunker.tryPeek()!.text).toBe(text.slice(0, base));
+    chunker.setLastChunkSlow(slow);
+    chunker.setChunkCap(() => (chunker.keepsSize ? 1 : 2) * base);
+    return chunker;
+  }
+
+  test('whole sentences that fit at 1x come next, not 2x', () => {
+    const chunker = slowChunker(
+      `${HARBOR}Walk down to the water and find the cafe. It has the best coffee on the coast, they say. `,
+    );
+    expect(chunker.tryPeek()!.text).toBe(
+      'Walk down to the water and find the cafe. ',
+    );
+  });
+
+  test('else a clause mark in the second half of the 1x cap', () => {
+    const chunker = slowChunker(
+      `${HARBOR}Stop here. Walk down to the water and find the little cafe, then sit outside. `,
+    );
+    expect(chunker.tryPeek()!.text).toBe(
+      'Stop here. Walk down to the water and find the little cafe, ',
+    );
+  });
+
+  test('a fast first chunk keeps the #153 cut: whole sentences first', () => {
+    const chunker = slowChunker(
+      `${HARBOR}Stop here. Walk down to the water and find the little cafe, then sit outside. `,
+      false,
+    );
+    expect(chunker.tryPeek()!.text).toBe('Stop here. ');
+  });
+
+  test('a clause mark in the first half of the 1x cap is not a fit', () => {
+    const first =
+      'When you finally get to the old harbor town after the long and winding drive through the hills, ';
+    const chunker = slowChunker(
+      `${first}stop at the gate next to the old stone church, then follow the narrow road that winds down past the fishing boats and the market stalls to the water where the small cafe stands. More. `,
+      true,
+      first.length,
+    );
+    // As before: the 2x cap past maxChunkSize leaves the sentence whole.
+    expect(chunker.tryPeek()!.text).toBe(
+      'stop at the gate next to the old stone church, then follow the narrow road that winds down past the fishing boats and the market stalls to the water where the small cafe stands. More. ',
+    );
+  });
+
+  test('after a word-capped first chunk the cut is as before: the chunk after it may grow again', () => {
+    const chunker = new StreamingChunker(200, 'clause', 6);
+    chunker.append(
+      'The best time to plant tomatoes outdoors in most temperate climates is a week or two after the frost, when the soil is warm. ',
+    );
+    expect(chunker.endsMidPhrase).toBe(false);
+    chunker.tryPeek();
+    expect(chunker.endsMidPhrase).toBe(true);
+    chunker.setLastChunkSlow(true);
+    chunker.setChunkCap(() => 90);
+    expect(chunker.tryPeek()!.text).toMatch(/frost, $/);
+    chunker.setLastChunkSlow(false);
+    expect(chunker.keepsSize).toBe(false);
+  });
+
+  test('a finalized tail with no sentence end is cut at the fitting clause too', () => {
+    const chunker = slowChunker(
+      `${HARBOR}walk down to the water and find the small cafe, then sit by the old lighthouse and the market`,
+    );
+    chunker.finalize();
+    expect(chunker.tryPeek()!.text).toBe(
+      'walk down to the water and find the small cafe, ',
+    );
+    expect(chunker.tryPeek()!.text).toBe(
+      'then sit by the old lighthouse and the market',
+    );
+    expect(chunker.tryPeek()).toBeNull();
+  });
+
+  test('without a consumer cap the slow flag changes nothing', () => {
+    // Ramp cap 4 x 28 = 112: a clause cut in its second half, as before.
+    const chunker = new StreamingChunker(200, 'clause', 16);
+    chunker.append(
+      'When you get to the harbor, walk down to the water and find the small cafe near the lighthouse, then order a coffee and sit outside until the sun goes down. ',
+    );
+    expect(chunker.tryPeek()!.text).toBe('When you get to the harbor, ');
+    chunker.setLastChunkSlow(true);
+    expect(chunker.tryPeek()!.text).toMatch(/lighthouse, $/);
+    chunker.setLastChunkSlow(false);
+    expect(chunker.keepsSize).toBe(false);
+  });
+});
