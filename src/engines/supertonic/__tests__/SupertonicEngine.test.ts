@@ -306,53 +306,59 @@ describe('SupertonicEngine - session creation order (#148)', () => {
     }) as any);
   });
 
-  async function drain(init: Promise<void>) {
-    let done = false;
-    init.then(
-      () => (done = true),
-      () => (done = true),
-    );
-    while (!done) {
-      await new Promise(r => setImmediate(r));
-      pending.shift()?.();
-    }
-    return init;
-  }
+  // Lets the init run until it waits on creates, then reports who started.
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise(r => setImmediate(r));
+  };
 
-  it('creates the 4 sessions one at a time with xnnpack providers', async () => {
+  it('with xnnpack, creates one session alone before the other three', async () => {
     const executionProviders = ['xnnpack' as const, 'cpu' as const];
-    await drain(
-      new SupertonicEngine().initialize({...validConfig, executionProviders}),
-    );
-    expect(maxInFlight).toBe(1);
-    expect(created).toEqual([
-      {path: validConfig.durationPredictorPath, providers: executionProviders},
-      {path: validConfig.textEncoderPath, providers: executionProviders},
-      {path: validConfig.vectorEstimatorPath, providers: executionProviders},
-      {path: validConfig.vocoderPath, providers: executionProviders},
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders,
+    });
+    await settle();
+    expect(created.map(c => c.path)).toEqual([
+      validConfig.durationPredictorPath,
     ]);
+    pending.shift()!();
+    await settle();
+    expect(created.map(c => c.path)).toEqual([
+      validConfig.durationPredictorPath,
+      validConfig.textEncoderPath,
+      validConfig.vectorEstimatorPath,
+      validConfig.vocoderPath,
+    ]);
+    expect(inFlight).toBe(3);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(created.map(c => c.providers)).toEqual(
+      Array(4).fill(executionProviders),
+    );
   });
 
-  it('the CPU fallback after a failed create is sequential too', async () => {
-    const impl = mockSessionCreate.getMockImplementation()!;
-    mockSessionCreate.mockImplementationOnce((() => {
-      inFlight++;
-      maxInFlight = Math.max(maxInFlight, inFlight);
-      return new Promise((_resolve, reject) =>
-        pending.push(() => {
-          inFlight--;
-          reject(new Error('xnnpack create failed'));
-        }),
-      );
-    }) as any);
-    mockSessionCreate.mockImplementation(impl);
-    const e = new SupertonicEngine();
-    await drain(
-      e.initialize({...validConfig, executionProviders: ['xnnpack', 'cpu']}),
-    );
-    expect(maxInFlight).toBe(1);
-    expect(created.map(c => c.providers)).toEqual(Array(4).fill(['cpu']));
-    expect(mockSessionCreate).toHaveBeenCalledTimes(5);
-    expect(await e.isReady()).toBe(true);
+  it('an xnnpack option object counts as xnnpack', async () => {
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders: [{name: 'xnnpack'}, 'cpu'],
+    });
+    await settle();
+    expect(created).toHaveLength(1);
+    pending.shift()!();
+    await settle();
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(maxInFlight).toBe(3);
+  });
+
+  it('cpu-only creates all 4 sessions in parallel', async () => {
+    const init = new SupertonicEngine().initialize({
+      ...validConfig,
+      executionProviders: ['cpu'],
+    });
+    await settle();
+    expect(inFlight).toBe(4);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
   });
 });

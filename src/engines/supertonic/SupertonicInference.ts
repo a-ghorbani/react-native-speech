@@ -192,30 +192,35 @@ export class SupertonicInference {
   }
 
   /**
-   * Create the 4 sessions one at a time: creating XNNPACK sessions in
-   * parallel can crash natively in Gemm::PrePack (#148).
+   * ONNX Runtime before 1.31 sets up XNNPACK's process-wide allocator
+   * without a lock in the first XNNPACK session it creates; creating several
+   * at once can crash natively in Gemm::PrePack (#148,
+   * microsoft/onnxruntime#32461). With XNNPACK, create the smallest model
+   * alone first, then the other three in parallel.
    */
   private async loadSessions(
     config: SupertonicConfig,
     executionProviders: ExecutionProvider[],
   ): Promise<void> {
     const options = {executionProviders};
-    this.durationPredictorSession = await InferenceSession.create(
-      config.durationPredictorPath,
-      options,
+    const create = (path: string) => InferenceSession.create(path, options);
+    const usesXnnpack = executionProviders.some(
+      ep => (typeof ep === 'string' ? ep : ep.name) === 'xnnpack',
     );
-    this.textEncoderSession = await InferenceSession.create(
-      config.textEncoderPath,
-      options,
-    );
-    this.vectorEstimatorSession = await InferenceSession.create(
-      config.vectorEstimatorPath,
-      options,
-    );
-    this.vocoderSession = await InferenceSession.create(
-      config.vocoderPath,
-      options,
-    );
+    const first = usesXnnpack
+      ? await create(config.durationPredictorPath)
+      : undefined;
+    [
+      this.durationPredictorSession,
+      this.textEncoderSession,
+      this.vectorEstimatorSession,
+      this.vocoderSession,
+    ] = await Promise.all([
+      first ?? create(config.durationPredictorPath),
+      create(config.textEncoderPath),
+      create(config.vectorEstimatorPath),
+      create(config.vocoderPath),
+    ]);
   }
 
   /**
