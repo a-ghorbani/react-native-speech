@@ -24,6 +24,7 @@
 import type {AudioBuffer, ChunkProgressEvent, FirstChunkMode} from '../types';
 import type {PlaybackOptions} from './NeuralAudioPlayer';
 import {StreamingChunker} from './StreamingChunker';
+import {assertMaxFirstChunkHoldMs} from '../utils/firstClause';
 import {createComponentLogger} from '../utils/logger';
 
 const log = createComponentLogger('EngineStream', 'Engine');
@@ -141,6 +142,7 @@ export class EngineStreamSession<
   private queuedMs = 0;
 
   constructor(config: EngineStreamSessionConfig<TAudio>) {
+    assertMaxFirstChunkHoldMs(config.maxFirstChunkHoldMs);
     this.config = config;
     this.hasAudio = config.hasAudio ?? defaultHasAudio;
     this.chunker = new StreamingChunker(

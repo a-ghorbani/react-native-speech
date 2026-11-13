@@ -583,6 +583,23 @@ describe('EngineStreamSession pacing after a first chunk that ends at a break (#
     expect(playAudio).not.toHaveBeenCalled();
   });
 
+  test.each([-1, NaN, Infinity, '2000'])(
+    'maxFirstChunkHoldMs %p is rejected by the session',
+    value => {
+      expect(
+        () =>
+          new EngineStreamSession({
+            synthesizeChunk: async () => audio(100),
+            playAudio: async () => {},
+            stopPlayback: async () => {},
+            maxChunkSize: 200,
+            firstChunk: 'clause',
+            maxFirstChunkHoldMs: value as any,
+          }),
+      ).toThrow(/^maxFirstChunkHoldMs must be a finite number >= 0/);
+    },
+  );
+
   test('maxFirstChunkHoldMs: audio without durations never waits', async () => {
     type Handle = {id: number};
     const plays: number[] = [];

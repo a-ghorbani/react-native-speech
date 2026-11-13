@@ -130,7 +130,8 @@ export interface SynthesisOptions {
    * words, such as a first chunk cut at `firstChunkMaxWords`, may be cut at
    * a word so its synthesis keeps up; so may the chunk after a first chunk
    * that ended at a comma or sentence end, when at least 60 characters fit
-   * and the first chunk synthesized faster than it plays, else that chunk
+   * and the first chunk took no more than 1.1 times its audio to
+   * synthesize, else that chunk
    * ends at the next clause mark. This goes on until the limit
    * reaches `maxChunkSize`; later chunks keep sentence boundaries. Ignored
    * by the OS engine.
