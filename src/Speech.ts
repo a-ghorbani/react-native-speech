@@ -151,9 +151,9 @@ function dispatchChunkProgress(event: ChunkProgressEvent): void {
 }
 
 /**
- * Default synthesis-option fields that can also be provided at init time
- * (applied on the native side for audio-session configuration).
- * These mirror the subset of `SynthesisOptions` relevant at initialization.
+ * Audio options that can also be given to `Speech.initialize()`. They are
+ * the defaults for every `speak()` and `createSpeechStream()` on that
+ * engine, until the next `initialize()`; a call's own value wins.
  */
 export interface SpeechInitAudioDefaults {
   /** iOS silent-switch behavior — see `SynthesisOptions.silentMode` */
@@ -192,6 +192,20 @@ type CustomEngineInitConfig = {
   [K in keyof CustomEngineConfigs]: {engine: K} & CustomEngineConfigs[K] &
     SpeechInitAudioDefaults;
 }[keyof CustomEngineConfigs];
+
+// Defaults from the initialize() that made the current engine current.
+let audioDefaults: SpeechInitAudioDefaults = {};
+
+function withAudioDefaults<T extends SynthesisOptions>(
+  options: T | undefined,
+): T | undefined {
+  const ducking = options?.ducking ?? audioDefaults.ducking;
+  const silentMode = options?.silentMode ?? audioDefaults.silentMode;
+  if (ducking === undefined && silentMode === undefined) {
+    return options;
+  }
+  return {...options, ducking, silentMode} as T;
+}
 
 export default class Speech {
   /**
@@ -276,9 +290,8 @@ export default class Speech {
       log.debug(`initialize(${engine}) superseded by a later call`);
       return;
     }
-    if (instance === osEngine) {
-      osEngine.setAudioDefaults(engineConfig as SpeechInitAudioDefaults);
-    }
+    const {ducking, silentMode} = engineConfig as SpeechInitAudioDefaults;
+    audioDefaults = {ducking, silentMode};
     engineManager.setDefaultEngine(engine);
     Speech.currentEngine = engine;
     log.debug(`currentEngine set to: ${Speech.currentEngine}`);
@@ -391,6 +404,7 @@ export default class Speech {
   ): Promise<{ended: Promise<void>}> {
     assertFirstChunkMaxWords(options?.firstChunkMaxWords);
     const engine = Speech.currentEngine;
+    options = withAudioDefaults(options);
 
     if (!engineManager.isEngineInitialized(engine)) {
       throw new Error(
@@ -447,6 +461,7 @@ export default class Speech {
     // `SpeechStreamOptions` extends `SynthesisOptions`; engines ignore the
     // stream-only fields (`targetChars`, `onError`) since they only read
     // the properties they care about.
+    options = withAudioDefaults(options);
     const synthesisOptions: SynthesisOptions | undefined = options;
 
     // Detect whether the active engine supports streaming. Neural engines
