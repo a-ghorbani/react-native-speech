@@ -618,6 +618,8 @@ All neural engines run on the bare CPU on iOS. On an iPhone 13 Pro, CoreML with 
 
 Supertonic v2 on CoreML ran slower than the CPU at 2.2 GB instead of 0.3 GB, and v3 grew past the app's 3 GB memory limit in the first `speak()`, so iOS killed the app. Phones with less RAM give an app a much lower memory limit than the 13 Pro's 3 GB ([#115](https://github.com/a-ghorbani/react-native-speech/issues/115), [#150](https://github.com/a-ghorbani/react-native-speech/issues/150)). xnnpack was no faster than the bare CPU there either. Passing `executionProviders` yourself still uses exactly what you pass.
 
+ONNX Runtime before 1.31 (iOS ships 1.24.3; Android apps get the latest unless they pin it) can crash natively when the first xnnpack sessions in a process are created at the same time ([#148](https://github.com/a-ghorbani/react-native-speech/issues/148)). With xnnpack, Supertonic creates one of its four models alone before the other three. Don't initialize two engines with xnnpack at once yourself.
+
 Long text is chunked and synthesized incrementally; `chunkProgress` events fire as each chunk starts.
 
 ### Kokoro
