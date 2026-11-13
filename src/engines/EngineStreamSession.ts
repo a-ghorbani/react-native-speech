@@ -38,6 +38,8 @@ export interface EngineStreamSessionBaseConfig<TAudio = AudioBuffer> {
   maxChunkSize: number;
   firstChunk?: FirstChunkMode;
   firstChunkMaxWords?: number;
+  /** See `SynthesisOptions.maxFirstChunkHoldMs`. Default 0 (off). */
+  maxFirstChunkHoldMs?: number;
   playbackOptions?: PlaybackOptions;
   postProcess?: (audio: TAudio) => void;
   onChunkProgress?: (event: ChunkProgressEvent) => void;
@@ -82,6 +84,11 @@ type Synthesized<TAudio> = {chunk: ChunkInfo; audio: TAudio};
 const LOOKAHEAD = 2;
 /** The next chunk may always be this many times the last one, so chunks still grow when synthesis is slower than playback. */
 const MIN_GROWTH = 2;
+/**
+ * A chunk whose synthesis took longer than this times its audio is slow:
+ * no next chunk can be ready when it ends (#153).
+ */
+const SLOW_CHUNK = 1.1;
 
 // Unknown shapes (JS callers without hasAudio) are treated as playable.
 function defaultHasAudio(audio: unknown): boolean {
@@ -122,6 +129,12 @@ export class EngineStreamSession<
   /** Synthesis ms per char and length of the last synthesized chunk. */
   private synthMsPerChar: number | null = null;
   private lastChunkChars = 0;
+  /** The last synthesized chunk was slow (SLOW_CHUNK). */
+  private lastChunkSlow = false;
+  /** Start and length of the latest chunk handed to synthesis. */
+  private lastSynthStart: {at: number; chars: number} | null = null;
+  /** Called when a chunk is handed to synthesis (the first-chunk hold). */
+  private onSynthStart: (() => void) | null = null;
   /** When the playing chunk ends (epoch ms). */
   private playingUntil = 0;
   /** Ms of synthesized audio waiting to play. */
@@ -244,6 +257,7 @@ export class EngineStreamSession<
       if (!bootstrap) {
         return;
       }
+      const firstSlow = this.lastChunkSlow;
       let currentChunk = bootstrap.chunk;
       currentAudio = bootstrap.audio;
       let chunkIdx = 0;
@@ -252,6 +266,18 @@ export class EngineStreamSession<
       while (true) {
         if (this.cancelled) {
           return;
+        }
+
+        if (
+          chunkIdx === 0 &&
+          firstSlow &&
+          (this.config.maxFirstChunkHoldMs ?? 0) > 0
+        ) {
+          this.fillLookahead(pending, synthesizeChunk, stopSignal);
+          await this.holdFirstChunk(currentAudio!, pending[0]!, stopSignal);
+          if (this.cancelled) {
+            return;
+          }
         }
 
         const chunkStartTs = Date.now();
@@ -282,18 +308,7 @@ export class EngineStreamSession<
           return;
         }
 
-        // Keep LOOKAHEAD chunks fetched + synthesizing in the background,
-        // one after another. Each skips no-audio chunks until it finds one
-        // with audio (or the chunker drains).
-        while (pending.length < LOOKAHEAD) {
-          const prev = pending[pending.length - 1];
-          const fetch = () =>
-            this.fetchNextWithAudio(synthesizeChunk, stopSignal);
-          const next = prev ? prev.then(fetch) : fetch();
-          // Observed when awaited; avoids an unhandled rejection on early return.
-          next.catch(() => {});
-          pending.push(next);
-        }
+        this.fillLookahead(pending, synthesizeChunk, stopSignal);
 
         // Play current chunk (concurrent with prefetch). The player owns
         // the audio from here, so the finally block must not discard it.
@@ -346,6 +361,81 @@ export class EngineStreamSession<
   }
 
   /**
+   * Keep LOOKAHEAD chunks fetched + synthesizing in the background, one
+   * after another. Each skips no-audio chunks until it finds one with
+   * audio (or the chunker drains).
+   */
+  private fillLookahead(
+    pending: Promise<Synthesized<TAudio> | null>[],
+    synthesizeChunk: (text: string) => Promise<TAudio>,
+    stopSignal: Promise<null>,
+  ): void {
+    while (pending.length < LOOKAHEAD) {
+      const prev = pending[pending.length - 1];
+      const fetch = () => this.fetchNextWithAudio(synthesizeChunk, stopSignal);
+      const next = prev ? prev.then(fetch) : fetch();
+      // Observed when awaited; avoids an unhandled rejection on early return.
+      next.catch(() => {});
+      pending.push(next);
+    }
+  }
+
+  /**
+   * Delay a slow first chunk until the chunk after it is predicted (at the
+   * first chunk's rate) to finish within the first chunk's audio, or is
+   * synthesized, or the stream ends, at most `maxFirstChunkHoldMs`. Until
+   * that chunk's text has arrived, keep waiting.
+   */
+  private async holdFirstChunk(
+    audio: TAudio,
+    next: Promise<unknown>,
+    stopSignal: Promise<null>,
+  ): Promise<void> {
+    const maxHold = this.config.maxFirstChunkHoldMs!;
+    const firstMs = audioMs(audio);
+    const rate = this.synthMsPerChar!;
+    const heldFrom = Date.now();
+    const deadline = heldFrom + maxHold;
+    const first = this.lastSynthStart;
+    const nextDone = next.then(
+      () => {},
+      () => {},
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const until = (ts: number) =>
+      new Promise<void>(resolve => {
+        timer = setTimeout(resolve, Math.max(0, ts - Date.now()));
+      });
+    let done = false;
+    nextDone.then(() => (done = true));
+    try {
+      if (this.lastSynthStart === first) {
+        await this.raceWithStop(
+          Promise.race([
+            nextDone,
+            until(deadline),
+            new Promise<void>(resolve => (this.onSynthStart = resolve)),
+          ]),
+          stopSignal,
+        );
+        clearTimeout(timer);
+      }
+      const second = this.lastSynthStart;
+      if (second && second !== first && !done && !this.cancelled) {
+        const start = second.at + rate * second.chars - firstMs;
+        await this.raceWithStop(
+          Promise.race([nextDone, until(Math.min(start, deadline))]),
+          stopSignal,
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+      this.onSynthStart = null;
+    }
+    log.info(`chunk#1 held ${Date.now() - heldFrom}ms, t+${this.rel()}ms`);
+  }
+
+  /**
    * Fetch chunks from the chunker, synthesizing each, until we find one
    * that produced audio. Returns null when the chunker is drained or the
    * session was cancelled.
@@ -369,6 +459,8 @@ export class EngineStreamSession<
         return null;
       }
       const synthStart = Date.now();
+      this.lastSynthStart = {at: synthStart, chars: chunk.text.length};
+      this.onSynthStart?.();
       const synth = synthesizeChunk(chunk.text);
       // If the stop signal wins the race the result still arrives later
       // and must be discarded; cancel() sets `cancelled` before resolving
@@ -400,9 +492,13 @@ export class EngineStreamSession<
         this.discard(audio);
         continue;
       }
-      this.synthMsPerChar = (Date.now() - synthStart) / chunk.text.length;
+      const synthMs = Date.now() - synthStart;
+      const ms = audioMs(audio);
+      this.synthMsPerChar = synthMs / chunk.text.length;
       this.lastChunkChars = chunk.text.length;
-      this.queuedMs += audioMs(audio);
+      this.lastChunkSlow = ms > 0 && synthMs > SLOW_CHUNK * ms;
+      this.chunker.setLastChunkSlow(this.lastChunkSlow);
+      this.queuedMs += ms;
       return {chunk, audio};
     }
   }
@@ -412,7 +508,9 @@ export class EngineStreamSession<
    * it (the rest of the playing chunk plus chunks already synthesized) at
    * the last chunk's synthesis rate, and at least MIN_GROWTH times that
    * chunk, or the same size when that chunk ended mid-phrase: the phrase
-   * is cut already, and a chunk that fits beats a long wait (#137). Null
+   * is cut already, and a chunk that fits beats a long wait (#137); the same
+   * after the first chunk, whose audio may be too short to cover twice its
+   * size, and after the chunk cut at a clause to fit after it (#153). Null
    * before the first chunk is synthesized, or when nothing is queued (also
    * the case for audio without durations): the chunker's own ramp applies.
    */
@@ -421,7 +519,7 @@ export class EngineStreamSession<
     if (this.synthMsPerChar === null || queued <= 0) {
       return null;
     }
-    const growth = this.chunker.endsMidPhrase ? 1 : MIN_GROWTH;
+    const growth = this.chunker.keepsSize ? 1 : MIN_GROWTH;
     return Math.floor(
       Math.max(queued / this.synthMsPerChar, growth * this.lastChunkChars),
     );

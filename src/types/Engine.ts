@@ -145,6 +145,18 @@ export interface SynthesisOptions {
    */
   firstChunkMaxWords?: number;
   /**
+   * Streaming with `firstChunk: 'clause'` only. When the first chunk took
+   * more than 1.1 times as long to synthesize as its audio lasts (a slow
+   * device, or the CPU shared with an LLM), the chunk after it can't be
+   * ready when it ends. The first chunk then waits up to this many
+   * milliseconds to start, until the next one is about to be ready:
+   * later first audio, in exchange for no pause after the first chunk.
+   * `0` never waits; fast devices never wait.
+   * @platform neural-engines
+   * @default 0
+   */
+  maxFirstChunkHoldMs?: number;
+  /**
    * Called for each synthesized audio chunk after any volume adjustment
    * and before playback. Useful for capturing audio offline — e.g. saving
    * a WAV for ASR round-trip verification or sharing a bug-report clip.

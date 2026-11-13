@@ -293,6 +293,7 @@ export class SupertonicEngine implements TTSEngineInterface<SupertonicConfig> {
       maxChunkSize,
       firstChunk: options?.firstChunk,
       firstChunkMaxWords: options?.firstChunkMaxWords,
+      maxFirstChunkHoldMs: options?.maxFirstChunkHoldMs,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,

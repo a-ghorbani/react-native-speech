@@ -23,6 +23,7 @@ import {
   lastCjkCharEnd,
   lastClauseEnd,
   lastWordEnd,
+  nextClauseEnd,
   nextWordEnd,
 } from '../utils/firstClause';
 
@@ -35,6 +36,12 @@ export {findFirstClauseEnd} from '../utils/firstClause';
  * maxChunkSize.
  */
 const RAMP_FACTOR = 4;
+/**
+ * Smallest consumer cap at which the chunk after a first chunk that ended
+ * at a break may be cut at a word: a smaller chunk can't keep up with the
+ * next one (#153).
+ */
+const MIN_WORD_FIT = 40;
 
 export class StreamingChunker {
   private buffer = '';
@@ -49,6 +56,12 @@ export class StreamingChunker {
   private rampCap: number | null = null;
   /** The last chunk was cut between two words of a phrase (#137). */
   private midPhrase = false;
+  /** Chunks cut so far. */
+  private taken = 0;
+  /** The last chunk followed the first and was cut at a clause to fit the consumer cap (#153). */
+  private fitClause = false;
+  /** The last chunk synthesized slower than it plays (`setLastChunkSlow`). */
+  private lastSlow = false;
   /** Consumer's size limit, read when a chunk is cut (`setChunkCap`). */
   private chunkCap: (() => number | null) | null = null;
 
@@ -151,12 +164,39 @@ export class StreamingChunker {
     return this.midPhrase;
   }
 
+  /**
+   * Whether the next chunk should be sized to fit rather than grow past
+   * the last one: the last chunk ended mid-phrase (#137), or, unless it
+   * synthesized slower than it plays, was the first chunk (`firstChunk:
+   * 'clause'`) or followed it and was cut at a clause to fit (#153).
+   */
+  get keepsSize(): boolean {
+    return (
+      this.midPhrase ||
+      (!this.lastSlow && (this.afterFirstChunk || this.fitClause))
+    );
+  }
+
+  /**
+   * Tells the chunker whether the last chunk synthesized slower than it
+   * plays. After such a first chunk, no next chunk can fit in its audio, so
+   * that one is cut at a clause mark, never at a word (#153).
+   */
+  setLastChunkSlow(slow: boolean): void {
+    this.lastSlow = slow;
+  }
+
   /** Total chars appended so far. */
   get totalAppended(): number {
     return this.absoluteOffset + this.buffer.length;
   }
 
   // ── Private ──────────────────────────────────────────────────────
+
+  /** With `firstChunk: 'clause'`, only the first chunk has been cut. */
+  private get afterFirstChunk(): boolean {
+    return this.firstChunk === 'clause' && this.taken === 1;
+  }
 
   /**
    * Try to produce a result synchronously. Returns `undefined` when
@@ -211,12 +251,14 @@ export class StreamingChunker {
 
   /**
    * While ramping: sentences up to the cap; else, once the buffer reaches
-   * the cap, the last clause mark in its second half, or, when the last
-   * chunk already ended mid-phrase and the consumer's cap applies, the last
-   * word end within it, or the end of the word that crosses it when that
-   * word ends the sentence or a clause (#137); else the first sentence
-   * alone, however long. Null (no sentence end yet) leaves the cut to the soft
-   * cut.
+   * the cap, the last clause mark in its second half, or, when the consumer's
+   * cap applies and the last chunk ended mid-phrase, or was a first chunk
+   * that ended at a break, synthesized no slower than it plays, with a cap
+   * of at least MIN_WORD_FIT, the last word end within it, or the end of the
+   * word that crosses it when that word ends the sentence or a clause (#137,
+   * #153); after any other first chunk that ended at a break, the next
+   * clause mark past the cap; else the first sentence alone, however long.
+   * Null (no sentence end yet) leaves the cut to the soft cut.
    */
   private extractRamped(): TextChunk | null {
     const limit = this.currentCap();
@@ -230,10 +272,16 @@ export class StreamingChunker {
     }
     if (this.buffer.length >= cap) {
       const end = lastClauseEnd(this.buffer, cap);
+      const afterBreak = byConsumer && this.afterFirstChunk && !this.midPhrase;
       if (end >= cap / 2) {
-        return this.take(end);
+        return this.take(end, false, afterBreak);
       }
-      if (this.midPhrase && byConsumer) {
+      if (afterBreak && (this.lastSlow || cap < MIN_WORD_FIT)) {
+        const clause = nextClauseEnd(this.buffer, cap, this.maxChunkSize);
+        if (clause > 0) {
+          return this.take(clause, false, true);
+        }
+      } else if ((this.midPhrase && byConsumer) || afterBreak) {
         const over = nextWordEnd(this.buffer, cap);
         if (over > 0 && endsAtBreak(this.buffer.slice(0, over))) {
           return this.take(over);
@@ -331,8 +379,10 @@ export class StreamingChunker {
   }
 
   /** Remove the first `end` chars of the buffer as a chunk. */
-  private take(end: number, midPhrase = false): TextChunk {
+  private take(end: number, midPhrase = false, fitClause = false): TextChunk {
     this.midPhrase = midPhrase;
+    this.fitClause = fitClause;
+    this.taken++;
     const chunk: TextChunk = {
       text: this.buffer.slice(0, end),
       startIndex: this.absoluteOffset,

@@ -352,3 +352,203 @@ describe('EngineStreamSession pacing (#83)', () => {
     }
   });
 });
+
+/**
+ * Like `timedStream`, with a fixed cost per chunk on top of the per-char
+ * synthesis time and a fixed audio length per chunk (Kokoro's edge
+ * silence), as measured on a slow phone while an LLM runs (#153).
+ */
+async function costStream(
+  text: string,
+  p: {fixed: number; perChar: number; audio0: number; audioPerChar: number},
+  maxFirstChunkHoldMs?: number,
+  textDelayMs = 0,
+) {
+  const t0 = Date.now();
+  const plays: {text: string; start: number; end: number}[] = [];
+  const session = new EngineStreamSession<AudioBuffer & {tag: string}>({
+    synthesizeChunk: chunk =>
+      new Promise(resolve =>
+        setTimeout(
+          () => resolve(audio(p.audio0 + chunk.length * p.audioPerChar, chunk)),
+          p.fixed + chunk.length * p.perChar,
+        ),
+      ),
+    playAudio: buffer =>
+      new Promise<void>(resolve => {
+        const start = Date.now() - t0;
+        const ms = buffer.duration * 1000;
+        plays.push({text: buffer.tag, start, end: start + ms});
+        setTimeout(resolve, ms);
+      }),
+    stopPlayback: async () => {},
+    maxChunkSize: 200,
+    firstChunk: 'clause',
+    firstChunkMaxWords: 16,
+    maxFirstChunkHoldMs,
+  });
+  let done = false;
+  (async () => {
+    const tokens = text.match(/\S+\s*/g) ?? [];
+    const first = text.match(/^.*?[.!?]\s+/)![0];
+    session.append(first);
+    if (textDelayMs) {
+      await new Promise(r => setTimeout(r, textDelayMs));
+    }
+    for (const tok of tokens.slice(first.split(/\s+/).length - 1)) {
+      session.append(tok);
+      await new Promise(r => setTimeout(r, 20));
+    }
+    await session.finalize();
+    done = true;
+  })();
+  while (!done) {
+    await jest.advanceTimersByTimeAsync(10);
+  }
+  const gaps = plays.slice(1).map((p2, i) => p2.start - plays[i]!.end);
+  return {
+    plays,
+    gaps,
+    chunks: plays.map(p2 => p2.text),
+    first: plays[0]!.start,
+  };
+}
+
+describe('EngineStreamSession pacing after a first chunk that ends at a break (#153)', () => {
+  // Kokoro int8 on a mid-range phone while an LLM generates (from a field report).
+  const SLOW = {fixed: 900, perChar: 45, audio0: 300, audioPerChar: 54};
+  // Supertonic on the same phone.
+  const FAST = {fixed: 300, perChar: 22, audio0: 640, audioPerChar: 70};
+  const COMMA_FIRST =
+    'When you finally reach the old harbor town after the long drive through the hills, the vineyards, and the little villages with their white houses and red roofs, you should walk down to the water and find the small cafe near the lighthouse. It has the best coffee on the coast. ';
+  const COMMA_FIRST_NO_CLAUSE =
+    'Since the forecast says it will rain on Saturday in the northern valleys, it might be better to hike the ridge trail on Sunday morning instead and keep Saturday for the museum and the old market. The views are better then anyway. ';
+  const SHORT_FIRST =
+    'Sure thing. Sintra is a lovely day trip from Lisbon, with fairytale palaces and green forest trails. The train takes about forty minutes. ';
+  const SHORT_THEN_LONG =
+    'Yes. You can grow basil indoors all year as long as it gets at least six hours of bright light a day and you keep the soil moist but never soggy. Pinch off the flower buds. ';
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  test('a comma-ended first chunk: chunk 2 ends at a clause that fits, no wait', async () => {
+    const {chunks, gaps} = await costStream(COMMA_FIRST, SLOW);
+    expect(chunks.join('')).toBe(COMMA_FIRST);
+    expect(chunks[0]).toBe(
+      'When you finally reach the old harbor town after the long drive through the hills, ',
+    );
+    // Base: chunk 2 may be 2x chunk 1, so it is the rest of the sentence (157 chars), ~3 s gap.
+    expect(chunks[1]).toBe(
+      'the vineyards, and the little villages with their white houses and red roofs, ',
+    );
+    expect(Math.max(...gaps)).toBeLessThanOrEqual(0);
+  });
+
+  test('a comma-ended first chunk and no clause mark within the cap: chunk 2 is cut at a word that fits', async () => {
+    const {chunks, gaps} = await costStream(COMMA_FIRST_NO_CLAUSE, SLOW);
+    expect(chunks.join('')).toBe(COMMA_FIRST_NO_CLAUSE);
+    expect(chunks[0]).toMatch(/valleys, $/);
+    expect(chunks[1]).toMatch(/[a-z] $/);
+    expect(gaps[0]).toBeLessThan(150);
+  });
+
+  test('a short first sentence: chunk 2 ends at the next clause mark, not the end of its sentence', async () => {
+    const {chunks, gaps, first} = await costStream(SHORT_FIRST, SLOW);
+    expect(chunks.join('')).toBe(SHORT_FIRST);
+    expect(chunks[0]).toBe('Sure thing. ');
+    // Base: chunk 2 is the whole 89-char sentence, ~4.1 s gap.
+    expect(chunks[1]).toBe('Sintra is a lovely day trip from Lisbon, ');
+    expect(gaps[0]).toBeLessThan(2000);
+    expect(first).toBeLessThan(1500);
+  });
+
+  test('a first chunk too short for a word cut: the next sentence is not cut at a word', async () => {
+    const {chunks} = await costStream(SHORT_THEN_LONG, SLOW);
+    expect(chunks[0]).toBe('Yes. ');
+    expect(chunks[1]).toMatch(/soggy\. $/);
+  });
+
+  test('maxFirstChunkHoldMs: a slow short first chunk waits for chunk 2, at most that long', async () => {
+    const off = await costStream(SHORT_FIRST, SLOW);
+    const on = await costStream(SHORT_FIRST, SLOW, 2000);
+    expect(on.chunks).toEqual(off.chunks);
+    expect(on.gaps[0]).toBeLessThanOrEqual(0);
+    expect(on.first - off.first).toBeGreaterThan(1500);
+    expect(on.first - off.first).toBeLessThanOrEqual(2000);
+    const capped = await costStream(SHORT_FIRST, SLOW, 1000);
+    expect(capped.first - off.first).toBeLessThanOrEqual(1000);
+    expect(capped.gaps[0]).toBeGreaterThan(0);
+  });
+
+  test('maxFirstChunkHoldMs: a first chunk that synthesizes faster than it plays never waits', async () => {
+    const off = await costStream(SHORT_FIRST, FAST);
+    const on = await costStream(SHORT_FIRST, FAST, 2000);
+    expect(on.first).toBe(off.first);
+    expect(on.chunks).toEqual(off.chunks);
+  });
+
+  test('maxFirstChunkHoldMs: waits for the next text while it arrives, within the limit', async () => {
+    const late = await costStream(SHORT_FIRST, SLOW, 3000, 1500);
+    const off = await costStream(SHORT_FIRST, SLOW, undefined, 1500);
+    expect(late.first).toBeGreaterThan(off.first + 1500);
+    expect(late.first - off.first).toBeLessThanOrEqual(3000);
+  });
+
+  test('maxFirstChunkHoldMs: a stream with only the first chunk does not wait', async () => {
+    const {first, chunks} = await costStream('Sure thing. ', SLOW, 2000);
+    expect(chunks).toEqual(['Sure thing. ']);
+    expect(first).toBeLessThan(1500);
+  });
+
+  test('maxFirstChunkHoldMs: cancel during the wait plays nothing', async () => {
+    const {synthesizeChunk, calls} = deferredSynth();
+    const {playAudio} = deferredPlayer();
+    const session = new EngineStreamSession({
+      synthesizeChunk,
+      playAudio,
+      stopPlayback: async () => {},
+      maxChunkSize: 200,
+      firstChunk: 'clause',
+      maxFirstChunkHoldMs: 5000,
+    });
+    session.append('Sure thing. ');
+    await flush();
+    jest.advanceTimersByTime(2000);
+    calls[0]!.resolve(audio(900));
+    session.append('Sintra is a lovely day trip from Lisbon, with palaces. ');
+    await flush();
+    expect(calls).toHaveLength(2);
+    await session.cancel();
+    expect(playAudio).not.toHaveBeenCalled();
+  });
+
+  test('maxFirstChunkHoldMs: audio without durations never waits', async () => {
+    type Handle = {id: number};
+    const plays: number[] = [];
+    let id = 0;
+    const session = new EngineStreamSession<Handle>({
+      synthesizeChunk: text =>
+        new Promise(resolve =>
+          setTimeout(() => resolve({id: ++id}), 100 * text.length),
+        ),
+      playAudio: async () => {
+        plays.push(Date.now());
+      },
+      stopPlayback: async () => {},
+      hasAudio: () => true,
+      maxChunkSize: 200,
+      firstChunk: 'clause',
+      maxFirstChunkHoldMs: 5000,
+    });
+    const t0 = Date.now();
+    session.append(SHORT_FIRST);
+    const done = session.finalize();
+    while (plays.length === 0) {
+      await jest.advanceTimersByTimeAsync(10);
+    }
+    expect(plays[0]! - t0).toBeLessThanOrEqual(1210);
+    await jest.runAllTimersAsync();
+    await done;
+  });
+});
