@@ -96,24 +96,11 @@ interface AccelState {
   coreMlFlags: number;
 }
 
+// Starts where the library default is: bare CPU on iOS (#115, #150).
 const ACCEL_DEFAULT: AccelState =
   Platform.OS === 'ios'
-    ? {
-        selected: new Set<AccelEpName>(['coreml', 'xnnpack']),
-        coreMlFlags: DEFAULT_COREML_FLAGS,
-      }
-    : {
-        selected: new Set<AccelEpName>(['xnnpack']),
-        coreMlFlags: 0,
-      };
-
-// The library runs Supertonic on the bare CPU on iOS (CoreML got v3
-// jetsam-killed, #115); start the picker there too.
-function accelDefaultFor(engine: EngineId): AccelState {
-  return Platform.OS === 'ios' && engine === TTSEngine.SUPERTONIC
     ? {selected: new Set<AccelEpName>(), coreMlFlags: DEFAULT_COREML_FLAGS}
-    : ACCEL_DEFAULT;
-}
+    : {selected: new Set<AccelEpName>(['xnnpack']), coreMlFlags: 0};
 
 /**
  * Translate the multi-select acceleration state into the array form
@@ -518,7 +505,7 @@ const RootView: React.FC = () => {
           if (outcome.action === 'hide') {
             hideEngine(PHONON, outcome.reason);
             setSelectedEngine(outcome.fallbackTo);
-            setAccel(accelDefaultFor(outcome.fallbackTo));
+            setAccel(ACCEL_DEFAULT);
           } else {
             console.log(`[Phonon] init failed: ${String(error)}`);
             setPhononError(outcome.message);
@@ -2081,7 +2068,7 @@ const RootView: React.FC = () => {
                       setSpokenText(ENGLISH_DEFAULT_TEXT);
                     }
                     if (item.engine !== selectedEngine) {
-                      setAccel(accelDefaultFor(item.engine));
+                      setAccel(ACCEL_DEFAULT);
                     }
                     setSelectedEngine(item.engine);
                   }}

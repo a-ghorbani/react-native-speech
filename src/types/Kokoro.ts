@@ -96,8 +96,9 @@ export interface KokoroConfig {
    * EP that loads the model wins; later entries are tried if earlier ones
    * fail.
    *
-   * If omitted, the engine uses a sensible platform default:
-   *   - iOS: `[{name: 'coreml', coreMlFlags: DEFAULT_COREML_FLAGS}, 'xnnpack', 'cpu']`
+   * If omitted, the engine uses the platform default:
+   *   - iOS: `['cpu']` (CoreML was slower at 3-4x the memory, and failed
+   *     on the fp16/q8f16 models, #150).
    *   - Android: `['xnnpack', 'cpu']` (no NNAPI — deprecated in Android 15;
    *     no GPU/NPU EP is exposed by `onnxruntime-react-native`).
    *   - Android on x86/x86_64: `['cpu']` (XNNPACK crashes ONNX Runtime there).
