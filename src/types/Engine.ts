@@ -125,10 +125,14 @@ export interface SynthesisOptions {
    * `firstChunkMaxWords` complete words, so audio starts sooner. In a
    * stream, the chunks after it grow from there, each limited to about 4
    * times the previous one and cut at a sentence end or else a clause mark
-   * (a longer sentence with no clause mark stays whole; on engines that
-   * measure synthesis speed, a chunk after one that ended between two
+   * (a longer sentence with no clause mark stays whole). On engines that
+   * measure synthesis speed, the chunk after one that ended between two
    * words, such as a first chunk cut at `firstChunkMaxWords`, may be cut at
-   * a word so its synthesis keeps up), until the limit
+   * a word so its synthesis keeps up; so may the chunk after a first chunk
+   * that ended at a comma or sentence end, when at least 60 characters fit
+   * and the first chunk took no more than 1.1 times its audio to
+   * synthesize, else that chunk
+   * ends at the next clause mark. This goes on until the limit
    * reaches `maxChunkSize`; later chunks keep sentence boundaries. Ignored
    * by the OS engine.
    * @platform neural-engines
@@ -144,6 +148,18 @@ export interface SynthesisOptions {
    * @default 12
    */
   firstChunkMaxWords?: number;
+  /**
+   * Streaming with `firstChunk: 'clause'` only (ignored otherwise). When the first chunk took
+   * more than 1.1 times as long to synthesize as its audio lasts (a slow
+   * device, or the CPU shared with an LLM), the chunk after it can't be
+   * ready when it ends. The first chunk then waits up to this many
+   * milliseconds to start, until the next one is about to be ready:
+   * later first audio, in exchange for no pause after the first chunk.
+   * `0` never waits; fast devices never wait.
+   * @platform neural-engines
+   * @default 0
+   */
+  maxFirstChunkHoldMs?: number;
   /**
    * Called for each synthesized audio chunk after any volume adjustment
    * and before playback. Useful for capturing audio offline — e.g. saving

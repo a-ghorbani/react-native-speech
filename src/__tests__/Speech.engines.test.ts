@@ -565,4 +565,21 @@ describe('firstChunkMaxWords validation', () => {
       expect(e.synthesizeStream).not.toHaveBeenCalled();
     },
   );
+
+  it.each([-1, NaN, Infinity, '2000', null])(
+    'createSpeechStream rejects maxFirstChunkHoldMs %p before the engine runs (#153)',
+    async value => {
+      const id = `hold-bad-${String(value)}`;
+      const e = fakeEngine(id);
+      Speech.registerEngine(e as any);
+      await Speech.initialize({engine: id} as any);
+      expect(() =>
+        Speech.createSpeechStream('v1', {
+          firstChunk: 'clause',
+          maxFirstChunkHoldMs: value,
+        } as any),
+      ).toThrow(/^maxFirstChunkHoldMs must be a finite number >= 0 \(got /);
+      expect(e.synthesizeStream).not.toHaveBeenCalled();
+    },
+  );
 });

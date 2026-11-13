@@ -16,6 +16,17 @@ jest.mock('../NeuralAudioPlayer', () => ({
 jest.mock('../../phonemization', () => ({
   loadNativeDict: jest.fn(),
 }));
+const sessionConfigs: any[] = [];
+jest.mock('../EngineStreamSession', () => {
+  const actual = jest.requireActual('../EngineStreamSession');
+  class Recorded extends actual.EngineStreamSession {
+    constructor(config: any) {
+      sessionConfigs.push(config);
+      super(config);
+    }
+  }
+  return {...actual, EngineStreamSession: Recorded};
+});
 
 import {KokoroEngine} from '../kokoro/KokoroEngine';
 import {KittenEngine} from '../kitten/KittenEngine';
@@ -122,6 +133,12 @@ describe.each(ENGINES)('%s synthesizeStream firstChunkMaxWords', (_n, make) => {
       await stream.finalize();
     },
   );
+
+  test('passes maxFirstChunkHoldMs to the stream session (#153)', async () => {
+    sessionConfigs.length = 0;
+    await firstChunk(make, {firstChunk: 'clause', maxFirstChunkHoldMs: 1500});
+    expect(sessionConfigs.at(-1).maxFirstChunkHoldMs).toBe(1500);
+  });
 
   test('the default cuts at word 12', async () => {
     const first = await firstChunk(make, {firstChunk: 'clause'});

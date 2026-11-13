@@ -308,6 +308,7 @@ export class KittenEngine implements TTSEngineInterface<KittenConfig> {
       maxChunkSize,
       firstChunk: options?.firstChunk,
       firstChunkMaxWords: options?.firstChunkMaxWords,
+      maxFirstChunkHoldMs: options?.maxFirstChunkHoldMs,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,

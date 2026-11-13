@@ -92,6 +92,45 @@ export function nextWordEnd(text: string, limit: number): number {
   return m ? m.index + m[0].length : -1;
 }
 
+/** End of the first match of `re` that ends after `from`, or -1. */
+function firstMatchEndAfter(
+  re: RegExp,
+  text: string,
+  from: number,
+  skip: (index: number) => boolean = () => false,
+): number {
+  const all = new RegExp(re.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = all.exec(text)) !== null) {
+    const end = m.index + m[0].length;
+    if (end > from && !skip(m.index)) {
+      return end;
+    }
+  }
+  return -1;
+}
+
+/**
+ * End of the first clause mark (ASCII or CJK) that ends after `from` and
+ * at or before `max`, with no sentence end before it; -1 otherwise.
+ */
+export function nextClauseEnd(text: string, from: number, max: number): number {
+  const ends = [CLAUSE_END_RE, CJK_CLAUSE_END_RE]
+    .map(re => firstMatchEndAfter(re, text, from))
+    .filter(end => end > 0);
+  if (ends.length === 0) {
+    return -1;
+  }
+  const clause = Math.min(...ends);
+  const sentence = firstMatchEndAfter(SENTENCE_END_RE, text, from, index =>
+    isAbbreviationPeriod(text, index),
+  );
+  if (clause > max || (sentence > 0 && sentence <= clause)) {
+    return -1;
+  }
+  return clause;
+}
+
 /**
  * Whether `text` ends at a sentence end (not an abbreviation's period) or
  * a clause mark.
@@ -124,6 +163,21 @@ export function assertFirstChunkMaxWords(value: unknown): void {
     typeof value === 'string' ? JSON.stringify(value) : String(value);
   throw new Error(
     `firstChunkMaxWords must be a positive integer (got ${shown})`,
+  );
+}
+
+/** Throws unless `value` is `undefined` or a finite number >= 0. */
+export function assertMaxFirstChunkHoldMs(value: unknown): void {
+  if (
+    value === undefined ||
+    (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  ) {
+    return;
+  }
+  const shown =
+    typeof value === 'string' ? JSON.stringify(value) : String(value);
+  throw new Error(
+    `maxFirstChunkHoldMs must be a finite number >= 0 (got ${shown})`,
   );
 }
 

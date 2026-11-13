@@ -330,6 +330,7 @@ export class KokoroEngine implements TTSEngineInterface<KokoroConfig> {
       maxChunkSize,
       firstChunk: options?.firstChunk,
       firstChunkMaxWords: options?.firstChunkMaxWords,
+      maxFirstChunkHoldMs: options?.maxFirstChunkHoldMs,
       playbackOptions: {
         ducking: options?.ducking,
         silentMode: options?.silentMode,
