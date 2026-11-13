@@ -660,7 +660,7 @@ Voice blending: pass multiple voice IDs (see `src/engines/kokoro/VoiceLoader.ts`
 > | 1.18 – 1.23 | ok | ok | ok | NaN on some inputs |
 > | 1.24 – 1.26 | ok | ok | NaN on every input | NaN on some inputs |
 >
-> With `model_q8f16.onnx` on onnxruntime 1.24+, each chunk is also at least 8× slower to synthesize. Measured on arm64 with onnxruntime-node and on Android with onnxruntime-react-native 1.24.3 (#71).
+> With `model_q8f16.onnx` on onnxruntime 1.24+, each chunk is also at least 8× slower to synthesize. Measured on arm64 with onnxruntime-node and on Android with onnxruntime-react-native 1.24.3 (#71). On an iPhone 13 Pro with 1.24.3, both files gave clean audio on the bare CPU for the test text, at about the speed of `model_quantized.onnx` ([#150](https://github.com/a-ghorbani/react-native-speech/issues/150)), so the guard may not trigger there; `model_quantized.onnx` or `model.onnx` remain the safe choice.
 
 ### Supertonic
 

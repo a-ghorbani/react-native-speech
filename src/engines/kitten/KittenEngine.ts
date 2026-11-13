@@ -6,7 +6,7 @@
  *
  * Features:
  * - Single ONNX model (simpler than multi-model engines)
- * - Hardware acceleration (CoreML on iOS, NNAPI on Android)
+ * - ONNX Runtime execution providers (default: CPU on iOS, xnnpack + CPU on Android)
  * - Pipelined synthesis for seamless playback
  * - Length-dependent voice style embeddings
  * - 8 built-in voices, English only
