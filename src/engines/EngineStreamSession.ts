@@ -271,6 +271,7 @@ export class EngineStreamSession<
         if (
           chunkIdx === 0 &&
           firstSlow &&
+          this.config.firstChunk === 'clause' &&
           (this.config.maxFirstChunkHoldMs ?? 0) > 0
         ) {
           this.fillLookahead(pending, synthesizeChunk, stopSignal);

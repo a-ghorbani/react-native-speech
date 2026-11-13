@@ -363,6 +363,7 @@ async function costStream(
   p: {fixed: number; perChar: number; audio0: number; audioPerChar: number},
   maxFirstChunkHoldMs?: number,
   textDelayMs = 0,
+  firstChunk: 'clause' | 'sentence' = 'clause',
 ) {
   const t0 = Date.now();
   const plays: {text: string; start: number; end: number}[] = [];
@@ -383,7 +384,7 @@ async function costStream(
       }),
     stopPlayback: async () => {},
     maxChunkSize: 200,
-    firstChunk: 'clause',
+    firstChunk,
     firstChunkMaxWords: 16,
     maxFirstChunkHoldMs,
   });
@@ -520,6 +521,39 @@ describe('EngineStreamSession pacing after a first chunk that ends at a break (#
     expect(late.first).toBeGreaterThan(off.first + 1500);
     expect(late.first - off.first).toBeLessThanOrEqual(3000);
   });
+
+  test("maxFirstChunkHoldMs: ignored with firstChunk 'sentence'", async () => {
+    const off = await costStream(SHORT_FIRST, SLOW, undefined, 0, 'sentence');
+    const on = await costStream(SHORT_FIRST, SLOW, 2000, 0, 'sentence');
+    expect(on.first).toBe(off.first);
+    expect(on.chunks).toEqual(off.chunks);
+  });
+
+  test.each([undefined, 2000])(
+    'maxFirstChunkHoldMs %p with a fast first chunk: nothing is synthesized before the first chunk starts',
+    async hold => {
+      const {synthesizeChunk, calls} = deferredSynth();
+      const {playAudio} = deferredPlayer();
+      const seen: number[] = [];
+      const session = new EngineStreamSession({
+        synthesizeChunk,
+        playAudio,
+        stopPlayback: async () => {},
+        maxChunkSize: 200,
+        firstChunk: 'clause',
+        maxFirstChunkHoldMs: hold,
+        postProcess: () => seen.push(calls.length),
+        onChunkProgress: () => seen.push(calls.length),
+      });
+      session.append(SHORT_FIRST);
+      await flush();
+      calls[0]!.resolve(audio(900));
+      await flush();
+      expect(seen).toEqual([1, 1]);
+      expect(calls.length).toBe(2);
+      await session.cancel();
+    },
+  );
 
   test('maxFirstChunkHoldMs: a stream with only the first chunk does not wait', async () => {
     const {first, chunks} = await costStream('Sure thing. ', SLOW, 2000);

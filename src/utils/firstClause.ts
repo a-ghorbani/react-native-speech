@@ -166,6 +166,21 @@ export function assertFirstChunkMaxWords(value: unknown): void {
   );
 }
 
+/** Throws unless `value` is `undefined` or a finite number >= 0. */
+export function assertMaxFirstChunkHoldMs(value: unknown): void {
+  if (
+    value === undefined ||
+    (typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  ) {
+    return;
+  }
+  const shown =
+    typeof value === 'string' ? JSON.stringify(value) : String(value);
+  throw new Error(
+    `maxFirstChunkHoldMs must be a finite number >= 0 (got ${shown})`,
+  );
+}
+
 /** Whitespace-separated tokens containing a letter or digit. */
 function countWords(text: string): number {
   return (text.match(/\S+/g) ?? []).filter(t => HAS_LETTER_RE.test(t)).length;

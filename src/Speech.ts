@@ -52,7 +52,10 @@ import {KittenEngine} from './engines/kitten';
 import {neuralAudioPlayer} from './engines/NeuralAudioPlayer';
 import {SpeechStreamImpl} from './engines/SpeechStream';
 import {createComponentLogger} from './utils/logger';
-import {assertFirstChunkMaxWords} from './utils/firstClause';
+import {
+  assertFirstChunkMaxWords,
+  assertMaxFirstChunkHoldMs,
+} from './utils/firstClause';
 
 const log = createComponentLogger('Speech', 'Api');
 
@@ -440,6 +443,7 @@ export default class Speech {
     options?: SpeechStreamOptions,
   ): ISpeechStream {
     assertFirstChunkMaxWords(options?.firstChunkMaxWords);
+    assertMaxFirstChunkHoldMs(options?.maxFirstChunkHoldMs);
     // `SpeechStreamOptions` extends `SynthesisOptions`; engines ignore the
     // stream-only fields (`targetChars`, `onError`) since they only read
     // the properties they care about.
