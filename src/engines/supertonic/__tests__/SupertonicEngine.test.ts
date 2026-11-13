@@ -275,6 +275,7 @@ describe('SupertonicEngine - session creation order (#148)', () => {
   let pending: Array<() => void>;
   let inFlight: number;
   let maxInFlight: number;
+  let rejectNext: ((e: Error) => void) | undefined;
   const created: Array<{path: string; providers: unknown}> = [];
 
   beforeEach(() => {
@@ -292,7 +293,8 @@ describe('SupertonicEngine - session creation order (#148)', () => {
       inFlight++;
       maxInFlight = Math.max(maxInFlight, inFlight);
       created.push({path, providers: opts.executionProviders});
-      return new Promise(resolve =>
+      return new Promise((resolve, reject) => {
+        rejectNext = reject;
         pending.push(() => {
           inFlight--;
           resolve({
@@ -301,8 +303,8 @@ describe('SupertonicEngine - session creation order (#148)', () => {
             run: mockSessionRun,
             release: mockSessionRelease,
           });
-        }),
-      );
+        });
+      });
     }) as any);
   });
 
@@ -360,5 +362,27 @@ describe('SupertonicEngine - session creation order (#148)', () => {
     expect(inFlight).toBe(4);
     pending.splice(0).forEach(resolve => resolve());
     await init;
+  });
+
+  it('after a failed xnnpack create, the CPU fallback creates all 4 in parallel', async () => {
+    const e = new SupertonicEngine();
+    const init = e.initialize({
+      ...validConfig,
+      executionProviders: ['xnnpack', 'cpu'],
+    });
+    await settle();
+    expect(created).toHaveLength(1);
+    pending.length = 0;
+    inFlight = 0;
+    // Fail the first create; the fallback should then start 4 CPU creates.
+    rejectNext!(new Error('xnnpack create failed'));
+    await settle();
+    expect(created.slice(1).map(c => c.providers)).toEqual(
+      Array(4).fill(['cpu']),
+    );
+    expect(inFlight).toBe(4);
+    pending.splice(0).forEach(resolve => resolve());
+    await init;
+    expect(await e.isReady()).toBe(true);
   });
 });

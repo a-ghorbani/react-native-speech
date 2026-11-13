@@ -196,7 +196,8 @@ export class SupertonicInference {
    * without a lock in the first XNNPACK session it creates; creating several
    * at once can crash natively in Gemm::PrePack (#148,
    * microsoft/onnxruntime#32461). With XNNPACK, create the smallest model
-   * alone first, then the other three in parallel.
+   * alone first, then the other three in parallel. This does not guard
+   * against another engine creating its session at the same time.
    */
   private async loadSessions(
     config: SupertonicConfig,
