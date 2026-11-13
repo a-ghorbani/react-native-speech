@@ -686,5 +686,6 @@ describe('EngineStreamSession pacing after a slow first chunk that ends at a com
     expect(chunks.join('')).toBe(text);
     expect(chunks[0]).toBe('Before you start the engine, ');
     expect(chunks[1]).not.toBe('check the oil, ');
+    expect(chunks[1]!.length).toBeGreaterThanOrEqual(40);
   });
 });

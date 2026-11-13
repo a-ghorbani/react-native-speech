@@ -1240,8 +1240,9 @@ describe('StreamingChunker after a slow first chunk that ends at a break (#158)'
       true,
       first.length,
     );
-    expect(chunker.tryPeek()!.text).not.toBe(
-      'stop at the gate next to the old stone church, ',
+    // As before: the 2x cap past maxChunkSize leaves the sentence whole.
+    expect(chunker.tryPeek()!.text).toBe(
+      'stop at the gate next to the old stone church, then follow the narrow road that winds down past the fishing boats and the market stalls to the water where the small cafe stands. More. ',
     );
   });
 
@@ -1258,6 +1259,20 @@ describe('StreamingChunker after a slow first chunk that ends at a break (#158)'
     expect(chunker.tryPeek()!.text).toMatch(/frost, $/);
     chunker.setLastChunkSlow(false);
     expect(chunker.keepsSize).toBe(false);
+  });
+
+  test('a finalized tail with no sentence end is cut at the fitting clause too', () => {
+    const chunker = slowChunker(
+      `${HARBOR}walk down to the water and find the small cafe, then sit by the old lighthouse and the market`,
+    );
+    chunker.finalize();
+    expect(chunker.tryPeek()!.text).toBe(
+      'walk down to the water and find the small cafe, ',
+    );
+    expect(chunker.tryPeek()!.text).toBe(
+      'then sit by the old lighthouse and the market',
+    );
+    expect(chunker.tryPeek()).toBeNull();
   });
 
   test('without a consumer cap the slow flag changes nothing', () => {

@@ -175,7 +175,9 @@ export class StreamingChunker {
    * Whether the next chunk should be sized to fit rather than grow past
    * the last one: the last chunk ended mid-phrase (#137), or, unless it
    * synthesized slower than it plays, was the first chunk (`firstChunk:
-   * 'clause'`) or followed it and was cut at a clause to fit (#153).
+   * 'clause'`) or followed it and was cut at a clause to fit (#153). A
+   * `setChunkCap` callback reads it to choose its growth: the chunker
+   * also sets it while reading the 1x cap after a slow first chunk (#158).
    */
   get keepsSize(): boolean {
     return (
@@ -321,9 +323,13 @@ export class StreamingChunker {
     if (!this.afterFirstChunk || this.midPhrase || !this.lastSlow) {
       return null;
     }
+    let limit;
     this.slowFit = true;
-    const limit = this.currentCap();
-    this.slowFit = false;
+    try {
+      limit = this.currentCap();
+    } finally {
+      this.slowFit = false;
+    }
     if (!limit?.byConsumer) {
       return null;
     }
