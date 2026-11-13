@@ -37,11 +37,11 @@ export {findFirstClauseEnd} from '../utils/firstClause';
  */
 const RAMP_FACTOR = 4;
 /**
- * Smallest consumer cap at which the chunk after a first chunk that ended
- * at a break may be cut at a word: a smaller chunk can't keep up with the
- * next one (#153).
+ * Shortest chunk after a first chunk that ended at a break that may be cut
+ * at a word: under load a shorter one takes longer to synthesize than to
+ * play, so the chunks after it can't keep up (#139, #153).
  */
-const MIN_WORD_FIT = 40;
+const MIN_WORD_FIT = 60;
 
 export class StreamingChunker {
   private buffer = '';
@@ -253,11 +253,12 @@ export class StreamingChunker {
    * While ramping: sentences up to the cap; else, once the buffer reaches
    * the cap, the last clause mark in its second half, or, when the consumer's
    * cap applies and the last chunk ended mid-phrase, or was a first chunk
-   * that ended at a break, synthesized no slower than it plays, with a cap
-   * of at least MIN_WORD_FIT, the last word end within it, or the end of the
-   * word that crosses it when that word ends the sentence or a clause (#137,
-   * #153); after any other first chunk that ended at a break, the next
-   * clause mark past the cap; else the first sentence alone, however long.
+   * that ended at a break, synthesized no slower than it plays, with a word
+   * end at MIN_WORD_FIT or later within the cap: the last word end within
+   * it, or the end of the word that crosses it when that word ends the
+   * sentence or a clause (#137, #153); after any other first chunk that
+   * ended at a break, the next clause mark past the cap; else the first
+   * sentence alone, however long.
    * Null (no sentence end yet) leaves the cut to the soft cut.
    */
   private extractRamped(): TextChunk | null {
@@ -276,7 +277,10 @@ export class StreamingChunker {
       if (end >= cap / 2) {
         return this.take(end, false, afterBreak);
       }
-      if (afterBreak && (this.lastSlow || cap < MIN_WORD_FIT)) {
+      if (
+        afterBreak &&
+        (this.lastSlow || lastWordEnd(this.buffer, cap) < MIN_WORD_FIT)
+      ) {
         const clause = nextClauseEnd(this.buffer, cap, this.maxChunkSize);
         if (clause > 0) {
           return this.take(clause, false, true);

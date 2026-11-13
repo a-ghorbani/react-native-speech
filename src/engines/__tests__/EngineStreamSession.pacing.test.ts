@@ -463,6 +463,22 @@ describe('EngineStreamSession pacing after a first chunk that ends at a break (#
     expect(first).toBeLessThan(1500);
   });
 
+  test('a short clause-ended first chunk: no short word-cut chunk that the next one cannot follow', async () => {
+    // A 42-char first chunk could fit a 42-char word cut; under this load
+    // the chunks after it shrank and stalled 6.6 s mid-phrase (#48 corpus).
+    const text =
+      "The core package must be >=2.9.0 <2.10.0: the add-on builds on the core's newer API and the native PCM sinks of the engine SDK, which may change in a core minor release, so each add-on release pins the core minors it was tested against. Register the engine once. ";
+    const {chunks, gaps} = await costStream(text, SLOW);
+    expect(chunks.join('')).toBe(text);
+    expect(chunks[0]).toBe('The core package must be >=2.9.0 <2.10.0: ');
+    chunks.slice(0, -1).forEach((c, i) => {
+      if (!/[.!?,;:—–]\s*$/.test(c)) {
+        expect(c.length).toBeGreaterThanOrEqual(60);
+        expect(gaps[i]).toBeLessThan(300);
+      }
+    });
+  });
+
   test('a first chunk too short for a word cut: the next sentence is not cut at a word', async () => {
     const {chunks} = await costStream(SHORT_THEN_LONG, SLOW);
     expect(chunks[0]).toBe('Yes. ');

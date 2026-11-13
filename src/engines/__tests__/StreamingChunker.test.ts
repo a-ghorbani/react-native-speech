@@ -1108,31 +1108,34 @@ describe('StreamingChunker after a word-capped first chunk (#137)', () => {
     expect(chunker.endsMidPhrase).toBe(false);
   });
 
-  test('after a first chunk that ends at a clause mark, a cap below 40 chars is never a word cut (#153)', () => {
+  test('after a first chunk that ends at a clause mark, a word cut shorter than 60 chars is never made (#153)', () => {
     const chunker = new StreamingChunker(200, 'clause', 6);
     chunker.append(`Yes, of course, ${LONG}`);
     expect(chunker.tryPeek()!.text).toBe('Yes, of course, ');
-    chunker.setChunkCap(() => 39);
+    // The last word end within 62 chars is at 59.
+    expect(LONG.lastIndexOf(' ', 61) + 1).toBe(59);
+    chunker.setChunkCap(() => 62);
     expect(chunker.tryPeek()!.text).toBe(LONG);
   });
 
-  test('after a first chunk that ends at a clause mark, a cap of 40 chars or more cuts at a word (#153)', () => {
-    const chunker = new StreamingChunker(200, 'clause', 6);
-    chunker.append(`Yes, of course, ${LONG}`);
-    chunker.tryPeek();
-    chunker.setChunkCap(() => 40);
+  test('after a first chunk that ends at a clause mark, a cap with a word end at 60 chars or more cuts at a word (#153)', () => {
+    const chunker = new StreamingChunker(200, 'clause', 12);
+    chunker.append(`Well, here is what I would do, ${LONG}`);
+    expect(chunker.tryPeek()!.text).toBe('Well, here is what I would do, ');
+    chunker.setChunkCap(() => 70);
     const second = chunker.tryPeek()!.text;
-    expect(second.length).toBeLessThanOrEqual(40);
+    expect(second.length).toBeGreaterThanOrEqual(60);
+    expect(second.length).toBeLessThanOrEqual(70);
     expect(LONG.startsWith(second)).toBe(true);
     expect(chunker.endsMidPhrase).toBe(true);
   });
 
   test('after a first chunk that synthesized slower than it plays, the next chunk is never a word cut (#153)', () => {
-    const chunker = new StreamingChunker(200, 'clause', 6);
-    chunker.append(`Yes, of course, ${LONG}`);
+    const chunker = new StreamingChunker(200, 'clause', 12);
+    chunker.append(`Well, here is what I would do, ${LONG}`);
     chunker.tryPeek();
     chunker.setLastChunkSlow(true);
-    chunker.setChunkCap(() => 60);
+    chunker.setChunkCap(() => 70);
     expect(chunker.tryPeek()!.text).toBe(LONG);
   });
 

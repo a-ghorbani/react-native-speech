@@ -13,14 +13,14 @@ On-device, multi-engine text-to-speech for React Native. Wraps the OS-native TTS
 
 ### Streaming (LLM token stream → TTS)
 
-| <center>iOS</center> | <center>Android</center> |
-| :---: | :---: |
+|                                                           <center>iOS</center>                                                           |                                                         <center>Android</center>                                                         |
+| :--------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------: |
 | <video src="https://github.com/user-attachments/assets/c3f6b6e5-a778-4d19-bed5-d2c79843eba1" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/218196c8-6a2c-49c4-a918-a37f71b5fcb3" controls width="100%" height="500"></video> |
 
 ### One-shot speak
 
-| <center>iOS</center> | <center>Android</center> |
-| :---: | :---: |
+|                                                           <center>iOS</center>                                                           |                                                         <center>Android</center>                                                         |
+| :--------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------: |
 | <video src="https://github.com/user-attachments/assets/648120eb-0e96-4b59-94f8-64012824942d" controls width="100%" height="500"></video> | <video src="https://github.com/user-attachments/assets/da0ccc52-042d-4444-b355-e478f3c8af33" controls width="100%" height="500"></video> |
 
 ## Features
@@ -125,13 +125,13 @@ Full options (execution providers, chunking, phonemizer selection) are documente
 
 ## Supported languages
 
-| Engine | Languages | How to select |
-| --- | --- | --- |
-| OS (`AVSpeechSynthesizer` / Android `TextToSpeech`) | Whatever voices the device has installed | `language: 'zh-CN'` (BCP 47) in the speak options, or a `voice` from `Speech.getAvailableVoices('zh')` |
-| Kokoro | English (`a*` American, `b*` British voices). Mandarin Chinese (`zf_*`, `zm_*` voices), opt-in, see below | Pick a voice of that language |
-| Kitten | English | — |
-| Supertonic | v3: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi, plus `na` for unknown or mixed text. v2: en, es, fr, ko, pt. v1: en | `language: 'hi'` in the speak options; any voice works with any language |
-| Phonon (add-on) | English (31m). The 40m models add fr, de, es and pt, but they are non-commercial (CC BY-NC) | `language` in the Phonon config |
+| Engine                                              | Languages                                                                                                                                                                                           | How to select                                                                                          |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| OS (`AVSpeechSynthesizer` / Android `TextToSpeech`) | Whatever voices the device has installed                                                                                                                                                            | `language: 'zh-CN'` (BCP 47) in the speak options, or a `voice` from `Speech.getAvailableVoices('zh')` |
+| Kokoro                                              | English (`a*` American, `b*` British voices). Mandarin Chinese (`zf_*`, `zm_*` voices), opt-in, see below                                                                                           | Pick a voice of that language                                                                          |
+| Kitten                                              | English                                                                                                                                                                                             | —                                                                                                      |
+| Supertonic                                          | v3: ar, bg, cs, da, de, el, en, es, et, fi, fr, hi, hr, hu, id, it, ja, ko, lt, lv, nl, pl, pt, ro, ru, sk, sl, sv, tr, uk, vi, plus `na` for unknown or mixed text. v2: en, es, fr, ko, pt. v1: en | `language: 'hi'` in the speak options; any voice works with any language                               |
+| Phonon (add-on)                                     | English (31m). The 40m models add fr, de, es and pt, but they are non-commercial (CC BY-NC)                                                                                                         | `language` in the Phonon config                                                                        |
 
 **Mandarin on Kokoro.** It works with the Kokoro v1.0 model you already have (no extra model download), but it is opt-in so apps that don't need it don't bundle it. Install `pinyin-pro` and import the entry once:
 
@@ -210,7 +210,7 @@ stream.onProgress(event => {
 
 On the OS engine each batch is one OS utterance: `onProgress` fires when a batch's audio starts (one event per batch), and `finalize()` resolves when the last batch's audio has ended. `Speech.stop()` and `stream.cancel()` silence it at once, and nothing is emitted afterwards.
 
-For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. So that the next chunk is synthesized while a short first chunk plays, the chunks after it grow step by step: each is limited to about 4 times the previous one, and on Kokoro, Kitten and Supertonic also to what the measured synthesis speed can finish while the audio already synthesized plays (at least twice the previous chunk; only the same size after a cut between two words, and, while synthesis keeps up with playback, for the chunk right after the first one and after a clause cut that follows it). A limited chunk is cut at a sentence end or, failing that, at a clause mark; a longer sentence with no clause mark stays whole. The exceptions are on Kokoro, Kitten and Supertonic. After a chunk that already ended between two words (a first chunk cut at `firstChunkMaxWords`, or a chunk cut this way), the next chunk is cut at a word so that its synthesis fits in the audio before it, instead of leaving seconds of silence. After a first chunk that ends at a comma or a sentence end, the next chunk is cut the same way when at least 40 characters fit and the first chunk was synthesized faster than it plays; otherwise it ends at the next clause mark, even past the limit. Without a limit below `maxChunkSize`, chunks break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
+For even lower time-to-first-audio on neural engines, pass `firstChunk: 'clause'`: the first chunk may then end at a clause boundary (`, ; : — –` after at least 3 words, or `，；：、` after at least 4 CJK characters), or after `firstChunkMaxWords` words (default 12), instead of waiting for the end of the sentence. So that the next chunk is synthesized while a short first chunk plays, the chunks after it grow step by step: each is limited to about 4 times the previous one, and on Kokoro, Kitten and Supertonic also to what the measured synthesis speed can finish while the audio already synthesized plays (at least twice the previous chunk; only the same size after a cut between two words, and, while synthesis keeps up with playback, for the chunk right after the first one and after a clause cut that follows it). A limited chunk is cut at a sentence end or, failing that, at a clause mark; a longer sentence with no clause mark stays whole. The exceptions are on Kokoro, Kitten and Supertonic. After a chunk that already ended between two words (a first chunk cut at `firstChunkMaxWords`, or a chunk cut this way), the next chunk is cut at a word so that its synthesis fits in the audio before it, instead of leaving seconds of silence. After a first chunk that ends at a comma or a sentence end, the next chunk is cut the same way when at least 60 characters fit and the first chunk was synthesized faster than it plays; otherwise it ends at the next clause mark, even past the limit. Without a limit below `maxChunkSize`, chunks break at sentence boundaries. The default is `'sentence'`. The OS engine ignores this option.
 
 A first sentence longer than the word limit, with no early comma, is split mid-sentence, which can be heard as a pause; on a slower device the rest of that sentence may be split again at a word. Raise `firstChunkMaxWords` to keep long first sentences whole, at the cost of later first audio. It must be an integer of at least 1; other values throw.
 
@@ -238,7 +238,10 @@ If you need `streamRange` to index into your own text exactly, strip markdown yo
 import {createMarkdownStreamBuffer} from '@pocketpalai/react-native-speech';
 
 // Pass the same word limit to both so they cut at the same place.
-const md = createMarkdownStreamBuffer({firstChunk: 'clause', firstChunkMaxWords: 25});
+const md = createMarkdownStreamBuffer({
+  firstChunk: 'clause',
+  firstChunkMaxWords: 25,
+});
 const stream = Speech.createSpeechStream('af_bella', {
   stripMarkdown: false,
   firstChunk: 'clause',
