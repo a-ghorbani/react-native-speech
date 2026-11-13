@@ -768,6 +768,17 @@ Speech.addChunkProgressListener(event => {
 
 `textRange.start` / `textRange.end` map the chunk back into the original input string; this is what the `HighlightedText` component uses to move its highlight.
 
+### Streaming on a slow device
+
+With `firstChunk: 'clause'`, a stream starts with a short first chunk, and the next chunk is synthesized while it plays. On a slow phone, or when an LLM uses the CPU at the same time, a very short first chunk can play for less time than it takes to synthesize anything after it, and the stream pauses after it. `maxFirstChunkHoldMs` (default 0) trades a later start for that pause: when the first chunk took more than 1.1 times as long to synthesize as it plays, it waits up to that many milliseconds to start, until the next chunk is about to be ready. Phones that synthesize faster than real time never wait. See the README section on `firstChunk` for measured numbers.
+
+```ts
+const stream = Speech.createSpeechStream(undefined, {
+  firstChunk: 'clause',
+  maxFirstChunkHoldMs: 2000,
+});
+```
+
 ### Audio interruptions
 
 All engines forward OS-level audio interruptions (iOS `AVAudioSession`, Android `AudioFocus`) as a JS event:
@@ -919,7 +930,7 @@ import {
 | --- | --- |
 | `EngineStreamSession`, `EngineStreamSessionConfig` | Pipelined synth + play for `synthesizeStream`. `hasAudio` / `discard` / `onCancel` cover audio that stays native; `onCancel` runs synchronously on cancel. |
 | `neuralAudioPlayer`, `NeuralAudioPlayer`, `PlaybackOptions` | The single shared player. `play(buffer)` plays JS audio; `playNative(start)` tracks native playback so `Speech.stop()` / `pause()` reach it. Do not construct another `NeuralAudioPlayer` for playback. |
-| `TextChunker`, `TextChunk`, `StreamingChunker`, `findFirstClauseEnd`, `assertFirstChunkMaxWords`, `stripMarkdown` | The chunking and markdown stripping the built-in engines use. An engine that supports `firstChunk` passes `firstChunk` and `firstChunkMaxWords` to both `createMarkdownStreamBuffer` and `EngineStreamSession`, so both cut the first chunk at the same place. |
+| `TextChunker`, `TextChunk`, `StreamingChunker`, `findFirstClauseEnd`, `assertFirstChunkMaxWords`, `stripMarkdown` | The chunking and markdown stripping the built-in engines use. An engine that supports `firstChunk` passes `firstChunk` and `firstChunkMaxWords` to both `createMarkdownStreamBuffer` and `EngineStreamSession`, so both cut the first chunk at the same place, and `maxFirstChunkHoldMs` to `EngineStreamSession`. |
 | `base64ToArrayBuffer`, `loadAssetAsText`, `createComponentLogger` | Asset and logging helpers. |
 
 Native PCM sinks (experimental, as the subpath; both play on the same single neural player as `playAudio`, so a new playback stops and replaces the current one):
